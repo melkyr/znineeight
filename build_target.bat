@@ -21,4 +21,4 @@ gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c diagnostics.c -o diagnostics.o
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c lexer.c -o lexer.o
 gcc -std=c89 -m32 -mconsole -static-libgcc -pedantic -Wall -O2 -I. -Isrc/include -c main.c -o main.o
-gcc -m32 -mconsole -static-libgcc -o app.exe zig_runtime.o net_runtime.o builtin.o allocator.o hash.o mem.o util.o pal.o name_mangler.o growable_array.o token.o source_manager.o string_interner.o diagnostics.o lexer.o main.o 
+gcc -m32 -mconsole -static-libgcc -o app.exe zig_runtime.o net_runtime.o builtin.o allocator.o hash.o mem.o util.o pal.o name_mangler.o growable_array.o token.o source_manager.o string_interner.o diagnostics.o lexer.o main.o

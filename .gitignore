@@ -50,6 +50,11 @@ test_runner_batch*
 
 # App outputs
 *.txt
+# Runtime-gate goldens + config (scripts/stdlib/run_fixtures.sh) are source, not output.
+!expected.txt
+!expected_dirs.txt
+!ports.txt
+!examples/z98/gfx_demo/tests/golden/grid.txt
 
 # Temporary binaries
 test_multi_file
@@ -58,9 +63,10 @@ tr*
 zig0.exe
 
 # Zig self-hosted compiler spill files
-.zig1_ast.tmp
-.zig1_hash.tmp
-.zig1_lir.tmp
+.zig1_*.tmp
+
+# Mnemoria memory store (runtime state, not source)
+mnemoria/
 
 # Generated C89 files
 temp_codegen_*.c
@@ -99,3 +105,5 @@ sf_out/*
 repro_out/*
 out_*/
 release/staging/
+docs/sf/manuals/dist/
+.worktrees/

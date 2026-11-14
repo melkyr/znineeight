@@ -1,0 +1,32 @@
+# Compile-only entries: intentional fixture extern getp
+
+## repro/mi_matrix/euoptptr_val_switch
+source: const E = error{Bad}; extern fn getp() *i32; pub fn main() void { var v: u32 = 0; var r: E!?*i32 = switch(v) { 0 => getp(), 1 => getp(), else => getp(), }; _ = r; }
+-- canonical base link log (compile OK, link fails on getp):
+main_7EB44BFC.c:(.text+0x49): undefined reference to `getp'
+/usr/bin/ld: main_7EB44BFC.c:(.text+0x5c): undefined reference to `getp'
+/usr/bin/ld: main_7EB44BFC.c:(.text+0x6f): undefined reference to `getp'
+collect2: error: ld returned 1 exit status
+-- canonical final link log:
+main_7EB44BFC.c:(.text+0x49): undefined reference to `getp'
+/usr/bin/ld: main_7EB44BFC.c:(.text+0x88): undefined reference to `getp'
+/usr/bin/ld: main_7EB44BFC.c:(.text+0xc7): undefined reference to `getp'
+collect2: error: ld returned 1 exit status
+-- supplemental stub: int *getp(void) { static int g = 7; return &g; }
+-- stub link rc: base=0 final=0; run rc: base=0 final=0; stdout cmp: equal (empty)
+
+## repro/mi_matrix/optptr_val_switch
+source: extern fn getp() *i32; pub fn main() void { var v: u32 = 0; var r: ?*i32 = switch(v) { 0 => getp(), 1 => getp(), else => getp(), }; _ = r; }
+-- canonical base link log (compile OK, link fails on getp):
+main_B447D61A.c:(.text+0x49): undefined reference to `getp'
+/usr/bin/ld: main_B447D61A.c:(.text+0x5c): undefined reference to `getp'
+/usr/bin/ld: main_B447D61A.c:(.text+0x6f): undefined reference to `getp'
+collect2: error: ld returned 1 exit status
+-- canonical final link log:
+main_B447D61A.c:(.text+0x49): undefined reference to `getp'
+/usr/bin/ld: main_B447D61A.c:(.text+0x6f): undefined reference to `getp'
+/usr/bin/ld: main_B447D61A.c:(.text+0x95): undefined reference to `getp'
+collect2: error: ld returned 1 exit status
+-- supplemental stub: int *getp(void) { static int g = 7; return &g; }
+-- stub link rc: base=0 final=0; run rc: base=0 final=0; stdout cmp: equal (empty)
+

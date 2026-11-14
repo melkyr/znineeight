@@ -1,11 +1,12 @@
-# std_import_bare_xmod — FAIL (import resolver defect: bare `@import("std")` has no search path)  [Task R, 2026-08-14]
+# std_import_bare_xmod — OK (bare `@import("std")` resolves via `<exe_dir>/lib`)  [Task R, 2026-08-14; updated 2026-09-17]
 
 ## What it tests
 A **bare module-name import**: `const std = @import("std");` followed by
 `std.io.printInt(@intCast(i32, 42))`. The import resolver must find `std.zig`
-via a **search path** (a `-I`/`--lib-dir` mechanism) rather than a sibling or
-relative file. This is the D1 gap that forces every current repro to carry
-byte-local copies of `std.zig`/`std_io.zig` in-tree.
+via a **search path** (the `-I`/`--lib-dir` mechanism plus the default
+`<exe_dir>/lib` install dir) rather than a sibling or relative file. This is the
+D1 gap that once forced every repro to carry byte-local copies of
+`std.zig`/`std_io.zig` in-tree.
 
 ## Layout (intentional)
 - `main.zig` — the bare `@import("std")` caller.
@@ -14,36 +15,34 @@ byte-local copies of `std.zig`/`std_io.zig` in-tree.
   `local/` subdirectory which is **NOT on any path**. The bare import cannot
   fall back to a sibling — there is none next to `main.zig`.
 
-## The compiler gap
-`@import("std")` (bare module name) fails to resolve. `moduleResolverResolve`
-(`sf/src/module_registry.zig:144`) searches only: (1) the importer's own
-directory, (2) the `search_dirs` list — never populated, because
-`moduleResolverAddSearchDir` (`:139`) is not called from any CLI path — and
-(3) `.` (the CWD). There is no `.zig`-extension append for bare names and no
-`-I`/`--lib-dir` flag wired through `main.zig` to seed `search_dirs`, so the
-bare name `"std"` never maps to `std.zig`; `moduleRegistryResolveImport`
-(`:260`) returns null → `error[3048]`.
+## Resolution (current truth)
+`@import("std")` (bare module name) resolves. `moduleResolverResolve`
+(`sf/src/module_registry.zig`) probes, in order: (1) the importer's own
+directory, (2) each `-I`/`--lib-dir` `search_dirs` entry, (3) `<exe_dir>/lib`
+(the default canonical install dir, via `pal_get_default_lib_path`), and (4) `.`
+(the CWD), with a generic `.zig` auto-append for bare names. Both the
+`-I`/`--lib-dir` flag (`sf/src/main.zig`) and `<exe_dir>/lib` are **implemented**
+and wired through, so `"std"` maps to `std.zig` and the import resolves.
 
 ## Two-state test (the gate for the I/F search-path tasks)
-- **No flag → FAIL (RED):** bare `@import("std")` is unresolved; `--dump-c89`
-  emits 0 `.c` files and a diagnostic. See "Measured result" below.
-- **`--lib-dir local/` (or `-I local/`) → SUCCESS (GREEN):** the resolver
-  searches `local/`, finds `std.zig` → `std_io.zig`, and the program prints
-  `42`. **NOTE:** this flag is NOT implemented yet — this is the EXPECTED
-  post-fix behavior only, recorded for the I/F tasks. Do not run it today.
+- **No flag → OK (GREEN):** bare `@import("std")` resolves via the default
+  `<exe_dir>/lib` install path (canonical std installed), and the program prints
+  `42`.
+- **`--lib-dir local/` (or `-I local/`) → OK (GREEN):** the resolver searches
+  `local/`, finds `std.zig` → `std_io.zig`, and the program prints `42`. This
+  flag is implemented; this GREEN path is unchanged.
 
-## Measured result (2026-08-14, /tmp/fx_subfolder/zig1)
+## Measured result (current: corpus classification **OK**)
 Command:
 ```bash
 /tmp/fx_subfolder/zig1 --dump-c89 repro/mi_matrix/std_import_bare_xmod/main.zig > /tmp/r.c 2>/tmp/r.err; echo "rc=$?"
 ```
-- **dump rc=2** — frontend failure, 0 `.c` files emitted, stdout empty.
-- **stderr:**
-  ```
-  error[3048]: could not resolve imported file 'std'
-  ```
-- Corpus classification: **FAIL** (import-resolution gap — real compiler gap).
+- **dump rc=0** — resolves and emits; the program runs and prints `42`.
+- Corpus classification: **OK** (was FAIL pre-fix — import-resolution gap).
+- Historical FAIL evidence (2026-08-14, before the search path landed): dump
+  rc=2, 0 `.c` emitted, stderr `error[3048]: could not resolve imported file
+  'std'`.
 
-## Expected classification
-**FAIL pre-fix → OK post-fix** (the I/F search-path tasks add `-I`/`--lib-dir`
-handling so the bare name resolves against `local/`).
+## Classification history
+**FAIL (2026-08-14, pre-fix) → OK (post-fix, via `<exe_dir>/lib`; the
+`--lib-dir local/` GREEN path also works).**

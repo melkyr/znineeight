@@ -1,0 +1,10 @@
+// repro/alias_value_reject.z98 — A5-F standalone reject control.
+// Baseline (fp c1746347): const A = i32; var x = A; compiles rc 0 and reads
+// poison. Fixed: rc 2, 0 .c, level-0 error[3000] (source: type / target: type).
+// census: 3000 1
+const A = i32;
+var x = A;
+
+pub fn main() void {
+    _ = x;
+}

@@ -2,12 +2,10 @@
 # cross_nocrt.sh — win32 ZIG_NO_CRT build harness (pre-test plan Task 4, 2026-09-04).
 #
 # Builds one non-net program as a PE32 console image that imports ONLY kernel32
-# (no msvcrt): the zig_pal.c mainCRTStartup stub (compiled under -DZIG_NO_CRT)
-# is the entry; mingw's crt objects and default libs are excluded (-nostdlib);
-# a tiny generated shim (in <workdir>) implements the handful of libc names the
-# emitted std_io/runtime modules reference but which a no-CRT binary cannot get
-# from msvcrt (strlen/putchar/getchar/fwrite/__acrt_iob_func/__main) as raw
-# Win32 I/O; libgcc covers __udivdi3/__umoddi3/__chkstk_ms.
+# (no msvcrt): the emitted zig_pal.c mainCRTStartup (compiled under
+# -DZIG_NO_CRT) is the entry; mingw's crt objects and default libs are excluded
+# (-nostdlib); the emitted zig_nocrt.c / zig_runtime.c / c_exit.c shims provide
+# the libc names the emitted code references; libgcc covers the 64-bit helpers.
 #
 # Usage:
 #   cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]
@@ -18,14 +16,23 @@
 #   <exe_out> path of the resulting PE32 .exe
 #   extra args: extra -D defs appended to every compile (e.g. a program flag)
 #
-# Link form (determined 2026-09-04, RECORDED):
-#   i686-w64-mingw32-gcc -m32 -nostdlib -o <exe_out> <objs> <workdir>/nocrt_shim.o \
-#       -Wl,-e,_mainCRTStartup -lgcc -lkernel32
+# Link form (updated T5.3, RECORDED; P4-M1 adds additive EXTRA_LIBS):
+#   i686-w64-mingw32-gcc -m32 -nostdlib -o <exe_out> <all emitted objs> \
+#       -Wl,-e,_mainCRTStartup -lgcc -lkernel32 $EXTRA_LIBS
 #   - -nostdlib        excludes mingw crt2.o (its mainCRTStartup would collide
-#                      with the pal stub) and the default msvcrt libs.
-#   - -e,_mainCRTStartup  sets the PE entry to the pal stub (COFF decoration:
+#                      with the pal startup) and the default msvcrt libs.
+#   - -e,_mainCRTStartup  sets the PE entry to the pal startup (COFF decoration:
 #                      C fn mainCRTStartup is the linker symbol _mainCRTStartup).
-#   - shim symbols come from nocrt_shim.c generated below.
+#   - shim symbols come from the emitted zig_nocrt.c / c_exit.c.
+#   - EXTRA_LIBS (default empty) is appended verbatim/word-split, so callers
+#     that do not set it keep the exact historical link line. The GUI tier sets
+#     EXTRA_LIBS="-luser32 -lgdi32". DDraw is loaded dynamically at runtime, so
+#     no -lddraw import library is needed (or shipped).
+#   - EXTRA_CSRC (default empty) is a space-separated list of extra C sources
+#     compiled with the same no-CRT flags and linked after the emitted objects.
+#     The GUI programs no longer need an extra C file (the old stdcall WndProc
+#     trampoline is gone; window messages are polled). Unset keeps every other
+#     caller unchanged.
 #   - Program choice: the dump MUST be no-CRT-clean. examples/z98/hello is the
 #     proven candidate; game_of_life is NOT (its emitted main calls system("cls")
 #     -> unresolved msvcrt `system`). See task-WIN32-report.md ## Task 4.
@@ -34,13 +41,27 @@
 # dump summary. Exit status mirrors XRUNRC (0 / 1). Every sub-run is
 # timeout-guarded.
 #
-# Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC.
+# Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC, EXTRA_LIBS,
+#                EXTRA_CSRC, DUMP_TARGET, EXTRA_LDFLAGS, EXTRA_CFLAGS.
 set -u
 
 ROOT=${ROOT:-/workspace/znineeight}
 CROSS_GCC=${CROSS_GCC:-i686-w64-mingw32-gcc}
 TIMEOUT_DUMP=${TIMEOUT_DUMP:-300}
 TIMEOUT_CC=${TIMEOUT_CC:-240}
+EXTRA_LIBS=${EXTRA_LIBS:-}
+EXTRA_CSRC=${EXTRA_CSRC:-}
+# Optional extra compiler flags (word-split), appended to every C compile line,
+# e.g. EXTRA_CFLAGS="-O2" for an optimized shipping build. Empty keeps every
+# existing caller byte-identical.
+EXTRA_CFLAGS=${EXTRA_CFLAGS:-}
+# Optional target flag for the Z98 dump (e.g. -osw). Empty keeps every existing
+# caller byte-identical; GUI programs that import std_time/std_os need -osw so
+# the emitted C takes the win32 branches instead of the POSIX ones.
+DUMP_TARGET=${DUMP_TARGET:-}
+# Optional extra linker flags (word-split), e.g. -Wl,--subsystem,windows for a
+# shipping GUI executable. Empty keeps every existing caller byte-identical.
+EXTRA_LDFLAGS=${EXTRA_LDFLAGS:-}
 
 ZIG1=${1:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
 ENTRY=${2:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
@@ -62,7 +83,7 @@ fail() {
 
 # ---- Step 1: dump C89 (fresh dir, repo-root CWD) ---------------------------
 (
-    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" --dump-c89 --output-dir "$DUMPDIR" "$ENTRY"
+    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" $DUMP_TARGET --dump-c89 --output-dir "$DUMPDIR" "$ENTRY"
 ) >"$DUMPDIR/dump.log" 2>&1
 DUMP_RC=$?
 NERR=$(grep -c 'error\[' "$DUMPDIR/dump.log" 2>/dev/null || true)
@@ -74,14 +95,27 @@ if [ "$DUMP_RC" -ne 0 ] || [ "$NERR" -ne 0 ] || [ "$NPAN" -ne 0 ]; then
 fi
 
 # ---- Step 2: mingw compile emitted .c + runtime under -DZIG_NO_CRT ----------
+# Task 4+ dump dirs are self-contained (they carry zig_runtime.c/zig_pal.c/
+# c_exit.c): compile with -I <dumpdir> and link ONLY the emitted objects.
+# Legacy (pre-Task-4) dirs keep -I sf/src/include + the separately compiled repo
+# runtime pair (zig_runtime.c + zig_pal.c).
+SELFCONTAINED=0
+if [ -f "$DUMPDIR/zig_runtime.c" ]; then
+    SELFCONTAINED=1
+    CC_INC="$DUMPDIR"
+    RT_OBJS=()
+else
+    CC_INC="$INCLUDE"
+    RT_OBJS=("$WORK/zig_runtime.o" "$WORK/zig_pal.o" "$WORK/zig_nocrt.o" "$WORK/c_exit.o")
+fi
 N_C=0
 CC_FAIL=""
 for f in "$DUMPDIR"/*.c; do
     [ -e "$f" ] || continue
     N_C=$((N_C + 1))
     if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
-        -Wall -Wno-long-long -Wno-pointer-sign -I "$INCLUDE" \
-        "${EXTRA_DEFS[@]}" -c "$f" -o "${f%.c}.o" \
+        -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
+        "${EXTRA_DEFS[@]}" $EXTRA_CFLAGS -c "$f" -o "${f%.c}.o" \
         >>"$DUMPDIR/cc.log" 2>&1; then
         CC_FAIL=$(basename "$f")
         break
@@ -91,67 +125,57 @@ if [ "$N_C" -eq 0 ]; then
     echo "0 .c emitted (dump ok)"
     fail NOC
 fi
-for r in zig_runtime zig_pal; do
-    if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
-        -Wall -Wno-long-long -Wno-pointer-sign -I "$INCLUDE" \
-        "${EXTRA_DEFS[@]}" -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
-        >>"$DUMPDIR/cc.log" 2>&1; then
-        CC_FAIL="$r.c"
-        break
-    fi
-done
+if [ "$SELFCONTAINED" -eq 0 ]; then
+    for r in zig_runtime zig_pal zig_nocrt c_exit; do
+        if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
+            -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
+            "${EXTRA_DEFS[@]}" $EXTRA_CFLAGS -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
+            >>"$DUMPDIR/cc.log" 2>&1; then
+            CC_FAIL="$r.c"
+            break
+        fi
+    done
+fi
 if [ -n "$CC_FAIL" ]; then
     echo "cc fail on $CC_FAIL"
     tail -20 "$DUMPDIR/cc.log"
     fail GCCFAIL
 fi
 
-# ---- Step 3: no-CRT shim (raw Win32 I/O; generated in scratch workdir) ------
-cat > "$WORK/nocrt_shim.c" <<'EOF'
-#include <windows.h>
-typedef unsigned int size_t;
-typedef struct _iobuf FILE;
-size_t strlen(const char* s) { const char* p = s; while (*p) p++; return (size_t)(p - s); }
-void __main(void) {}
-int putchar(int c) {
-    char ch = (char)c; DWORD w; HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (h == INVALID_HANDLE_VALUE || h == NULL) return -1;
-    if (!WriteConsoleA(h, &ch, 1, &w, NULL)) WriteFile(h, &ch, 1, &w, NULL);
-    return (unsigned char)c;
-}
-int getchar(void) {
-    char ch; DWORD r; HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
-    if (h == INVALID_HANDLE_VALUE || h == NULL) return -1;
-    if (!ReadFile(h, &ch, 1, &r, NULL) || r == 0) return -1;
-    return (unsigned char)ch;
-}
-size_t fwrite(const void* p, size_t sz, size_t n, FILE* stream) {
-    size_t tot = sz * n; DWORD w; HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-    (void)stream;
-    if (!p || !tot) return 0;
-    if (h == INVALID_HANDLE_VALUE || h == NULL) return 0;
-    if (!WriteConsoleA(h, p, (DWORD)tot, &w, NULL)) WriteFile(h, p, (DWORD)tot, &w, NULL);
-    return (w == (DWORD)tot) ? n : 0;
-}
-FILE* __acrt_iob_func(unsigned _Ix) { (void)_Ix; return NULL; }
-__asm__(".section .data,\"w\"");
-__asm__(".globl __imp____acrt_iob_func");
-__asm__("__imp____acrt_iob_func:");
-__asm__(".long ___acrt_iob_func");
-EOF
-if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -c "$WORK/nocrt_shim.c" \
-    -o "$WORK/nocrt_shim.o" >>"$DUMPDIR/cc.log" 2>&1; then
-    echo "cc fail on nocrt_shim.c"
-    tail -20 "$DUMPDIR/cc.log"
-    fail GCCFAIL
+# ---- Step 2b: optional extra C sources (EXTRA_CSRC) ------------------------
+EXTRA_OBJS=()
+if [ -n "$EXTRA_CSRC" ]; then
+    for src in $EXTRA_CSRC; do
+        if [ ! -f "$src" ]; then
+            echo "extra C source missing: $src"
+            fail GCCFAIL
+        fi
+        obj="$WORK/extra_$(basename "$src" .c).o"
+        if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
+            -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
+            "${EXTRA_DEFS[@]}" $EXTRA_CFLAGS -c "$src" -o "$obj" \
+            >>"$DUMPDIR/cc.log" 2>&1; then
+            echo "extra C compile failed: $src"
+            tail -20 "$DUMPDIR/cc.log"
+            fail GCCFAIL
+        fi
+        EXTRA_OBJS+=("$obj")
+    done
 fi
 
-# ---- Step 4: mingw no-CRT link (entry = pal mainCRTStartup stub) ------------
+# ---- Step 3: mingw no-CRT link (entry = emitted mainCRTStartup) ------------
+# All emitted objects (including c_exit.o and zig_nocrt.o) are linked; the
+# emitted shims provide exit/atexit/strlen/memcpy/strncmp/stdio/env/time.
+LINK_OBJS=()
+for f in "$DUMPDIR"/*.o; do
+    [ -e "$f" ] || continue
+    LINK_OBJS+=("$f")
+done
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -nostdlib -o "$EXE_OUT" \
-    "$DUMPDIR"/*.o "$WORK/zig_runtime.o" "$WORK/zig_pal.o" \
-    "$WORK/nocrt_shim.o" -Wl,-e,_mainCRTStartup -lgcc -lkernel32 \
+    "${LINK_OBJS[@]}" "${RT_OBJS[@]}" "${EXTRA_OBJS[@]}" \
+    -Wl,-e,_mainCRTStartup -lgcc -lkernel32 $EXTRA_LIBS $EXTRA_LDFLAGS \
     >>"$DUMPDIR/ld.log" 2>&1; then
-    echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32)"
+    echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32 $EXTRA_LIBS $EXTRA_LDFLAGS)"
     tail -20 "$DUMPDIR/ld.log"
     fail LINKFAIL
 fi

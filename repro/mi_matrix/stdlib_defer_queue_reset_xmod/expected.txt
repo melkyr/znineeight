@@ -1,0 +1,31 @@
+plain-body
+plain-defer
+for 1
+for-defer
+for 2
+for-defer
+while 0
+while-defer
+while 1
+while-defer
+nested 1 1
+nested-defer
+nested 1 2
+nested-defer
+nested 2 1
+nested-defer
+nested 2 2
+nested-defer
+try 1
+try 2
+try 1
+try 2
+errdefer 2
+caught
+helpplain-body
+helpplain-defer
+helpfor 1
+helpfor-defer
+helpfor 2
+helpfor-defer
+done

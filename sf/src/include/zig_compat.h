@@ -2,18 +2,53 @@
 #ifndef ZIG_COMPAT_H
 #define ZIG_COMPAT_H
 
+/* FX14: the Z98 layout model is frozen at 32-bit (i64/u64/f64 size 8 align
+   8). The era Windows compilers already default to that (MSVC /Zp8, wcc386
+   -zp8), but gcc/clang/mingw on SysV i386 align 64-bit scalars to 4, so the
+   shared typedefs below (and the emitted per-program carrier typedefs) carry
+   this attribute to pin the model on every supported host compiler. */
 #ifdef _MSC_VER
-    typedef __int64 z64;
-    typedef unsigned __int64 zu64;
+#define Z98_ALIGN8
+#elif defined(__WATCOMC__)
+#define Z98_ALIGN8
+#else
+#define Z98_ALIGN8 __attribute__((aligned(8)))
+#endif
+
+#ifdef _MSC_VER
+    typedef __int64 z64 Z98_ALIGN8;
+    typedef unsigned __int64 zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##i64
+    #define Z98_U64_C(n) n##ui64
 #elif defined(__WATCOMC__)
     typedef long long z64;
     typedef unsigned long long zu64;
+    #define Z98_I64_C(n) n##LL
+    #define Z98_U64_C(n) n##ULL
 #else
-    typedef long long z64;
-    typedef unsigned long long zu64;
+    typedef long long z64 Z98_ALIGN8;
+    typedef unsigned long long zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##LL
+    #define Z98_U64_C(n) n##ULL
 #endif
 
-#if !defined(__cplusplus) && !defined(__WATCOMC__)
+#define Z98_I64_MAX Z98_I64_C(9223372036854775807)
+#define Z98_I64_MIN (-Z98_I64_MAX - Z98_I64_C(1))
+#define Z98_U64_MAX (~Z98_U64_C(0))
+
+/* IEEE-754 binary64 non-finite constants (C89 union type-pun; no C99
+   compound literals, no GCC builtins, no math.h/libm). Little-endian
+   layout: u[0] is the low word, u[1] the high word; unsigned long is
+   32-bit on every supported toolchain. */
+typedef union { unsigned long u[2]; double d; } z98_f64_bits;
+static const z98_f64_bits z98_inf_bits  = {{ 0x00000000, 0x7FF00000 }};
+static const z98_f64_bits z98_ninf_bits = {{ 0x00000000, 0xFFF00000 }};
+static const z98_f64_bits z98_nan_bits  = {{ 0x00000000, 0x7FF80000 }};
+#define Z98_INF    (z98_inf_bits.d)
+#define Z98_NEGINF (z98_ninf_bits.d)
+#define Z98_NAN    (z98_nan_bits.d)
+
+#if !defined(__cplusplus)
     typedef signed char i8;
     typedef short i16;
     typedef int i32;
@@ -23,7 +58,7 @@
     typedef unsigned int u32;
     typedef zu64 u64;
     typedef float f32;
-    typedef double f64;
+    typedef double f64 Z98_ALIGN8;
     typedef unsigned int usize;
 #endif
 
@@ -33,6 +68,14 @@ typedef int bool;
 
 #ifndef NULL
 #define NULL ((void*)0)
+#endif
+
+#if !defined(_WIN32)
+#define Z98_STDCALL
+#elif defined(_MSC_VER) || defined(__WATCOMC__)
+#define Z98_STDCALL __stdcall
+#else
+#define Z98_STDCALL __attribute__((stdcall))
 #endif
 
 #endif /* ZIG_COMPAT_H */

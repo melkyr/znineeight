@@ -1,0 +1,61 @@
+// repro/f32_narrow_switch.z98 — standalone FX10 (Volume II D6 extras
+// follow-up) positive: a switch VALUE expression at an f32 expectation site
+// is retyped value-aware like the FX9 `if` path.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/f32_narrow_switch_out
+//   <zig1> -o /tmp/f32_narrow_switch_out repro/f32_narrow_switch.z98
+//   cd /tmp/f32_narrow_switch_out && sh build_target.sh linux f32_narrow_switch
+//   ./f32_narrow_switch
+//
+// EXPECTED (after the fix): rc 0 and
+//   sw=6 2.5 6 3.5 2.5 2.5
+//   rev=2.5 6 3.5 2.5
+//   sites=6 2.5 6 6 6
+// (byte-identical to the Zig-0.15.2 twin). A comptime-known exact i32 first
+// prong (`C`), an exactly-representable typed f64 first prong (`D`), a
+// runtime f32 else prong and the reverse (float-first) order all narrow at
+// return/declaration/assignment/field/union-payload/argument sites; a
+// runtime non-float or int-inexact prong stays a reject (see
+// repro/f32_narrow_switch_reject.z98).
+//
+// DEFECT (FX3 fix round 1 `20127360` through FX9): the switch resolver
+// unified value-blind, so a typed-int first prong won the unification and a
+// later float prong was truncated — `sw` printed `6 2 ...`, `sites` printed
+// `6 2 ...`. The seed v88 printed the correct values. See
+// repro/mi_matrix/stdlib_f32_narrow_ok_xmod (`swx=`/`swsites=` rows) for the
+// pinned runtime golden.
+const std = @import("std");
+
+const C: i32 = 6;
+const D: f64 = 2.5;
+const S = struct { x: f32 };
+const U = union(enum) { a: f32, empty };
+
+fn take(x: f32) f32 { return x; }
+fn retC(c: i32) f32 { return switch (c) { 1 => C, else => 2.5 }; }
+fn retX(c: i32, x: f32) f32 { return switch (c) { 1 => C, else => x }; }
+fn retF(c: i32) f32 { return switch (c) { 1 => D, else => 2.5 }; }
+fn retRev(c: i32) f32 { return switch (c) { 1 => 2.5, else => C }; }
+fn retXFirst(c: i32, x: f32) f32 { return switch (c) { 1 => x, else => 2.5 }; }
+
+pub fn main() void {
+    var c1: i32 = 1;
+    c1 = c1;
+    var c2: i32 = 2;
+    c2 = c2;
+    var x: f32 = 3.5;
+    x = x;
+
+    const vd: f32 = switch (c1) { 1 => C, else => 2.5 };
+    var va: f32 = 0.0;
+    va = switch (c2) { 1 => C, else => 2.5 };
+    var vs: S = S{ .x = switch (c1) { 1 => C, else => 2.5 } };
+    var vu: U = U{ .a = switch (c1) { 1 => C, else => 2.5 } };
+    const vt: f32 = take(switch (c1) { 1 => C, else => 2.5 });
+
+    std.io.print("sw={} {} {} {} {} {}\n", .{ retC(c1), retC(c2), retX(c1, x), retX(c2, x), retF(c1), retF(c2) });
+    std.io.print("rev={} {} {} {}\n", .{ retRev(c1), retRev(c2), retXFirst(c1, x), retXFirst(c2, x) });
+    std.io.print("sites={} {} {} {} {}\n", .{ vd, va, vs.x, vu.a, vt });
+    std.io.print("done\n", .{});
+}

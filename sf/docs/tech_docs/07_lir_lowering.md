@@ -1,22 +1,28 @@
-# LIR Lowering Layer [updated: 2026-09-04 — the 11 socket builtins were REMOVED (netbind S3, `838009b0`): the `builtin_socket_*` LIR variants (lir.zig:89-99) and the socket lowering arm (lower.zig:2949-3046) are deleted; a direct `@socket*` call now fails `error[3000]: unsupported builtin function` (rc=2, 0 `.c`); networking is now the std_net extern surface (wsock32/libc, WSAStartup init, createTcpClient). The socket records below are the pre-removal F6 notes; prior 2026-08-15 — per-function LIR scratch reset (F-LIR): `lirFunctionRelocateToModule` (lir.zig) deep-copies each lowered function's LIR lists (`params`/`blocks`+`insts`/`hoisted_temps`/`switch_cases`/`temp_variant_sub_field`) out of the scratch arena into the module arena after `lowerFn`/`lowerModuleInit`, and `phase_LIRLowering` (main.zig) `sandReset(scratch)` per function (was per-phase only). Bounds the accumulated-LIR scratch peak (rogue_mud 511K→127K, lisp 426K→63K) while emission (a later phase) still reads the module-resident copies — 4 MD5 gates byte-identical, corpus OK=247 FAIL=2 ICE=0 CRASH=0 GREEN=4 over 253 dirs unchanged. See §Data Flow. | updated: 2026-08-13 — Defect C FIXED (task F4, operator ruling m0872 — Option a): `lowerLValueAddr` (lower.zig:739) now has a `field_access` branch — computes the address of the field within the base's address (pointer base → `&base->f_N`; struct/union value base → recursive `&base` then `&addr->f_N`), emitting a new LIR inst `addr_of_field` (lir.zig:44) via the `addr_of`-adjacent C emitter form (c89_emit.zig, `result = &base->field;`). `lowerFieldStore` (lower.zig:894) routes nested field_access/deref/paren bases through it (`base_temp = lowerLValueAddr(child_0, ptr_type)`; ptr-typed bases keep `lowerExpr`) so the outer `store_field` stores through the pointer (proven ptr-base emitter c89_emit.zig:4199-4218 emits `ptr->field = v;`). Fixes BOTH: nested field-store write-back drop (repros `nested_field_store_xmod`→`4243`, `nested_field_store_xmod2`→`78`) and `&o.inner` ICE error[3043] (throwaway `&field` tests pass, incl. 3-level chains, union members, cross-module). Single-level stores unchanged; index-access bases unchanged; lisp_interpreter `v.data.Cons.car = car` now writes through `&v->data` / `&->Cons` and no longer SEGFAULTS at run; 4 MD5 gates byte-identical; corpus OK=237 FAIL=3 ICE=0 CRASH=0 GREEN=4 (no new FAIL).; prior 2026-08-13 — Defect-C investigation (task I2): documented the lvalue/address path gap — `lowerLValueAddr` (lower.zig:739) has NO `field_access` branch; 2+ level field-access lvalues (`o.inner.a = v`) lower the inner base as an rvalue COPY (`lowerFieldStore` lower.zig:860 → `lowerExpr`) and drop the write-back, and `&o.inner` ICEs error[3043]. Fix recommendation + blast radius in §Plain Assignment / §Field Store / §Address-Of; 0 of 4 MD5 gates affected; corrected stale lowerLValueAddr/lowerAssignLValue refs (655→739, 709→793).; prior 2026-08-13 — F2 module-scope coercion recording: new pub sema fn `semanticAnalyzerResolveModuleVarDecl` records the init coercion (wrap_optional_null for module-scope `var g: ?T = null`) → `set_optional_null` instead of `int` null_const (Defect B FIXED; side effect `int_literal_coerce` on `g_used: usize = 0` → gol/lisp/json MD5 gates re-baselined m0809); prior 2026-08-13 — F6 networking builtins: 11 `builtin_socket_*` LIR variants (lir.zig:89-99) + lowering (lower.zig:2949-3046) + 07 §Builtin calls / F6 paragraph; prior 2026-08-08 — F4 std-lib migration COMPLETE: all 6 example-facing `__bootstrap_*` I/O wrappers removed from zig_runtime.c/.h; the 19 `@intCast` cast helpers repointed `__bootstrap_panic(...)` → `std_panic(msg)` (m0564); 21 z98 examples migrated to `std.io` (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-08 — 4 console builtins lowered to `builtin_console_clear`/`builtin_console_gotoxy`/`builtin_console_set_color` LIR (63→66 variants) + comptime branch folding for `if`/`if-expr` on comptime-known conditions (`@isWindows`); prior 2026-08-08 — 6 core I/O builtins lowered to `builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`/`builtin_exit`/`builtin_sleep_ms` LIR (57→63 variants); prior I-RT bootstrap inventory: `__bootstrap_*` → builtin mapping + surviving zig_runtime.c function list (see §Bootstrap-to-Builtin Mapping below); prior 2026-08-07 null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `null_type`→`int` (correct for `?*T`, wrong for `?[]T`); prior labeled_stmt unwrap + current_label propagation to loop_stack; prior varargs `va_start`/`va_arg`/`va_end` LIR + `@intCast` is_checked; prior F4/F5 comptime_values guards + INT_LIT→I32 remap; stale lower.zig line refs corrected post-F2 +30 insert (lowerStmt :3592, lowerFn :4788, applyCoercion :4469, expandDefers :4392, pushDefer :4384, hoistTemps :4420, applyNoneCoercion :4456, set_optional_null var-decl :4214); F7 line-ref pass: core I/O builtin dispatch :2777-2814 → :2821-2858, console :2816-2837 → :2860-2878 (socket arms shifted the block); F3 line-ref pass (2026-08-13): I/O/console/socket arm ranges re-corrected post-F4 — :2821-2858→:2890-2928, :2860-2878→:2929-2948, :2880-2977→:2949-3046]
+# 07 — LIR Lowering [updated: 2026-10-18 — M6 T5.3 (Win9x no-CRT runtime): lowering is unchanged; the Win9x-safe std_file/std_os/std_time PAL helpers are C/runtime wiring in `sf/src/include/*` + `sf/src/std_*.zig`, not new LIR. No lowering sites touched; pins move only from the 64-bit spelling layer (see doc 08/13).] [updated: 2026-10-12 — P9 (structural frame-save rule): the `load_global` inst is the carried record of the global-alias class (the result's storage IS the module global) — the async save/restore set (`async_frame_layout.zig` `asyncTempIsGlobalAlias` consumers) never contains these temps; no new LIR record field (the `load_global` def carries the fact; a redundant `TempDecl` flag would add copier surface for zero information)] [updated: 2026-10-12 — P6 fix round 1 (review Important 1): the `lowerFieldRecord` funnel now records the tagged-union PAYLOAD variant identity too — `field_name_id` = the matched variant member's name (first variant field whose declared type equals the payload-side temp's type — load result / store value / assign src; the old emit-time `emitVariantFieldPayload` pick, relocated; `field_type_id` stays 0 — the variant type is the match key, not a spelled fact). `field_name_id == 0` keeps the bare `.payload` spelling. No new payload fields (the existing `field_name_id`/`field_type_id` carry it; `remapInst` already copies them).] [updated: 2026-10-12 — P6 (lowerer carries decisions; Decision-vs-spelling): the lowerer now RECORDS the semantic facts the emitter used to re-derive. `emitInst` is the record funnel (`lowerRecordFacts`): every `binary` inst gains `result_type`/`width`/`is_signed` (the operation's semantic type via `lowerBinSemType` — the former emit-time `getTempTypeInfo` result→lhs→rhs chain + sat void/int-lit re-check, computed here via P5 predicates; Amendment 5 ruling 2, A15 pattern) and every `load_field`/`store_field`/`assign_field`/`addr_of_field` inst gains `field_name_id`/`field_type_id` (`lowerFieldRecord` — the field identity resolved at the owning phase, incl. the ptr→pointee unwrap; 0/0 = synthetic slice/TU/tuple designators). Direct calls record the callee fn type id on `CallDirectData`/`TailCallData.fn_type_id` (`lowerCalleeFnTypeId` — the old emit-time `findCalleeFnTypeId` scan, relocated; 0xFFFFFFFF when `call_conv == 0` or indirect, matching the old guard). `TempDecl.type_id` is the authoritative temp result type record (the emitter's read is pure; the `undefined_literal`/indirect-`call` UNDEFINED slots stay as registered). LIR payloads stay inside the 32 B `LirInst` envelope.] [updated: 2026-10-12 — combined fix (P6-pre-f3+P12-f1) H1 (facts fill COMPLETE at every `.int_const` construction site; the hoist-gate "gate-unreadable today" argument RETIRED): every producer now writes `width_bits`/`is_signed` by the uniform facts rule (the result temp type's P5 `typeRegistryIntWidthBits`/`typeRegistryIntIsSigned`; non-int kinds (0,0)) — `lower.zig` `emitIntConst` (unchanged), `lir_opt_pass.zig` `runConstFold`'s 3 fold constructions (facts from `tempDeclTypeId(c, result)`; the fold gate keeps them concrete-hoisted but the fields are now DETERMINISTIC regardless), and `async_state_machine.zig`'s 23 own-consts (facts from the `newTemp`/`fiNewTemp` type — `c_state_type`/`b.state_type`/`state_type`/`ptrVoid` sites included; the two null-ptr consts get the non-int (0,0) class). New twin helpers `intFactWidthBits`/`intFactIsSigned` in both files. Gate: zero remaining two-field `.int_const` constructions in `sf/src` (grep-verified in the combined fix report); copiers (`remapInst` 4-field, `retargetDefResult` whole-payload, serialization byte copies) unchanged. Battery 8/8 green (corpus byte-identical, pins 0/8), fixed point `e93ca5ee…` -> `1293d62d71dceeb734dee837a7e10e8e` (hop1==hop2; seed NOT rotated).] [updated: 2026-10-12 — P6-pre fix round 2 (Important 1: the async remap COPIER now carries the facts; §5.3 airtightness re-true to cover copy sites): `remapInst`'s `.int_const` arm (`async_state_machine.zig:352`) copies `width_bits`/`is_signed` alongside `value`/`result` (one copier line; `async_state_machine.zig` is in-touch-set for this line — "LIR carries semantic int facts only" covers ALL producers AND copiers). Pre-fix the remapped copy of a USER-body fact-carryed const kept `TYPE_INT_LIT` on the hoisted-temp copy (`:952-954`) but lost the facts, so both read gates consumed indeterminate values (`c89_plan` `integer_literal_type` + `width_bits != 0` -> `carrierFromFacts(garbage)`; `c89_emit` `d4_fcar` fill gate) — garbage==0 degraded sign-collision Class B to the value rule (i64 -> u64 -> wrong `printU64`) for e.g. `print("{}", .{0 - 3000000000})` inside a suspending fn. Gate audit (every `.int_const` producer/copier, enumerated in the fix report): producers set all four fields or sit on typed/concrete-hoisted temps the gates never read (async_state_machine's 23 own constructions + `lir_opt_pass`'s 3 fold constructions); copiers are `remapInst` (this fix — all four) and `lir_opt_pass.retargetDefResult` (whole-payload copy — facts ride along). Targeted confirmer: the review's suspending-fn shape routes `printI64` again. Battery + fixed point + any pin delta: fix report `## Fix round 2`; tech-doc truth-ups (`untypedIntCarrier` stale mentions -> `lowerUntypedIntFacts`/`deriveConstCarrier`).] [updated: 2026-10-12 — P6-pre fix round 1 (LIR semantic int facts; carrier derivation completes in the planner): `int_const` records all four semantic facts `{value, result, width_bits, is_signed}` (lir.zig:74; NO carrier fields — ruling (ii)). The untyped exact-value materialization (Class B) records its semantic width/signedness at lowering — the sign-collision disambiguator (`lowerUntypedIntFacts`: `0 - 3000000000` -> (64,1) vs the literal `18446744070697051616` -> (64,0), same u64 pattern) — via `emitIntConstFacts`, and its materialization temp is the untyped `TYPE_INT_LIT` (no carrier-typed temps on LIR); typed consts and bare untyped literals go through `emitIntConst` (facts = the carried temp result type's semantic width/signedness; TYPE_INT_LIT/non-int kinds (0,0)). `lowerExactIntArg`/`lowerFoldedIntConst` keep ZERO carrier application (the i32/signed legacy gate becomes the fact test `fw == 32 and fs == 1`; the error[3000] dummy path unchanged); `untypedIntCarrier` and the `c89_plan` import are deleted from lower.zig. Class B knock-ons (documented, `-fsafe`-only / coercion-layer): `materializeShiftLhs` takes the existing untyped-LHS path; `materializeInto`'s `cur != src_ty` guard and `lowerArrayElemTupleCoerce` may fire `int_literal_coerce` casts where the fact type `== cur` previously suppressed them. Out-of-touch-set residue: `async_state_machine.zig` (24 sites) and `lir_opt_pass.zig` (3 fold-produced sites) leave the new fields indeterminate — safe because their result temps are typed / concrete-hoisted and the planner/emitter fact gates never read them. Pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P6-pre (emitter sanitization: C89 spelling planner, carrier derivation): the i32/u32/i64/u64 carrier derivation moves OUT of `lowerExactIntArg`/`lowerFoldedIntConst` into `sf/src/c89_plan.zig` (`untypedIntCarrier` — same rule values; the width/signedness primitive is shared with sema's `comptimeIntUntypedType`). Lowering records the const's semantic width/signedness on the materialization temp (the spec §4 "Lowerer-carried decisions" fact; P6 later makes it an explicit LIR field); the C carrier is derived at the `phase_EmissionClassification` boundary (`c89_plan.deriveConstCarrier` into `C89SpellPlan`) and read by the emitter at spell time — ruling (ii): carriers are C-spelling choices, never LIR fields. `int_const` LIR unchanged (`{value, result}` = semantic facts only). Pins 0/8, hop1==hop2.] [updated: 2026-10-04 — A4-F (Volume IV Amendment A4, operator m1523): `emitValuelessReturn` gains an `optional_type` sibling to its existing `error_union_type` branch. When the function's return type is `?void` (an optional whose payload is `TYPE_VOID`), a valueless `return;` — and falling off the end of the body — now emits `wrap_optional` on a fresh void temp followed by `.ret` (has_value = 1, present) instead of the old `.ret_void` (which `c89_emit.zig` materialised as `zT_ret_void = {0}` → has_value = 0, absent). Zig 0.15.2 parity: `return;`/fall-off in a `?void` fn is present; `return null` is absent; `{}`/`undefined` payload construction and non-void optionals are unchanged (the `opay != TYPE_VOID` arm keeps the old `.ret_void`). Fix is lowering-only — no new `LirInst`, reuses the existing `wrap_optional` void-payload emitter. Free-standing `return <void expr>;` (`fn f() ?void { return v(); }`) still ICEs `error[3043]` (rc 3) on both base and fixed — pre-existing residual, NOT fixed. Fixtures `repro/mi_matrix/optional_void_present_xmod` (golden `present absent present present absent`, rc 0; baseline RED) + standalone `repro/optional_void_present.z98`. Blast radius: no `?void`-returning fn in `sf/src`/the 30 std modules/the upgraded closeout programs, so only the self-emission fixed point moves. 4-MD5 emitted-C UNCHANGED 8/8 both modes; non-`?void` emitted C byte-identical (6/6 representative programs); corpus `-s0` **1092 = 923 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH** (zero common-dir movers; the new fixture classifies OK either way — the pin is the runtime golden); example matrix 24/24; stdlib 266 PASS / 0 FAIL; emit support 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` / 0 PANIC; fixed point `2794fe04e0828c95dd5c2c6fecdea362` -> `c1746347cbcdbb39385f325be20b9b6b` (hop1 == hop2; seed v90 NOT rotated).] [updated: 2026-09-29 — FX16-F fix round 1 (I2): the generic tagged-union read arm checks the synthetic `.tag` BEFORE the member walk (only for a value base), so a real member named `tag` no longer shadows the synthetic tag in lowering — sema's field-access tag arm already ruled that `.tag` always means the ordinal; the type-base `U.tag` member-reference path keeps the member walk (sema's `type_alias` arm resolves it as a member) and the post-walk synthetic fallback is unchanged. PRE: `u.tag` read the same-named member's payload (`5 0 0 9 5 0 5 0` on the collision probe); POST: the ordinal (`0 1 0 1 0 1 1 1`). Fixture `tagged_tag_member_shadow_xmod`; corpus zero movers (no pre-existing member named `tag`); fixed point moved. The analogous real member named `payload` keeps its pre-existing shadow behavior (out of ruling scope).] [updated: 2026-09-29 — FX16-F (Volume II ch7 amendment, A+/S2/S1/adjacent). **A+:** `lowerSwitchCaseItemValue`'s `field_access` arm now consults `enum_value_table` FIRST and returns the recorded ordinal, so a `switch (s.tag)` case label (`lib.Shape.m`, `Shape.m`, `.m`) resolves even though the condition's own type stays the u32 tag (sema records the ordinal for both spellings; whole-union/enum switches see identical table values, zero blast radius). **A2/P1:** the generic tagged-union read arm (`field_access` under `lowerExprImpl`) loads the `[*]`-derefed pointee into the base temp when the base temp is a `ptr_type`/`many_ptr_type`, so `p.tag`/`p.member` read the union value instead of the pointer address (mirrors the T0b index-base deref). **A3/R1:** at that arm's `emitTaggedUnionInit`, a node present in `enum_value_table` (an A+ member, retyped u32) emits the plain ordinal with the retyped `fa_box[0]` init type — needed for cross-module qualified RELATIONAL compares to be gcc-valid. **S2/S1:** `lowerFieldStore`'s tagged-union payload-member arm and `lowerLValueAddr`'s tagged-union pointee (`found_f == 0`) replace their `error[3043]` ICEs with clean level-0 `error[3000]` rejects (`cannot store to a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })` / `cannot take the address of …`), the address path returning a typed dummy so a nested store yields exactly ONE diagnostic per statement; other pointee kinds keep the ICE. **Adjacent:** the `store_field` emitter pointer-base arm gains the `p.tag = v` case (doc 08). Fixtures `tagged_tag_sugar_xmod` / `tagged_tag_switch_reject_xmod` / `copied_tag_compare_reject_xmod` / `tagged_payload_store_reject_xmod` (`3000 9`) / `tagged_payload_whole_reassign_xmod` + standalones; 4-MD5 emitted-C UNCHANGED 8/8; corpus 1083 = 917/55/111 / 0 ICE / 0 CRASH, zero common-dir movers; fixed point `9d63b8ce…` -> `f54f3bbe…` (moving point hop1 `2cb6be18…` != hop2 == hop3; explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated).] [updated: 2026-09-29 — FX15-F fix round 1 (Volume II): `lowerPackedWholeCopy`'s recursion is bounded at 32 nesting levels and every call site now turns a failure into that site's clean level-0 `error[3000]` reject (the whole-value `bit-slice` messages) instead of falling through to the pre-fix whole-aggregate `store_bitfield`/`load_bitfield` (which emitted gcc-invalid C at nesting >= 34: "aggregate value used where an integer was expected" / "incompatible types"). Boundary pinned by `packed_nested_whole_depth_ok_xmod` (field type nesting 33 deep still accepted and runs) and `packed_nested_whole_depth_reject_xmod` (34 deep: rc 2 / 0 `.c` / one `error[3000]` per site, deterministic). 4-MD5 emitted-C UNCHANGED 8/8; corpus `-s0` zero common-dir movers + the 2 new fixtures; fixed point `1e898a16…` -> `9d63b8cedaff9dff3ab73c2e847c6f60` (moving point hop1 `a1537257…` != hop2 == hop3; explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated).] [updated: 2026-09-29 — FX15-F (Volume II defect fix, A-full): whole-value moves of nested packed sub-containers now lower per leaf instead of one aggregate `store_bitfield`/`load_bitfield`. New `lowerPackedWholeCopy(dst_base, dst_off, src_base, src_off, ty_id, depth)` walks the packed type's pk side table and emits one scalar `load_bitfield` + `store_bitfield` per leaf with composed offsets (recursing through nested packed fields exactly like `lowerPackedChainAnalyze`; leaves are <= 31 bits by the sema gate). New `lowerTempIsPackedAggregate(temp_id)` gates every store site (TEMP_NONE/out-of-range/`TYPE_UNDEFINED` — i.e. `undefined` — keep the old scalar-store path). Call sites: the `struct_init` packed-struct field branch (the Task-4 literal hole), the packed-union literal member branch, `lowerFieldStore`'s packed-struct and packed-union whole-field guards (former `error[3000]` rejects), `lowerTryNestedPackedLeafStore` (chained whole-sub store), `lowerTryNestedPackedLeafRead` and the `field_access` struct + packed-union whole-value read guards. The chain-depth>=2 natural-holder store reject (`first_packed + 1 < depth`) is unchanged. Fixtures `packed_nested_wholeliteral_xmod` (positive, golden) + `packed_nested_whole_chain_reject_xmod` (residual reject) + standalone `repro/packed_nested_whole.z98`; `packed_union_struct_wholemember_xmod` converted GREEN-guard -> positive. 4-MD5 emitted-C UNCHANGED 8/8; corpus `-s0` single mover (the converted fixture); fixed point `368c34e6…` -> `1e898a16bac50bd2898262dd6bce176f` (moving point hop1 `7ca45053…` != hop2 == hop3; explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated).] [updated: 2026-09-27 — FB2 fix round 1 (Volume II): the sema-side transient fallback for a VOID-typed tuple element is narrowed to bare idents and MODULE-member references, so a void STRUCT FIELD read (`s.v`) keeps `void` and both print paths reject `error[3063]` (no more `'zT_N' undeclared` C through the FD2 variable path). The lowering arm is unchanged: `lowerTupleElemRead` already returns `TEMP_NONE` for a genuine void element. Fixed point moved; 4-MD5 emitted-C UNCHANGED 8/8.] [updated: 2026-09-27 — FB2 (Volume II defect fix): the inferred-tuple construction arm lowers each element through the generalised `lowerExactIntArg` (was `lowerPrintArgExact`), so an untyped integer element outside i32 materialises its exact value in the value-chosen carrier (the print variable path reads the sema-chosen tuple field type); a >64-bit exact value reports `error[3000]`. Fixed point `115c716c…` -> `416f0932e2e164fb4c04013d3fda549d` (hop1 == hop2, explicit gate; seed v88 NOT rotated); 4-MD5 emitted-C UNCHANGED 8/8.] [updated: 2026-09-27 — FX3 (Volume II defect fix, D6 extras): `CoercionKind.float_narrow` (recorded by sema's value-aware `semanticAnalyzerFloatNarrowStatus`, never by `classifyCoercion`) gets its `float_cast` arm in both `applyCoercion` and `materializeInto`, so an accepted f64/integer value materialises at an f32 expectation site; the FF literal-payload special case in the tagged-union init arm is now redundant for sema-validated programs (lowerExpr applies the recorded narrowing first). See doc 05 for the rule and Language Spec "Value-Aware Narrowing to f32" for the accept/reject matrix.] [updated: 2026-09-27 — FX1 (Volume II defect fix, D2 extras): the switch case-value resolver now also resolves named constants and `bool` items. `lowerSwitchCaseItemValue` handles `bool_literal` (1/0) and `ident_expr` (unqualified enum member, then named constant); `field_access` falls through from the D2 member lookup to the constant path. New helpers `lowerSwitchCaseItemConstValue` (exact int evaluator `evalConstI64Full` with the cross-module visibility check; a non-int initializer re-checks structurally), `lowerSwitchCaseItemEnumConstMemberValue` (walk a const's initializer chain `Color.Red` / `.Red` / `Red` / aliases to the member name and resolve via `member.value` / TU field index), `lowerSwitchCaseItemConstDecl` (immutable `SymbolKind.global` lookup: current module first, all tables next, `resolveModuleBase` for a qualified/direct-import base) and `lowerSwitchCaseItemIsConstGlobal` (flags bit0 = `is_mutable`). Supports typed/untyped int consts, `LO...HI` / `mod.LO...mod.HI` bounds, enum-member consts with `enum(uN)` gaps, mixed `LO, 2` lists, `mod.LO`, `bool` items and unqualified member names; negative-valued constants and function-local consts stay unresolved (silent `else`; spec §3.1). Int/char literal paths, the `>16384` / `hi < lo` / empty-exclusive caps and FA-a's enum-range resolution are unchanged. Fixture `repro/mi_matrix/stdlib_switch_case_consts_xmod` + standalone `repro/switch_case_consts.z98`; D02 remains green. 4-MD5 emitted-C UNCHANGED; corpus `-s0` join-diff = the one new fixture; fixed point `b44a8511…` -> `98cd68f4a4f99b520f663d6964673e67` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT ROTATED).] [updated: 2026-09-27 — FI (Volume II defect fix, operator ruling A): the `for_stmt` iteration arm now recognizes a pointer-to-array pattern type in both the element-type extraction and the ptr/len setup — a `ptr_type` whose pointee (payload guarded) is a fixed-size array contributes the pointee array's element and length, and the base temp is `ptr_cast`-ed from `*[N]T` down to its element pointer so the item load and the by-value row copy behave exactly like the plain-array decay path. `for (p[0..1]) |v|` (the former FH over-rejection), `for (p[0..0])`/`for (p[1..1])`, direct `for (pa) |v|`, `for (cpa) |v|`, `for (pa, start..end)`/`for (pa, start..)` and the row-by-value `for (pma: *[2][3]i32) |row|` all run; array/slice/range/many-pointer arms are byte-identical. Fixture `repro/mi_matrix/stdlib_ptrarray_for_ok_xmod` + standalone `repro/ptrarray_for.z98`; D10 `control_slice_legal.zig` converted. 4-MD5 emitted-C UNCHANGED; corpus `-s0` join-diff = the one new fixture; fixed point `99ef01ad…` -> `b44a85111b1f89921ab1d46a752c61a5` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT ROTATED).] [updated: 2026-09-27 — FH (Volume II defect fix, D10): the `slice_expr` arm's bounded branch (`child_2 != 0`) detects when the resolved type is a pointer-to-array (only the legal `*T` slices `p[0..0]`/`[0..1]`/`[1..1]` produce one) and emits `BIN_ADD` on the element-typed pointer immediately followed by a `ptr_cast` to the resolved `*[N]T` type — no `make_slice`, no length temp, so the result is Zig's pointer-to-array value rather than a Z98 slice struct. Every array/slice/many-pointer base and the FX5 `*[N]T` slice path keep their existing emission. 4-MD5 emitted-C UNCHANGED; corpus `-s0` zero movers; fixed point `d1ae4389…` -> `99ef01ad63ba37f98f327317608f577f` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT ROTATED).] [updated: 2026-09-26 — FC (Volume II defect fix, D5+D12): `applyCoercion`'s `slice_to_many_ptr` arm now emits a `.ptr` field load (`load_field` with `SLICE_FIELD_PTR`, mirroring `maybeExtractSlicePtr`) instead of a raw `ptr_cast` of the slice struct — `[]T`/`[]const T` -> `[*]T`/`[*]const T` now emits `dst = sl.ptr;` and runs (the old cast produced gcc `cannot convert to a pointer type`); `array_to_many_ptr`/`string_to_many_ptr` keep their array-decay `ptr_cast`. The D12 sema gate (doc 05) rejects `[]const T` -> `[*]T` in the same change, so the `.ptr` extraction cannot create a silently mutating alias. Fixture `repro/mi_matrix/stdlib_slice_to_many_ptr_xmod` + standalone `repro/slice_to_many_ptr.z98`; fixed point `cadf3c24…` -> `effa5a6aae9f11266597196561186f1b` (hop1 == hop2; seed v88 NOT rotated).] [updated: 2026-09-26 — FF (Volume II defect fix, D6+D9): the `struct_init` tagged-union arm narrows an f64 float-LITERAL payload temp to the selected variant's declared f32 type (new `lowerUnionPayloadIsFloatLiteral` + a `float_cast` before the `assign_field TU_FIELD_PAYLOAD`), so the emitter's exact type-id variant match selects the real field instead of the gcc-invalid whole-union `payload = double` or a silent f64-sibling write; the `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf`/`@bitOffsetOf` net is converted from `iceUnresolvedComptime` (`error[3043]`, rc 3) to a clean `error[3074]` fallback (rc 2 / 0 `.c`). Fixed point `536ed494…` -> `cadf3c241abd1baf4d31da52b0ccd649` (hop1 == hop2; seed v88 NOT rotated).] [updated: 2026-09-26 — FE (Volume II defect fix, D8+D11): the `catch_expr` capture temp/decl is retyped from hard i32 to the sema error-set type (read from the error union's `eu_items[..].error_set`; a bare `!T` with `error_set == 0` stays i32 — documented residual), so `print("{}", .{e})` routes `error.Name`; both switch-expression capture paths (expression `swt_ex` in `lowerExprImpl`, statement `swt_ex` in `lowerStmtBody`) now index the tagged-union payload table ONLY when the condition's kind is `tagged_union_type` — a non-tagged-union operand (an enum) binds a fresh COPY of the operand value (Zig-style operand capture) via `nextTemp` + `assign`, never `tu_items[enum.payload_idx]`. The pre-fix unguarded read SIGSEGV'd the compiler (rc 139) on an unused enum capture. `maybeDisambiguateCapture` now sees the error-set type for catch captures, so a same-named later capture of a DIFFERENT error set gets the synth name (json dump `err`/`err_1`). Fixture `repro/mi_matrix/stdlib_errset_capture_qualified_xmod` + standalone `repro/errset_capture_qualified_prong.z98`; 4-MD5 lisp `edc55d7f…` -> `ec14d644…` / json `ca303731…` -> `5034a0c8…` re-baselined with PRE<->POST runtime identity; fixed point `7bf2da19…` -> `536ed4943ecf8bacbbf93343d732c3e0` (hop1 == hop2; seed v88 NOT rotated).] [updated: 2026-09-26 — FD1 (Volume II defect fix, D7+D13): the print argument container is validated before the argument walk — `lowerPrintFmt` takes only a `tuple_literal` (or the empty anonymous `.{ }`) and emits level-0 `error[3065]` `ERR_3065_PRINT_CONTAINER_NOT_TUPLE` at any other container node (deduped per node); the print arm requires exactly two arguments (more -> the existing `error[3061]` at the call span); the D13 unbounded `lowerPrintFmt` re-entry SIGSEGV is structurally impossible; tuple variables stay an interim `error[3065]` until FD2. Table B gains `printFmtContainerReject` + `lowerPrintArityReject`; fixtures `repro/mi_matrix/print_nontuple_container_reject_xmod` (13 x `error[3065]` + 1 x `error[3061]`) + standalone `repro/print_nontuple_container.z98`; fixed point `c4f10f9e…` -> `7bf2da194d7385dea638a9126191c173` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated); 4-MD5 UNCHANGED; D07/S01 repros RED->clean-reject.] [updated: 2026-09-26 — FA-a (Volume II defect fix, D2): `lowerAppendSwitchCaseItem`'s case-value extraction is factored into two helpers — `lowerSwitchCaseItemValue` (one item: int/char literal, `enum_literal`, `error_literal`, `field_access`, else null) and `lowerSwitchCaseItemMemberValue` (a member name resolved against the condition enum via `member.value` — exact for `enum(uN)` gaps — or a tagged-union field index). The range branch now resolves BOTH endpoints through `lowerSwitchCaseItemValue`, so enum-typed range prongs (`Color.Red...Color.Green` qualified, `.Red... .Blue` shorthand, cross-module `mod.LO...mod.HI`) expand to real C `case` labels exactly like int/char ranges; an unresolved endpoint still appends nothing (FX1 owns exact `identifier` items / named-const bounds / `bool_literal`). Integer/char ranges, the `>16384` count cap, `hi < lo`, and empty-exclusive behavior are unchanged. Table B gains both helpers.] [updated: 2026-09-25 — final-review Critical fix + Minor 5 (z98-print-formatting Amendment 1): `lowerModuleInit`'s global-init order walk no longer uses the recursive `lowerInitOrderVisit`; each candidate's same-module edges are precomputed once into a flat adjacency (`dep_cnt`/`dep_off`/`dep_all`) and an ITERATIVE DFS with an explicit frame stack orders the globals. The deleted recursive walk shared one `dep_buf` across nested calls, so an inner visit clobbered the outer's remaining edges and a global could be emitted before its dependencies and run with a wrong value (`var g = a + b; const a = c + d; const b: i32 = 5 + 7;` ran `g = 3`, Zig 0.15.2 prints `15`), and its depth was unbounded; the iterative walk fixes both. Table B's `lowerInitOrderVisit` row is replaced by the inline order-walk row. Fixture `stdlib_print_init_order_dep_xmod`.] [updated: 2026-09-25 — Task 10` (z98-print-formatting Amendment 1, B8): `lowerPrintFmt` sets the new `SemanticContext.print_value_lowered` when it emits a `.print_val`; the pipeline uses it to report a missing auto-imported `std_fmt.zig` (`error[3048]`, same code/message) only when a print value was actually lowered, so an unrelated identifier named `print` no longer fails a lib dir without std_fmt.zig. See `print()`. Data-only flag; emitted C unchanged.] [updated: 2026-09-25 — Task 9 fix round 4 (z98-print-formatting Amendment 1; re-review 3 Finding 1 + Minor): the `ident_expr` global-literal fold's "no fold" sentinel changed from `0` (a REAL first temp of `__module_init`) to `TEMP_NONE`, so a skipped literal const reached through a same-module alias (`const s2 = s`) as the first lowered value is folded instead of loaded — before, rc 0 + gcc `'zG_..._s' undeclared`; `lowerInitDepScan` now walks `child_0/child_1/child_2` through `ast.zig`'s `nodeChildIsNode` (was a `builtin_call`-only special case), also protecting `swt_prong.child_1` / `for_stmt.child_2` name ids. Fixtures `stdlib_print_alias_chain_{fwd,bwd,scalar}_xmod` (stdlib pin 242 -> 245), each RED/GCCFAIL on the fix-round-3 compiler; fixed point hop1 == hop2 == `e7f4c67f…`; 4-MD5 UNCHANGED (the fold only changes previously-broken C); corpus `-s0` 1037 = 892/46/99 (only the three new fixtures); `EXPECTED_FAIL.md` v246 -> v247.] [updated: 2026-09-25 — Task 9 fix round 3 (z98-print-formatting Amendment 1, B5; operator ruling Q7): `lowerModuleInit` now emits a module's global initializers in a STABLE DEPENDENCY ORDER. It collects the emittable decls, scans each init expression for module-global references (`lowerInitDepScan`: `child_0/child_1/child_2` plus the extra-child pool only for extras-bearing kinds via `lowerInitKindHasExtras`), runs a depth-first visit (`lowerInitOrderVisit`) that emits a global after its same-module initializer dependencies (source order preserved when already dependency-ordered), and records cross-module edges in `LirLowerer.module_dep_map` (consumed by `computeModuleInitOrder` in doc 09). A same-module initializer cycle emits `error[3064]` (`ERR_3064_CYCLIC_GLOBAL_INIT`). `resolveModuleBase` also resolves a direct `@import("x.zig").member` base (previously an uninitialized temp read). The fix-round-1/2 tuple-element reject predicates are removed (see doc 05). Table B gains `lowerInitDepAppend`, `lowerInitDepScan`, `lowerInitKindHasExtras`, `lowerInitOrderVisit`.] [updated: 2026-09-25 — Task 9 (z98-print-formatting Amendment 1, B4): the `printFmtCheck` pointer-to-array arm's `reg.array_items[pty.payload_idx].elem` read is now range-guarded (`payload_idx < reg.array_len`, the same `types_len`-style pattern as `printFmtPointeeNameOk` and every sibling payload read). The registry appends a payload before the type record, so the read is safe today and the guard is defensive only — every well-formed registry entry keeps its exact 3013/3063 decision. Guard probe fixture `print_fmt_ptrarray_guard_reject_xmod` (2 x `error[3063]` + 4 x `error[3013]`, diagnostics byte-identical to the pre-guard compiler); B5 is documented in doc 05.] [updated: 2026-09-25 — Task 8 (z98-print-formatting Amendment 1, B2): `printFmtPointeeNameOk` now mirrors the emitter's fixed 512-byte name buffer byte-for-byte via the new `printFmtPointeeNameLen` accumulator (`printFmtU32DecLen`/`printFmtQualsLen` helpers; `kPrintPointeeNameCap = 512`; requires `name_len + 1` for the trailing `@` <= 512). A longer rendered pointer name (e.g. a >511-byte `error{...}`) rejects the existing `error[3063]` at validation instead of being silently dropped by `emitPtrValuePrint` (whose append failure is now a `@panic` backstop); under-budget names emit byte-identically. See `print()`. The B3 single 16 depth cap is documented in doc 08.] [updated: 2026-09-25 — final whole-branch review fix wave (Finding 1): new `foldPrintArgIntExact`/`lowerPrintArgExact` route an exact untyped integer print argument (`TYPE_INT_LIT`) through its value-chosen carrier (`comptimeIntUntypedType`: i32 when it fits, else u32/i64/u64; lookup order fold table -> FITS_ARG literal/negate/paren -> the exact ComptimeInt evaluator for literal-only arithmetic) instead of a forced 32-bit signed literal route; a value that fits i32 keeps the legacy temp (in-range C byte-identical), and a literal-only exact value outside the 64-bit window is a clean `error[3000]`. Finding 2 / operator ruling R11 is documented in Language_Spec §4: a recursive or mutually recursive aggregate rejects `error[3063]` at the `printFmtAggFieldsOk`/`printFmtPtrRouteOk` depth cap (the latent emitter risk — `emitAggPrinterRec` emits post-order with no forward declarations — is recorded there).] [updated: 2026-09-25 — Task 6 fix round 1 (review Critical 1): `printFmtPtrRouteOk` gains an `is_many` gate (called with 0 from the one-pointer `{}` argument arm, and with the field's pointer kind from `printFmtAggFieldKindOk`), so a many-pointer FIELD to a named aggregate/enum/tuple/packed (`[*]S`/`[*]E`/...) no longer delegates to the pointee printer (Zig's `.many, .c` arm is `printAddress` with the container-qualified `@typeName`, e.g. `main.S@addr`) and rejects `error[3063]`; `[*]i32` and other exactly-nameable children keep the `T@hex` name route. The emitter mirror is the same `is_many` gate in `emitPtrValuePrint`. See `print()`. ] [updated: 2026-09-25 — Task 6 (z98-print-formatting): the print validator's field closure (`printFmtAggFieldKindOk`) now accepts pointer / fn-pointer / many-pointer FIELDS (Zig's `{any}` pointer route: non-delegating pointee → `T@hex`, aggregate/enum/array pointee → delegation), while a one-pointer-to-array field stays the slice residual `error[3063]`; the pointer ARGUMENT arm (`printFmtCheck`) accepts `{}` on a non-array one-pointer only when `printFmtPtrPointeeOk` proves the emitter can print it (delegate or an exactly-nameable child), rejecting named-aggregate composite names (`*?S`, `**S`, `*?E`) with `error[3063]`; new mirrored predicates `printFmtPtrPointeeOk`/`printFmtPtrRouteOk`/`printFmtPointeeNameOk` (keep in lockstep with `c89_emit.zig`'s `zigPrintNameAppend`; an enum/integer-literal name component is explicitly rejected there because the emitter has no enum-name arm — a divergence found during Task 6's own oracle verification and fixed before the fixture capture).] [updated: 2026-09-25 — Task 5 (z98-print-formatting): `LirInst.print_val` gains an `implicit: u8` field set by `lowerPrintFmt` (1 for a bare `{}`, 0 for an explicit specifier), so the emitter can route a bare enum `{}` to the generated name printer while an explicit `{d}`/`{x}` keeps the numeric route (the two are otherwise indistinguishable — both carry `fmt = 'd'`). `printFmtAggFieldKindOk` now accepts enum and error-set FIELDS (non-packed): `enum` prints `.member`, `error_set` prints `error.Name` through the generated name printer; a PACKED enum/error-set field stays the Task-4 residual (`error[3063]`). See `print()`. ] [updated: 2026-09-25 — Task 4 fix round 1 (Critical 1 + controller ruling R8): tuple-literal resolution is idempotent per node (`semanticAnalyzerResolveTupleLiteral` returns the recorded resolved type), so module-level inferred tuple `var`/`const` globals and their lowered initializer/printer share ONE C type (`__module_init` no longer emits a cross-type struct assignment); `printFmtAggFieldKindOk` also rejects a packed struct / packed union field nested inside another aggregate with `error[3063]` (the packed-VALUE C model has no working field route — pre-existing, out of Task 4 scope).] [updated: 2026-09-25 — Task 4 (z98-print-formatting): a tuple literal whose resolved type is `tuple_type` now materialises a real aggregate value (`nextTemp` + `assign_field` per element) instead of leaving only the first element; the print validator recurses over an aggregate's field/element types (`printFmtAggFieldsOk` / `printFmtAggFieldKindOk`) and rejects unsupported field kinds at the ARGUMENT with `error[3063]` (documented bounded residual; Tasks 5/6 extend the closure).] [updated: 2026-09-25 — Task 3 (z98-print-formatting): `lowerPrintFmt` validates every argument before emitting `.print_val` — new `printFmtCheck`/`printFmtReject`/`printFmtKindIsIntegerLike`/`printFmtArgIsTypeValue` emit level-0 `error[3013]` (spec/type mismatch) or `error[3063]` (`ERR_3063_PRINT_TYPE_NOT_SUPPORTED`; no printer / operator-ruled Q3 bounded residual / `undefined`) at the ARGUMENT node's span, deduped per node, with a bare `{}` tracked separately from an explicit `{d}`; an unknown specifier keeps the existing fmt-span `error[3013]` and suppresses the type check. Sema's resolved type is authoritative for the check (the lowered temp type is the fallback), and the argument deref is guarded against `TEMP_NONE`/out-of-range temps (`print("{}", .{f()})` with `f() void` previously SIGSEGV'd the compiler); see §Builtins] [updated: 2026-09-24 — Task 11 fix round (review Important I1): the for_stmt explicit-index arm lowers the header inputs in SOURCE order — iterable, then start, then end (matching official Zig; start/end-first was observable for side-effecting header expressions, `for (tickA(), tickB()..tickC())` -> Zig `123`, pre-fix Z98 `231`); see Control Flow §For Statement] [updated: 2026-09-24 — Task 11 (Part II): the for_stmt iteration arm also lowers Zig's explicit index-range pattern (`AstKind.for_index_range`, `for (iterable, start..end)`) — the element sequence is the whole iterable (`j < len`), the index capture is `start + j` (no clamping), and an explicit end gets a checked `usize` span plus an `-fsafe`-only `span == len` trap; see Control Flow §For Statement] [updated: 2026-09-24 — Task 10 bookkeeping hygiene: `lowerFn` now resets the function-scoped capture/local bookkeeping at entry (`local_decl_count = 0` + `u32ToU32MapClear(&self.capture_shadow)`); `main.zig` already hands every function a fresh `LirLowerer`, so the production path is unchanged and only reused-lowerer callers (the unit tests) see the reset. The eight dead arm-end `capture_shadow.count = 0` stores were deleted (a map `Get` ignores `count`) and a mid-function clear remains wrong (it drops an enclosing capture referenced after a nested loop). `maybeDisambiguateCapture`'s over-rename is now type-gated (fix round: rename only when an earlier same-named declaration has a different type — same-type bindings share the deduped C variable; the previously-unused `variant_type_id` parameter is now used) — see Variables §Capture-shadow redirect] [updated: 2026-09-24 — Task 8: the two void/value-`if` statement residuals are fixed. `plain_assign` now skips the l-value store when the lowered RHS is the no-value `0` marker and the RHS is void-typed (a known-direct void call lowers with result temp 0, not the void-`if` `TEMP_NONE` sentinel), so `_ = foo();` no longer runs `getTempType(self, 0)` off the end of an empty temp table (`error[3043] invalid temp index 0 (len 0)`) and no longer emits a spurious `(void)zT_0;`; `return_stmt` now emits `emitValuelessReturn` (`.ret_void`, or the error-union(void) wrap) when the return operand is the `TEMP_NONE` void sentinel, so `return if (c) foo();` emits `return;` instead of `return zT_4294967295;`; and `lowerExpr`'s coercion wrapper now skips a recorded coercion when the lowered result is `TEMP_NONE` (`fn f() !void { return if (c) foo(); }` previously ICEd in `materializeInto`) — see Control Flow §If Expression] [updated: 2026-09-24 — Task 7: a one-argument `@intCast(expr)` (official Zig 0.15.2 infers the target type from context) is lowered by returning the operand's temp — sema's single-argument builtin fallback types the expression as the operand's own type, so the consumer applies any contextual conversion; previously the call fell through the `ec_n >= 2` cast block to the `TYPE_VOID` default and the emitter (which never declares void temps) left the consumer referencing an undeclared `zT_<n>` (emit rc=0, gcc failure) — see Builtins] [updated: 2026-09-23 — Task 4 fix round (review Importants 1–4): new `scalarTargetOf` (unwrap `?T`/`E!T` before the fit check), `foldNodeIntExact` (the exact-value lookup with three modes: table / table+literal / table+on-demand arithmetic probe), `checkIntFitsMode`, `checkArgReturnIntFits` (bare-literal arguments and returns at the four call-arg loops + `return_stmt`) and `checkDeclInitFits` (`var`/`const`/module declaration slots; a `var`'s arithmetic init is folded on demand, a bare positive literal keeps the warning+truncate decl path)] [updated: 2026-09-23 — Task 4 (coercion into typed slots): `SemanticContext.comptime_values` (`U32ToU64Map`) becomes `comptime_folds` (`ce_mod.ComptimeFoldTable`, exact `ComptimeVal`s); new helpers `lowerFoldedIntConst` (all 14 arithmetic/unary HITs: typed target → exact range check; untyped slot → value-based `I32`/`U32`/`I64`/`U64`), `checkFoldedIntFits`/`reportComptimeIntFits` (the pinned param/argument/return rule called from `materializeInto`, `applyCoercion`, `return_stmt`, the module-init and local-decl slots; `error[3000] "comptime integer value does not fit the target type"`, once per node, `~` exempt) and `comptimeFoldBool` (condition folds are now `KIND_BOOL`); the builtin HIT range-checks a concrete integer target and emits the exact pattern; the local `var_decl` slot of an unannotated folded integer takes the value-based type (Task 1 §8 risk 7). Fixtures `stdlib_comptime_coerce_typed_slots_xmod` + `comptime_coerce_reject_xmod` + `array_size_negative_reject_xmod`; fixed point `f533e834…` → `b4f999b57e4516c2a2c305e8660d5c44`] [updated: 2026-09-23 — Task 3 fix round 1 (Critical): the `if_expr` comptime-fold sub-path now lowers the arm with `lowerIfArmValue`, returns the "no value" sentinel when the arm terminated the block, and skips the shortcut for a noreturn-resolved if_expr — a folded `if (true) return 5;` previously materialised the return as a value and read an uninitialised temp; see Control Flow §If Expression] [updated: 2026-09-23 — Task 10D: `captureShadowShouldRedirect` now resolves a `capture_shadow` redirect by walking the actual scope chain (`scope_nodes` parents) instead of depth arithmetic, so a same-named declaration in a scope nearer than the synth declaration's scope node suppresses the redirect and a legal later local in a shallower sibling scope keeps its own declaration; the `capture_shadow` map stays append-only (the eight arm-end `count = 0` clears are dead writes — `u32ToU32MapGet` ignores `count`) — see Variables §Capture-shadow redirect] [updated: 2026-09-23 — Task 10B: the two `for` arms (`AstKind.for_stmt`, range and slice/array) now create a dedicated `step_bb` and register it as `LoopInfo.header_bb`, so a `continue` reaches the implicit increment before the next condition test; the increment moved out of the body fall-through into `step_bb`, which is emitted unconditionally (an always-`continue` body still reaches it), and `step_bb`/the fall-through both jump to `cond_bb`. The `while` arm, both `for` arms, and the labeled-block arm now clear `self.current_label` before lowering the body (saving/restoring it at the arm end), so an unlabeled nested loop is pushed with `label_id = 0` and a labeled `break`/`continue` no longer targets the inner loop — see Control Flow §While Statement/§For Statement/§Labeled break/continue] [updated: 2026-09-23 — Task 9D: the `AstKind.if_expr` arm no longer allocates a result temp when the resolved type is `TYPE_VOID` (it returns `TEMP_NONE` at the join and guards the arm assigns), lowers the `else` arm only when `child_2 != 0` (removing the old `lowerIfArmValue(self, 0)` bogus-temp lowering for an absent `else`), applies the same void handling to the comptime-fold sub-path, and guards `return_stmt`'s `hoisted_temps[val]` deref against `TEMP_NONE`; this fixes `_ = if (c) foo();` (was gcc `'zT_<n>' undeclared`) — see Control Flow §If Expression] [updated: 2026-09-22 — Task 8B: the `comptime_values` HIT path in `lowerExprImpl` now recovers the folded constant's target type for `@as` as well as `@intCast` (`node.child_0 == self.intcast_name_id or node.child_0 == self.as_name_id`); the two builtins share the `[target_type, value]` AST layout, so a folded `@as(<signed>, <negative literal>)` operand previously fell through to the `TYPE_USIZE` default and was materialised as the unsigned 64-bit literal `18446744073709551614ULL` (wrong value or `-fsafe` trap); the fold itself (`comptime_eval.zig`) was already correct] [updated: 2026-09-22 — Task 6F: an undeclared identifier now clean-rejects in semantic analysis (`semanticAnalyzerResolveIdent` emits `error[3001]`, code 20), so the post-sema `hasErrors` gate exits rc=2 / 0 `.c` BEFORE `phase_LIRLowering`; an undeclared-ident callee therefore never reaches the Task 6D variant-C `error[3056]` path or the Task 6B `error[3042]` path — both are unchanged (`std.nope()` still `error[3042]`; a declared non-function callee still `error[3056]`)] [updated: 2026-09-22 — Task 6D: the generic `fn_call` path now inspects the lowered callee temp's type after `callee_temp = lowerExpr(...)`; a callee that is neither a `fn_type` nor a pointer to a `fn_type` (and is not `TYPE_VOID`/`TYPE_UNDEFINED`) emits the new `error[3056]: expression is not callable` (`ERR_3056_CALL_TARGET_NOT_CALLABLE`), rc=2, 0 `.c`; keyed on the lowered temp type so it also covers the flat non-pub member the resolved-type check misses] [updated: 2026-09-22 — Task 6B: the `fn_call` field-access callee path no longer silently returns temp 0 on an unresolvable nested-module chain (`std.io.<name>`); the chain walk is bounded (`chain_len < 4`, the `chain` buffer size) and a failure sets `chain_valid=0` and falls through to the generic call path, which lowers the callee as a value and emits the existing `error[3042]` (rc=2, 0 `.c`); a resolved nested callee is still emitted before the chain code is reached] [updated: 2026-09-21 — Task B2: a function-local named-type binding (`const T = struct/enum/union/error{...}`) is skipped in `var_decl` lowering after emitting one `decl_local` storage slot of the registered type (the value initializer has no runtime representation); `field_access`'s generic base-type path gains an `enum_type` arm mirroring `error_set_type` so a local enum's `E.A` emits `enum_const`] [updated: 2026-09-20 — refreshed against the current 82-variant `LirInst` set, `lir_opt_pass`/`lir_stream`/`spill_store` coverage, packed bitfields, arbitrary-width int ops, `-fsafe` checks, `volatile`, calling convention, and async lowering; line references and dated evidence removed; `return_stmt` now classifies an explicit error return and passes `is_error_path=1` to `expandDefers` so `errdefer` runs on explicit error returns (Task 10B, 2026-09-20); `@floatCast` is now interned (`floatcast_name_id`) and lowers to the existing `float_cast` op (Task 11B, 2026-09-20); `return_stmt` now runs `errdefer` on a dynamic error-union return (identical src/dst types, no recorded coercion) via a pending-errdefer-gated `check_error`/`branch` mirroring the `try` path (Task 10F, 2026-09-20); field-access lowering now intercepts `.len` on a struct/union array field and emits the declared compile-time length via `fieldStaticLenForBase`, since the array-field decay makes the `array_type` `.len` arm unreachable (Task 11N, 2026-09-21)] [updated: 2026-09-26 — FB (Volume II defect fix, D4): tuple access is one ordinal mechanism. New `lowerTupleElemRead(base_temp, base_tid, ord)` emits `load_field{field_id = ord}` (an array element decays to `*elem` like a struct field); the `field_access` read arm decodes `.N`/`._0` (`typeRegistryTupleOrdinalFromNameId`) and the `index_access` read arm uses sema's `tuple_index_table` ordinal; `lowerFieldStore`/`lowerAssignLValue`/`lowerLValueAddr` gain the matching store/address arms (an l-value base that `lowerExpr` would copy — field/index/deref/paren — is taken by address, exactly like a struct field). `applyCoercion` gains `tuple_to_tuple` -> `applyTupleToTuple` (fresh target-typed temp + per-element `lowerTupleElemRead`/recursive coercion/`store_field`), and `lowerArrayElemTupleCoerce` copies a tuple-typed array-literal element into a tuple-typed array element (both the array-typed tuple-literal arm and the `array_init` arm). Table B gains `lowerTupleElemRead`, `lowerArrayElemTupleCoerce`, `applyTupleToTuple`.]
+
+> Covers: `lower.zig`, `lir.zig`, `lir_opt_pass.zig`, `lir_stream.zig`, `spill_store.zig`
 
 ## Summary
 
-The lowering phase transforms the typed AST (AstStore) into a low-level intermediate representation (LIR) suitable for direct code generation. It handles control flow flattening, temporary hoisting, defer/errdefer expansion, and type coercion application.
+The lowering phase transforms the typed AST (AstStore) into a low-level intermediate representation (LIR) suitable for direct code generation. It handles control-flow flattening, temporary hoisting, defer/errdefer expansion, packed bitfield access, `-fsafe` checks, and type-coercion application.
 
-Two key files:
-- `sf/src/lir.zig` — LIR data types (LirInst, LirFunction, BasicBlock, etc.)
-- `sf/src/lower.zig` — LirLowerer struct that walks the AST and emits LIR
+Five files:
+- `sf/src/lir.zig` — LIR data types (`LirInst`, `LirFunction`, `BasicBlock`, side tables, array lists)
+- `sf/src/lower.zig` — `LirLowerer` struct that walks the AST and emits LIR
+- `sf/src/lir_opt_pass.zig` — per-function optimization pass (copy propagation, local const-fold, arg/join copy coalescing, expression-nesting metadata)
+- `sf/src/lir_stream.zig` — serializes/deserializes each `LirFunction` through the spill store
+- `sf/src/spill_store.zig` — offset-addressed byte spill with Disk/Ram backends
 
 ## Data Flow
 
 ```
-AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list → codegen
+AstStore (fn_decl) → lowerFn() → LirFunction → lirStreamAppend() ── spill ──▶
+  phase_C89Emission: lirStreamReadFunction() → lirOptRun() → c89_emit
 ```
 
-`lowererInit()` creates a `LirLowerer` with empty stacks. `lowerFn()` is called per function, producing one `LirFunction` per call. The result list is managed externally.
+`lowererInit()` creates a `LirLowerer` with empty stacks. `lowerFn()` is called per `fn_decl`, producing one `LirFunction`; `lowerModuleInit()` synthesizes one `__module_init` per module with runtime globals. The function's LIR is serialized through `lir_stream.zig` into `spill_store.zig` (`spillBackendFor(SpillId.s_lir)`); during emission each function is faulted back in, optimized by `lirOptRun`, and then emitted.
 
-**[updated: 2026-08-15 — per-function LIR scratch reset (F-LIR):]** every LIR list backing store (`params`/`blocks`+per-block `insts`/`hoisted_temps`/`switch_cases`/`temp_variant_sub_field` map arrays) is allocated by `lowerFn`/`lowerModuleInit` into the **scratch** arena (`self.alloc`, `main.zig:637`). The `LirFunction` struct itself is copied **by value** into the module-arena `ctx.lir_fns` (`main.zig:165`), so the stored copies still pointed at scratch — which was only reset per phase (`phase_LIRLowering`, `main.zig:583`), letting the per-function LIR accumulate across the whole lowering phase (~0.5–1 MB scratch peak). Because C emission runs in a **later** phase (`phase_C89Emission`, `main.zig:736`) and reads every function's LIR, a per-function `sandReset(scratch)` alone would free data emission still needs. Fix: `lirFunctionRelocateToModule` (`lir.zig`) deep-copies each function's LIR array data into the module arena (exact `len`-sized, dropping the doubling-growth slack) and repoints the lists; `main.zig` then `sandReset(&ctx.alloc.scratch)` before the next function. Emission reads the module-resident copies; all LirInst/param/temp/switch payloads are scalar ids, so the value copy is exact and the emitted C is byte-identical. Measured (`--track-memory`, HEAD `6549fe73`): rogue_mud `scr=` 511K→127K (pool 3759K→3247K); lisp `scr=` 426K→63K (pool 1930K→1674K).
+**Streaming LIR (current).** `phase_LIRLowering` opens the LIR spill stream and calls `lirStreamAppend` for every non-suspending function plus each module's `__module_init`; suspending functions are retained in scratch for the two-phase async transform and streamed by the transform. Each append returns a `LirSlot { module_id, disk_offset, byte_len }` recorded in `ctx.lir_slots`. `phase_C89Emission` reopens the stream for reading and faults each slot in before emission. All LIR payloads are scalar ids, so the raw byte dump is byte-preserving in both the Disk and Ram backends.
 
 ---
 
@@ -26,13 +32,22 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 
 | Type | Fields | Purpose |
 |------|--------|---------|
-| `SwitchCase` | `value: u64`, `target_bb: u32` | Case value mapping to target basic block |
+| `SwitchCase` | `value: u64`, `target_bb: u32` | Case value mapping to a target basic block |
 | `LirParam` | `name_id: u32`, `type_id: TypeId`, `temp_id: u32` | Function parameter declaration |
 | `TempDecl` | `temp_id: u32`, `type_id: TypeId` | Hoisted temporary declaration |
 | `BasicBlock` | `id: u32`, `insts: LirInstArrayList`, `is_terminated: u8` | Basic block with instruction list |
-| `LirFunction` | `name_id`, `module_id`, `return_type`, `params`, `blocks`, `hoisted_temps`, `switch_cases`, `temp_variant_sub_field`, `is_extern`, `is_pub`, `is_variadic` | Compiled function unit |
+| `LirFunction` | `name_id`, `module_id`, `return_type`, `params`, `blocks`, `hoisted_temps`, `switch_cases`, `side_table`, `temp_variant_sub_field`, `is_extern`, `is_pub`, `is_variadic`, `call_conv`, `poison_uninit`, `is_export` | Compiled function unit |
+| `LirSlot` | `module_id: u32`, `disk_offset: u32`, `byte_len: u32` | Spill-stream location of one serialized function |
+| `ModuleGlobalDecl` | `name_id`, `module_id`, `type_id`, `has_runtime_init` | Module-scope global declaration |
+| `CallDirectData` | `name_id, module_id, args_start, args_count, result, return_type, is_extern, call_conv` | Operands of a `call_direct` (side table) |
+| `TailCallData` | `callee, module_id, args_start, args_count, result, return_type, is_indirect, is_extern, call_conv` | Operands of a `tail_call` (side table) |
+| `LirSideEntry` | union `{ call_direct, tail_call }` | Side-table payload union |
 
-### LirFunction Fields `sf/src/lir.zig:326`
+`LirInst` carries the tag plus a `u32` slot for the two wide variants `call_direct`/`tail_call`; their operands live in the per-function `side_table` (`LirSideEntryArrayList`) and are serialized with the function. The largest inline payload is `enum_const` (20 B, padded to 24 B), so the Z98-folded `@sizeOf(LirInst)` that `lir_stream` writes stays 32 B. `CallDirectData`/`TailCallData` carry a `call_conv` flag (0 or `FN_FLAG_STDCALL`).
+
+`CHECK_OP_*` discriminators (`u8`): `CHECK_OP_ADD = 0`, `CHECK_OP_SUB = 1`, `CHECK_OP_MUL = 2`, `CHECK_OP_SHL = 3`, `CHECK_OP_NEG = 4` — used by `overflow_flag`.
+
+### LirFunction Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -43,12 +58,16 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `blocks` | `BasicBlockArrayList` | All basic blocks (entry at index 0) |
 | `hoisted_temps` | `TempDeclArrayList` | All temps hoisted to function entry |
 | `switch_cases` | `SwitchCaseArrayList` | Switch case value→block map |
+| `side_table` | `LirSideEntryArrayList` | `call_direct`/`tail_call` operand storage |
 | `temp_variant_sub_field` | `U32ToU32Map` | Maps temps to variant sub-field indices |
 | `is_extern` | `u8` | External linkage flag |
 | `is_pub` | `u8` | Public visibility flag |
 | `is_variadic` | `u8` | Variadic parameter flag |
+| `call_conv` | `u8` | Calling convention (0 or `FN_FLAG_STDCALL`) |
+| `poison_uninit` | `u8` | `-fsafe` `undefined` poison-net decision transported to the emitter |
+| `is_export` | `u8` | `export fn` flag (a suspending `export fn` is a synchronous-driver target) |
 
-### All 66 LirInst Variants `sf/src/lir.zig:22`
+### All 82 LirInst Variants `sf/src/lir.zig`
 
 #### Declarations
 | Variant | Fields | Purpose |
@@ -64,31 +83,41 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `assign_index` | `base, index, src, name_id` | Write array element |
 | `load` | `ptr, result` | Load value through pointer (deref) |
 | `store` | `ptr, value` | Store value through pointer |
-| `addr_of` | `operand, result` | Take address of local |
+| `addr_of` | `operand, result` | Take the address of a local/global |
+| `addr_of_field` | `base, field_id, result` | Address of a field within a base address |
 | `load_field` | `base, field_id, result, name_id` | Read struct/union/slice field |
 | `store_field` | `base, field_id, value, name_id` | Write struct/union/slice field |
-| `load_index` | `base, index, result, name_id` | Read array element |
+| `load_index` | `base, index, result, name_id, decay` | Read array element (`decay=1`: pointer-to-array element address; `decay=2`: element address for a `\|*item\|` capture; `decay=3`: by-value array-row copy) |
 | `load_local` | `name_id, result` | Load named local variable |
 | `store_local` | `name_id, value` | Write named local variable |
-| `load_global` | `name_id, result` | Load named global |
-| `store_global` | `name_id, value` | Write named global |
+| `load_global` | `name_id, module_id, result` | Load named global (P9: the result is a global ALIAS — recorded at `lowerGlobalRef`/the module-alias arms; the emitter spells the global's name and never declares the temp; never a frame-save member) |
+| `store_global` | `name_id, module_id, value` | Write named global |
+| `load_bitfield` | `base, result, name_id, bit_offset, bit_width` | Read a packed-struct/union bitfield |
+| `store_bitfield` | `base, value, bit_offset, bit_width` | Write a packed-struct/union bitfield |
 
 #### Control Flow
 | Variant | Fields | Purpose |
 |---------|--------|---------|
 | `jump` | `u32` (target block) | Unconditional branch |
 | `branch` | `cond, then_bb, else_bb` | Conditional branch on bool/optional |
-| `switch_br` | `cond, cases_start, cases_count, else_bb` | Multi-way branch (lookup in func.switch_cases) |
-| `loop_header` | `u32` (label/block ID) | Loop entry marker |
+| `switch_br` | `cond, cases_start, cases_count, else_bb` | Multi-way branch (lookup in `func.switch_cases`) |
+| `loop_header` | `u32` (label/block ID) | Loop entry marker / self-TCO jump target |
 | `ret` | `u32` (value) | Return with value |
 | `ret_void` | `void` | Return without value |
 | `label` | `u32` | Label marker for jumping |
+| `trap` | `void` | Emit a live trap (`pal_trap`) |
 
 #### Arithmetic & Logic
 | Variant | Fields | Purpose |
 |---------|--------|---------|
-| `binary` | `op, lhs, rhs, result` | Binary arithmetic (add/sub/mul/div/mod/and/or/xor/shl/shr/eq/ne/lt/le/gt/ge) |
+| `binary` | `op, lhs, rhs, result` | Binary arithmetic (add/sub/mul/div/mod/and/or/xor/shl/shr/eq/ne/lt/le/gt/ge, plus wrapping/saturating ops) |
 | `unary` | `op, operand, result` | Unary arithmetic (neg/not/bnot) |
+| `add_with_overflow` | `lhs, rhs, result, result_type, width, is_signed` | `-fsafe` wrapping add (value half) |
+| `sub_with_overflow` | `lhs, rhs, result, result_type, width, is_signed` | `-fsafe` wrapping sub (value half) |
+| `mul_with_overflow` | `lhs, rhs, result, result_type, width, is_signed` | `-fsafe` wrapping mul (value half) |
+| `shl_with_overflow` | `lhs, rhs, result, result_type, width, is_signed` | `-fsafe` wrapping shl (value half) |
+| `neg_with_overflow` | `value, result, result_type, width, is_signed` | `-fsafe` wrapping negate (value half) |
+| `overflow_flag` | `lhs, rhs, result, result_type, op, width, is_signed` | Boolean overflow predicate for the matching `*_with_overflow` op |
 
 #### Constants
 | Variant | Fields | Purpose |
@@ -97,8 +126,8 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | `float_const` | `value, result` | Float literal |
 | `string_const` | `string_id, result` | String literal pointer |
 | `bool_const` | `value, result` | Boolean literal |
-| `null_const` | `result` | Null literal — result temp is typed `null_type` (lower.zig:1184), whose C name is `"int"` (`getCTypeName`, c89_emit.zig:605). **Option B [updated: 2026-08-07]:** when a null literal feeds a `?T` coercion (null_src), the null_literal branch (lower.zig:1183) now emits `set_optional_null` directly on an `Opt_`-typed temp instead of `null_const` — no dead `int zT_N; zT_N = NULL;` store. `null_const` remains only for uncoerced null / non-optional (pointer/fn) targets. See the `materializeInto` null-construction note below. |
-| `set_optional_null` | `result, type_id` | Set optional to null (typed null) — emitted by the null_literal branch (lower.zig:1183, Option B) for null_src coercions, by `materializeInto` (lower.zig:977-978) for other null_src paths, and directly by the var-decl path (lower.zig:4214) and `applyNoneCoercion` (lower.zig:4456) for `var x: ?T = null`. Only `.has_value = 0;` is set; the payload field is left untouched. |
+| `null_const` | `result` | Null literal (uncoerced / non-optional target) |
+| `set_optional_null` | `result, type_id` | Set an optional to null (typed null); sets only `.has_value = 0` |
 | `undefined_const` | `result, type_id` | Undefined literal |
 | `enum_const` | `value, result, type_id, member_name_id` | Enum literal with member name |
 
@@ -106,55 +135,37 @@ AstStore (fn_decl) → lowerFn() → LirFunction → appended to function list �
 | Variant | Fields | Purpose |
 |---------|--------|---------|
 | `call` | `callee, args_start, args_count, result` | Indirect function call |
-| `call_direct` | `name_id, module_id, args_start, args_count, result, return_type, is_extern` | Direct named function call |
+| `call_direct` | `u32` (side-table slot) | Direct named function call; operands in `CallDirectData` |
+| `tail_call` | `u32` (side-table slot) | Cross-function same-type tail; operands in `TailCallData` |
 | `func_ref` | `name_id, module_id, result` | Function pointer reference |
 
-#### Variadic (va_*) — `sf/src/lir.zig:46-48` [added: 2026-08-06]
+#### Variadic (va_*)
 | Variant | Fields | Purpose |
 |---------|--------|---------|
-| `va_start` | `va_list_temp, last_param_temp` | `va_start(vl, last_param)` — init a `va_list` after the last named param |
-| `va_arg` | `va_list_temp, type_id, result` | `result = va_arg(vl, TYPE)` — read the next variadic argument |
-| `va_end` | `va_list_temp` | `va_end(vl)` — cleanup |
+| `va_start` | `va_list_temp, last_param_temp` | `va_start(vl, last_param)` |
+| `va_arg` | `va_list_temp, type_id, result` | `result = va_arg(vl, TYPE)` |
+| `va_end` | `va_list_temp` | `va_end(vl)` |
 
-These are emitted by the `@cVaStart`/`@cVaArg`/`@cVaEnd` builtin handler
-(`lower.zig:2721-2772`, dispatched before the `ec.len>=2` cast block); the
-`va_list_temp` operand is resolved via `vaListArgTemp` (`lower.zig:1002`, unwraps
-`&ident`/`ident` to a local temp). `@cVaStart` in a non-variadic function emits
-`error[3012]` (`ERR_3012_VARARGS_INVALID`); the same error is emitted for a
-variadic fn with ZERO fixed params (`fn f(...)`, `lower.zig:4726-4730`).
-`LirFunction.is_variadic` (`lir.zig:341`) is set by `lowerFn` from
-`FnPayload.flags_packed` bit0 (`lower.zig:4715-4725`); the legacy `child_0==0`
-anytype-marker branch was **deactivated in F5b (AMENDMENT 5)** — `is_variadic`
-now comes solely from the flag-bit path (mud/gol `print(fmt, ...)` signatures
-are unchanged because they migrated to true `...`).
+Emitted by the `@cVaStart`/`@cVaArg`/`@cVaEnd` builtin handler; the `va_list_temp` operand is resolved via `vaListArgTemp` (unwraps `&ident`/`ident` to a local temp). `@cVaStart` in a non-variadic function emits `error[3012]` (`ERR_3012_VARARGS_INVALID`), as does a variadic fn with zero fixed params. `LirFunction.is_variadic` is set by `lowerFn` from the `FnProto` fn-type `flags_packed` bit0.
 
-#### Builtin I/O — `sf/src/lir.zig:80-85` [added: 2026-08-08]
+#### Builtin I/O
 | Variant | Fields | Purpose |
 |---------|--------|---------|
-| `builtin_put_char` | `value` | Emit `putchar(value)` to stdout (libc stdio) |
+| `builtin_put_char` | `value` | Emit `putchar(value)` to stdout |
 | `builtin_stdout_write` | `ptr, len` | Emit `fwrite(ptr, 1, len, stdout)` |
 | `builtin_stderr_write` | `ptr, len` | Emit `fwrite(ptr, 1, len, stderr)` |
 | `builtin_get_char` | `result` | `result = getchar()` (result temp typed `TYPE_U8`) |
 | `builtin_exit` | `value` | Emit `exit(value)`; sets `block_terminated = 1` (noreturn) |
 | `builtin_sleep_ms` | `value` | Emit `#ifdef _WIN32` `Sleep(value)` `#else` `usleep(value * 1000)` `#endif` |
 
-Emitted by the core-I/O builtin handler (`lower.zig:2777-2814`, dispatched before
-the `ec.len>=2` cast block, mirroring the `va_*` handlers). Each value arg is
-lowered via `lowerExpr`; `@exit` marks the current block terminated so the
-function's trailing `emitValuelessReturn` (lower.zig:4906) is skipped. See §Builtin
-I/O lowering below.
-
-#### Builtin Console — `sf/src/lir.zig:86-88` [added: 2026-08-08]
+#### Builtin Console
 | Variant | Fields | Purpose |
 |---------|--------|---------|
 | `builtin_console_clear` | — | Emit console clear (Win32 `FillConsoleOutput*`+home / ANSI `\x1b[2J\x1b[H`) |
-| `builtin_console_gotoxy` | `x, y` | Emit cursor move (Win32 `SetConsoleCursorPosition(COORD)` / ANSI `\x1b[%d;%dH` (y+1, x+1)) |
-| `builtin_console_set_color` | `fg, bg` | Emit color set (Win32 `SetConsoleTextAttribute` / ANSI `\x1b[%s;%sm` fg/bg tables) |
+| `builtin_console_gotoxy` | `x, y` | Emit cursor move (Win32 `SetConsoleCursorPosition(COORD)` / ANSI `\x1b[%d;%dH`) |
+| `builtin_console_set_color` | `fg, bg` | Emit color set (Win32 `SetConsoleTextAttribute` / ANSI `\x1b[%s;%sm`) |
 
-Emitted by the console builtin handler (`lower.zig:2816-2837`). Each arg is lowered
-via `lowerExpr`. Emission is `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else`
-guarded (see 08 §Builtin console emission). `@isWindows()` never produces LIR — it
-folds in sema/comptime (see §Comptime branch folding below).
+Emission is `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guarded (see 08_c89_emission.md). `@isWindows()` never produces LIR — it folds in sema/comptime.
 
 #### Optional Handling
 | Variant | Fields | Purpose |
@@ -162,6 +173,7 @@ folds in sema/comptime (see §Comptime branch folding below).
 | `wrap_optional` | `value, result, type_id` | Wrap value in optional type |
 | `unwrap_optional` | `value, result` | Extract payload from optional |
 | `unwrap_optional_abi` | `value, result` | Extract payload from optional (ABI-stable) |
+| `unwrap_optional_checked` | `value, result` | `-fsafe` guarded payload read (`if (!has_value) pal_trap();`) |
 | `check_optional` | `value, result` | Test if optional has value |
 
 #### Error Union Handling
@@ -176,12 +188,14 @@ folds in sema/comptime (see §Comptime branch folding below).
 #### Slice Operations
 | Variant | Fields | Purpose |
 |---------|--------|---------|
-| `make_slice` | `ptr, len, result, type_id` | Construct slice from pointer and length |
+| `make_slice` | `ptr, len, result, type_id` | Construct a slice from pointer and length |
 
 #### Type Conversions
 | Variant | Fields | Purpose |
 |---------|--------|---------|
-| `int_cast` | `value, target, result, is_checked` | Integer type conversion (widening/narrowing) |
+| `int_cast` | `value, target, result` | Integer type conversion (unchecked) |
+| `int_cast_checked` | `value, target, result, src_signed, src_width, dst_signed, dst_width` | `-fsafe` checked narrowing/sign-change cast |
+| `width_wrap` | `value, result, result_type, width, is_signed` | Arbitrary-width mask/sign-extend normalization |
 | `float_cast` | `value, target, result` | Float type conversion |
 | `ptr_cast` | `value, target, result` | Pointer type conversion |
 | `int_to_float` | `value, target, result` | Integer to float conversion |
@@ -194,20 +208,26 @@ folds in sema/comptime (see §Comptime branch folding below).
 | `print_str` | `string_id` | Print string literal |
 | `print_val` | `value, type_id, fmt` | Print typed value with format |
 
+#### Safety / Poison
+| Variant | Fields | Purpose |
+|---------|--------|---------|
+| `check_trap` | `cond, kind` | `-fsafe` runtime guard; the emitter traps when `cond` is false. `kind`: 2 = div/mod (zero or `MIN/-1`), 3 = shift count ≥ width, 4 = null-unwrap, 5 = index OOB, 6 = integer overflow, 7 = `@asyncInit` buffer smaller than `@asyncFrameSize` |
+| `poison_init` | `result` | `-fsafe` `undefined` poison fill (byte-exact 0xAA) of the result storage |
+
 #### Other
 | Variant | Fields | Purpose |
 |---------|--------|---------|
-| `nop` | `void` | No operation (placeholder) |
+| `nop` | `void` | No operation (placeholder/tombstone) |
 
 ---
 
 ## lower.zig — LIR Lowerer `sf/src/lower.zig`
 
-### LirLowerer Struct `sf/src/lower.zig:218`
+### LirLowerer Struct
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `ctx` | `*SemanticContext` | Shared compilation context (store, type registry, symbols, diagnostics) |
+| `ctx` | `*SemanticContext` | Shared compilation context (store, type registry, symbols, resolved types, coercions, diagnostics, async maps) |
 | `func` | `*LirFunction` | Currently constructing LirFunction |
 | `current_bb` | `u32` | Active basic block index |
 | `temp_counter` | `u32` | Next temporary ID to allocate |
@@ -217,58 +237,79 @@ folds in sema/comptime (see §Comptime branch folding below).
 | `hoisted_temps` | `TempDeclArrayList` | Accumulated temporary declarations for function entry |
 | `alloc` | `*Sand` | Allocator for dynamic data structures |
 | `scope_depth` | `u32` | Current lexical scope depth |
-| `block_terminated` | `u8` | Whether current block has a terminating instruction |
+| `block_terminated` | `u8` | Whether the current block has a terminating instruction |
+| `suppress_fnref_ban` | `u8` | Suppresses the bare-function-reference ban while lowering `@asyncFrameSize`/`@asyncInit` target args |
 | `module_id` | `u32` | Current module ID |
 | `module_reg` | `*ModuleRegistry` | Module registry reference |
-| `intcast_name_id` | `u32` | Interned "@intCast" |
-| `inttofloat_name_id` | `u32` | Interned "@intToFloat" |
-| `print_fn_id` | `u32` | Interned "print" |
-| `ptrcast_name_id` | `u32` | Interned "@ptrCast" |
-| `ptrtoint_name_id` | `u32` | Interned "@ptrToInt" |
-| `inttoptr_name_id` | `u32` | Interned "@intToPtr" |
-| `enumtoint_name_id` | `u32` | Interned "@enumToInt" |
-| `size_of_name_id` | `u32` | Interned "@sizeOf" |
-| `align_of_name_id` | `u32` | Interned "@alignOf" |
-| `local_decl_names/temps/types/kinds/scopes` | `[64]u32/u8` | Fixed-slot array of local declarations (max 64) |
+| `*_name_id` | `u32` | Pre-interned builtin names: `@intCast`, `@floatCast`, `@intToFloat`, `print`, `@ptrCast`, `@volatileCast`, `@ptrToInt`, `@intToPtr`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr`, `@enumToInt`, `@intToEnum`, `@as`, `@bitCast`, `@sizeOf`, `@alignOf`, `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf`, `@cVaStart`/`@cVaArg`/`@cVaEnd`, `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@panic`/`@sleepMs`, `@isWindows`, `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor`, `@asyncFrameSize`/`@asyncInit`/`@asyncResume`/`@asyncSuspend` |
+| `local_decl_names`/`_src_names`/`_types`/`_temps` | `[*]u32` | Parallel arrays of local declarations (grown by `growLocalDecls`) |
+| `local_decl_kinds`/`_is_capture` | `[*]u8` | Declared type kind / capture flag per local |
+| `local_decl_scopes`/`_scope_nodes`/`_fn` | `[*]u32` | Scope depth, scope-node id, and owning function sequence per local |
+| `local_decl_cap` | `usize` | Current capacity of the parallel arrays |
 | `local_decl_name_map` | `U32ToU32Map` | Maps temp ID → name_id for debug info |
 | `local_decl_count` | `usize` | Number of tracked local declarations |
-| `_fn_ret_type` | `u32` | Cached function return type |
-| `_ctx_node_idx` | `u32` | Context node index (for diagnostics) |
-| `_ctx_node_kind` | `u32` | Context node kind (for diagnostics) |
-| `capture_shadow` | `U32ToU32Map` | Maps captured names to disambiguated synthetic names |
+| `scope_nodes` | `ScopeNodeArrayList` | Scope-parent chain |
+| `cur_scope` / `pending_scope` | `u32` | Active / pending scope-node ids |
+| `fn_seq` | `u32` | Monotonic per-function sequence number |
+| `_fn_ret_type` / `_ctx_node_idx` / `_ctx_node_kind` | `u32` | Cached return type and diagnostic context |
+| `capture_shadow` | `U32ToU32Map` | Maps captured names to disambiguated synthetic names. Function-scoped: `lowerFn` clears it at entry (`u32ToU32MapClear`, a real clear of `occupied` + `count`), so redirects never leak across functions; inside a function a redirect is decided by `captureShadowShouldRedirect`'s scope-chain walk (see Variables §Capture-shadow redirect) |
 | `synth_name_counter` | `u32` | Counter for synthetic name generation |
-| `current_label` | `u32` | **[F1, 2026-08-07] Currently active label name ID** (0=unlabeled). Set from a `labeled_stmt` node's payload around its `child_0` recursion (lower.zig:257, init 0 at lower.zig:324); read by all 3 loop-push sites to stamp `LoopInfo.label_id`. |
+| `current_label` | `u32` | Active label name ID (0 = unlabeled), set from a `labeled_stmt` payload around its `child_0` recursion |
 
 ### Supporting Types
 
 | Type | Fields | Purpose |
 |------|--------|---------|
+| `SemanticContext` | store, registry, symbol_tables, resolved_types, coercions, diag, has_symbols, enum_value_table, error_code_registry, call_arg_types, comptime_folds (Task 4: `*ce_mod.ComptimeFoldTable`, exact `ComptimeVal`s), source_file_id, safe_checks, suspending_fns, frame_sizes, state_widths, print_value_lowered (Task 10: set by `lowerPrintFmt` on each emitted `.print_val`; `phase_LIRLowering` reports a missing std_fmt only when it is 1) | Read-only view of the compilation state passed to the lowerer |
 | `DeferAction` | `kind, ast_node, scope_depth` | Descriptor for deferred statement execution (`kind`: 0=defer, 1=errdefer) |
-| `LoopInfo` | `header_bb, exit_bb, scope_depth, label_id` | Loop context for break/continue resolution. `label_id` is the active label name ID from `current_label` at push time (0=unlabeled). |
+| `LoopInfo` | `header_bb, exit_bb, scope_depth, label_id, is_loop` | Loop context for break/continue resolution. `header_bb` is the `continue` target (a `while` uses its `cont_bb`; each `for` arm uses its dedicated `step_bb` so `continue` runs the implicit increment). `label_id` is the active label name ID from `current_label` at push time (0=unlabeled); the loop arms then clear `current_label` while lowering the body, so an unlabeled nested loop is pushed with `label_id = 0` |
 | `SwitchInfo` | `exit_bb, scope_depth` | Switch context |
-| `SrcIntent` | enum `value`, `null_src`, `error_src` | Classifies source expression for coercion. `null_src` (from a `null_literal` or `wrap_optional_null` coercion) makes the null_literal branch emit `set_optional_null` directly on an `Opt_`-typed temp (Option B, 2026-08-07); `materializeInto` then short-circuits or wraps outer EU layers. No dead `null_const` temp [updated: 2026-08-07] |
+| `SrcIntent` | enum `value`, `null_src`, `error_src` | Classifies a source expression for coercion. `null_src` makes the null_literal branch emit `set_optional_null` directly on an `Opt_`-typed temp |
+| `LocalBinding` | `temp, kind, tid` | Resolved local-variable binding |
+| `ScopeNode` | `parent` | Scope-parent chain node |
+| `CallInfo` | is_self, is_indirect, is_extern, call_conv, callee, module_id, args_start, args_count, result, return_type, call_block_idx, call_inst_idx | Tail-call candidate resolved by `findTailCall` |
 
 ### Key Functions
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `lowererInit` | `(ctx, alloc) → LirLowerer` `sf/src/lower.zig:271` | Creates LirLowerer with empty stacks, pre-caches builtin name IDs (incl. the 10 I/O + console builtins, F1/F2) |
-| `emitInst` | `(self, LirInst)` `sf/src/lower.zig:336` | Appends instruction into current basic block |
-| `nextTemp` | `(self, type_id) → u32` `sf/src/lower.zig:340` | Allocates temp ID, records in hoisted_temps |
-| `createBlock` | `(self) → u32` `sf/src/lower.zig:379` | Creates new BasicBlock, appends to func.blocks |
-| `lowerExpr` | `(self, node_idx) → u32` `sf/src/lower.zig:461` | Lower AST expression to LIR temp; applies coercion wrapper |
-| `lowerExprImpl` | `(self, node_idx) → u32` `sf/src/lower.zig:1122` | Core expression lowering dispatch |
-| `lowerStmt` | `(self, node_idx)` `sf/src/lower.zig:3592` | Lower AST statement to LIR |
-| `lowerFn` | `(self, fn_node) → LirFunction` `sf/src/lower.zig:4788` | Lower entire function to LIR |
-| `applyCoercion` | `(self, src_temp, coercion) → u32` `sf/src/lower.zig:4469` | Apply type coercion (widen, wrap, cast) |
-| `expandDefers` | `(self, target_depth, is_error_path)` `sf/src/lower.zig:4392` | Emit deferred statements at scope exit |
-| `pushDefer` | `(self, kind, ast_node)` `sf/src/lower.zig:4384` | Push a defer/errdefer action onto stack |
-| `hoistTemps` | `(self)` `sf/src/lower.zig:4420` | Prepend decl_temp instrs to entry block |
-| `materializeInto` | `(self, src_temp, expected, intent) → u32` `sf/src/lower.zig:906` | Layer type wrappers (optional/error-union) to match expected type |
-| `addLocalDecl` | `(self, name_id, type_id, temp, depth)` `sf/src/lower.zig:485` | Register a local variable |
-| `findLocalTemp` | `(self, name_id) → ?u32` `sf/src/lower.zig:994` | Look up local temp by name |
-| `lowerLValueAddr` | `(self, lv_node_idx, result_type) → u32` `sf/src/lower.zig:739` | Compute address of l-value. Handles `index_access`, `ident_expr`, `deref`, `paren_expr`, and — **FIXED (F4, 2026-08-13)** — `field_access` (address of field within base's address; emits `addr_of_field` LIR). See §Address-Of / §Field Store. |
-| `lowerAssignLValue` | `(self, lv_node_idx, value_temp, diag_node_idx)` `sf/src/lower.zig:793` | Emit store to l-value target |
+| `lowererInit` | `(ctx, alloc) → LirLowerer` | Creates a LirLowerer with empty stacks; pre-caches the builtin name IDs |
+| `emitInst` | `(self, LirInst)` | Appends an instruction into the current basic block; emits `width_wrap` for arbitrary-width `binary`/`unary`/`int_cast`/`int_cast_checked` results |
+| `nextTemp` | `(self, type_id) → u32` | Allocates a temp ID and records it in `hoisted_temps` |
+| `createBlock` | `(self) → u32` | Creates a BasicBlock, appends to `func.blocks` |
+| `lowerExpr` | `(self, node_idx) → u32` | Lowers an AST expression to a LIR temp; applies the coercion wrapper from `coercions` |
+| `lowerExprImpl` | `(self, node_idx) → u32` | Core expression-lowering dispatch |
+| `lowerStmt` / `lowerStmtBody` | `(self, node_idx)` | Lower an AST statement / statement body |
+| `lowerFn` | `(self, fn_node) → LirFunction` | Lower an entire function to LIR (entry `loop_header`, params, body, defers, `hoistTemps`) |
+| `lowerModuleInit` | `(self, root_idx, mod_id, dep_map) → LirFunction` | Synthesize a module's `__module_init`, emitting its globals in a stable dependency order (cross-module edges recorded in `dep_map`) `[updated: 2026-10-17 — T4: a module-alias `const impl = if (...) @import(...) else @import(...)` / bare `@import` init is skipped (no garbage store into the binding's slot); T3: the dead module's `__module_init` is not emitted — reachability-consistent runtime-init edge, `prune_active` (docs 08 §6.2 / 09)]` |
+| `lowerInitKindHasExtras` | `(kind) → bool` | May this init-expression kind be descended through the extra-child pool? (only kinds that store extra ranges) |
+| `lowerInitDepAppend` | `(out, out_len, cap, v)` | Bounded append of a same-module dependency name |
+| `lowerInitDepScan` | `(self, mod_id, node_idx, out, out_len, cap)` | Collect a global initializer's module-global references (same-module names + cross-module edges); the fixed-slot walk is gated by `ast.zig`'s `nodeChildIsNode` (name-id slots are never read as nodes) |
+| `lowerModuleInit` (order walk, inline) | `lowerModuleInit` body | Two deterministic dep scans per candidate fill a flat adjacency (`dep_cnt`/`dep_off`/`dep_all`); an ITERATIVE DFS over an explicit frame stack (`stack_i` = candidate, `stack_next` = next dep index) emits a global after its same-module dependencies (source order preserved when already ordered) and detects a cycle (`error[3064]`). Replaced the recursive `lowerInitOrderVisit`, whose shared `dep_buf` was clobbered by nested visits (final-review Critical) and whose depth was unbounded (review Minor 5); the relative `stack_next` is compared against the per-candidate dep LENGTH, not the absolute adjacency end offset |
+| `applyCoercion` | `(self, src_temp, coercion) → u32` | Apply a type coercion (widen, wrap, cast) |
+| `applyNoneCoercion` | `(self, src_temp, coercion) → u32` | Handle the `none` kind (`null` → optional-null / null pointer) |
+| `materializeInto` | `(self, src_temp, expected, intent, src_node) → u32` | Layer optional/error-union wrappers to match the expected type |
+| `expandDefers` | `(self, target_depth, is_error_path, pop)` | Emit deferred statements at scope exit |
+| `pushDefer` | `(self, kind, ast_node)` | Push a defer/errdefer action onto the stack |
+| `hoistTemps` | `(self)` | Prepend `decl_temp` instrs to the entry block |
+| `addLocalDecl` / `growLocalDecls` | `(self, name_id, type_id, temp, depth, is_capture)` | Register a local variable / grow the parallel arrays |
+| `findLocalTemp` | `(self, name_id) → ?u32` | Look up a local temp by name |
+| `lowerIndexElemAddr` | `(self, lv_node_idx, base_node, idx_node, result_type, want_addr) → IndexAddrResult` | `[updated: 2026-10-12 — P10]` ONE checked index-addr computation for lvalue chains (FX5 `indexBaseAfterArrayDeref` → `lowerExpr` base → `maybeExtractSlicePtr` → `lowerExpr` index → `emitSafeCheckIndex` always — self-gated on `safe_checks`; the F6 `safe_check` opt-in is gone — → element address when `want_addr`: `load_index{decay=1}` under the unified ptr-to-array rule — element of the pointed-to array for a decayed row (`base node` = array) or a genuine `*[N]T` (auto-deref; `base node` = the single pointer) — else `BIN_ADD`). FB/D4: the sem-folded tuple `t[ord]` escape (base temp is a `tuple_type` + `tuple_index_table` entry; the folded index is never lowered) is returned as `is_tuple`/`tuple_bt`/`tuple_ord`/`orig_base` for the caller's `store_field`/`addr_of_field` ordinal form |
+| `lowerLValueAddr` | `(self, lv_node_idx, result_type) → u32` | Compute the address of an l-value (`ident_expr`, `index_access` → `lowerIndexElemAddr`, `deref`, `paren_expr`, `field_access` → `addr_of_field`); FX16-F: a `tagged_union_type` pointee rejects level-0 `error[3000]` (`cannot take the address of a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })`) and returns a typed dummy (was the `error[3043]` address-of ICE) |
+| `lowerAssignLValue` | `(self, lv_node_idx, value_temp, diag_node_idx)` | Emit a store to an l-value target |
+| `lowerFieldStore` | `(self, fa_node_idx, value_temp, diag_node_idx)` | Store to a struct/union/slice/TU field, or `store_bitfield` for packed fields; FX16-F: a tagged-union payload member rejects level-0 `error[3000]` (`cannot store to a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })`) instead of the `error[3043]` field-store ICE |
+| `lowerPackedChainAnalyze` | `(self, node_idx, ...) → u8` | Analyze a nested packed-field chain (holder, bit offset, width, depth) |
+| `lowerPackedWholeCopy` | `(self, dst_base, dst_off, src_base, src_off, ty_id, depth) → u8` | FX15-F per-leaf copy of a whole packed aggregate value: recursive pk walk, one `load_bitfield` + `store_bitfield` per leaf with composed offsets |
+| `lowerTempIsPackedAggregate` | `(self, temp_id) → bool` | FX15-F source-carrier gate for whole-value store sites (`undefined`/`TEMP_NONE`/out-of-range excluded, so they keep the scalar-store path) |
+| `emitSafeCheckDivMod` / `emitSafeCheckShift` / `emitSafeCheckIndex` / `emitOverflowTrap` | `(self, ...)` | Emit backend-neutral `-fsafe` `check_trap` guards |
+| `emitArith` / `emitArithNeg` | `(self, ...)` | Emit checked or plain integer arithmetic depending on `safe_checks` |
+| `lowerAppendSwitchCaseItem` | `(self, item_idx, prong_bb_id, cond_ty_id)` | Append one `SwitchCase` for a prong item; ranges expand via `lowerSwitchCaseItemValue` (literal/enum/error/field-access/const/bool endpoint resolution, D2 + FX1) |
+| `lowerSwitchCaseItemValue` / `lowerSwitchCaseItemMemberValue` | `(self, item_idx, cond_ty_id) → ?u64` / `(self, name_id, cond_ty_id) → ?u64` | D2/FX1 shared case-value resolver: int/char literal, `bool_literal` (1/0), `enum_literal` (table then condition-enum member name), `error_literal`, `field_access` (FX16-F: `enum_value_table` first — the A+ `.tag` switch ordinal — then enum `member.value` / TU field index, then the named-const path), `ident_expr` (member name, then named const); `null` when unresolved |
+| `lowerSwitchCaseItemConstValue` | `(self, node_idx, cond_ty_id) → ?u64` | FX1: a named int const / `mod.LO` through the exact evaluator (visibility-checked); a non-int initializer falls through to the enum-member walk; non-negative values only |
+| `lowerSwitchCaseItemEnumConstMemberValue` | `(self, node_idx, cond_ty_id, depth) → ?u64` | FX1: walk an enum-member const's initializer chain (`Color.Red` / `.Red` / `Red` / aliases) to the member name, resolved against the condition enum / TU |
+| `lowerSwitchCaseItemConstDecl` / `lowerSwitchCaseItemIsConstGlobal` | `(self, node_idx) → ?u32` / `(s) → bool` | FX1: the decl node of the immutable module-level constant a case item names (current module first, then all tables; `resolveModuleBase` for a qualified/direct-import base); `var` and non-globals never resolve |
+| `findTailCall` / `zeroCallCFG` / `zeroChainInsts` / `hasOtherConsumers` | `(self, ...)` | TCO detection and dead-call-CFG elimination |
+| `lowerDeclCallConvFlag` | `(store, decl_node) → u8` | Read the calling-convention flag from an extern decl's `FnProto` |
 
 ---
 
@@ -278,21 +319,21 @@ folds in sema/comptime (see §Comptime branch folding below).
 
 | AstKind | LIR Output | Description |
 |---------|-----------|-------------|
-| `int_literal` | `int_const` → temp(TYPE_INT_LIT) | Integer constant value |
-| `float_literal` | `float_const` → temp(TYPE_F64) | Float constant |
+| `int_literal` | `int_const` → temp(`TYPE_INT_LIT`) | Integer constant value |
+| `float_literal` | `float_const` → temp(`TYPE_F64`) | Float constant |
 | `string_literal` | `string_const` → temp(ptr) | String pointer constant |
-| `char_literal` | `int_const` → temp(TYPE_U8) | Character as u8 |
-| `bool_literal` | `bool_const` → temp(TYPE_BOOL) | Boolean 0/1 |
-| `null_literal` | `null_const` → temp(TYPE_NULL) | Untyped null. **FIXED [2026-08-07, Option B]:** when the node's coercion routes to `SrcIntent.null_src` (`wrap_optional_null`/`wrap_optional`/`wrap_error_success`) AND the coercion target chain contains an optional layer, the null_literal branch (lower.zig:1183) instead emits `set_optional_null` directly on a temp typed as the optional layer — the dead `int zT_N; zT_N = NULL;` (gcc `-Wint-conversion`) is eliminated. The generic `null_const` path remains for uncoerced null / non-optional targets (pointer/fn). |
-| `undefined_literal` | `undefined_const` → temp(TYPE_UNDEFINED) | Undefined value |
-| `enum_literal` | `enum_const` or `int_const` or tagged-union init | Enum member; for TU emits `int_const` tag + `assign_field` tag |
-| `error_literal` | `int_const` → temp(TYPE_I32) | Error value as integer |
+| `char_literal` | `int_const` → temp(`TYPE_U8`) | Character as u8 |
+| `bool_literal` | `bool_const` → temp(`TYPE_BOOL`) | Boolean 0/1 |
+| `null_literal` | `null_const` or `set_optional_null` | Untyped null. When the node's coercion routes to `SrcIntent.null_src` and the target chain contains an optional layer, the branch emits `set_optional_null` on a temp typed as that layer; the generic `null_const` path remains for uncoerced null / non-optional targets (pointer/fn). |
+| `undefined_literal` | `undefined_const` → temp(`TYPE_UNDEFINED`) | Undefined value |
+| `enum_literal` | `enum_const` / `int_const` / tagged-union init | Enum member; for a TU emits `int_const` tag + `assign_field` tag |
+| `error_literal` | `int_const` → temp(`TYPE_I32`) | Error value as integer |
 
 ### Arithmetic & Logic
 
 All binary operations follow the same pattern (with a comptime fold guard first):
 ```
-if comptime_values[node_idx] → nextTemp(ftype); emitInst(.int_const{ cv }); return ctid   ← F4/F5 guard
+if lowerFoldedIntConst(node_idx, rtype) → nextTemp(ft); emitInst(.int_const{ pattern }); return ctid
 lowerExpr(lhs) → tid_lhs
 lowerExpr(rhs) → tid_rhs
 nextTemp(resolved_type) → tid_result
@@ -300,16 +341,13 @@ emitInst(.binary{ op, tid_lhs, tid_rhs, tid_result })
 return tid_result
 ```
 
-**[updated: 2026-08-06] Comptime fold guards (F4/F5, commits `ec71f9ad`/`5ed90251`):** the 10
-binary op handlers (add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr, lower.zig:1218-1306)
-and the 2 unary handlers (`negate`/`bit_not`, lower.zig:1426-1439) now consult
-`ctx.comptime_values` **before** lowering operands — mirroring the `builtin_call` handler
-(lower.zig:2456). When a folded value is present, the temp type is taken from
-`resolvedTypeTableGet(node_idx)` with an **INT_LIT→I32 remap** (`ft = TYPE_I32` when the resolved
-type is `TYPE_INT_LIT` or `TYPE_UNDEFINED`), and an `int_const` LIR inst is emitted instead of a
-`binary`/`unary` inst. The remap keeps bare const inits (which resolve TYPE_INT_LIT) typed `int`
-in C; annotated consts (e.g. `const X: u64 = …`, threaded by the F7 sema fix) keep their declared
-width so u64 folds >2^32 are not masked to 32 bits. `bool_not` has no guard (never folds).
+**Comptime fold guards (Task 4 rewrite).** The 10 binary op handlers (add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr) and the 2 unary handlers (`negate`/`bit_not`) call `lowerFoldedIntConst(self, node_idx, rtype, check_fit)` **before** lowering operands (`ctx.comptime_folds`, the exact `ComptimeFoldTable`). Behaviour:
+- a concrete integer `rtype`: when `check_fit != 0` and the exact value does not fit, emit `error[3000] "comptime integer value does not fit the target type"` (`reportComptimeIntFits`, once per node) and return a dummy temp — the post-lowering diag gate exits rc=2 with 0 `.c`; otherwise emit `int_const(comptimeIntMaterialize(v))`;
+- an untyped `rtype` (`INT_LIT`/`UNDEFINED`): record the exact value's semantic width/signedness on the `int_const` (`lowerUntypedIntFacts` fit windows I32/U32/I64/U64 — negative → signed (64,1); P6-pre fix rounds 1-2: facts only, never a carrier at lowering) and let the planner derive the C carrier at the boundary (`c89_plan.deriveConstCarrier`/`carrierFromFacts`; `c89_plan.untypedIntCarrier` is DELETED). A value beyond `[i64 min, u64 max]` is `error[3000]` (Task 1 §8 risk 1: `const BIG = 1 << 100;` rejects where Zig accepts — bounded divergence);
+- `negate` passes `check_fit=1`; `bit_not` passes `0` (`~`'s exact `-x - 1` is exempt from the materialisation fit, matching the Task 3 peer-fit exemption).
+`bool_not` has no guard (never folds). This fixes the Task 3 carry-item local bare-negate i64 min (`const imin: i64 = -9223372036854775808;` now emits the exact `i64` min instead of forcing an `i32` temp and printing 0).
+
+Under `-fsafe`, integer `+ - * <<` and unary negate route through `emitArith`/`emitArithNeg`: they emit the corresponding `add_with_overflow`/`sub_with_overflow`/`mul_with_overflow`/`shl_with_overflow`/`neg_with_overflow` value op plus an `overflow_flag` predicate and a `check_trap{kind=6}`. Under `-ffast`, or for non-integer/zero-width results, the plain `binary`/`unary` op is emitted. Division and shift additionally get `emitSafeCheckDivMod` (`check_trap{kind=2}`, including the signed `MIN / -1` case) and `emitSafeCheckShift` (`check_trap{kind=3}`) under `-fsafe`; `materializeShiftLhs` first gives an integer-literal left operand a typed temp so the shift bound applies.
 
 | AstKind | LIR Op |
 |---------|--------|
@@ -325,33 +363,65 @@ width so u64 folds >2^32 are not masked to 32 bits. `bool_not` has no guard (nev
 | `shr` | `BIN_SHR` |
 | `cmp_eq` | `BIN_EQ` (or `check_optional`+`unary.not` for `== null`) |
 | `cmp_ne` | `BIN_NE` (or `check_optional` for `!= null`) |
-| `cmp_lt` | `BIN_LT` |
-| `cmp_le` | `BIN_LE` |
-| `cmp_gt` | `BIN_GT` |
-| `cmp_ge` | `BIN_GE` |
+| `cmp_lt` / `cmp_le` / `cmp_gt` / `cmp_ge` | `BIN_LT` / `BIN_LE` / `BIN_GT` / `BIN_GE` |
 
-**Short-circuit `bool_or`** (`sf/src/lower.zig:1322`): Produces 3 blocks (rhs_bb, true_bb, done_bb). If lhs is true → true_bb emits `bool_const(1)` → done_bb. If lhs is false → rhs_bb evaluates rhs → assign result → done_bb.
+The `BIN_*` constant set also includes the wrapping/saturating ops `BIN_WADD`, `BIN_WSUB`, `BIN_WMUL`, `BIN_SADD`, `BIN_SSUB`, `BIN_SMUL`, `BIN_SSHL`; the unary set includes `UN_WNEG`. Arbitrary-width results additionally get a `width_wrap` op from `emitInst` (`maybeEmitWidthWrap`).
 
-**Short-circuit `bool_and`** (`sf/src/lower.zig:1345`): Produces 3 blocks (rhs_bb, false_bb, done_bb). If lhs is true → rhs_bb evaluates rhs → assign. If lhs is false → false_bb emits `bool_const(0)` → done_bb.
+**Short-circuit `bool_or`** produces 3 blocks (rhs_bb, true_bb, done_bb): if lhs is true → true_bb emits `bool_const(1)` → done_bb; if lhs is false → rhs_bb evaluates rhs → assign result → done_bb.
+
+**Short-circuit `bool_and`** produces 3 blocks (rhs_bb, false_bb, done_bb): if lhs is true → rhs_bb evaluates rhs → assign; if lhs is false → false_bb emits `bool_const(0)` → done_bb.
 
 ### Unary Operations
 
 | AstKind | Pattern |
 |---------|---------|
-| `negate` | `.unary{ UN_NEG }` — **F5 guard**: folds to `int_const` when `comptime_values[node_idx]` present |
+| `negate` | `.unary{ UN_NEG }` (or `neg_with_overflow` under `-fsafe`) |
 | `bool_not` | `.unary{ UN_NOT }` |
-| `bit_not` | `.unary{ UN_BNOT }` — **F5 guard**: folds to `int_const` when `comptime_values[node_idx]` present |
+| `bit_not` | `.unary{ UN_BNOT }` |
 
 ### Variables
 
 | AstKind | Pattern |
 |---------|---------|
-| `ident_expr` | Lookup via `findLocalTemp()` or symbol table → `load_local` or `load_global`. For fn types, `func_ref`. For modules, diagnostic warning. For type aliases, emits temp. `sf/src/lower.zig:1489` |
-| `var_decl` | `nextTemp(decl_type)` → `decl_local` → optionally `store_local` + `assign` from init expression. Arrays init'd via `array_init` lowering. `sf/src/lower.zig:3687` |
+| `ident_expr` | Lookup via `findLocalTemp()` or the symbol table → `load_local` or `load_global`. For fn types, `func_ref`; for modules, a diagnostic warning; for type aliases, emits a temp. |
+| `var_decl` | `nextTemp(decl_type)` → `decl_local` → optionally `store_local` + `assign` from the init expression. Arrays init'd via `array_init` lowering. |
+
+#### Capture-shadow redirect (scope-chain guard) `[updated: 2026-09-24 — Task 10 fix round]`
+
+`maybeDisambiguateCapture` renames a `for`/`while`/`catch` capture only when the local-decl table
+already holds an earlier same-named declaration **of a different type** (`self.local_decl_types[eli] !=
+variant_type_id` — the previously-unused parameter). Same-type same-name bindings may share the one
+emitted C variable: the emitter dedupes `decl_local` by `name_id` across the function
+(`emitFunctionBody`'s `dedup_names`) and the lifetimes of sibling-scope bindings never overlap, so
+renaming them was pure name churn; a different type cannot share the C variable, so the rename is
+required. The criterion mirrors `maybeDisambiguateCaptureIfTypeDiffers` and the var-decl `type_rename`
+path. When a rename does fire, the source-name → synthetic-name redirect is recorded in
+`capture_shadow` (`U32ToU32Map`). That map is **function-scoped**: `main.zig` creates a fresh
+`LirLowerer` per `fn_decl`, and `lowerFn` additionally resets the function-scoped bookkeeping at entry
+(`local_decl_count = 0` + `hash_mod.u32ToU32MapClear(&self.capture_shadow)`) so the invariant also
+holds for callers that reuse one lowerer across functions (the unit tests). `u32ToU32MapClear`
+(util/hash.zig) is a real clear — it zeroes the `occupied` flags and `count`; the eight historical
+arm-end `self.capture_shadow.count = 0` stores were dead (`u32ToU32MapGet` scans `occupied` and
+ignores `count`) and were deleted. A mid-function clear remains wrong: it would drop an enclosing
+capture that is referenced after a nested loop inside its own body.
+
+Every identifier read/store/l-value that names a shadowed capture calls
+`captureShadowShouldRedirect(name_id, syn)`, which decides by walking the actual scope chain from
+`cur_scope` outward through `scope_nodes[...].parent`: at each scope, a declaration of the original
+name in that scope suppresses the redirect (return false — a legal later same-name local in a
+shallower sibling scope keeps its own variable); reaching the synth declaration's scope node
+(`local_decl_scope_nodes`) redirects (return true). The two fallbacks (synth name not found / synth
+scope not on the chain) keep the redirect, preserving the historical behavior. Pre-Task-10D the guard
+used depth arithmetic over `local_decl_scopes`, which could not recognize a later same-name local in a
+scope shallower than the synth capture's registration depth, so the stale capture temp won
+(declaration + initializer dropped, uses aliased the old loop variable). The Task 10 fix round's
+narrowing moved the emitted C of `examples/z98/json_parser` (e.g. `i_2`→`i`) and
+`examples/z98/lisp_interpreter_curr`; both re-baselines carry PRE↔POST runtime-identity proof by
+execution (QUICK_REF "Byte-identical gate").
 
 ### Compound Assignments
 
-All `*_assign` variants follow this pattern (`sf/src/lower.zig:3038-3147`):
+All `*_assign` variants follow this pattern:
 ```
 lowerExpr(lhs) → lhs_val
 lowerExpr(rhs) → rhs_val
@@ -360,165 +430,73 @@ emitInst(.binary{ op, lhs_val, rhs_val, op_r })
 lowerCompoundLValueStore(self, node_idx, lhs_val, op_r)
 ```
 
-This covers: `add_assign`, `sub_assign`, `mul_assign`, `div_assign`, `mod_assign`, `shl_assign`, `shr_assign`, `and_assign`, `xor_assign`, `or_assign`.
+Covers: `add_assign`, `sub_assign`, `mul_assign`, `div_assign`, `mod_assign`, `shl_assign`, `shr_assign`, `and_assign`, `xor_assign`, `or_assign`.
 
-### Plain Assignment `sf/src/lower.zig:843` (`lowerAssignLValue`)
+### Plain Assignment
+
 ```
 lowerExpr(rhs) → src
-lowerAssignLValue(lhs, src)
+lowerAssignLValue(lhs, src, diag_node)
 ```
-`lowerAssignLValue` handles: `ident_expr`→`store_local`+`assign`, `index_access`→`assign_index`, `field_access`→`lowerFieldStore`, `deref`→`store`, `paren_expr`→recurse.
+`lowerAssignLValue` handles: `ident_expr` → `store_local` / `store_global` / `assign`; `index_access` → `assign_index`; `field_access` → `lowerFieldStore`; `deref` → `store`; `paren_expr` → recurse.
 
-**Defect-C — FIXED (2026-08-13, task F4, operator ruling m0872 — Option a).** Previously: for a
-2+ level field-access lvalue (`o.inner.a = v`), `field_access` dispatch reached `lowerFieldStore`
-(lower.zig:894). For a NON-index base (child_0 is itself `field_access`), lowerFieldStore lowered
-the base with `base_temp = lowerExpr(fa_node.child_0)` — an **rvalue COPY**
-(inner `field_access` → `.load_field` into a fresh temp). The outer `store_field`
-(lower.zig:933-941) then mutated that throwaway local; the write-back to `o` was DROPPED (emitted C
-`zT_5 = o.inner; zT_5.a = v;`, repros `nested_field_store_xmod`/`_xmod2` printed garbage).
-**Now:** `lowerFieldStore`'s nested-base case (lower.zig:909-927) routes
-field_access/deref/paren bases through
-`lowerLValueAddr(child_0, ptr_type)` (pointer-typed bases keep `lowerExpr`), producing a pointer
-to the inner field; the outer `store_field` stores through it (emitted C
-`zT_5 = &o; zT_6 = &zT_5->inner; zT_6->a = v;`). Repro `nested_field_store_xmod` prints `4243`,
-`nested_field_store_xmod2` prints `78`. Single-level stores unaffected (ident base stays on the
-`lowerExpr` path, which returns the local's own temp, lower.zig:2014). See §Field Store /
-§Address-Of. **[F3 line-ref pass 2026-08-13: lower.zig refs corrected — `lowerFieldStore` :894
-(was :844), nested-base case :909-927 (was :859-873), ptr-base store through :933-941 (was
-:884).]**
-
-### Field Access `sf/src/lower.zig:2106`
+### Field Access
 
 Two modes:
-1. **Compile-time resolved**: `TypeAlias.field` → `emitTaggedUnionInit` (for TU) or `enum_const` (for enum) or error set member
-2. **Runtime**: `lowerExpr(base)` → resolve base type → if struct/union/TU → `.load_field{ field_id }`. Slice `.len` → `SLICE_FIELD_LEN`, slice `.ptr` → `SLICE_FIELD_PTR`.
+1. **Compile-time resolved**: `TypeAlias.field` → `emitTaggedUnionInit` (for a TU), `enum_const` (for an enum), or an error-set member.
+2. **Runtime**: `lowerExpr(base)` → resolve base type → `.load_field{ field_id }` for struct/union/TU. Slice `.len` → `SLICE_FIELD_LEN`, slice `.ptr` → `SLICE_FIELD_PTR`. **FX16-F:** when the base resolves to a tagged union and the lowered base temp is a `ptr_type`/`many_ptr_type` (a pointer base such as `p.tag`/`p.member`), the arm first `load`s the pointee into a fresh temp and reads the field from it (P1) — before, `p.tag` emitted `zT = p` and returned the address; and a tagged-union member-shaped read whose node is in `enum_value_table` (an A+ `.tag` operand retyped to u32) emits the plain ordinal with the retyped init type at `emitTaggedUnionInit` (R1, so cross-module qualified relational compares are gcc-valid).
+3. **Array-field `.len`** `[updated: 2026-09-21 — Task 11N]`: immediately after `resolved_base` is computed, if the field name is `len` and `fieldStaticLenForBase(self, node.child_0)` yields a length (the base is a `field_access` whose container declares the named field as an array), the lowerer emits an `int_const` of that compile-time length and returns. This is required because the base temp decayed to a bare `*elem` (the array length is lost at the field-access boundary), so the `array_type` `.len` arm below is unreachable; `fieldStaticLenForBase` (also used by the A5F `emitSafeCheckIndex` bounds check) recovers the declared length. Slice fields (`indexStaticLenForType` → null) and local arrays (base is not a `field_access`) fall through to the existing paths; the array-field decay itself is deliberately preserved for `s.arr[i]`/A5F.
 
-### Field Store `sf/src/lower.zig:894` (`lowerFieldStore`)
+### Field Store
 
-Dispatched from `lowerAssignLValue` for `field_access` lvalues. Base handling:
-- **Index base** (`arr[i].field = v`, lower.zig:900-908): computes a POINTER base
-  (`ptr_temp + idx_temp` via `BIN_ADD`, typed `*elem`) and emits `store_field{ base = ptr, field_id }`
-  → C emitter (c89_emit.zig:4199-4218) emits `ptr->field = v;`. Correct.
-- **Nested lvalue base** (`o.inner.a = v`; base is `field_access`/`deref`/`paren_expr`,
-  lower.zig:909-927, **FIXED F4 2026-08-13**): routes through
-  `base_temp = lowerLValueAddr(child_0, *BaseTy)` (or `lowerExpr` when the base is itself
-  pointer-typed, keeping its existing pointer value) → `resolved_base = *BaseTy`, so the struct/
-  union dispatch unwraps the pointer and `store_field` emits `ptr->field = v;`. Emitted C:
-  `zT_5 = &o; zT_6 = &zT_5->inner; zT_6->a = v;`. Previously `base_temp = lowerExpr(child_0)`
-  produced an rvalue COPY and dropped the write-back (**Defect C**).
-- **Ident / pointer-var base** (`o.tag = 1`, `ptr.x = v`): unchanged — `base_temp = lowerExpr(child_0)`;
-  for an aggregate local this is the local's own temp (correct), for a pointer var it is the
-  pointer value (emitter emits `ptr->x`).
+`lowerFieldStore` is dispatched from `lowerAssignLValue` for `field_access` lvalues. Base handling:
+- **Index base** (`arr[i].field = v`) `[updated: 2026-10-12 — P10]`: the element address comes from the ONE checked address-taking path — `base_temp = lowerLValueAddr(child_0, *elem)` → `lowerIndexElemAddr` (FX5, slice `.ptr` extract, the root-index `-fsafe` check — deliverable (b); this arm previously had NO check, so `s[i].field = v` was unguarded under `-fsafe` — and the unified ptr-to-array rule: `load_index{decay=1}` `&(*ptr)[idx]` for a decayed multi-dim row / `*[N]T` auto-deref, `BIN_ADD` otherwise). Emits `store_field{ base = ptr, field_id }`; the C emitter renders `ptr->field = v;`. The T0b pointer-elem `load` (e.g. `[*]*T` `s.tasks[i]`) after the address is unchanged.
+- **Nested lvalue base** (`o.inner.a = v`; base is `field_access`/`deref`/`paren_expr`): routes through `base_temp = lowerLValueAddr(child_0, *BaseTy)` (or `lowerExpr` when the base is itself pointer-typed) so the outer `store_field` stores through the pointer. This fixes the dropped write-back that a plain `lowerExpr` copy would cause. `[updated: 2026-10-12 — P10]` Such chains are now always `-fsafe`-checked (the F6 `safe_check` opt-in is gone).
+- **Ident / pointer-var base** (`o.tag = 1`, `ptr.x = v`): `base_temp = lowerExpr(child_0)` — for an aggregate local this is the local's own temp; for a pointer var it is the pointer value.
+  **FX16-F (S2):** a tagged-union payload member (`x.i = 5`, `b.box = .{…}`, compound `+=`, all bases incl. cross-module) instead rejects level-0 `error[3000]` `cannot store to a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })` and returns (was the `error[3043]` field-store ICE). A pointer-base `p.tag = v` is emitted through (the emitter renders `p->tag = v`, doc 08).
+- **Packed struct/union member**: when the base resolves to a packed struct or packed union, the store emits `store_bitfield{ base, value, bit_offset, bit_width }` from the field's packed bit layout. A whole packed-struct value assigned to a nested packed-struct field (or written as a packed-union member) lowers per leaf since FX15-F (see Packed Bitfield Access).
 
-**Implementation (task F4, operator ruling m0872 — Option a):** extended `lowerLValueAddr`
-(lower.zig:739) with a `field_access` branch — compute the address of the field within the base's
-address: if the base's resolved type is a pointer, `base_addr = lowerExpr(base)` (the pointer
-value); else `base_addr = lowerLValueAddr(base, *BaseTy)` (recursion handles nested chains and
-ident/index/deref/paren cases); then emit a new `addr_of_field` LIR inst
-(`{ base = base_addr, field_id, result }`, lir.zig:44) which the C emitter renders as
-`result = &base->f_N;` (resolving the field name via the base temp's hoisted ptr-to-struct/union
-type, mirroring the `store_field` ptr-base emitter c89_emit.zig:4199-4218). This completes the
-universal lvalue→address primitive and is strictly more general than patching only the consumer:
-it also un-ICEs `&o.inner` / `&v.data.Int` (see §Address-Of). Blast radius verified 2026-08-13:
-repros `dup_val_field_emit`, `tu_field_store_ptr`, `tu_ptrcast_copy`,
-`xmod_amp_arena_union_store`, `struct_field_store_subscript` now emit the `->` store form
-(compile-only, same gate status); 0 of the 4 MD5 gates (mud/gol/lisp_curr/json) use nested
-field-store, so no gate re-baselined (all 4 byte-identical). `examples/z98/lisp_interpreter`
-`v.data.Cons.car = car` (value.zig:38-39) now emits `zT_9 = &v->data; zT_10 = &zT_9->Cons;
-zT_10->car = car;` and the example no longer SEGFAULTS at run.
+### Packed Bitfield Access
 
-### Index Access `sf/src/lower.zig:1797`
+Nested packed-field chains (`a.b.c` where `a`/`b` are packed) are analyzed by `lowerPackedChainAnalyze` (up to 16 levels): it walks the `field_access` chain, finds the first packed-struct/packed-union container, and sums the packed bit offsets down to the leaf. A read emits `load_bitfield{ base, result, name_id, bit_offset, bit_width }`; a store emits `store_bitfield`. The leaf width comes from the registry's packed-bitfield table. A whole packed-struct value move (struct-literal element, whole-field assignment, whole-value read, packed-union member) is lowered per leaf by `lowerPackedWholeCopy` since FX15-F — one scalar bitfield load/store per leaf with composed offsets; the recursion is bounded at 32 nesting levels and a failure is a clean site `error[3000]` reject (fix round 1), an `undefined` RHS keeps the old scalar path via `lowerTempIsPackedAggregate`, and a whole-sub store whose chain crosses a byte-aligned container below the packed edge (`first_packed + 1 < depth`) keeps its clean `error[3000]` reject.
+
+### Index Access
+
 ```
 lowerExpr(base) → base_temp
-maybeExtractSlicePtr() → ptr_temp (extracts `.ptr` field from slice)
+maybeExtractSlicePtr() → ptr_temp (extracts `.ptr` field from a slice)
 lowerExpr(index) → idx_temp
 nextTemp(elem_type) → tid
-emitInst(.load_index{ ptr_temp, idx_temp, tid })
+emitInst(.load_index{ ptr_temp, idx_temp, tid, decay })
 ```
-Coercion context: `applyCoercion` after expression (`sf/src/lower.zig:476`).
+Under `-fsafe`, `emitSafeCheckIndex` emits a `check_trap{kind=5}` (`idx < len`) before a user load/store: the length is the static array length when known (including via a pointer-to-array or a field of a struct/union container), otherwise a runtime `SLICE_FIELD_LEN` load from the original slice base. `[*]T`/scalar pointers are unchecked; a signed index wider than `usize` additionally requires `idx >= 0`. `decay=1` marks a pointer-to-array base whose element address must be `&(*base)[j]`. `[updated: 2026-10-12 — P10]` The store/addr arms share ONE checked index-addr computation, `lowerIndexElemAddr` (FX5 base-after-array-deref → slice `.ptr` extract → index lower → `emitSafeCheckIndex` always-on, self-gated → `BIN_ADD` / `load_index{decay=1}` under the unified ptr-to-array rule; the FB/D4 sem-folded tuple `t[ord]` escape hands the ordinal back to the caller). The value-read path above keeps its own (already checked) sequence.
 
-### Dereference `sf/src/lower.zig:1416`
+### Dereference / Address-Of
+
 ```
-lowerExpr(ptr) → ptr_temp
-nextTemp(pointee_type) → tid
-emitInst(.load{ ptr_temp, tid })
+deref:   lowerExpr(ptr) → ptr_temp; nextTemp(pointee_type) → tid; emitInst(.load{ ptr_temp, tid })
+addr_of: lowerLValueAddr(lvalue) → tid
 ```
+`lowerLValueAddr` dispatches by l-value kind: ident → `.addr_of`; `index_access` → `lowerIndexElemAddr` `[updated: 2026-10-12 — P10]`, the ONE checked index-addr path (FX5 `indexBaseAfterArrayDeref` → slice `.ptr` extract → index lower → `-fsafe` `emitSafeCheckIndex` ALWAYS — the checker self-gates on `safe_checks`; the F6 per-caller `safe_check` opt-in is removed, so every address-of/nested chain is guarded — → element address `BIN_ADD` or `load_index{decay=1}` under the unified ptr-to-array rule); `deref` → reuses the inner expression; `paren_expr` → recurse; `field_access` → `.addr_of_field` (address of a field within the base's address, rendered `result = &base->f_N;`). A module global reached through a module alias (`&mid.leaf.counter`) resolves to `load_global` + `addr_of`. An unsupported l-value kind reaches `iceAddrOfLValueUnsupported` (`error[3043]`) — **except FX16-F:** a `tagged_union_type` pointee (`&x.i`, `b.box.w = 7`, pointer param `p.box.w`) rejects level-0 `error[3000]` `cannot take the address of a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })` and returns a typed dummy, so a nested store reports exactly one diagnostic per offending statement.
 
-### Address-Of `sf/src/lower.zig:1792`
-```
-lowerLValueAddr(lvalue) → tid
-```
-Dispatches by l-value kind: ident → `.addr_of`, index_access → ptr+idx via `BIN_ADD`, deref → reuses inner expr, paren → recurse, **field_access → `addr_of_field` (FIXED F4 2026-08-13)**.
-**FIXED (task F4, 2026-08-13, operator ruling m0872 — Option a):** `&o.inner` (and any 2+ level
-field-access address-of) previously fell through to `iceAddrOfLValueUnsupported` (lower.zig:720)
-→ ICE `error[3043] "internal: unsupported address-of l-value"`. The new `field_access` branch
-projects the field within the base's address: pointer-typed base → use the base's pointer value;
-struct/union-value base → recurse `lowerLValueAddr(base, *BaseTy)`; then emit `addr_of_field`
-(lir.zig:44) rendered as `result = &base->f_N;`. `&o.inner` now emits `zT_5 = &o;
-zT_6 = &zT_5->inner;` (verified: throwaway tests for struct/union members, 3-level chains, and
-cross-module `&o.inner` all compile and run). This same primitive also unblocks the nested store
-via `lowerFieldStore` (see §Field Store).
+### Array Init / Struct Init / Tuple Literal
 
-### Array Init `sf/src/lower.zig:3321`
-```
-nextTemp(array_type) → base_temp
-for each element:
-  lowerExpr(element) → val_temp
-  emitInst(.int_const{ ei }) → ix_temp
-  emitInst(.assign_index{ base_temp, ix_temp, val_temp })
-return base_temp
-```
+**Array init**: `nextTemp(array_type)`; per element `lowerExpr(element)` → `int_const(index)` → `assign_index`.
 
-### Struct Init `sf/src/lower.zig:3352-3505`
-```
-nextTemp(struct_type) → base_temp
-for each field init:
-  lowerExpr(val) → val_temp
-  find field index by name
-  if TU: emit `.int_const(tag_index)` + `.assign_field(TU_FIELD_TAG, tag)` + optionally `.assign_field(TU_FIELD_PAYLOAD, val)`
-  if struct: emit `.assign_field(field_index, val)`
-  if union: emit `.assign_field(field_index, val)` (FIXED 2026-08-13, F1) — see note below
-```
+**Struct init**: `nextTemp(struct_type)`; per field `lowerExpr(val)` then `assign_field`. A tagged-union target emits `int_const(tag_index)` + `assign_field(TU_FIELD_TAG)` and optionally `assign_field(TU_FIELD_PAYLOAD)`; a `struct_type` target emits `assign_field(field_index, val)`; a `union_type` target scans the union's members and emits `assign_field(member_index, val)`. `undefined`-initialized array-typed fields are skipped (no dead `undefined_const` temp, no `assign_field`).
 
-**FIXED — bare `union_type` struct-literal target (2026-08-13, F1):** the
-field loop now has a `union_type` branch (lower.zig:3489-3502, after the
-`struct_type` branch) scanning `un_items[payload_idx].fields_start/
-fields_count`, finding the member by `name_id`, and emitting
-`.assign_field(union_field_index, val)` — mirroring the `struct_type` branch
-(including the `is_undef_arr_field` skip). Previously a bare-union struct
-literal (`Inner{ .Int = v }`) never matched, so its member construction was
-DROPPED and the outer struct-literal field assigned an unconstructed temp
-(`zT_1.data = zT_3;` with `zT_3` never declared → gcc `'zT_3' undeclared`).
-With sema's union branch (05 §semanticAnalyzerResolveStructInit),
-`init_type` now resolves to the union type, so `base_temp` gets the union
-type and the member assign emits. Emitted C: `zT_3.Int = v; zT_1.data = zT_3;`.
-Reproduction: `repro/mi_matrix/union_literal_nested_xmod` prints `42`. Same
-shape as `examples/z98/lisp_interpreter` `token.zig`. [updated: 2026-08-13]
+**Tuple literal** `[updated: 2026-09-25 — Task 4]`: an empty tuple returns `TYPE_VOID`. When the literal's resolved type is an array (`[_]T{...}` / an annotated tuple), the existing array arm materialises a temp and `assign_index` per element. Otherwise, when the resolved type is a `tuple_type`, the literal materialises a real aggregate value: `nextTemp(tuple_type)`, then per element `lowerExpr(element)` → `assign_field(field_index)` (the C model is `typedef struct { T0 _0; T1 _1; ... }`; see doc 08). Before Task 4 only the first element survived (`const t = .{1,2,3}` assigned `t = zT_1`, and a direct `print("{}", .{.{1,2,3}})` printed `1`); an unresolved literal still forwards to `lowerExpr(ec[0])` as the last-resort fallback.
 
-[updated: 2026-08-07] **`undefined` array-typed fields are skipped (F2, commit ba89a6e0):** a
-pre-scan (`lower.zig:3392-3427`) computes `is_undef_arr_field` — true iff the field init is
-`undefined_literal` AND the matching field (by `name_id`) in the struct-init type has a declared
-type of kind `array_type` (scans `struct_type` `st_items`/`fe_items` and `tagged_union_type`
-`tu_items`/`fe_items`). When true, the field's `lowerExpr` is skipped (`lower.zig:3427`, no dead
-`undefined_const` temp) and the `assign_field` is NOT emitted (`lower.zig:3468` TU payload branch,
-`lower.zig:3483` struct branch; the TU tag assign is still emitted). Matches the zig0 oracle, which
-emits nothing for `undefined` array fields. Fixes `undef_arr_struct_literal` (previously the
-emitter's `emitFieldAssign` zero-fill hardcoded `base.fld[_j] = 0;` for the whole array regardless
-of element type, emitting `int` assigns on struct elements → gcc `incompatible types`).
-**[F3 line-ref pass 2026-08-13: pre-scan ref corrected — :3006-3038 → :3392-3427 (F1/F4 shifted
-the block).]**
+### Function Calls
 
-### Tuple Literal `sf/src/lower.zig:2793`
-Single-element tuples forward to `lowerExpr(ec[0])`. Empty tuples return `TYPE_VOID`.
-
-### Function Calls `sf/src/lower.zig:1954`
-
-**Direct call** (callee resolves to fn symbol):
+**Direct call** (callee resolves to a fn symbol):
 ```
 Reserve args_start temps
 for each arg: lowerExpr(arg) → applyCoercion → .assign to args slot
 nextTemp(return_type) → result
-emitInst(.call_direct{ name_id, module_id, args_start, args_count, result, return_type, is_extern })
+emitInst(.call_direct{ side-table slot })   // CallDirectData: name_id, module_id,
+                                            // args_start, args_count, result,
+                                            // return_type, is_extern, call_conv
 ```
 
 **Indirect call** (callee is pointer-to-fn):
@@ -529,122 +507,39 @@ for each arg: lowerExpr → .assign
 emitInst(.call{ callee_temp, args_start, args_count, result })
 ```
 
-**Cross-module call** (field access on module): Resolves symbol, emits `call_direct` with target `module_id`.
+**Cross-module call** (field access on a module): resolves the symbol and emits `call_direct` with the target `module_id`. A cross-module `pub const` whose init is an `int_literal`/`char_literal`/`float_literal` folds to `int_const`/`float_const` at the declared type at the ref site; other consts use `load_global`. The callee's calling-convention flag is captured by `lowerDeclCallConvFlag` into `CallDirectData.call_conv`.
 
-[updated: 2026-08-07] **Cross-module `pub const` literal fold (F3, commit 317f3a82):** in the
-cross-module `SymbolKind.global` module-field-access branch (`lower.zig:2005-2024`), when the
-target's `ts.flags` bit0 is 0 (const) and its `decl_node.child_1` init is an `int_literal` /
-`char_literal` / `float_literal`, the lowerer emits the folded `int_const` / `float_const` directly
-at the ref site, typed at the DECLARED type (`gbl_tid` from `resolvedTypeTableGet(ts.decl_node)`,
-`lower.zig:2007`) — mirroring the same-module literal fold (`lower.zig:1681-1704`). The
-`load_global` fallback is kept for non-literal consts. Previously a cross-module `pub const` with a
-literal init registered as `SymbolKind.global` but got NO F-7 storage slot (main.zig:623-630 skips
-int/float/char-literal-init consts; bit0=mutable only), so the consumer's `load_global` referenced
-an undeclared `zG_...` name (gcc `'zG_...' undeclared`). Fixes `xmod_pub_const_global`.
+**Nested-module callee chain** `[updated: 2026-09-22 — Task 6B]`. A call whose callee base is itself a field access (`std.io.<name>`) is handled by the resolved-callee path first; only when the semantic analyzer did **not** resolve the callee to a `fn_type` does the field-access arm walk the chain (`std.io.a.b.c…`). The walk buffers member names in `chain: [4]u32` and is bounded (`chain_len < 4`) so a base with four or more field-access levels cannot overrun the buffer. If the chain does not bottom out in an `ident_expr`, or an intermediate name does not resolve to a module, the walk sets `chain_valid = 0` (breaking out of the lookup loop) instead of returning temp 0; the direct cross-module handling is then skipped and control falls through to the generic call path, which lowers the callee as a value and emits `error[3042]: non-value base expression in field access` (+ `warning[3023]`) with 0 `.c` — exact parity with the flat `std.<name>` case. A valid nested call is resolved to a `fn_type` at the top of `fn_call` and never reaches this block.
 
-**print() builtin** (`sf/src/lower.zig:375`): Special-cased. Emits `print_str` for the format string, `print_val` per argument.
+**Non-callable callee rejection** `[updated: 2026-09-22 — Task 6D]`. After the generic call path lowers the callee (`lowerExpr(node.child_0) → callee_temp`) it inspects the lowered callee temp's type via `getTempType`. A type that is neither `fn_type` nor a pointer to a `fn_type` (and is not `TYPE_VOID`/`TYPE_UNDEFINED`, so the undefined-member `error[3042]` path above is preserved) emits the new `error[3056]: expression is not callable` (`ERR_3056_CALL_TARGET_NOT_CALLABLE`) and returns a `TYPE_VOID` dummy; the post-lowering `hasErrors` gate then exits rc=2 with 0 `.c`. The check is keyed on the **lowered** temp type (not the resolved-type table) so it also catches a flat non-pub module member (`io.INVALID_FD()` where `const io = @import("std_io.zig")`), which the semantic analyzer types as `TYPE_VOID`. Valid direct calls and indirect (function-pointer) calls are unaffected.
 
-**Builtin calls** (`sf/src/lower.zig:2395`): `@ptrCast`, `@intCast`, `@intToFloat`, `@ptrToInt`, `@intToPtr` emit corresponding LIR instructions. `@sizeOf`/`@alignOf` resolved via comptime values table or ICE. `@enumToInt` forwards the value as-is. **Variadic builtins** (`lower.zig:2721-2772`): `@cVaStart`/`@cVaArg`/`@cVaEnd` emit the `va_start`/`va_arg`/`va_end` LIR (see the Variadic table above). **[updated: 2026-08-08] Core I/O builtins** (`lower.zig:2890-2928`, F1): `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` emit the 6 `builtin_*` LIR (see the Builtin I/O table above). `@exit` sets `block_terminated=1` (noreturn). **[updated: 2026-08-08] Console builtins** (`lower.zig:2929-2948`, F2): `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor` emit the 3 `builtin_console_*` LIR (see the Builtin Console table above). `@isWindows()` folds via the comptime-values path (`lower.zig:2703-2724`, emits `int_const` typed `TYPE_BOOL`) and never produces a runtime LIR inst. **[REMOVED 2026-09-04 (netbind S3, `838009b0`)] Socket builtins — the 11 `@socket*` builtins and their `builtin_socket_*` LIR variants (lir.zig:89-99) are deleted (a direct caller now fails `error[3000]: unsupported builtin function`, rc=2, 0 `.c`); networking is now the std_net extern surface (target-selected wsock32/libc, WSAStartup init, createTcpClient). Pre-removal F6 record (2026-08-13):** (`lower.zig:2949-3046`, F6) `@socketCreate`/`@socketBindListen`/`@socketAccept`/`@socketConnect`/`@socketSend`/`@socketRecv`/`@socketSelect`/`@socketFdZero`/`@socketFdSet`/`@socketFdIsset`/`@socketClose` emitted the 11 `builtin_socket_*` LIR (lir.zig:89-99, the F6 phase-2 variants, deleted with the builtins). **[F3 line-ref pass 2026-08-13: I/O/console/socket arm ranges corrected — :2821-2858→:2890-2928, :2860-2878→:2929-2948, :2880-2977→:2949-3046 (F4's +69 lines shifted the block).]**
+**Undeclared-identifier interaction** `[updated: 2026-09-22 — Task 6F]`. An undeclared identifier — including one used as a call callee — is now diagnosed in semantic analysis by `semanticAnalyzerResolveIdent` (`error[3001]`, code 20, with a real `file:line:col` span). The post-sema `hasErrors` gate exits rc=2 with 0 `.c` before `phase_LIRLowering`, so the Task 6D variant-C `error[3056]` path and the Task 6B `error[3042]` path are never reached for an undeclared callee and are unchanged. A call whose callee is a **declared** non-function value still lowers and emits `error[3056]`; a declared base with an undefined member (`std.nope()`) still emits `error[3042]` (+ `warning[3023]`).
 
-**`@intCast` range-check (F1, 2026-08-06):** the explicit `@intCast` builtin handler
-(`lower.zig:2686-2703`) now computes `is_checked` from the source/target widths
-(`intCastTypeBits`) and signedness (`intCastTypeIsSigned`): `chk=1` when
-`src_bits > dst_bits` (narrowing) OR `src_bits == dst_bits` with differing
-signedness (same-width reinterpret); widening and same-signedness same-width are
-left unchecked. The checked arm emits `int_cast{ is_checked=1 }`, which c89_emit
-renders as the range-checked `__bootstrap_<DST>_from_<SRC>` helper call. Coercion
-sites (`lower.zig:955`, `:4379`, `:4387`) keep `is_checked=0`.
+### Builtins
 
-### Bootstrap-to-Builtin Mapping — I-RT inventory [updated: 2026-08-08]
+`print()` is special-cased: it emits `print_str` for each format-string segment and `print_val` per argument. **Task 3 validator:** before each `.print_val` the placeholder's specifier is parsed with an explicit-vs-`{}` flag, then `printFmtCheck` validates the argument's static type (sema's resolved type; lowered temp type fallback) against the spec §6 / frozen-table decision boundaries and emits one diagnostic at the argument node when it rejects: `error[3013]` `ERR_3013_INVALID_PRINT_SPECIFIER` for a Zig-rejected spec/type mismatch (non-u8 integer-like `{c}`/`{s}`, float/enum `{c}`/`{s}`, bool `{d}`/`{x}`/`{c}`/`{s}`, `u8 {s}`, `{}`/`{c}`/`{d}` on `[]const u8`, all specs on a non-u8 slice, explicit aggregate/error-set specs, pointer/many-pointer/fn-pointer specs) and `error[3063]` `ERR_3063_PRINT_TYPE_NOT_SUPPORTED` for a type with no `std.fmt` printer (`[N]T`, `?T`, `E!T`, function-body values, `undefined`, exotic kinds, primitive-type values) or an operator-ruled Q3 bounded residual (`{}` on `void`/`null`/`type`; `[]const u8 {x}`; `[N]u8 {s}`/`{x}`; `*const [N]u8 {s}`/`{x}`). A `{}` placeholder is *not* the explicit `{d}` (aggregates and error sets accept the former, reject the latter); unknown specifiers keep the existing fmt-span `error[3013]` and skip the type check (no double-report); `printFmtReject` dedupes per argument node via `diagnosticCollectorMarkNodeOnce`. The argument lowering is guarded (`pv != TEMP_NONE and pv < hoisted_temps.len`; the emitted `.print_val` keeps its old dispatch type, validation defaults to `TYPE_VOID`) — a `void`-valued call argument previously dereferenced the temp table unguarded and SIGSEGV'd. **Task 4 aggregate closure:** a `{}` on `struct`/`union`/`tagged_union`/`tuple`/`packed_union` is accepted only when every value the generated printer would read has a final field route — `printFmtAggFieldsOk`/`printFmtAggFieldKindOk` recurse over fields/elements accepting integer-like (minus `enum`), `bool`, `f32`/`f64` and nested aggregates, with packed aggregates restricted to scalars ≤32 bits; an untagged auto `union` is accepted unconditionally (its printer never reads a field). Anything else (`enum`/`error_set`/pointer/array/slice/optional/error-union/void/… fields) rejects the aggregate ARGUMENT with `error[3063]` — a documented bounded residual (Tasks 5/6 extend the closure for enum/error-set and pointers; arrays/slices/optionals/error-unions have no owning task). **Fix round 1 (R8):** a packed struct / packed union field nested inside another aggregate is rejected too — the printer would walk the pre-existing broken packed-VALUE C model (`error[3063]`; Zig accepts and prints `.{ ... }`). **Task 5 closure extension:** `printFmtAggFieldKindOk` now accepts an enum field (prints `.member` via the generated name printer) and an error-set field (prints `error.Name`); a packed enum/error-set field stays rejected (`error[3063]`, the Task-4 packed residual). Each `.print_val` also records `implicit` (1 for a bare `{}`): the emitter uses it to send a bare top-level enum to the name printer, while explicit `{d}`/`{x}` stay numeric. **Task 6 closure extension:** `printFmtAggFieldKindOk` accepts pointer / many-pointer / fn-pointer fields (`printFmtPtrRouteOk`: a ONE-pointer aggregate/enum pointee delegates, otherwise — and always for a many-pointer — a name-route child; a one-pointer-to-array field stays rejected as the slice residual), and the pointer ARGUMENT arm of `printFmtCheck` accepts `{}` on a non-array one-pointer only when `printFmtPtrPointeeOk` proves the emitter can print it — a composite child name that contains a NAMED struct/enum/union (`*?S`, `**S`, `*?E`) rejects `error[3063]` (Zig container-qualifies those names, e.g. `main.S`). **Fix round 1 (Critical 1):** the `is_many` gate also rejects a many-pointer FIELD to a named aggregate/enum/tuple/packed (`[*]S`/`[*]E`) with `error[3063]` — Zig's `.many, .c` arm is `printAddress`, so no delegation ever applies; `[*]i32` still prints `i32@addr`. The predicate trio mirrors `c89_emit.zig`'s `zigPrintNameAppend`; an enum / `integer_literal` name component is explicitly false there (the emitter has no enum-name arm). **Task 7 closeout (2026-09-25):** the z98-print-formatting program is complete (Tasks 1-6 landed, whole-set review done); the binding user-facing per-type route table and the consolidated bounded-residual list live in `docs/reference/Language_Spec_Z98.md` §4 "Formatted `print`". **Task 8 (Amendment 1, B2):** `printFmtPointeeNameOk` is now byte-budget-aware — it accumulates the exact `@typeName` byte count through `printFmtPointeeNameLen` (mirroring `zigPrintNameAppend`, including the trailing `@` the emitter appends) and rejects `error[3063]` when the name would overflow the emitter's `kZigPrintNameCap = 512` buffer; previously a >511-byte name (e.g. a large `error{...}` or a many-param `fn (...)` name) passed validation and the emitter silently emitted nothing (rc=0, no diagnostic, `p=` with no value). The emitter's append failure is now a defensive `@panic`. The 16 pointer-chain depth cap is unchanged. **Task 9 (Amendment 1, B4):** the pointer-to-array sub-path reads the pointee array payload's element type to separate `*[N]u8 {s}`/`{x}` (3063, the Q3 residual) from `*[N]T {s}`/`{x}`/`{}` (3013); that `array_items[pty.payload_idx].elem` read is now guarded by `payload_idx < reg.array_len` (the `types_len`-style guard the neighbouring pointee read already used) — the registry invariant makes the index always valid, so the guard is defensive and every well-formed registry entry keeps its exact decision. Guard probe `repro/mi_matrix/print_fmt_ptrarray_guard_reject_xmod`. **Task 10 (Amendment 1, B8):** every emitted `.print_val` also sets `SemanticContext.print_value_lowered`; `phase_LIRLowering` (doc 09) uses it to report a missing auto-imported `std_fmt.zig` (the same `error[3048]` the import path used) only when a print VALUE was actually lowered — a `print("literal", .{})` needs only the C-runtime `std_print`, and an unrelated identifier named `print` no longer fails a lib dir without std_fmt.zig. The flag is data-only; emitted C is unchanged.
 
-Per the std-lib migration plan (`.superpowers/plans/2026-07-31-std-lib-migration-plan.md`, I-RT
-task), the example-facing `__bootstrap_*` I/O wrappers in `sf/src/include/zig_runtime.c` become
-compiler builtins; the compiler-internal cast helpers and the `std_print*`/`std_panic` general
-runtime STAY. Full inventory: `.superpowers/sdd/I-RT-report.md`.
+**FD1 (Volume II D7/D13, 2026-09-26): container validation.** The print arm now requires exactly two arguments (`ec_n == 2`; `print` is variadic, so sema alone only enforces the fixed first parameter) and `lowerPrintFmt` gates the container kind BEFORE its first `astStoreNodeExtraChildCount` read: only a `tuple_literal` (or the parser's equivalent empty anonymous `struct_init` `.{ }`, which carries no base and no field inits) takes the literal decomposition path. Any other container (bare value/variable/expression/nested call/typed or anonymous struct init/array init) emits one level-0 `error[3065]` `ERR_3065_PRINT_CONTAINER_NOT_TUPLE` (`print arguments must be a tuple literal`) at the container node, deduped per node, and lowers nothing; `ec_n > 2` emits the existing `error[3061]` (`expected 2 argument(s), found N`) at the call span. Before the gate, the unwitting extra-child read reinterpreted the container node's payload as an `extra_ranges` index — the D7 silent argument drop, misattributed `error[3013]`/wrong values, and the unbounded `lowerPrintFmt` re-entry SIGSEGV (D13/S01) when the accidental child was the print call itself; the gate makes that re-entry structurally impossible. Tuple variables are spec-legal but stay an interim `error[3065]` until FD2 implements their element reads. Fixtures: `repro/mi_matrix/print_nontuple_container_reject_xmod` (13 x `error[3065]` + 1 x `error[3061]`, including the `.{ }` and `.{ 7, 8 }` controls), standalone `repro/print_nontuple_container.z98`; `lowerPrintFmt` literal-path emission is byte-identical (4-MD5 emitted-C UNCHANGED).
 
-**The lowerer's two print paths.** The Z98 `print()` builtin (`lower.zig:375`) lowers to
-`print_str`/`print_val` LIR, which c89_emit renders as direct `std_print(...)` /
-`std_print_<type>(...)` calls (`getPrintFnName`, c89_emit.zig:3015) — NOT the `__bootstrap_*`
-wrappers. The `__bootstrap_print*` aliases are resolved only at LINK time for example-facing
-`extern fn` declarations. So builtin migration removes the *example extern → zig_runtime.c alias*
-path; the `print_str`/`print_val` → `std_print*` path is untouched.
+**FD2 (Volume II print tuple variables, 2026-09-27): variable-container element reads.** `lowerPrintFmt` classifies a non-literal container whose sema-resolved type is a registry `tuple_type` as the variable path; anything else keeps the FD1 `error[3065]`. The variable path has no element AST nodes: the container expression is lowered once through `lowerExpr`, lazily on the first placeholder it serves (a placeholder-free fmt does not evaluate it), and each placeholder reads element `ai` through FB's `lowerTupleElemRead` (`typeRegistryTupleElem` + the shared `load_field` tuple arm), emits `.print_val{ .value = elem, .type_id = elem_tid, ... }` and skips `lowerPrintArgExact`. A placeholder beyond the tuple arity stays silently dropped (the literal path's `ai < extraChildCount` equivalence); validation calls `printFmtCheck` at the container span with the element type and suppresses the resolved-type override (there is no element node). The literal path is untouched (all emitted C byte-identical) and every non-tuple container keeps 3065. Fixtures: positive `repro/mi_matrix/stdlib_print_tuple_var_ok_xmod` (14 rows: basic/specs/char/slice/float/bool/enum/nested/struct/call-result/field/alias/cross-module/placeholder-free; rc 0, 3x byte-exact, Zig-0.15.2 twin byte-identical; stdlib pin 258 -> 259) + standalone `repro/print_tuple_var.z98`; `S01_print_nontuple_args/red_tuple_var.zig` RED -> GREEN (`tuple-var=7 8`); the FD1 reject fixtures are unchanged (the interim tuple-variable row inside `print_nontuple_container_reject_xmod` now compiles, so its live census is 12 x `error[3065]` + 1 x `error[3061]`). 4-MD5 emitted-C UNCHANGED 8/8; fixed point `ce9906b62cb2b9ab7522d8cfafcf3cc9` -> `115c716c67db7040c0c765dd15795713` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated).
 
-| `__bootstrap_*` (zig_runtime.c:line) | Signature (C) | Consumers | Disposition |
-|---|---|---|---|
-| `__bootstrap_print` :67 | `void (const char* s)` | 20+ z98 examples (hello, quicksort, sort_strings, json_parser, mud/gol/lisp std_debug.zig, rogue_mud…) | → `std.io.print` (std_io.zig `@stdoutWrite` walk) — **REMOVED (F4)** |
-| `__bootstrap_print_int` :68 | `void (int n)` | 15+ z98 examples (printInt wrappers, lisp `.Int`, rogue_mud HP/pos) | → `std.io.printInt` (std_io.zig itoa) — **REMOVED (F4)** |
-| `__bootstrap_print_char` :69 | `void (int c)` | rogue_mud ui.zig:161 (unused decl) | → `std.io.writeByte` — **REMOVED (F4)** |
-| `__bootstrap_panic` :70 | `void (const char*, const char*, int)` | cast helpers (this file + zig_runtime.h static copies) | **REMOVED (F4)** — cast helpers repointed to `std_panic(msg)` directly (operator ruling m0564) |
-| `__bootstrap_write` :71 | `void (const char*, unsigned int)` | json_parser, rogue_mud `__bootstrap_print_bytes` | → `std.io.write` — **REMOVED (F4)** |
-| `__bootstrap_sleep_ms` :72 | `void (unsigned int)` | game_of_life (sleep 100), oracle examples | → `std.io.sleepMs` (`@sleepMs`) — **REMOVED (F4)** |
-| 19× `__bootstrap_<DST>_from_<SRC>` :121-208 | per-pair `DST (SRC)` (see below) | zig1's c89_emit checked `int_cast` arm (isBootstrapHelperDefined, c89_emit.zig:2973-3013); also zig0-emitted compiler binary | **STAY** (compiler `@intCast` runtime; now panic via `std_panic`) |
+**FB2 (Volume II inferred tuple-element typing, 2026-09-27): exact element carriers.** `lowerPrintArgExact` is generalised to `lowerExactIntArg` (same body; the print-argument literal route and the inferred-tuple construction arm are its two callers) and the `tuple_literal` construction arm (`lowerExprImpl`, `tuple_type` branch) now tries it per element before `lowerExpr`: an exact untyped integer element materialises as a fact-carrying `int_const` temp (its semantic width/signedness is recorded on the record by `lowerUntypedIntFacts` — the C carrier i32/u32/i64/u64 is derived from those facts by `c89_plan.deriveConstCarrier` at the boundary; `c89_plan.untypedIntCarrier` is DELETED), so a negate element such as `-3000000000` is computed exactly instead of in a 32-bit temp (`._1 = -zT_u32` wrapped before); in-i32 elements return `TEMP_NONE` and keep the legacy lowering (byte-identical C), and a literal-only exact value outside the 64-bit window still reports `error[3000]` via `reportComptimeIntFits`. The `print` variable path is untouched (its element temp type comes from the tuple registry type sema chose); sema guarantees the tuple field type and the recorded facts agree, because `lowerUntypedIntFacts` reproduces the exact `comptimeIntUntypedType` class windows. Fixed point `115c716c…` -> `416f0932e2e164fb4c04013d3fda549d` (hop1 == hop2, explicit gate; seed v88 NOT rotated); 4-MD5 emitted-C UNCHANGED 8/8; all 119 tuple-using corpus/example dirs emit byte-identical `.c`/`.h` PRE<->POST.
 
-**F4 (2026-08-08) — std-lib migration COMPLETE.** All 6 example-facing wrappers are removed from
-`sf/src/include/zig_runtime.c`/`.h`; the 21 z98 examples were migrated to `std.io`
-(`std.zig`/`std_io.zig` root package; per-example local copies resolved via `@import("std.zig")`,
-the F3 std_arena precedent — bare `@import("std")` needs a resolver search-path feature, out of
-scope). `__bootstrap_panic` was removed AFTER the 19 cast helpers (both `zig_runtime.c` defs and
-`zig_runtime.h` static copies) were repointed to `std_panic("integer cast overflow in @intCast")`
-(m0564). Verified: all 21 examples dump rc=0; 19/21 link+run (lisp_interpreter gcc `zT_N`
-defect + rogue_mud D4 plat-stub link block are pre-existing); 4 MD5 gates re-baselined with
-runtime-proof (AMENDMENT B).
+**FB2 fix round 1 (2026-09-27): void struct-field reads reject.** Sema's transient fallback (`semanticAnalyzerTupleElemVoidIsUnresolvedRef`) matched every `field_access`, so an element reading a `void` STRUCT FIELD (`const t = .{ s.v, 1 }`, with `struct { v: void, a: i32 }`) was typed i32 and FD2's variable path accepted it; lowering produced no temp for the void field read, so `print` emitted `'zT_N' undeclared` C (dump rc 0 / gcc fail; the literal container path already rejected 3063). The fallback is narrowed to bare (parenthesized) idents and MODULE/`@import` member references (new helper `semanticAnalyzerTupleElemFieldBaseIsModule`); a value-base field read keeps `void`, `lowerTupleElemRead` returns `TEMP_NONE` and `printFmtCheck` rejects `error[3063]` on both print paths. Lowering code is unchanged. Reject fixture `tuple_elem_type_reject_xmod` gains local/global/parameter void-field rows (census 8 -> **12 x `error[3063]` + 2 x `error[3000]`**) + standalone `repro/print_tuple_void_field_reject.z98` (4 x 3063); positive control `repro/void_field_ok.z98` (`ok=7 7` / `gok=9 1`, Zig-twin-equal) pins the legal void-field struct use.
 
-**Builtin signatures (plan catalog, Option B):** `@putChar(c: u8) void`,
-`@stderrWrite(buf: [*]const u8, len: usize) void`, `@getChar() u8`, `@exit(code: u8) noreturn`,
-`@sleepMs(ms: u32) void`, `@stdoutWrite(buf: [*]const u8, len: usize) void` (added by operator
-ruling m0564 — the I-RT concern-3 flag), `@isWindows() bool` (comptime), `@consoleClear() void`,
-`@consoleGotoxy(x: i32, y: i32) void`, `@consoleSetColor(fg: i32, bg: i32) void`, then 11
-`@socket*` in Phase 2. **F1 (2026-08-08) IMPLEMENTED the first 6:** `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` are live in sema (`semantic_analyzer.zig:1383-1398`),
-lower (`lower.zig:2821-2858`, the 6 `builtin_*` LIR), and c89_emit (`emitBuiltinIncludes` +
-`emitFwriteCall` + the 6 emission arms). `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/
-`@exit` are portable (stdio/libc); `@sleepMs` uses `#ifdef _WIN32` `Sleep(ms)` / `#else`
-`usleep(ms*1000)` (preprocessor-guarded C emission, never comptime), matching the zig0-oracle
-runtime body. Guarded repro: `repro/mi_matrix/io_builtin_test`.
+`@ptrCast`/`@volatileCast` emit `ptr_cast`; `@intCast` emits `int_cast` or, under `-fsafe` when a narrowing or sign-change check is required, `int_cast_checked`; a one-argument `@intCast(expr)` (Task 7) is lowered as its operand value (sema's single-argument builtin fallback types it as the operand type; the consumer applies any contextual conversion), fixing the undeclared `zT_<n>` (gcc) emission; `@floatCast` emits `float_cast` (a direct C-style cast, no runtime check, both directions); `@intToFloat` emits `int_to_float`; `@ptrToInt`/`@intFromPtr` emit `ptr_to_int`; `@intToPtr`/`@ptrFromInt` emit `int_to_ptr`; `@bitCast` resolves the target type and emits `int_cast`; `@enumToInt` forwards the value as-is; `@intToEnum`/`@as` emit `int_cast` to the target. `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf`/`@bitOffsetOf` resolve through the comptime-values table; a fold miss is a clean level-0 `error[3074]` fallback (FF/D9 — sema already rejects every miss with `error[3072]`/`[3073]`/`[3074]`, and the old `error[3043]` ICE is gone). `@fieldParentPtr` computes the outer pointer via `ptr_to_int`/`sub`/`int_to_ptr`.
 
-**F2 (2026-08-08) IMPLEMENTED the 3 console builtins + `@isWindows`:** `@consoleClear`/
-`@consoleGotoxy`/`@consoleSetColor` are live in sema (`semantic_analyzer.zig:1429-1440`),
-lower (`lower.zig:2929-2948`, the 3 `builtin_console_*` LIR), and c89_emit (see 08 §Builtin
-console emission) with `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guards. `@isWindows()`
-folds in `comptime_eval.zig` (module const `host_is_windows`, currently `false`; 1-bit
-`ComptimeVal` 0/1) → `phase_ComptimeEvaluation` populates `comptime_values` → the lowerer emits
-`int_const` (`TYPE_BOOL`) and the comptime branch folding below drops the dead branch. Guarded
-repro: `repro/mi_matrix/console_builtin_test`.
+**Comptime-values HIT (fold consumer; Task 4 rewrite).** The `builtin_call` arm checks `comptimeFoldTableGet(ctx.comptime_folds, node_idx)` before any runtime dispatch. On a hit: a `KIND_FLOAT` entry emits `float_const` at the resolved `f32`/`f64` target (the f64 bit pattern is reinterpreted via a pointer — Z98 `@bitCast` is integer-only; the 11D/11U target-recovery rules are unchanged); a `KIND_BOOL` entry (`@isWindows`) materialises 0/1 at a `TYPE_BOOL` temp; a `KIND_INT` entry uses the resolved target (default `TYPE_USIZE`) and — Task 4 — range-checks a concrete integer target exactly (`error[3000]` on failure, dummy temp) before emitting `int_const(comptimeIntMaterialize(v))`. The `@intCast`/`@as` target recovery (`[target_type, value]` layout, Task 11U/8B) is unchanged. A miss falls through to the runtime builtin forms below.
 
-**F6 (2026-08-13) ADDED the 11 socket builtins — REMOVED 2026-09-04 (netbind S3, `838009b0`):** the
-11 `@socket*` builtins and their `builtin_socket_*` LIR variants are deleted (a direct `@socket*`
-call now fails `error[3000]: unsupported builtin function`, rc=2, 0 `.c`); networking is now the
-std_net extern surface (target-selected wsock32/libc, WSAStartup init, createTcpClient). Pre-removal
-F6 record: (`lir.zig:89-99`, `lower.zig:2880-2977`)
-`@socketCreate`/`@socketBindListen`/`@socketAccept`/`@socketConnect`/`@socketSend`/
-`@socketRecv`/`@socketSelect`/`@socketFdZero`/`@socketFdSet`/`@socketFdIsset`/`@socketClose`
-emitted the 11 `builtin_socket_*` LIR (phase-2 variants), lowering each call's value args to
-operand temps (fd = i32, port/backlog/len/timeout = u32; the select fd-sets are optional
-`?[*]u8` operands). The C emission ported net_runtime.c 1:1 (see 08 §6.9). Guarded repro
-(pre-removal): `repro/mi_matrix/net_builtin_test` — now the GREEN negative probe.
+**Variadic builtins**: `@cVaStart`/`@cVaArg`/`@cVaEnd` emit `va_start`/`va_arg`/`va_end`; `@cVaStart` in a non-variadic function emits `error[3012]`, as does a variadic function with zero fixed params.
 
-#### Comptime branch folding (F2, 2026-08-08) — `[updated: 2026-08-08]`
+**Core I/O builtins**: `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@sleepMs` emit the six `builtin_*` ops; `@exit` sets `block_terminated = 1` (noreturn). `@panic` emits the `"panic: "` prefix, the message, a newline, and a `trap`, and marks the block terminated. **Console builtins**: `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor` emit the three `builtin_console_*` ops. `@isWindows()` folds via the comptime-values path and never produces a runtime op. There are no socket builtins; networking is the `std_net` extern surface (see 10_c_runtime).
 
-`if` statements (`lower.zig:3768-3790`) and `if` expressions (`lower.zig:3069-3083`) now check
-`comptime_values` for the condition node before lowering: a comptime-known condition (0 or
-nonzero) lowers ONLY the active branch — no `branch` inst, no empty blocks, and for `if_stmt` no
-then/else/join blocks at all. Guarded against `if_capture` (`node.payload != 0` falls back to the
-runtime path). This is what makes `if (@isWindows()) {…} else {…}` emit only the active branch.
-Caveat: the folding is generic — any comptime-known condition (e.g. `@sizeOf(u32)` in an `if`)
-folds too (Zig-correct; corpus-verified no emitted-C change outside `console_builtin_test`).
-
-**`@intCast` cast-helper table (all STAY):** `usize_from_i64` :121, `i32_from_u32` :126,
-`u32_from_u64` :131, `u32_from_i32` :136, `usize_from_i32` :141, `i32_from_usize` :146,
-`u8_from_usize` :151, `u8_from_bool` :156, `f32_from_f64` :160, `i32_from_u8` :164,
-`u8_from_i32` :168, `u8_from_u32` :173, `u16_from_i32` :178, `u32_from_i64` :183,
-`u64_from_i64` :188, `i8_from_i32` :193, `i16_from_i32` :198, `i32_from_i64` :203,
-`c_char_from_u8` :208. Also defined `static` in `zig_runtime.h` (per-TU; message
-`"integer cast overflow in @intCast"`). `getCheckedCastFnName` (c89_emit.zig:2940) and the 8
-`std_checked_cast_*` (upper-bound-only, `zig_runtime.c:76-113`) are **dead** in the current
-emitter — F1 (2026-08-06) switched checked casts to the per-pair helpers.
+**Async builtins**: `@asyncFrameSize` resolves the callee's published frame size and emits an `int_const`. `@asyncInit` initializes the caller-provided Context header (`used = 0`, sticky `oom = 0`), optionally emits a `-fsafe` `check_trap{kind=7}` when the buffer's pointee array size is compile-time known and smaller than the frame, then calls the shared frame-init helper (`async_state_machine.asyncEmitFrameInit`). `@asyncResume` loads the frame's step word, emits a `-fsafe` `check_trap{kind=4}` (null-unwrap), converts it to a generic step fn pointer, and emits an indirect `call` with the frame and the optional argument. `@asyncSuspend` lowers to a null `?*void` (the suspension itself is realized by the async transform).
 
 ### Control Flow
 
-#### If Statement `sf/src/lower.zig:3220`
+#### If Statement
 ```
 lowerExpr(cond) → cond_temp
 If optional type → .check_optional to extract has_val
@@ -656,46 +551,133 @@ emitInst(.branch{ cond_temp, then_bb, fallthrough_bb })
 → join_bb
 ```
 
-#### If Expression `sf/src/lower.zig:2636`
-Same pattern as if-statement but with `result` temp that both branches assign into.
+A comptime-known condition (from `comptime_folds`, guarded against `if_capture`) lowers ONLY the active branch — no `branch` inst and, for `if_stmt`, no then/else/join blocks. This is what makes `if (@isWindows()) {…} else {…}` emit only the active branch.
 
-#### While Statement `sf/src/lower.zig:3302`
+`[updated: 2026-10-17 — D2 root fix (T3, comptime-if folding; spec §3): the untaken arm is NOT lowered. The trigger is the same narrow set sema gates on (`semanticAnalyzerIfComptimeCondition` — see doc 05): `comptime_folds` KIND_BOOL hits (`@isWindows()`, comptime `const`/constant folds), literal `true`/`false`, and sema's local-const stamps; `if_fold` (statements) / `ie_fold` (expressions) eliminate the untaken arm so sema and lowering ALWAYS agree on which arm exists (sema/lowering coherence — lowering never walks an arm sema left un-analyzed). Supersessions: (1) the If-Expression bullet's "skips the shortcut entirely when the if_expr's resolved type is `TYPE_NORETURN`" second-line guard is GONE — a noreturn-typed folded `if` now takes the one-arm path too (live arm via `lowerIfArmValue`, block marked terminated, no result materialised), which is what makes `if (true) return 5;`-style dead-arm elimination safe; (2) else-less ifs fold as well (Variant B, `3583668b`). Runtime conditions, captures and noreturn-UNTYPED non-fold paths are untouched. Downstream: the module-closure edge (a dead module's `__module_init` is not emitted — `prune_active`, docs 08 §6.2 / 09) and conditional-`@import` (below) ride the same fold. Fixtures `iswindows_deadarm_*` / `comptime_if_noelse_deadarm_xmod` green.]`
+
+`[updated: 2026-10-17 — conditional `@import` (T4, spec §4): an `import_expr` in expression position LOWERS TO NO VALUE (module identities are compile-time only), and so does an `if`/`switch` whose resolved type is `module_type` — the comptime-selected import idiom `const impl = if (@isWindows()) @import("a.zig") else @import("b.zig");`. `lowerModuleInit` skips such module-alias initializers exactly like a bare `@import` init (no garbage store into the binding's storage slot; the DECL stays `int`-typed — doc 05), and `resolveModuleBase` folds the initializer through the shared comptime table so `impl.member` resolves to the LIVE module's member. Fix commits `a7828e5e`/`d568880c`.]`
+
+#### If Expression
+Same pattern as the if-statement, with a `result` temp both arms assign into — **except** `[updated: 2026-09-23 — Task 9D]:`
+- A **void-typed** `if_expr` (`ie_rtype == TYPE_VOID`) is not a value producer: no `result` temp is
+  allocated (the previous code called `nextTemp(TYPE_VOID)`, which records a void-typed temp that
+  `emitHoistedDecls` never declares while the arm assigns still referenced it — gcc
+  `'zT_<n>' undeclared`); the then/else arm materialize+assign steps are guarded; and the join
+  returns `TEMP_NONE`, the established "no value" sentinel `plain_assign` checks (it returns without
+  emitting an assign for an unresolvable RHS — the `_ = if (c) foo();` discard case).
+- The `else` arm is lowered **only when `node.child_2 != 0`**. An absent `else` is reachable only
+  when sema proved the condition comptime-true (the then arm is the sole analyzed arm), so no value
+  is needed; the else block still jumps to the join. This removes the old `lowerIfArmValue(self, 0)`
+  call that lowered node 0 to a bogus temp (Task 9B's silent miscompile).
+- The comptime-fold sub-path (`comptime_folds` HIT, capture-free) gets the same void handling and
+  the same `child_2 != 0` guard. `[updated: 2026-09-23 — Task 3 fix round 1 (Critical)]:` the
+  sub-path now also handles a **terminating arm**: it lowers the arm with `lowerIfArmValue` (which
+  `lowerStmt`s a `return`/`break`/`continue`) and, when the arm set `block_terminated`, returns the
+  "no value" sentinel **without** materialising a result or emitting the assign — the caller sees
+  the terminated block and skips its store. It also skips the shortcut entirely when the if_expr's
+  resolved type is `TYPE_NORETURN`. Before this, `const x: i32 = if (true) return 5;` took the fold
+  shortcut, lowered the `return` arm as a VALUE (`lowerExpr` has no statement arm) and left `x`
+  uninitialised (`int zT_1; int x; zT_1 = x; x = zT_1; return x;`); the pre-Task-3 compiler (no
+  stored condition, so the normal path ran) printed `5`.
+- `return_stmt`'s `hoisted_temps[val]` deref is guarded against `TEMP_NONE` so a void value-`if` in
+  return position cannot read out of bounds. A direct void call in return position (`return foo();`)
+  is lowered as a tail call and **compiles+runs** (pre-9D it segfaulted the compiler — the guard's
+  beneficial side effect, kept). `[updated: 2026-09-24 — Task 8]:` the two residuals named here are
+  now fixed. (i) `_ = foo();` (a discarded void call) lowers the expression, then `plain_assign` sees
+  the direct call's no-result `0` marker with a void-typed RHS and skips the l-value store: pre-fix
+  the `getTempType(self, 0)` probe ICEd `error[3043] invalid temp index 0` while the temp table was
+  still empty, and with a non-empty table it emitted a spurious `(void)zT_0;` naming an unrelated
+  temp. (ii) `return_stmt` now checks for the `TEMP_NONE` void sentinel before emitting `.ret` and
+  calls `emitValuelessReturn` instead (`.ret_void`, or the `wrap_error_ok` of a void payload when the
+  function returns an error union), so `return if (c) foo();` in a void function emits a plain
+  `return;` rather than `return zT_4294967295;`. (iii) fix round (operator ruling — fix the review's
+  Important now): `lowerExpr`'s coercion wrapper now skips the recorded coercion when the lowered
+  result is the `TEMP_NONE` sentinel, so a void value-`if` carrying a recorded `void -> !void` (or
+  `?void`) coercion is returned to its consumer uncoerced; pre-fix `applyCoercion` ->
+  `materializeInto` dereferenced the sentinel with `getTempType` and `fn f(c: bool) !void { return
+  if (c) foo(); }` ICEd (`error[3043] invalid temp index 294967295`) before `return_stmt` ran. The
+  consumer (`return_stmt`) then emits the normal valueless return / EU(void) `wrap_error_ok`. A void
+  `catch` block that lowers to a real temp (e.g. `_ = writeCoreDump(...) catch {};`) keeps its
+  pre-existing store — a separate shape.
+
+#### While Statement
 ```
 createBlock(cond_bb, body_bb, exit_bb, cont_bb)
-push LoopInfo{ header=cont_bb, exit=exit_bb }
+saved_label = current_label
+push LoopInfo{ header=cont_bb, exit=exit_bb, label_id=current_label }
+current_label = 0
 .jump(cond_bb)
 → cond_bb: lowerExpr(cond) → check_optional? → .branch{ cond, body_bb, exit_bb }
 → body_bb: bindCapture? → lowerStmtBody(body) → .jump(cont_bb) (if not terminated)
 → cont_bb: lowerStmtBody(incr) → .jump(cond_bb) (if not terminated)
-→ exit_bb: pop loop_stack
+→ exit_bb: pop loop_stack; current_label = saved_label
 ```
 
-#### For Statement `sf/src/lower.zig:3389`
+#### For Statement
 
 **Range for** (`range_exclusive`/`range_inclusive`):
 ```
 lowerExpr(start), lowerExpr(end)
-createBlock(cond_bb, body_bb, exit_bb)
-push LoopInfo
+createBlock(cond_bb, body_bb, exit_bb, step_bb)
+saved_label = current_label
+push LoopInfo{ header=step_bb, exit=exit_bb, label_id=current_label }
+current_label = 0
 .jump(cond_bb)
 → cond_bb: .binary{ LE/LT, start, end } → .branch{ cmp, body_bb, exit_bb }
-→ body_bb: lowerStmtBody(body) → nxt = start + 1; start = nxt → .jump(cond_bb)
-→ exit_bb: pop loop_stack
+→ body_bb: lowerStmtBody(body) → .jump(step_bb) (if not terminated)
+→ step_bb: nxt = start + 1; start = nxt → .jump(cond_bb)
+→ exit_bb: pop loop_stack; current_label = saved_label
 ```
 
 **Iteration for** (slice/array):
 ```
 lowerExpr(array/slice) → extract .ptr and .len
 idx = 0
-createBlock(cond_bb, body_bb, exit_bb)
-push LoopInfo
+createBlock(cond_bb, body_bb, exit_bb, step_bb)
+saved_label = current_label
+push LoopInfo{ header=step_bb, exit=exit_bb, label_id=current_label }
+current_label = 0
 .jump(cond_bb)
 → cond_bb: .binary{ LT, idx, len } → .branch{ cmp, body_bb, exit_bb }
-→ body_bb: .load_index{ ptr, idx } → item_temp; decl_local for capture → lowerStmtBody(body) → idx += 1 → .jump(cond_bb)
-→ exit_bb: pop loop_stack
+→ body_bb: .load_index{ ptr, idx, decay } → item_temp; decl_local for capture → lowerStmtBody(body) → .jump(step_bb) (if not terminated)
+→ step_bb: idx += 1 → .jump(cond_bb)
+→ exit_bb: pop loop_stack; current_label = saved_label
 ```
 
-#### Switch Expression `sf/src/lower.zig:3114` [updated: 2026-08-07]
+**Pointer-to-array iteration** `[added: 2026-09-27 — FI (operator ruling A)]`. When the pattern type is a
+`ptr_type` whose pointee is a fixed-size array, the element type is the pointee array's element and the
+length is the pointee array's compile-time length; the iterable temp (the `*[N]T` value) is `ptr_cast`
+to a `*elem` element pointer before the standard item loop, so the only emission difference from the
+plain-array path is that `ptr_temp` is a cast instead of the array decay. `for (p[0..1]) |v|` (the FH
+`*[1]T` result) therefore runs with the pre-FH shape, `for (p[0..0])`/`for (p[1..1])` iterate zero times,
+and direct/`*const`/explicit-range forms all behave like their array counterparts; the by-value
+array-row item copy is unchanged. Every non-array pointer pointee still leaves the item unresolved, so
+sema rejects before lowering; array/slice/range/many-pointer arms are untouched.
+
+**Mutable item capture** `[added: 2026-10-29 — Phase 2.5 T4]`. When the `for_stmt` `0x10` flag is set and a named capture is present, the lowerer reads the pointer type from the `for_stmt` node's resolved-type channel (published by sema; not `child_0`), validates it is a `ptr_type` whose base equals the element type, and panics on a channel violation (unreachable after sema). The item temp has that pointer type, is loaded by element address with `load_index{decay=2}` (`&base[idx]`), and is bound via `bindCapture`; there is no by-value array copy. Array-typed elements (row captures) override the item type to a non-const pointer-to-array (`typeRegistryGetOrCreatePtr(elem, false)`) so the C model prints the `Arr_*` row pointer instead of decaying a `*const [N]u8` to `unsigned char*`. Scalar and fn-pointer captures use the sema channel type (`*T`/`*const T`). The by-value path (`decay=0`, or `decay=3` for a row copy) is unchanged.
+
+**Explicit index range** (Task 11; `for (iterable, start..end)`): the pattern node is
+`AstKind.for_index_range` (child_0 = iterable, child_1 = start, child_2 = end or 0). The iterable
+lowers exactly as the plain iteration form above (same ptr/len extraction and `j < len` condition —
+the element sequence is always the whole iterable); the index capture is `start + j` (a `.binary ADD`
+inside `body_bb`), **not clamped** to the iterable (Zig 0.15.2 semantics). For an explicit end the arm
+first emits a checked `usize` span (`emitArith(CHECK_OP_SUB)`: `-fsafe` traps on `end < start`, Zig's
+integer-overflow panic) and, **under `-fsafe` only**, a `check_trap{kind=8}` on `span == len` (Zig's
+"non-matching for loop lengths" runtime panic; ReleaseFast/`-ffast` disables it, matching Zig). A
+comptime-known mismatch is rejected in sema, not here. **Evaluation order (fix round, review
+Important I1):** the header inputs are lowered in source order — iterable, then start, then end
+(matching official Zig); the pre-fix arm lowered start/end first, which was observable for
+side-effecting header expressions (`for (tickA(), tickB()..tickC())`). `[updated: 2026-09-24 — Task 11
+(Part II); fix round I1 adds the source-order guarantee.]`
+
+**Always-emitted step block (Task 10B).** Both `for` arms emit `step_bb` unconditionally — a `continue`
+from anywhere in the body jumps to it, and the fall-through jumps to it too, so the increment runs on
+every iteration (including a body that never falls through, e.g. a body whose last statement is
+`continue`). Registering `cond_bb` as the `continue` target instead (the pre-10B shape) skipped the
+increment whenever `continue` was taken (a silent hang). The labeled-block arm clears `current_label`
+for its body as well; its `LoopInfo{ is_loop=0 }` entry keeps the block's own label for `break :blk`.
+
+#### Switch Expression
 ```
 lowerExpr(cond) → cond_temp
 If TU → .load_field(TU_FIELD_TAG) to extract tag
@@ -709,81 +691,54 @@ for each prong:
 exit_bb
 ```
 
-**Switch case-collection loops** (expr `lower.zig:3167-3188`; stmt twin
-`lower.zig:3904-3926`; entry handlers `swt_ex` at `lower.zig:3114` expr / `:3872`
-stmt): each non-else prong's `case_ec` children are walked and a
-`SwitchCase{ value, target_bb }` is appended per case node. The case-value
-extraction handles **4 literal kinds**:
+**Switch case collection** (`lowerAppendSwitchCaseItem`): each non-else prong's `case_ec` children are walked and a `SwitchCase{ value, target_bb }` is appended per case node. The case-value extraction (`lowerSwitchCaseItemValue`) handles:
+- `int_literal` / `char_literal` → the literal's u64 value from `AstStore.int_values` at the node's payload index.
+- `range_inclusive` / `range_exclusive` → each endpoint is resolved through the same `lowerSwitchCaseItemValue` resolver, then expanded to individual case values (count ≤ 16384; `hi < lo` and empty-exclusive append nothing). **[FA-a (D2)]** enum endpoints therefore expand like int/char literals: `enum_literal` resolves through `enum_value_table` and, on a miss (sema never walks range endpoints), by member name against the condition enum via `lowerSwitchCaseItemMemberValue` (exact `member.value`, so `enum(uN)` gaps are right); `field_access` resolves the same way (enum member value or tagged-union field index). An unresolved endpoint (a negative-valued constant, a function-local const, a non-constant expression) appends nothing.
+- `enum_literal` → `enum_value_table[case_node]` ordinal via `u32ToU32MapGet`, falling back to a condition-enum member-name lookup.
+- `error_literal` → `error_code_registry` dense code via `u32ToU32MapGetOrAddDense`, falling back to the `enum_value_table` ordinal.
+- `field_access` → an enum member value or a tagged-union variant index, resolved against the switch condition's type; **FX16-F:** `enum_value_table[item_idx]` is consulted FIRST (the A+ `switch (s.tag)` ordinal recorded by sema for both shorthand and qualified prongs — the condition value stays the u32 tag), so the case label is emitted without a condition-type walk.
+- `ident_expr` (FX1) → an unqualified enum member name first, then a named constant through `lowerSwitchCaseItemConstValue` (`LO`, `PICK`); `bool_literal` (FX1) → 1 for `true`, 0 for `false`. A `field_access` whose member name does not match the condition type also falls through to the constant path (`mod.LO`, `mod.LOMEM`), and an enum-member constant's initializer chain is walked to the member name. Negative-valued constants and function-local consts stay unresolved (no case appended; spec §3.1).
 
-- `int_literal` → `case_val = store.int_values.items[@intCast(usize, case_node.payload)]`
-  (`lower.zig:3170-3171` / `:3909-3910`). The literal's u64 value lives in
-  `AstStore.int_values` at the node's `payload` index — `astStoreAddIntLiteral`
-  stores the value at the payload index (ast.zig:317-321).
-- `char_literal` → **same `store.int_values` payload access pattern** —
-  `astStoreAddCharLiteral` also stores the char's u64 code in `int_values` at the
-  payload index (ast.zig:323-327), exactly like int_literal. **FIXED (F1,
-  2026-08-07):** both loops now have a `char_literal` branch (`lower.zig:3172-3173`
-  expr / `:3911-3912` stmt) reading `store.int_values.items[@intCast(usize,
-  case_node.payload)]`, mirroring `int_literal` (Option A per the I1 ruling in
-  `.superpowers/sdd/I-char-switch-report.md`). Before F1, neither loop had it — a
-  char case node fell to `else { continue; }` at `lower.zig:3185` / `:3924` and
-  was silently dropped — `switch_br.cases_count` came out short and the C emitter
-  rendered only `default:` (symptom: `switch (c) { default: … }`, no `case 'a':`
-  label; runtime every input took the else prong). 12 `switch_char_*` repros in
-  `repro/mi_matrix/` gate it (all 12 now print their post-fix outputs).
-- `enum_literal` → `enum_value_table[case_node]` ordinal via `u32ToU32MapGet`,
-  falling back to the raw `payload` (`lower.zig:3174-3178` / `:3913-3917`).
-- `error_literal` → `error_code_registry` dense code via
-  `u32ToU32MapGetOrAddDense`, falling back to the `enum_value_table` ordinal
-  (`lower.zig:3179-3183` / `:3918-3922`).
+The `else` prong is identified by `flags` bit0.
 
-The `else` prong is identified by `flags` bit0 (`lower.zig:3163` / `:3899` skip;
-`:3194-3200` / `:3930-3936` set `else_target`).
+**[FE (D11)] capture binding by condition kind:** the prong-capture block branches on the condition
+type's kind. A `tagged_union_type` condition loads the selected field from `TU_FIELD_PAYLOAD` (as
+before). Any other condition — an enum, or any other resolved operand type — binds a fresh temp
+(`nextTemp` + `.assign`) holding a COPY of the switch operand value: Zig's operand-value capture
+semantics. The `tu_items[cond.payload_idx]` lookup is gated on `tagged_union_type`; an enum type's
+`payload_idx` is not a `tu_items` index, and the pre-fix unguarded read SIGSEGV'd the compiler (rc 139)
+on an unused-capture enum switch. An unused capture on either operand kind is crash-free. The statement
+form (`lowerStmtBody`) sets its `tu_type_box2` for every resolved condition type and applies the same
+kind gate.
 
-#### Return Statement `sf/src/lower.zig:3614`
+#### Return / Break / Continue
 ```
-expandDefers(0, 0)  // emit all pending defers
-lowerExpr(value) → .ret(val) or .ret_void
+return:   classify ret_is_error → expandDefers(0, ret_is_error, 0) → lowerExpr(value) → .ret(val) or .ret_void
+          dynamic EU + pending errdefer: lowerExpr(value) → .check_error → .branch{is_err, err_bb, ok_bb}
+            → err_bb: expandDefers(0, 1, 0) → .ret(val)   → ok_bb: expandDefers(0, 0, 0) → .ret(val)
+break:    expandDefers(exit_scope, 0, 0) → .jump(exit_target)
+continue: expandDefers(cont_scope, 0, 0) → .jump(header_target)
 ```
 
-#### Break Statement `sf/src/lower.zig:4010`
-```
-expandDefers(exit_scope, 0) → .jump(exit_target)
-```
+**Labeled break/continue:** `break :label` / `continue :label` read `node.payload` as `label_id` (0 = unlabeled). The unlabeled path keeps the top-of-stack jump; the labeled path scans `loop_stack` top-down for `LoopInfo.label_id == label_id` and jumps to that loop's exit/header. `LoopInfo.label_id` is stamped from `self.current_label` at all three loop-push sites; each loop arm then **clears** `self.current_label` while lowering its body and restores the saved value at arm end (the labeled-block arm clears it too), so a nested **unlabeled** loop is pushed with `label_id = 0` and cannot capture a labeled transfer — a labeled `break`/`continue` reaches the loop that actually carries the label (Task 10B; pre-fix the inner loop inherited the outer label and the search matched it first). `current_label` is set from a `labeled_stmt` node's payload in `lowerStmt` with save/restore around the `child_0` recursion. `break :label` out of a labeled **non-loop** block is unsupported — the break handler searches only `loop_stack`.
 
-#### Continue Statement `sf/src/lower.zig:4036`
-```
-expandDefers(cont_scope, 0) → .jump(header_target)
-```
+### Optional Unwrapping
 
-**Labeled break/continue — ACTIVE (F1, 2026-08-07, lower.zig:4012-4053):** `break :label` /
-`continue :label` read `node.payload` as `label_id` (0=unlabeled). The unlabeled path keeps the
-top-of-stack jump; the labeled path scans `loop_stack` top-down for `LoopInfo.label_id ==
-label_id` and jumps to that loop's exit/header. `LoopInfo.label_id` is now stamped from
-`self.current_label` at all 3 loop-push sites (lower.zig:3630 while, :3729 for-range, :3783
-for-slice), and `current_label` is set from a `labeled_stmt` node's payload in `lowerStmt`
-(lower.zig:3518-3524) with save/restore around the `child_0` recursion. Before F1, `label_id`
-was hardcoded 0 so `break :label` never matched → the labeled loop HUNG. Scope limit (matches
-plan): `break :label` out of a labeled **non-loop** block remains unsupported — the break
-handler searches only `loop_stack`.
-
-### Optional Unwrapping `sf/src/lower.zig:998`
-
-`bindOptionalCapture`: Takes an optional value, emits `unwrap_optional` to get payload, then `decl_local` to bind capture name.
+`bindOptionalCapture` takes an optional value, emits `unwrap_optional` (or `unwrap_optional_checked` under `-fsafe` for a non-void payload) to get the payload, then `decl_local` to bind the capture name.
 
 ### Error Union Handling
 
-#### Try Expression `sf/src/lower.zig:2469`
+#### Try Expression
 ```
 lowerExpr(inner) → inner_temp
 .check_error(inner_temp) → is_err
 .branch{ is_err, err_bb, ok_bb }
-→ err_bb: expandDefers(0, 1) → .ret(inner_temp) or rewrap → .ret(rewrapped)
+→ err_bb: expandDefers(0, 1, 0) → .ret(inner_temp) or rewrap → .ret(rewrapped)
 → ok_bb: .unwrap_error_payload(inner_temp) → payload → .jump(join_bb)
 → join_bb: return payload
 ```
 
-#### Catch Expression `sf/src/lower.zig:2524`
+#### Catch Expression
 ```
 lowerExpr(lhs) → lhs_temp
 .check_error → .branch{ is_err, err_bb, ok_bb }
@@ -792,7 +747,14 @@ lowerExpr(lhs) → lhs_temp
 → join_bb: return join_temp
 ```
 
-#### OrElse Expression `sf/src/lower.zig:2590`
+**[FE (D8)] capture type:** the `err_bb` capture temp and its `decl_local` are typed with the error
+union's `error_set` (`eu_items[payload_idx].error_set`), exactly the type sema registers for the
+`catch |e|` payload. The pre-fix hard `i32` made `.print_val` take the numeric route while the format
+validator checked the resolved error-set type, so `print("{}", .{e})` printed `1` instead of
+`error.Bar`. A bare `!T` union (`error_set == 0`) keeps the i32 fallback — a documented residual
+(anyerror is unusable today).
+
+#### OrElse Expression
 Same structure as catch but for `?T`:
 ```
 lowerExpr(lhs) → lhs_temp
@@ -802,7 +764,9 @@ lowerExpr(lhs) → lhs_temp
 → join_bb
 ```
 
-### Slice Expression `sf/src/lower.zig:2965`
+`[updated: 2026-10-05 — A9-F (Volume IV Amendment A9, operator m1740): the null branch's `materializeInto`/`.assign(join_temp)` is now skipped when `lowerBodyIsValueless` (the former `lowerCatchBodyIsValueless`, renamed and reused at both `catch` and `orelse`; a labeled block recurses through `child_0`) says the fallback yields no value and `block_terminated == 0`. Sema rejects the value positions, so the legal forms that reach lowering are the direct `_ = ...;` discard and a bare-statement expression; both previously assigned the undeclared `TYPE_VOID` temp into the join temp (`join = void_temp` → gcc `'zT_N' undeclared`) and now keep a declared-but-uninitialized join temp that is only `(void)`-cast. Valid value/diverging fallbacks are unchanged, so all 8 emitted-C pins stay UNCHANGED 8/8.]`
+
+### Slice Expression
 ```
 lowerExpr(base) → base_temp
 Extract ptr/len from array or slice: .load_field(SLICE_FIELD_PTR/LEN) or .ptr_cast(array→manyptr) + int_const(len)
@@ -810,8 +774,15 @@ If start: .binary(ADD, ptr, start) → offset_ptr
 If end: .binary(SUB, end, start) → new_len
 emitInst(.make_slice{ ptr, len, result, type_id })
 ```
+**[FH (D10), 2026-09-27]** When the node's resolved type is a pointer-to-array (only the legal `*T` slices produce one), the arm instead emits `.binary(ADD, base, start)` on the element-typed pointer (skipped when start is omitted, which is comptime 0) followed by `.ptr_cast{ value, target = resolved type }`; it returns that pointer and never emits `make_slice` or a length temp. **Superseded by FI (operator ruling A, 2026-09-27):** the `for` arm now iterates a `*[N]T` pattern type (see Control Flow §For Statement §Pointer-to-array iteration), so `for (p[0..1]) |v|` runs again with the pre-FH shape (`sum=42`); the FH review-round residual is closed.
 
-### Block Expression `sf/src/lower.zig:3148`
+**[FX5 (Volume II), 2026-09-28] `*[N]T` slices, open ends, runtime bounds, `pa.*[i]`.**
+- The base-kind setup gains a `ptr_type`-whose-pointee-is-array arm: the `*[N]T` temp is `ptr_cast`-ed to its element many-pointer FIRST (so a `start` offset scales by ONE element — the old `pa + start` scaled by the whole array), and the pointee length N becomes the static length temp (also the open-end `pa[s..]` effective end). A struct/union array FIELD (which decays to a `[*]T` temp) recovers its declared length from the base node's resolved type / `fieldStaticLenForBase`, so `h.arr[s..]` works.
+- Closed ranges emit `start <= end` and (when a length is known) `end <= len`; open ranges emit `start <= len`; `[*]T` has no length, so only `start <= end` is checked. The guard reuses `check_trap{kind=5}` (the index-out-of-bounds check; no separate slice trap exists) and is gated on `safe_checks`, so `-ffast` emits nothing. `emitSafeCheckSliceRange`/`emitSafeCheckSliceOpen` + `emitSafeBoundLeTrap` skip a comparison whose bound pair is comptime-decided (`sliceBoundComptimeI64` folds literals, arithmetic, module/qualified consts via `evalConstI64Full` + `foldPrintArgIntExact`); a comptime pair on a static-length base was already validated by sema's `error[3062]`.
+- `pa.*[i]` (read, store, compound, and `&pa.*[i]`) lowers the POINTER operand via `indexBaseAfterArrayDeref` instead of the deref, so the emitter renders `(*pa)[i]` and the index guard sees N — the old `zT = *pa; zT[i]` was gcc-invalid ("assignment to expression with array type").
+- An open-ended many-item-pointer range (`mp[s..]`/`mp[0..]`, FX5 fix round 1, operator ruling) resolves to `[*]T`: the open-end arm returns the element pointer offset by `start` (`BIN_ADD`), with no `make_slice`, no length temp and no bounds check (a many-item pointer has no length). Sema types the form `[*]T` (doc 05), so the arm keys on the resolved `many_ptr_type`; the former `error[3043]` ICE and the interim `error[3067]` reject are gone. Fixture `repro/mi_matrix/stdlib_ptr_array_slice_ok_xmod` (stdlib pin 260) + standalone `repro/ptr_array_slice.z98`; the single-item-pointer reject fixture `repro/mi_matrix/ptr_slice_reject_xmod` is unchanged.
+
+### Block Expression
 ```
 nextTemp(TYPE_VOID)
 lowerStmtBody(node)  // recurses into block children
@@ -819,172 +790,97 @@ lowerStmtBody(node)  // recurses into block children
 
 ---
 
-## Defer/Errdefer Expansion `sf/src/lower.zig:3922`
+## Defer/Errdefer Expansion
 
 **Push**: `pushDefer(kind, ast_node)` appends a `DeferAction{ kind(0=defer, 1=errdefer), ast_node, scope_depth }` to `defer_stack`.
 
-**Expand**: `expandDefers(target_depth, is_error_path)` iterates stack from top:
-- For `defer` (kind=0): always emits the body
-- For `errdefer` (kind=1): only emits when `is_error_path != 0`
+**Expand**: `expandDefers(target_depth, is_error_path, pop)` iterates the stack from the top:
+- `defer` (kind=0): always emits the body.
+- `errdefer` (kind=1): emits only when `is_error_path != 0`.
 
-**Fixed (F2, 2026-07-31):** `expandDefers` now takes a `pop` parameter. At scope-termination exits (`lowerStmtBody` block exit, `lowerStmt` block exit, `lowerFn` end), `pop=1` removes the action after emitting — preserving scope-lifetime semantics (a defer never re-emits after its scope closes). At internal exits (`return_stmt`, `break_stmt`, `continue_stmt`, try-error path), `pop=0` leaves the action on the stack — ensuring the defer/errdefer body is inlined at **every** runtime exit while the scope is live. This is the hybrid "pop at block-exit only" fix (Option B from I2 research), matching the design doc's intent at `docs/sf/AST_LIR_Lowering_p2.md:406-421` while closing its scope-termination blind spot.` [updated: 2026-07-31]
+At scope-termination exits (`lowerStmtBody` block exit, `lowerStmt` block exit, `lowerFn` end) `pop=1` removes the action after emitting — preserving scope-lifetime semantics (a defer never re-emits after its scope closes). At internal exits (`return_stmt`, `break_stmt`, `continue_stmt`, try-error path) `pop=0` leaves the action on the stack so the body is inlined at **every** runtime exit while the scope is live.
 
 Called at:
-- Scope exit in `lowerStmtBody` (target_depth = self.scope_depth, is_error_path = 0)
-- `return_stmt` (target_depth = 0, is_error_path = 0)
+- Scope exit in `lowerStmtBody` (target_depth = `self.scope_depth`, is_error_path = 0)
+- `return_stmt` (target_depth = 0, is_error_path = `ret_is_error`; `ret_is_error=1` when the return expression carries a `CoercionKind.wrap_error_err` coercion (error set → error union, recorded by `resolveReturnStmt`) or its AST kind is `error_literal`, else 0)
+- `return_stmt` dynamic error-union path (target_depth = 0, is_error_path = 1 on the error arm and 0 on the success arm; taken only when `ret_is_error == 0`, a pending `errdefer` exists, and both the return expression's resolved type and `func.return_type` are error unions)
 - `break_stmt`/`continue_stmt` (target_depth = targeted scope + 1, is_error_path = 0)
 - `try_expr` error path (target_depth = 0, is_error_path = 1)
 
 ---
 
-## Temp Hoisting `sf/src/lower.zig:3942`
+## Temp Hoisting
 
-`hoistTemps()` runs at the end of `lowerFn()`. It:
-1. Creates a new `LirInstArrayList`
-2. Appends a `decl_temp` for each temp in `hoisted_temps` (skipping TYPE_VOID)
-3. Appends all existing entry-block instructions
-4. Replaces entry block's instruction list
-
-This means all temporaries are declared at function entry, before any control flow — the ISA does not support SSA phi nodes, so every temp is effectively a `alloca`.
+`hoistTemps()` runs at the end of `lowerFn()`. It creates a new `LirInstArrayList`, appends a `decl_temp` for each temp in `hoisted_temps` (skipping `TYPE_VOID`), appends all existing entry-block instructions, and replaces the entry block's instruction list. All temporaries are therefore declared at function entry before any control flow — the IR has no SSA phi nodes, so every temp is effectively an `alloca`.
 
 ---
 
-## TCO (Tail Call Optimization) Pattern — [updated: 2026-08-03]
+## TCO (Tail Call Optimization)
 
-The lowerer implements **tail-call elimination for self-recursion** and a **`tail_call` LIR variant**
-for same-type cross-function tails. TCO feature commits: df412714 (F-S1, variant), 4702e9c8 + b0a53387
-(F-S2, detection + try-CFG elimination), fa3cee16 (F-S3, C89 emission), 6dcf112e (F-S2 AMENDMENT 11,
-same-type-only cross guard).
+The lowerer implements **tail-call elimination for self-recursion** and a **`tail_call` LIR variant** for same-type cross-function tails.
 
-### `loop_header` injection at entry block — `sf/src/lower.zig:4349-4350`
+### `loop_header` injection at entry block
 
-Every function gets `loop_header(0)` as the first entry-block instruction. In `lowerFn`, immediately
-after `self.current_bb = createBlock(self);` (:4349) the lowerer emits
-`emitInst(self, LirInst{ .loop_header = @intCast(u32, 0) });` (:4350). The entry block id is always 0
-(nothing allocates a block before lowerFn's entry createBlock). `hoistTemps` (:4362) prepends
-`decl_temp` instructions to block 0, so the final entry-block order is
-`decl_temp*, loop_header, body` — the C89 emitter's `.loop_header` arm emits `z_bb_0:` at that point,
-landing the label after every temp/local declaration (see 08_c89_emission.md §1.8/§1.9).
+Every function gets `loop_header(0)` as the first entry-block instruction. `lowerFn` emits it immediately after `self.current_bb = createBlock(self)`. The entry block id is always 0 (nothing allocates a block before `lowerFn`'s entry `createBlock`). `hoistTemps` then prepends the `decl_temp` instructions to block 0, so the final entry-block order is `decl_temp*, loop_header, body` — the C89 emitter's `.loop_header` arm emits `z_bb_0:` there, landing the label after every temp/local declaration.
 
-### `findTailCall` — `sf/src/lower.zig:4138-4193`
+### `findTailCall`
 
-Bounded **5-hop def-use walk** from the return temp (`hops < 5`, :4141). Each hop scans all blocks /
-instructions for the inst whose `.result == cur`:
-- `.call_direct` → `CallInfo{ is_self = (name_id == self.func.name_id and module_id == self.func.module_id) (:4153), is_indirect=0, is_extern = inst.call_direct.is_extern, callee, module_id, args_start, args_count, result, return_type, call_block_idx, call_inst_idx }` (:4156).
-- `.call` (indirect) → `CallInfo{ is_self=0, is_indirect=1, is_extern=0, callee = inst.callee, module_id=0, return_type = TYPE_UNDEFINED, … }` (:4160).
-- `.unwrap_error_payload` / `.unwrap_error_code` / `.wrap_error_ok` / `.wrap_error_err` with `.result == cur` → follow `.value` (:4162-4185) — this is what lets `return try self(...)` (ok-path payload) and `return <coerced>` (wrap chain) resolve back to the underlying call.
+A bounded **5-hop def-use walk** from the return temp (`hops < 5`). Each hop scans all blocks/instructions for the inst whose result is the current temp:
+- `.call_direct` → `CallInfo{ is_self = (name_id == func.name_id and module_id == func.module_id), is_indirect=0, ... }` from the side-table slot.
+- `.call` (indirect) → `CallInfo{ is_self=0, is_indirect=1, is_extern=0, callee, return_type = TYPE_UNDEFINED, ... }`.
+- `.unwrap_error_payload` / `.wrap_error_ok` / `.wrap_error_err` with the matching result → follow `.value`; this lets `return try self(...)` (ok-path payload) and `return <coerced>` (wrap chain) resolve back to the underlying call. `.unwrap_error_code` returns null (the error path is not a tail).
 
-A hop that finds no defining inst returns `null` (:4190). `CallInfo` struct at `sf/src/lower.zig:4124-4136`.
+A hop that finds no defining inst returns `null`.
 
-### `return_stmt` TCO — `sf/src/lower.zig:3614-3673`
+### `return_stmt` TCO
 
-After `expandDefers` (:3615) and `lowerExpr` (:3618), guarded by `self.func.is_extern == 0` (:3629):
-- `var tci = findTailCall(self, val);` (:3630). `null` → unchanged plain `ret` (:3666-3668).
-- **Self-recursion** (`ci.is_self == 1 and ci.args_count == params.len`, :3632): `zeroCallCFG` first (:3633), then param-rebind assigns `param_temp_i = args_start + i` for every param (:3638-3641), then `emitInst(LirInst{ .jump = 0 })` back to the entry `loop_header` (:3642), then `block_terminated = 1` (:3644) — the old `ret` is suppressed by the `if (block_terminated == 0)` guard (:3666).
-- **Cross-function** (`ci.is_self == 0 and ci.return_type == self.func.return_type`, :3645 — AMENDMENT 11): `zeroCallCFG` (:3646), then emit `tail_call` LIR with all 8 fields from CallInfo (:3651-3660), `block_terminated = 1` (:3662). The type-equality guard means type-changing coercions fall back to the plain `ret` path; indirect calls (`.call`, `return_type == TYPE_UNDEFINED`) never cross-TCO.
-- Params mismatch (`args_count != params.len`) or `is_extern` fn → normal `ret` (defensive).
+After `expandDefers` and `lowerExpr`, guarded by `func.is_extern == 0`:
+- **Self-recursion** (`is_self == 1` and `args_count == params.len`): `zeroCallCFG` first, then param-rebind assigns `param_temp_i = args_start + i` for every param, then `jump` back to the entry `loop_header`, then `block_terminated = 1` (suppressing the plain `ret`).
+- **Cross-function** (`is_self == 0` and `ci.return_type == func.return_type`): `zeroCallCFG`, then emit `tail_call` from `CallInfo`, `block_terminated = 1`. The type-equality guard means type-changing coercions fall back to the plain `ret`; indirect calls (`return_type == TYPE_UNDEFINED`) never cross-TCO.
+- Params mismatch (`args_count != params.len`) or an extern fn → normal `ret` (defensive).
 
-### try-CFG elimination — `sf/src/lower.zig:4195-4263` (AMENDMENT 7)
+`hasOtherConsumers` is a **defensive guard** called before `zeroCallCFG` in both TCO branches. It scans all blocks for any instruction referencing the call result that is not a recognized chain consumer (`call_direct`, `call`, the unwrap/wrap/check family, `ret`, `nop`); if one exists, TCO is skipped. No valid Z98 pattern triggers it today.
 
-When the tail resolves through a try, the dead call CFG is zeroed out of the emitted blocks:
-- `zeroCallCFG` (:4243): nops the defining call at `blocks[call_block_idx].insts[call_inst_idx]` (:4245), the following `check_error`/`check_optional` if present (:4246-4253), and the following `branch` if present (:4254-4261).
-- `zeroChainInsts` (:4195): mirrors findTailCall's 5-hop walk, nop-ing the intermediate `unwrap_error_payload`/`unwrap_error_code`/`wrap_error_ok`/`wrap_error_err` insts that read the nop'd call result (:4207-4235).
-- Rebind assigns / `tail_call` are emitted into the **CALL block** (`self.current_bb = ci.call_block_idx` when it differs from the current block, :3634-3637 / :3647-3650), then the original current block is restored. `block_terminated = 1` also suppresses the join-block `ret` (the `if (block_terminated == 0)` guard at :3666).
+### try-CFG elimination
 
-### Statement-form if/switch
+When the tail resolves through a try, the dead call CFG is zeroed out: `zeroCallCFG` nops the defining call, the following `check_error`/`check_optional` if present, and the following `branch` if present; `zeroChainInsts` nops the intermediate `unwrap_error_payload`/`unwrap_error_code`/`wrap_error_ok`/`wrap_error_err` insts that read the nop'd call result. Rebind assigns / `tail_call` are emitted into the **call block**, then the original current block is restored. `block_terminated = 1` also suppresses the join-block `ret`.
 
-Per-branch `return_stmt` sites inside `if_stmt`/`switch_stmt` bodies reach this same `return_stmt` handler and get TCO automatically. Expression-form `return if/switch (...)` (join-temp results) is out of scope (AMENDMENT 3) — the walk starts at the return temp and cannot resolve a join temp to one call without full dataflow, so those fall back to plain `ret`.
+### Statement-form if/switch; defer-after-TCO ordering
 
-### Defer-after-TCO ordering — `sf/src/lower.zig:3618-3694` [updated: 2026-08-03]
+Per-branch `return_stmt` sites inside `if_stmt`/`switch_stmt` bodies reach this same handler and get TCO automatically. Expression-form `return if/switch (...)` (join-temp results) is out of scope: the walk starts at the return temp and cannot resolve a join temp to one call without full dataflow, so those fall back to plain `ret`.
 
-`expandDefers(self, 0, 0, 0)` is called **once at the top of `return_stmt`** (:3618), before any TCO decision. The self-TCO branch then **nops the freshly-emitted defer instructions** when the defer stayed in the same block (`defer_bb_unchanged` guard, :3641-3645). `cross`/non-TCO branches preserve the defer instructions.
-
-| Branch | expandDefers call | Defer behavior |
-|--------|-------------------|----------------|
-| Self-TCO | :3618 (emit) → :3641-3645 (nop) | Defer body nop'd per-iteration. Fires once at terminal exit via `expandDefers(self, 0, 0, 1)` at `lowerFn:4457`. |
-| Cross TCO | :3618 (emit, preserved) | Defer fires once before `tail_call` emission. |
-| No TCO (fallback ret) | :3618 (emit, preserved) | Existing behavior — defer fires before `ret`. |
-
-The try-expr err-path (:2489) and terminal-exit (:4457) `expandDefers` calls are untouched. `pop=1` at :4457 ensures the defer is removed after the terminal re-emit, matching the hybrid pop semantics (see §Defer/Errdefer Expansion).
-
-### `hasOtherConsumers` single-consumer guard — `sf/src/lower.zig:4265-4340` [updated: 2026-08-03]
-
-Defensive guard called **before `zeroCallCFG`** in both self (:3647) and cross (:3664) TCO branches. **Scans ALL blocks** for any instruction referencing `call_result` that is NOT a recognized chain consumer:
-
-- **Skipped (chain consumers):** `call_direct`, `call`, `unwrap_error_payload`, `unwrap_error_code`, `wrap_error_ok`, `wrap_error_err`, `check_error`, `ret` (for `ret_temp` only), `nop`.
-- **Checked (all other variants):** every input field is compared against `call_result` — `.value`, `.src`, `.operand`, `.ptr`, `.base`, `.cond`, `.lhs`, `.rhs`, `.index`, `.callee` (for `tail_call`).
-- **Returns `true`** → TCO is **skipped entirely** (falls through to normal `ret` path at :3688-3690).
-- **Returns `false`** → `zeroCallCFG` + TCO emission proceeds normally.
-
-This guard is **purely defensive** — no valid Z98 pattern triggers it today. It future-proofs against instrumentation/debug/optimization passes that might create secondary consumers of the call result temp after the recognized chain. The full false-return path (all recognized consumers, no false positive) is exercised by the existing tco_factorial and tco_return_try examples.
+`return_stmt` first classifies the return and then calls `expandDefers`, before any TCO decision. `ret_is_error` is 1 when the return expression carries a `CoercionKind.wrap_error_err` coercion (error set → error union; covers `return error.X`, `return E.X`, `return err;`) or when its AST kind is `error_literal` (covers a bare-error-set return type, where no coercion is recorded); otherwise 0. When `ret_is_error == 0`, a pending `errdefer` exists, and both the return expression's resolved type and `func.return_type` are error unions, the **dynamic error-union return** path is taken instead: the value is lowered first, then `check_error` + `branch` discriminate on its `is_error` flag; the error arm calls `expandDefers(self, 0, 1, 0)` and the success arm `expandDefers(self, 0, 0, 0)`, each followed by `.ret(val)`. This mirrors the `try` path and makes a dynamic `return x;` (`x: E!T`; `src==dst`, so `tryRecordCoercion` records no coercion) run `errdefer` iff the value is in its error state; the pending-errdefer gate keeps every other error-union return on the existing path. This dynamic path deliberately skips TCO (a tail call would bypass `errdefer`), and it evaluates the return operand before the defers (the static path evaluates defers first) — the same operand-before-defers order the `try` path already uses. Otherwise the static path calls `expandDefers(self, 0, ret_is_error, 0)`, and the self-TCO branch then nops the freshly-emitted defer instructions when the defer stayed in the same block; cross/non-TCO branches preserve them. The defer fires once at terminal exit via `expandDefers(self, 0, 0, 1)` at the end of `lowerFn`.
 
 ---
 
-## Type Coercions `sf/src/lower.zig:4469`
+## Type Coercions
 
-`applyCoercion` dispatches to `materializeInto` and specific cast instructions:
+`applyCoercion` dispatches to `materializeInto` and the specific cast instructions:
 
 | CoercionKind | LIR Pattern |
-|-------------|-------------|
-| `none` | `applyNoneCoercion` (lower.zig:4456) — handles null→optional null ptr via `set_optional_null`/`int_const(0)` |
-| `wrap_optional_null` | `materializeInto(src, target, null_src)` → `set_optional_null` — src is the `?T`-typed temp already produced by the null_literal branch (Option B, 2026-08-07); `materializeInto` short-circuits on `src_ty == expected` (lower.zig:911) or wraps into outer EU layers. No dead `int zT_N; zT_N = NULL;` in the stream |
-| `wrap_optional` | `materializeInto(src, target, intent)` → `wrap_optional` |
-| `wrap_error_success` | `materializeInto(src, target, intent)` → `wrap_error_ok` |
-| `wrap_error_err` | `materializeInto(src, target, error_src)` → `wrap_error_err` |
-| `int_widen` | `int_cast{ is_checked=0 }` |
+|--------------|-------------|
+| `none` | `applyNoneCoercion` — rewrites `null` → optional-null (`set_optional_null`) or `int_const(0)` for pointer/fn targets |
+| `wrap_optional_null` | `materializeInto(src, target, null_src, node)` → `set_optional_null`; src is the `?T`-typed temp produced by the null_literal branch, so `materializeInto` short-circuits on `src_ty == expected` or wraps into outer error-union layers |
+| `wrap_optional` | `materializeInto(src, target, intent, node)` → `wrap_optional` |
+| `wrap_error_success` | `materializeInto(src, target, intent, node)` → `wrap_error_ok` |
+| `wrap_error_err` | `materializeInto(src, target, error_src, node)` → `wrap_error_err` |
+| `int_widen` | `int_cast` |
 | `float_widen` | `float_cast` |
-| `int_literal_coerce` | `int_cast{ is_checked=0 }` |
-| `ptr_to_optional_ptr` | `materializeInto(src, target, intent)` → `wrap_optional` |
+| `float_narrow` | `float_cast` (FX3: value-aware f64/integer → f32; sema-recorded only — `classifyCoercion` never returns it, so runtime values Zig rejects cannot take it) |
+| `int_literal_coerce` | `int_cast` |
+| `ptr_to_optional_ptr` | `materializeInto(src, target, intent, node)` → `wrap_optional` |
 | `array_to_slice` | `int_const(len)` + `make_slice{ ptr, len }` |
 | `array_to_many_ptr` | `ptr_cast` |
-| `slice_to_many_ptr` | `ptr_cast` |
+| `slice_to_many_ptr` | `load_field{ SLICE_FIELD_PTR }` (`.ptr` extraction; FC/D5 — was `ptr_cast` of the slice struct) |
 | `string_to_slice` | `int_const(len)` + `make_slice{ ptr, len }` |
 | `string_to_many_ptr` | `ptr_cast` |
 | `string_to_ptr` | `ptr_cast` |
 | `const_qualify` | No-op (identity) |
 | `unwrap_optional` | No-op (identity) |
 
-`materializeInto` (`sf/src/lower.zig:906`) is the general mechanism: given a source temp and an expected type, it walks the type hierarchy (optional layers, error union layers) and emits wrapping instructions (`wrap_optional`, `wrap_error_ok`, `wrap_error_err`, `set_optional_null`) to match the expected type shape.
+`materializeInto(src_temp, expected, intent, src_node)` is the general mechanism: given a source temp and an expected type, it walks the type hierarchy (up to 8 optional/error-union layers) and emits `set_optional_null`/`wrap_optional`/`wrap_error_ok`/`wrap_error_err`, optionally preceded by an inner `int_cast`/`float_cast`. **Task 4 (pinned param/argument/return rule):** after the layers are unwound, a `value`-intent materialisation into an integer type calls `checkFoldedIntFits(self, src_node, cur)` — when the source expression node is a comptime-known integer (`KIND_INT`, `~` exempt) that does not fit the target exactly, it emits `error[3000] "comptime integer value does not fit the target type"` once per node (dummy temp; the post-lowering gate exits rc=2 with 0 `.c`). `applyCoercion` runs the same table-only check on the recorded `(node_idx, target_type)` before dispatch, because `int_widen`/`int_literal_coerce`/`none` materialise without calling `materializeInto`. **Task 4 fix round:** all fit checks share `checkIntFitsMode`/`foldNodeIntExact`/`scalarTargetOf` — the target is unwrapped through `?T`/`E!T` layers, and the lookup mode decides what may fold: the generic checks use the fold table only, the four call-arg loops and `return_stmt` use `checkArgReturnIntFits` (table + bare `int`/`char` literals and their `negate`; `f(300)`/`return 300;` are now rejects), and the module/local declaration slots use `checkDeclInitFits` (table + an on-demand evaluator probe for arithmetic/unary inits — `var y: u32 = 0 - 1;` is now a reject — while a bare positive literal keeps the pre-existing warning[3000]+truncate path). **Task 4 untyped local slot:** an unannotated local binding whose init folds to an integer the inferred type cannot hold takes the value-based slot type (`comptimeIntUntypedType`) before the `decl_local` is emitted, so the slot and the HIT temp agree (`const c = 2000000000 + 1000000000;` is a `u32` slot). The DECL on-demand probe has no function-local const scope, so `var y: u32 = c - 1;` with a local `c` is a false negative (doc 04 KI12(b)), and the ARG mode covers the fold table + bare literals only.
 
-**Null-construction path (FIXED, Option B, [updated: 2026-08-07]):** for a `null_literal` whose coercion routes to `SrcIntent.null_src` (`wrap_optional_null`/`wrap_optional`/`wrap_error_success`) with an optional layer in the target chain, the null_literal branch (lower.zig:1183) walks the coercion target chain (`optional_type` → layer; `error_union_type` → payload, max 8) to find the optional layer and emits `set_optional_null` directly on a temp typed as that optional layer — instead of emitting the old dead `null_const` temp (`int zT_N; zT_N = NULL;`, typed `null_type`→`int` via `nextTemp(TYPE_NULL)` lower.zig:1184 → `getCTypeName(null_type)` = `"int"` c89_emit.zig:605). `materializeInto` then short-circuits on `src_ty == expected` (lower.zig:911) for a plain `?T`, or wraps the `?T` temp into outer error-union layers (`eul == src_ty` match at lower.zig:945 → `wrap_error_ok`) for `E!?T`. Result: no `int zT_N;`, no `zT_N = NULL;` — fixes the gcc `-Wint-conversion` warning for both `?*T` and `?[]T` null construction. Emitted C is now `Opt_... zT; zT.has_value = 0;` (or `EU`-wrapped). Non-optional-target null (pointer/fn, no optional layer) still uses the `null_const` path unchanged.
-
-**FIXED — module-scope global `= null` init (Defect B, [updated: 2026-08-13, F2]):**
-the module-scope `var_decl` global-init path (`main.zig` `phase_ComptimeEvaluation`
-loop, :400-441) previously hand-rolled `pushExpectedType`/`semanticAnalyzerResolveExpr`/
-`popExpectedType` and **never recorded a coercion** — unlike the function-body
-`var_decl` path (sema `classifyCoercion` + `coercionTableAdd(decl.child_1, ck, decl_type)`).
-A module-scope `var g: ?*Node = null;` had no `wrap_optional_null` entry, so the
-null_literal branch's `coercionTableGet` (lower.zig:1268) returned null and the
-fallback emitted `null_const` with a `TYPE_NULL` temp (:1298-1301), which the
-emitter typed `"int"` (`getCTypeName(null_type)`, c89_emit.zig:605) →
-`int zT_0; zT_0 = NULL;` → `store_global` assigned `int` to an `Opt_`-typed
-global → gcc `incompatible types ... from type 'int'`.
-**Fix (F2, operator ruling m0792 — Option 2):** the coercion record lives in
-sema. New **pub** fn `semanticAnalyzerResolveModuleVarDecl(self, decl_idx) u32`
-(`sf/src/semantic_analyzer.zig`, after `semanticAnalyzerResolveStmt`) owns the
-resolve + coercion record: reads the declared type from `rtt_mod.resolvedTypeTableGet`
-(`decl.child_0`), `pushExpectedType`/`semanticAnalyzerResolveExpr`/`popExpectedType`,
-then `classifyCoercion(errLitSrcType(decl.child_1, decl_type, it), decl_type)` →
-if non-`none` `coercionTableAdd(coercion_table, decl.child_1, ck, decl_type)` —
-mirroring the function-body `var_decl` block (sema :1890-1895); returns the
-resolved init type. `main.zig`'s global-init loop calls it
-(`var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decls[di]);`)
-instead of hand-rolling push/resolve/pop; module-scope symbol registration
-(ident_expr nameCachePut, INT_LIT re-resolution, resolvedTypeTableSet) stays in
-main.zig. The lowerer/emitter paths already handle `wrap_optional_null`, so the
-null_literal branch now emits `set_optional_null` on an `Opt_`-typed temp:
-`zT_AEEBC7B3_Opt_26 zT_0; zT_0.has_value = 0; zG_E20C2606_g = zT_0;`. Reproduction
-`repro/mi_matrix/global_null_init_xmod`: dump/gcc/link/run rc=0, prints `1`.
-Unblocks the exact lisp shape (`examples/z98/lisp_interpreter` `parser.zig:12`
-`var global_symbol_list: ?*SymbolNode = null;`).
-**Side effect (operator re-baseline m0809, [updated: 2026-08-13]):** the fn
-records ALL non-`none` coercions, so the shared module-scope scalar
-`std_arena.zig:8 var g_used: usize = 0;` (game_of_life / lisp_interpreter_curr /
-json_parser) now records `int_literal_coerce` and the lowerer emits one cast on
-the global init (`zT_1 = (unsigned int)zT_0; zG_099B6C9A_g_used = zT_1;`) —
-matching function-body behavior for `var x: usize = 0`; runtime byte-identical
-(AMENDMENT B). gol/lisp/json MD5 gates **re-baselined** to
-`ff47d18d…`/`c1cb748b…`/`376fd681…`; mud `fd0fdaa4…` byte-identical.
+**Null construction.** For a `null_literal` whose coercion routes to `SrcIntent.null_src` (`wrap_optional_null`/`wrap_optional`/`wrap_error_success`) with an optional layer in the target chain, the null_literal branch walks the coercion target chain (`optional_type` → layer; `error_union_type` → payload, max 8) and emits `set_optional_null` directly on a temp typed as that optional layer — instead of a dead `null_const` temp typed `int`. `materializeInto` then short-circuits on `src_ty == expected` for a plain `?T`, or wraps the `?T` temp into outer error-union layers for `E!?T`. Non-optional-target null (pointer/fn, no optional layer) still uses the `null_const` path.
 
 ---
 
@@ -994,163 +890,67 @@ Blocks are created lazily via `createBlock()`. Every branch/switch terminator se
 
 ---
 
-## Experimental Evidence (P7 Deep-Dive, 2026-07-31) — [updated: 2026-08-01]
+## LIR Optimization Pass — `sf/src/lir_opt_pass.zig`
 
-Verified on the 4 working examples (`examples/z98/{mud_server,game_of_life,lisp_interpreter_curr,json_parser}/main.zig`) with two independent methods:
+Runs per function in the emission phase (`c89_emit.zig` `emitModule`/`emitModuleFile`), immediately after the spill fault-in and before the emitter walks the function. It rewrites the in-memory `LirFunction` in place, deterministically. Dead-temp deletion is NOT re-implemented here: the emission-side DCE (`emitHoistedDecls`) already removes unused temps — this pass only makes copies and constant ops disappear so that DCE has less to keep.
 
-- `[markers]` — the P0 traces `/tmp/dd/*.mrk` (`zig1 --markers --dump-c89`). The LIR-phase region runs from the `L\n` marker (`main.zig:508`) through the per-module `M<idx>:<ast_root>:R<decls>:<kinds>` markers (`main.zig:537`), the per-fn `FNL:<name_id>` markers (`lower.zig:4116`) and `D3HT:` temp dumps (`lower.zig:4183`), up to `A0 <kinds>` (`main.zig:586`) and the closing `C\n` (`main.zig:605`).
-- `[fprintf]` — a debug build of zig1 (`zig0` bootstrap into a fresh dir, `gcc -g -O0`) with `emitInst`, `expandDefers`, `pushDefer`, `applyCoercion`, `materializeInto` and the `@ptrCast` builtin site instrumented in the generated `lower.c` (`fprintf` to stderr). Instrumentation does **not** perturb codegen: `--dump-c89` output is byte-identical to the P0 baselines (md5 mud `87954d75…`, gol `9cc38ab9…`, lisp `6a8ca449…`, json `9492e3b3…`).
+Entry point `lirOptRun(alloc, reg, lir_fn)` builds per-temp scratch arrays sized by `maxTempOf` (the max `hoisted_temps` id), then runs, in order:
 
-Phase-scope summary `[markers]`:
+1. `copyPropagate` — an `assign` copy (`dst = src`, `name_id == 0`, identical scalar/pointer types) whose dst is read exactly once at an explicit operand slot in the same block after the copy, whose src is single-use and defined by a PURE op, and neither temp is address-taken / param / `decl_local`-bound / `load_global`-aliased, is removed by renaming the consumer's operand to `src` and tombstoning the copy with `.nop`. Call/`call_direct`/`tail_call` argument runs and side-table operands are excluded — the arg ids are a contiguous temp-id run the pass cannot rewrite per-slot.
+2. `runConstFold` — PURE `binary`/`unary` ops whose value operands are all `int_const` fold to one `int_const` (comparisons to `bool_const`) at the result type's width with two's-complement semantics; `int_cast` folds only when the value is exactly representable at the target. Checked casts (`int_cast_checked`) are skipped.
+3. `coalesceArgCopies` — argument-fill copies that survive copy-prop are collapsed by re-targeting the arg's PURE single-use producer to write the slot id directly and tombstoning the fill (identical TypeId, both single-use, scalar/pointer move, same-block producer < fill < call-reader).
+4. `coalesceJoinCopies` — per-arm join/merge fills collapse the same way: re-target the arm's PURE single-use producer to the join temp and tombstone the arm fill.
+5. `computeNestMetadata` — records per temp an inline-candidate bit (`lirOptNestCandidate`) and expression-tree depth (`lirOptNestDepthOf`), plus def/read locations (`lirOptNestDefLoc`/`lirOptNestConsLoc`). The emitter (not this pass) enforces the C90 nesting cap and the C-shape rules. A memory-reading PURE def (the load family) is only a candidate when its single read is in the same block with no ORDERED inst between def and read; register/const-only defs have no such window.
 
-| Example | `nodes=`/`extra=` | modules | fn_decls lowered (`FNL`) | fns with bodies (emitted C) | `A0` (module-0 decl kinds) |
-|---------|------------------|---------|--------------------------|------------------------------|----------------------------|
-| mud_server | 944 / 343 | 4 (`M0:843:R28` `M1:926:R1` `M2:923:R2` `M3:943:R3`) | 20 | 7 | `1 1 96 96 2 2 2 2 2 2 2 2 1 2 2 2 2 1 1 1 1 1 1 2 1 2 2 2` |
-| game_of_life | 807 / 382 | 3 (`M0:774:R14` `M1:777:R1` `M2:806:R5`) | 11 | 7 | `1 96 96 2 2 1 1 1 1 2 2 2 2 2` |
-| lisp_interpreter_curr | 3854 / 1307 | 10 (`M0:810:R21` … `M9:908:R4`) | 48 | 45 | `1 1 1 1 1 1 1 1 1 96 96 2 …` |
-| json_parser | 1568 / 534 | 3 (`M0:292:R13` `M1:1567:R16` `M2:1375:R20`) | 32 | 19 | `1 1 96 96 96 2 2 1 2 2 2 2 2` |
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `kCopyPropMaxIter` | 128 | Iteration cap for the copy-prop / coalesce fixpoint loops |
+| `kEmitNestDepthCap` | 32 | C90 expression-nesting cap (emitter-enforced) |
 
-(Per-module `M` counts sum to the `FNL` totals; the fn_decl count matches the P6 static-analyzer count on the same traces.)
-
-### 1. LirInst variant distribution
-
-Total instructions **emitted via `emitInst`** per example `[fprintf]` (note: `decl_temp` is prepended by `hoistTemps` directly into the entry block — `lower.zig:3953` — so it never passes through `emitInst`; add the `D3HT` temp totals below to get the full instruction count):
-
-| Example | insts via emitInst | + hoisted `decl_temp` | total |
-|---------|--------------------|------------------------|-------|
-| mud_server | 686 | 454 | 1140 |
-| game_of_life | 698 | 462 | 1160 |
-| lisp_interpreter_curr | 3634 | 2256 | 5890 |
-| json_parser | 1452 | 945 | 2397 |
-
-Top variants per example `[fprintf]`:
-
-| Example | top LirInst variants (count) |
-|---------|------------------------------|
-| mud_server | assign 116, int_const 81, load_field 56, jump 55, binary 53, branch 41, store_local 41 |
-| game_of_life | int_const 157, assign 138, jump 56, assign_field 56, binary 54, int_cast 45, store_local 36 |
-| lisp_interpreter_curr | assign 703, jump 318, load_field 304, int_const 263, decl_local 219, ret 203, branch 199 |
-| json_parser | assign 254, int_const 144, jump 143, call_direct 127, load_field 124, binary 123, branch 102 |
-
-Dominant shape: **`assign` + `int_const` + `jump` + `branch` dominate in every example** — a straight-line, alloca-based, jump-heavy IR. json_parser is the most call-heavy (127 `call_direct`, its parser is deeply recursive), lisp the most branch/switch-heavy (21 `switch_br` in `eval` alone). Per-function detail `[fprintf]` (top function per example): mud `main` 427 insts (assign 84, int_const 43, binary 41, jump 40); gol `main` 496 (int_const 133, assign 99, assign_field 54); lisp `eval` 826 (assign 182, load_field 75, jump 74); json `parseObject` 214 (assign 46, call_direct 24, jump 19). 44 of the 57 variants fire via `emitInst`; the 13 that never fire in these examples are `decl_temp` (only via `hoistTemps`, `lower.zig:3953`), `loop_header`, `label`, `float_cast`, `int_to_float`, `int_to_ptr`, `float_const`, `enum_const`, `load_global`, `store_global`, `va_start`, `va_arg`, `va_end` — and `unary` is rare (13 total across all 4). The `va_start`/`va_arg`/`va_end` variants (added 2026-08-06) do not fire in these 4 examples (none use `@cVa*`). `[updated: 2026-08-03]` Since the TCO feature (F-S2, `lowerFn` at `lower.zig:4350`) the `loop_header` variant now fires **once per function** (first entry-block inst) in every example; it was 0 in the 2026-07-31 P7 capture. The `tail_call` variant fires for every cross-function same-type tail (eval.zig:169 `return try apply(...)`, json extern `file.strtod`, etc.).
-
-### 2. Temp counts per function / hoisting
-
-`D3HT:<tid,type>|…` is emitted once per lowered fn (`lower.zig:4183`); its entry count = total temporaries for that function (params included — each param gets a `nextTemp`, `lower.zig:4135`, then its type is patched in `hoisted_temps`, `lower.zig:4145`). `[markers]`:
-
-| Example | fns | total temps | avg | max temp count |
-|---------|-----|-------------|-----|----------------|
-| mud_server | 20 | 454 | 22.7 | 264 (`main`) |
-| game_of_life | 11 | 462 | 42.0 | 339 (`main`) |
-| lisp_interpreter_curr | 48 | 2256 | 47.0 | 462 (`eval`) |
-| json_parser | 32 | 945 | 29.5 | 126 (`parseObject`) |
-
-Temp hoisting does create many temporaries: every intermediate (each literal, field load, call result, wrapper) gets its own temp, and `hoistTemps` (lower.zig:3942) prepends a `decl_temp` for **all** of them (skipping `TYPE_VOID`, lower.zig:3949) to the entry block. Consequence visible in emitted C: `eval` declares 461 `zT_` temps at function top (lisp_interpreter_curr.c:3915-4438); `readFile` declares 79 `zT_` temps (json_parser.c:704-788; its D3HT count of 81 includes the 2 params). All temps are effectively `alloca` slots — the IR has no SSA/phi discipline.
-
-### 3. Defer/errdefer expansion trace (json_parser `fclose`)
-
-Only **one** `defer` exists across all 4 examples: `readFile` in `examples/z98/json_parser/file.zig:30` (`defer { _ = fclose(f); }`). No `errdefer` anywhere. `[fprintf]` trace of `readFile` (FNL:74, 111 insts, 81 temps):
-
-```
-P7PD:0,1491              <- pushDefer(kind=0 defer, ast_node=1491)
-P7XD:0,0                 <- first return site (fseek(END)!=0): expands the defer
-   P7CD:139,32           <- fclose() call inlined at this return
-P7XD:3,0 ... P7XD:0,0    <- subsequent return sites (size<0, fseek(SET)!=0,
-P7XD:0,0 ... P7XD:0,0       bytes_read!=size, ferror!=0, success): NO fclose
-```
-
-`expandDefers` counts `[fprintf]`: pushDefer 0/0/0/1, expandDefers calls 86/55/593/195 for mud/gol/lisp/json. **Fixed (F2, 2026-07-31):** The single-use defer issue has been resolved via the hybrid-pop fix (Option B from I2 research). `expandDefers` now takes a `pop` parameter: at scope-termination exits (block exit, fn-end) `pop=1` removes the action; at internal exits (return, break, continue, try-error) `pop=0` leaves it for re-expansion at subsequent exits. After the fix, `readFile`'s emitted C contains `fclose` at all 6 return paths (pre-fix: only 1), closing the FILE* leak.` [updated: 2026-07-31]
-
-### 4. `@ptrCast` lowering: scalar vs tagged-union vs fn-pointer
-
-The builtin path (`lower.zig:2381-2466`) emits `.ptr_cast{ value, target, result }` **uniformly** — the source expression is lowered without any source-kind check (`val_temp = lowerExpr(ec[1])`, lower.zig:2424), so pointer-to-pointer, pointer-to-many-ptr and fn-pointer casts all produce the same LirInst. The only differentiation is **target type resolution** (`lower.zig:2425-2445`):
-
-- If the type argument is a `fn(...)` type: `resolveTypeExprFull` + `typeRegistryMarkFnPtrUsed` (lower.zig:2435-2438), emitting the `FNT:t` marker (lower.zig:2439) and registering the fn-ptr type so the C emitter can emit the `typedef`.
-- Otherwise: plain `resolveTypeExprFull` (lower.zig:2442-2444); a `CASTDFLT` marker fires if the target defaults to `TYPE_U32` (lower.zig:2446).
-
-`[fprintf]` per-site evidence (value-type kind → target-type kind, both `ptr_type`(17) / `many_ptr_type`(18)):
-
-| Example | site | source kind → target kind |
-|---------|------|---------------------------|
-| lisp `apply` (eval.zig:264, fn-pointer) | `*void` → ptr-to-fn | 17 → 17, `FNT:t` fired (the only FNT:t in all 4 examples) |
-| lisp `main` (main.zig:107-108) | `*[1048576]u64` → `[*]u8` | 17 → 18 |
-| lisp `main` (main.zig:116-126, 11 sites) | ptr-to-fn → `*void` | 17 → 17 |
-| json `readFile` (file.zig:28-29,38) | `*[2]c_char` / `*void` → `[*]u8` | 17 → 18, 17 → 18, 17 → 18 |
-| json `parseObject`/`parseArray`/`parseJson` | `*void` → `[*]T` / `*T` | 17 → 18 / 17 → 17 |
-
-There is **no scalar (non-pointer) or tagged-union `@ptrCast`** anywhere in the 4 examples, so those two cases are not exercised; from the code the only distinguishing mechanism is the fn-type target path above. (The `@ptrCast([*]const c_char, "rb")` string case is likewise a uniform `ptr_cast` — file.zig:28.)
-
-### 5. TCO assessment (lisp `eval` loop) — [updated: 2026-08-03]
-
-**TCO is now detectable — implemented** (F-S1/F-S2/F-S3, see §TCO above). The 2026-07-31 "no TCO"
-findings below were the pre-TCO state; each item is re-assessed:
-
-- `loop_header` (lir.zig:31) is **now emitted once per function** — `lowerFn` injects
-  `LirInst{ .loop_header = 0 }` as the first entry-block inst (`lower.zig:4350`). `while_stmt`
-  lowering (lower.zig:3302-3388) still builds the plain 5-block CFG (entry → cond → body → exit →
-  cont, back-edge cont → cond) with `jump`/`branch` only; the entry `loop_header` is the self-TCO
-  jump target, not a loop-marking inst.
-- `eval`'s manual `while (true)` trampoline (eval.zig:12) still lowers to: `jump cond` (entry),
-  `bool_const(1)` + `branch` (cond block BB1), body with the expr-type `switch_br` (21 of them), and
-  a back-edge `jump` to BB1. The source-level `continue`s (eval.zig:56,61,222) remain plain
-  `goto`/`jump` to the loop header — loop branches, not tail calls.
-- The tail-position `return try apply(fun, args, …)` (eval.zig:169, `.Builtin` prong) is a **direct
-  cross-function call with matching return type** → `findTailCall` resolves it, `zeroCallCFG` +
-  `zeroChainInsts` nop the `call_direct`/`check_error`/`branch`/unwrap chain, and a `tail_call` LIR
-  inst is emitted in the call block. The C89 emitter's `.tail_call` arm produces
-  `zT_N = zF_24BC4A3B_apply(zT_…,…); return zT_N;` — a call+ret (not a jump; see the C89 cross-function
-  limitation in 08_c89_emission.md). This replaced the old full try-CFG trace
-  (previously `lisp_interpreter_curr.c:5480-5509`).
-- `apply`'s tail-position `return try f(args, temp_sand)` (eval.zig:265) is an **indirect fn-pointer
-  call** → `findTailCall` carries `return_type = TYPE_UNDEFINED` for `.call`, and the AMENDMENT-11
-  same-type guard (`lower.zig:3645`) disables cross TCO → falls back to the normal ret path, which
-  re-emits the full `check_error`/unwrap/`.is_error = 0` re-wrap. Indirect cross-TCO is conservatively
-  disabled even when the fn-pointer callee shares the enclosing fn's return type (a missed
-  optimization, accepted by ruling).
-- `eval`'s 4 plain recursive `zF_08D22E0F_eval(...)` calls (lisp_interpreter_curr.c:4636, :4753,
-  :4990, :5440) are non-tail (mid-loop / argument positions) and remain frame-preserving calls — the
-  self-recursion trampoline only benefits from TCO at direct tail sites.
-
-**Byte-identity note:** the `z_bb_0:` label emitted in every function (AMENDMENT 8) and the
-try-CFG collapse to `zT = f(args); return zT;` are accepted baseline changes — the lisp stdout md5
-was re-baselined from `0ad02040…` to `10d09c99f77c68e680f6ccce33eb81ed` (see QUICK_REF.md).
-
-### 6. Coercion application: `applyCoercion` vs `materializeInto`
-
-`applyCoercion` (lower.zig:4469) dispatches exactly as the §Type Coercions table describes: the 5 wrapper kinds (`wrap_optional_null`, `wrap_optional`, `wrap_error_success`, `wrap_error_err`, `ptr_to_optional_ptr`) and `none`-with-null delegate to `materializeInto` (lower.zig:906), which walks up to 8 optional/error-union layers (lower.zig:913-949) and emits `set_optional_null`/`wrap_optional`/`wrap_error_ok`/`wrap_error_err`, optionally preceded by an inner `int_cast`/`float_cast` (lower.zig:952-964). `[fprintf]` call counts:
-
-| Example | applyCoercion calls | materializeInto calls | dominant kinds |
-|---------|---------------------|------------------------|----------------|
-| mud_server | 51 | 8 | int_literal_coerce 20, none 14, string_to_slice 12 |
-| game_of_life | 99 | 10 | none 52, int_literal_coerce 39, const_qualify 8 |
-| lisp_interpreter_curr | 595 | 135 | none 329, wrap_error_success 60, string_to_slice 53, wrap_error_err 53, int_literal_coerce 48 |
-| json_parser | 159 | 34 | none 95, int_literal_coerce 27, wrap_error_success 15, wrap_error_err 14 |
-
-Cross-check `[markers]`: the `CEM`/`CEP` markers are emitted **per `lowerExpr`** call (lower.zig:446-468) — `CEP:n…k<kind>` when a coercion entry exists (→ `applyCoercion`), `CEM:n…` when missing. `[markers]` CEP counts (mud 36, gol 43, lisp 261, json 63) and the CEP-kind distribution (int_literal_coerce / string_to_slice / wrap_error_* / unwrap_optional / wrap_optional_null, exactly the table's kinds) agree with the `[fprintf]` `applyCoercion` kinds. The `[fprintf]` totals are higher because `applyCoercion` also fires at non-`lowerExpr` sites (call args `lower.zig:2022, :2092, :2176, :2269`, return values, compound-assign sites `lower.zig:1391`); the `none` kind (52 in gol) comes from `applyNoneCoercion` (lower.zig:4456), which rewrites `null` → optional-null / `int_const(0)` pointer.
+Purity table (`defInfoPure`): `binary`, `unary`, the const family (`int_const`/`float_const`/`bool_const`/`null_const`/`string_const`/`undefined_const`/`enum_const`/`set_optional_null`), the casts (`int_cast`/`int_cast_checked`/`width_wrap`/`float_cast`/`ptr_cast`/`int_to_float`/`int_to_ptr`/`ptr_to_int`), `make_slice`, `addr_of`/`addr_of_field`, `func_ref`, the optional/error wrappers, the load family, and the overflow ops. Everything else is ORDERED.
 
 ---
 
-## Debugging — [updated: 2026-08-01]
+## LIR Streaming — `sf/src/lir_stream.zig`
 
-The lowerer emits verbose marker output prefixed with `"L"` (for LIR lowering). **The `--dump-lir` flag is DEAD**: its flag string is declared (`main.zig:775`) but never matched in `parseArgs`, so `cli.dump_lir` stays `false` and nothing reads it anywhere in the pipeline. Marker output is instead gated on the `--markers` flag via `pal.markerWrite()`/`markerWriteInt()`, which check `g_markers_enabled` (`sf/src/pal.zig:96-103`). Run `zig1 --markers --dump-c89 <file>` and capture stderr to see the per-node tracing below.
+`LirStream` wraps a `SpillStore` plus a 512-byte path buffer and a running `write_offset`. `phase_LIRLowering` calls `lirStreamBeginWrite(path, alloc)` once, then `lirStreamAppend(fn)` per lowered function, returning a `LirSlot { module_id, disk_offset, byte_len }`. `phase_C89Emission` calls `lirStreamBeginRead(alloc)` and faults each function in with `lirStreamReadFunction(slot, dst)` before emission; `lirStreamEndRead()` closes the stream.
+
+Serialization is a raw little-endian byte dump of the function's scalar payloads (u32/u64/f64/u8 ids — no pointers/slices), so the dump is byte-preserving: `lirStreamAppend` writes the header fields (`name_id`, `module_id`, `return_type`, `is_extern`, `is_pub`, `is_variadic`, `call_conv`, `poison_uninit`, `is_export`), the seven counts, then the raw arrays (`params`; per-block `{id, is_terminated, 3 pad, insts}`; `hoisted_temps`; `switch_cases`; `side_table`; and the `temp_variant_sub_field` keys/values/occupied). `lirStreamReadFunction` reconstructs each array with exact-length allocations into the caller's `Sand` and verifies the computed `expected_len` against `slot.byte_len`, panicking on mismatch (`"S-LIR byte_len mismatch on fault-in read"`).
+
+In Ram backend mode, `lirStreamBeginRead` does not re-open or truncate: the write-phase buffer already holds all bytes, so it only resets the read cursor.
+
+---
+
+## Spill Store — `sf/src/spill_store.zig`
+
+`SpillStore` is an offset-addressed byte spill over a Disk (`pal.streamOpen`/`streamSeek`/`streamWrite`/`streamRead`/`streamClose`) or Ram (arena-backed growable byte buffer) backend. Each producer/consumer treats the spill as byte-addressed opaque data, so byte identity holds in both modes.
+
+| Constant / type | Value | Purpose |
+|-----------------|-------|---------|
+| `SPILL_COUNT` | 6 | Number of spill streams |
+| `SPILL_SEEK_MAX` | `0x7FFFFFFF` | Uniform i32-seek guard |
+| `SpillBackend` | `disk = 0`, `ram = 1` | Per-spill backend |
+| `SpillId` | `s_ast=0`, `s_lir=1`, `s_hash=2`, `s_res=3`, `s_side=4`, `s_extra=5` | Spill identifiers |
+
+The backend is selected once per spill from the immutable per-spill flag prefix (`spillBackendFor`); the CLI `-s<N>` flag calls `spillSetLevel(N)` to set indices `< N` to Ram (all-Disk by default). Ram buffers grow via `sandTryReallocInPlace` first, else a fresh allocation plus copy. `spillSeek`/`spillWriteAt`/`spillReadAt` enforce the i32 seek limit and panic on a null Disk handle; a Ram read past the logical high-water panics (parity with a Disk short read). `SpillStore` fields: `backend`, `opened`, `handle` (Disk `FILE*`), `buf`/`cap`/`len`/`cur` (Ram buffer, capacity, logical high-water, last I/O end), `alloc` (arena backing the Ram buffer).
+
+---
+
+## Debugging
+
+The lowerer emits marker output gated on the `--markers` flag via `pal.markerWrite()`/`pal.markerWriteInt()`, which check `g_markers_enabled` (`sf/src/pal.zig`). Run `zig1 --markers --dump-c89 <file>` and capture stderr to see the per-node tracing. **The `--dump-lir` flag is DEAD**: its flag string is declared but never matched in `parseArgs`, so nothing reads it anywhere in the pipeline.
 
 | Marker | Meaning |
 |--------|---------|
-| `LEX:n<idx>k<kind>` | Entering lowerExpr (node + kind) |
-| `CT:t<type>r<tid>` | Creating temp with type_id (nextTemp) |
-| `NXT:i<idx>k<kind>t<tid>` | nextTemp warning for void/undefined type |
-| `GBL` | Global lowering context |
-| `BB` | Struct init entry |
-| `ILR` | Int literal |
-| `STK` | Statement kind |
-| `BLC` | Block child processing |
-| `FNL:<name_id>` | Function lowering — one per lowered fn_decl (`lower.zig:4116`) |
-| `D3HT:<tid,type>\|...` | Hoisted temps dump — one per fn, entry count = total temp count (`lower.zig:4183`) |
-| `CEM:n<idx>` | Coercion check — coercion missing (per lowerExpr, `lower.zig:463`) |
-| `CEP:n<idx>k<kind>` | Coercion check — coercion present, kind emitted (`lower.zig:456`) |
-| `COE/CO2` | Compound-assign coercion sites (`lower.zig:1391`) |
-| `XD:<depth>,<err>` / `PD:<kind>,<node>` | expandDefers / pushDefer tracing (instrumented builds; see P7 evidence above) |
+| `LEX:n<idx>k<kind>` | Entering `lowerExpr` (node + kind) |
+| `CT:t<type>r<tid>` | Creating a temp with type_id (`nextTemp`) |
+| `NXT:i<idx>k<kind>t<tid>` | `nextTemp` warning for void/undefined type |
+| `FNL:<name_id>` | Function lowering — one per lowered `fn_decl` |
+| `D3HT:<tid,type>\|...` | Hoisted temps dump — one per fn, entry count = total temp count |
+| `CEM:n<idx>` | Coercion check — coercion missing (per `lowerExpr`) |
+| `CEP:n<idx>k<kind>` | Coercion check — coercion present, kind emitted |
+| `COE`/`CO2` | Compound-assign coercion sites |
+| `GBL`, `BB`, `ILR`, `STK`, `BLC` | Global context / struct init / int literal / statement kind / block child tracing |
 
-All markers use `pal.markerWrite()` which outputs to stderr when `--markers` is enabled.
-
+All markers use `pal.markerWrite()` and output to stderr only when `--markers` is enabled.
 

@@ -1,0 +1,39 @@
+// repro/f32_undefined_arm_ok.z98 — standalone FX9 fix round 1 accept: an
+// `undefined` arm of an `if` VALUE expression at an f32 site.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/f32_undefined_arm_ok_out
+//   <zig1> -o /tmp/f32_undefined_arm_ok_out repro/f32_undefined_arm_ok.z98
+//   cd /tmp/f32_undefined_arm_ok_out && sh build_target.sh linux f32_undefined_arm_ok
+//   ./f32_undefined_arm_ok
+//
+// EXPECTED (after FX9 fix round 1): rc 0 and
+//   und=2.5 3.5 4.5 5.5 6.5 7.5
+// `undefined` coerces to every type (Zig's `undefined` is a valid f32 value),
+// so it is neutral for the runtime-arm reject exactly like a `noreturn` arm.
+// Every row takes the LITERAL arm (`retUnd(-1)`, `retUndR(1)`, and runtime
+// false conditions); a taken `undefined` arm is unspecified and is never
+// pinned. The declarations/assignment/field/argument shapes emitted
+// gcc-invalid C (field) or ICEd `error[3043]` (argument) before FX9.
+//
+// DEFECT (FX9 as first landed): the arm classifier treated `undefined` as an
+// unclassifiable arm, so all six shapes rejected `error[3000]` although the
+// seed v88, PRE `89aaf0ec` and Zig 0.15.2 accept them. See
+// repro/mi_matrix/stdlib_f32_narrow_ok_xmod (`und=` row) for the pinned
+// runtime golden.
+const std = @import("std");
+const S = struct { x: f32 };
+
+fn take(x: f32) f32 { return x; }
+fn retUnd(c: i32) f32 { return if (c > 0) undefined else 2.5; }
+fn retUndR(c: i32) f32 { return if (c > 0) 3.5 else undefined; }
+
+pub fn main() void {
+    var n: i32 = -1;
+    n = n;
+    const xu: f32 = if (n > 0) undefined else 4.5;
+    var yu: f32 = 0.0;
+    yu = if (n > 0) undefined else 5.5;
+    var su: S = S{ .x = if (n > 0) undefined else 6.5 };
+    std.io.print("und={} {} {} {} {} {}\n", .{ retUnd(-1), retUndR(1), xu, yu, su.x, take(if (n > 0) undefined else 7.5) });
+}

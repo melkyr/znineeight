@@ -1,0 +1,128 @@
+// capture_fn_reuse.z98 — Task 10 standalone probe: cross-function capture/local
+// name reuse.
+//
+// Each function is lowered with a FRESH LirLowerer (`sf/src/main.zig` creates
+// one per fn_decl), so the function-scoped bookkeeping (the `local_decl_*`
+// table, the `capture_shadow` source->synth redirect map, the synth-name
+// counter) starts clean at every function. A capture renamed inside an earlier
+// function (because the same name was already declared in a closed sibling
+// scope of that function) must NOT redirect a same-named local, capture, or
+// parameter in a later function.
+//
+// Shapes pinned:
+//   * fa: closed sibling-scope `var j` -> renamed `for` capture `j` (the Task
+//     10D over-rename) still resolves inside fa
+//   * fb: a later function's plain `var j` keeps its own declaration
+//   * fc: a later function's `for |j|` with no earlier same-name decl keeps
+//     its own name (the per-function table is clean)
+//   * fd: a later function's parameter named `j`
+//   * ff: `if (opt) |j|` capture (the addLocalDeclRenamed path)
+//   * fg: a `catch |err|` capture after a closed sibling-scope `var err`
+//   * fi: a `for (arr) |x, i|` index capture named `i` after a closed
+//     sibling-scope `var i`
+//
+// Expected stdout (Zig 0.15.2 oracle twin uses `std.debug.print`):
+//   fa=7 fb=6 fc=3 fd=9 ff=3 fg0=102 fg1=9 fi=20
+// rc 0. A stale cross-function redirect makes the later function read the
+// earlier function's synth storage, or emits an undeclared synth name.
+const std = @import("std");
+
+const E = error{Boom};
+
+fn fa() u32 {
+    var sum: u32 = 0;
+    var k: u32 = 0;
+    while (k < 2) : (k += 1) {
+        var j: u32 = 3;
+        sum += j;
+    }
+    for (0..2) |j| {
+        sum += j;
+    }
+    return sum;
+}
+
+fn fb() u32 {
+    var j: u32 = 5;
+    j += 1;
+    return j;
+}
+
+fn fc() u32 {
+    var sum: u32 = 0;
+    for (0..3) |j| {
+        sum += j;
+    }
+    return sum;
+}
+
+fn fd(j: u32) u32 {
+    return j + 1;
+}
+
+fn fe(x: u32) ?u32 {
+    if (x == 0) return null;
+    return x;
+}
+
+fn ff() u32 {
+    var sum: u32 = 0;
+    var c: u32 = 0;
+    while (c < 3) : (c += 1) {
+        if (fe(c)) |j| {
+            sum += j;
+        }
+    }
+    return sum;
+}
+
+fn fh(a: u32) E!u32 {
+    if (a == 0) return error.Boom;
+    return a;
+}
+
+fn fg(a: u32) u32 {
+    var acc: u32 = 0;
+    var i: u32 = 0;
+    while (i < 2) : (i += 1) {
+        var err: u32 = 1;
+        acc += err;
+    }
+    const r = fh(a) catch |err| {
+        if (err == error.Boom) return acc + 100;
+        return acc;
+    };
+    return acc + r;
+}
+
+fn fi() u32 {
+    var arr: [3]u32 = undefined;
+    arr[0] = 4;
+    arr[1] = 5;
+    arr[2] = 6;
+    var sum: u32 = 0;
+    var k: u32 = 0;
+    while (k < 2) : (k += 1) {
+        var i: u32 = 1;
+        sum += i;
+    }
+    for (arr) |x, i| {
+        sum += x + i;
+    }
+    return sum;
+}
+
+pub fn main() void {
+    const a = fa();
+    const b = fb();
+    const c = fc();
+    const d = fd(8);
+    const f = ff();
+    const g0 = fg(0);
+    const g1 = fg(7);
+    const h = fi();
+    if (a != 7 or b != 6 or c != 3 or d != 9 or f != 3 or g0 != 102 or g1 != 9 or h != 20) {
+        @panic("cross-function capture-reuse guard failed");
+    }
+    std.io.print("fa={} fb={} fc={} fd={} ff={} fg0={} fg1={} fi={}\n", .{ a, b, c, d, f, g0, g1, h });
+}

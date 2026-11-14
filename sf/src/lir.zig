@@ -19,11 +19,18 @@ pub const TempDecl = struct {
     type_id: TypeId,
 };
 
+// A6F `check_trap{kind=6}` integer-overflow operations (the `op` discriminator).
+pub const CHECK_OP_ADD = @intCast(u8, 0);
+pub const CHECK_OP_SUB = @intCast(u8, 1);
+pub const CHECK_OP_MUL = @intCast(u8, 2);
+pub const CHECK_OP_SHL = @intCast(u8, 3);
+pub const CHECK_OP_NEG = @intCast(u8, 4);
+
 pub const LirInst = union(enum) {
     decl_temp: struct { temp: u32, type_id: TypeId },
     decl_local: struct { name_id: u32, type_id: TypeId, temp: u32 },
     assign: struct { dst: u32, src: u32, name_id: u32 },
-    assign_field: struct { base: u32, field_id: u32, src: u32, name_id: u32 },
+    assign_field: struct { base: u32, field_id: u32, src: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
     assign_index: struct { base: u32, index: u32, src: u32, name_id: u32 },
     jump: u32,
     branch: struct { cond: u32, then_bb: u32, else_bb: u32 },
@@ -32,16 +39,37 @@ pub const LirInst = union(enum) {
     ret: u32,
     ret_void: void,
     label: u32,
-    binary: struct { op: u8, lhs: u32, rhs: u32, result: u32 },
+    // P6 (Amendment 5 ruling 2, A15 pattern): `result_type`/`width`/`is_signed`
+    // are the lowering-recorded semantic facts of the operation's type (P5
+    // predicates at lowering; `width`/`is_signed` are semantic, never C
+    // carriers). Emitted for every `binary`; the emitter's sat family (op >=
+    // 19) and wrap family (op >= 16) spell ONLY from these fields (the old
+    // emit-time `getTempTypeInfo` re-derivation is deleted). 19 B payload keeps
+    // the folded `@sizeOf(LirInst)` at 32 B.
+    binary: struct { op: u8, lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
     unary: struct { op: u8, operand: u32, result: u32 },
     call: struct { callee: u32, args_start: u32, args_count: u32, result: u32 },
-    load_field: struct { base: u32, field_id: u32, result: u32, name_id: u32 },
-    store_field: struct { base: u32, field_id: u32, value: u32, name_id: u32 },
-    load_index: struct { base: u32, index: u32, result: u32, name_id: u32 },
+    // P6 (Decision-vs-spelling): `field_name_id`/`field_type_id` are the
+    // lowering-recorded field identity (the field's source name id and declared
+    // type id). Named struct/union/packed fields record `fe_items` name+type.
+    // Slice `.ptr`/`.len`, tagged-union `.tag` and tuple ordinal designators
+    // record 0/0 and are spelled from `field_id` + the base kind. A
+    // tagged-union PAYLOAD designator records the matched VARIANT MEMBER's name
+    // in `field_name_id` (the lowering-side variant pick; `field_type_id` stays
+    // 0 — the variant type is the match key, not a spelled fact); its
+    // `._<sub>` index is the lowering-recorded `temp_variant_sub_field` map, so
+    // `.payload.<variant>._<sub>` is spelled from RECORDS too (fix round 1).
+    // The emitter spells from these records and never re-resolves `fe_items` by
+    // ordinal. `name_id` (the pre-existing field) stays the BASE local's name
+    // id. The payloads stay within the 24 B union slot (load/store_field 24 B),
+    // so `@sizeOf(LirInst)` stays 32 B.
+    load_field: struct { base: u32, field_id: u32, result: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
+    store_field: struct { base: u32, field_id: u32, value: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
+    load_index: struct { base: u32, index: u32, result: u32, name_id: u32, decay: u8 },
     load: struct { ptr: u32, result: u32 },
     store: struct { ptr: u32, value: u32 },
     addr_of: struct { operand: u32, result: u32 },
-    addr_of_field: struct { base: u32, field_id: u32, result: u32 },
+    addr_of_field: struct { base: u32, field_id: u32, result: u32, field_name_id: u32, field_type_id: u32 },
     wrap_optional: struct { value: u32, result: u32, type_id: TypeId },
     call_direct: u32, // side-table slot (see LirSideEntry / lirSideAppendCallDirect)
     va_start: struct { va_list_temp: u32, last_param_temp: u32 },
@@ -58,13 +86,13 @@ pub const LirInst = union(enum) {
     unwrap_error_code: struct { value: u32, result: u32 },
     check_error: struct { value: u32, result: u32 },
     make_slice: struct { ptr: u32, len: u32, result: u32, type_id: TypeId },
-    int_cast: struct { value: u32, target: TypeId, result: u32, is_checked: u8 },
+    int_cast: struct { value: u32, target: TypeId, result: u32 },
     float_cast: struct { value: u32, target: TypeId, result: u32 },
     ptr_cast: struct { value: u32, target: TypeId, result: u32 },
     int_to_float: struct { value: u32, target: TypeId, result: u32 },
     ptr_to_int: struct { value: u32, result: u32 },
     int_to_ptr: struct { value: u32, target: TypeId, result: u32 },
-    int_const: struct { value: u64, result: u32 },
+    int_const: struct { value: u64, result: u32, width_bits: u8, is_signed: u8 },
     float_const: struct { value: f64, result: u32 },
     string_const: struct { string_id: u32, result: u32 },
      null_const: struct { result: u32 },
@@ -77,7 +105,7 @@ pub const LirInst = union(enum) {
     load_global: struct { name_id: u32, module_id: u32, result: u32 },
     store_global: struct { name_id: u32, module_id: u32, value: u32 },
     print_str: struct { string_id: u32 },
-    print_val: struct { value: u32, type_id: TypeId, fmt: u8 },
+    print_val: struct { value: u32, type_id: TypeId, fmt: u8, implicit: u8 },
     builtin_put_char: struct { value: u32 },
     builtin_stdout_write: struct { ptr: u32, len: u32 },
     builtin_stderr_write: struct { ptr: u32, len: u32 },
@@ -88,6 +116,77 @@ pub const LirInst = union(enum) {
     builtin_console_gotoxy: struct { x: u32, y: u32 },
     builtin_console_set_color: struct { fg: u32, bg: u32 },
     nop: void,
+    load_bitfield: struct { base: u32, result: u32, name_id: u32, bit_offset: u32, bit_width: u32 },
+    store_bitfield: struct { base: u32, value: u32, bit_offset: u32, bit_width: u32 },
+    trap: void,
+    // A4F/A5F/A6F `-fsafe` cheap runtime check. `cond` is the success-condition
+    // temp (the emitter traps when it is false). `kind`: 2 = div/mod (zero),
+    // 3 = shift (count >= width), 4 = null-unwrap, 5 = index OOB, 6 = integer
+    // overflow, 7 = `@asyncInit` buffer smaller than `@asyncFrameSize` (frame
+    // size compile-time known). Every kind's success condition is now computed in lowering
+    // (A15 kind 6 `overflow_flag == 0`; A16 kind 2 div/mod zero+`INT_MIN/-1`;
+    // kinds 3/5 already did), so A18 shrank the payload to `{cond,kind}`: the
+    // old `aux`/`imm`/`result_type`/`op` fields are gone. Non-terminating. The
+    // 5 B payload is below `enum_const` (20 B → 24 B padded), so the
+    // Z98-folded `@sizeOf(LirInst)` that lir_stream writes stays 32 B.
+    check_trap: struct { cond: u32, kind: u8 },
+    // A15 integer-overflow guard ops (AMENDMENT 4). Each `*_with_overflow` op
+    // yields the WRAPPED value as its sole result (mirrors AIR `@addWithOverflow`
+    // value half); `overflow_flag` yields the boolean overflow predicate (1 =
+    // overflow) consuming the same operands. Splitting the value/flag halves keeps
+    // the single-result-per-inst LIR/DCE model (`dceResultPos`/`defResultTemp`).
+    // `result_type` + `width`/`is_signed` are lowering-computed so the emitter
+    // performs no type inspection. Appended after `check_trap` so tag ordinals and
+    // the streamed `@sizeOf(LirInst)` stay stable; the largest payload is now
+    // `enum_const` (20 B) padded to its 24 B union slot, so these <= 20 B
+    // payloads keep the folded size at 32 B.
+    add_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    sub_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    mul_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    shl_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    neg_with_overflow: struct { value: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    overflow_flag: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, op: u8, width: u8, is_signed: u8 },
+    // A16 null-unwrap guard op (AMENDMENT 4). Safe optional payload read: the
+    // emitter maps it to `if (!(<value>.has_value)) { pal_trap(); }` followed by
+    // `result = <value>.value;`. Lowering emits it only under `-fsafe` and only
+    // for non-void payloads (the `optional(void)` skip is preserved by emitting
+    // the plain `unwrap_optional` there); it is never emitted under `-ffast`, so
+    // the fast-path bytes are unchanged. Appended after `overflow_flag`; the 8 B
+    // payload keeps the Z98-folded `@sizeOf(LirInst)` at 32 B.
+    unwrap_optional_checked: struct { value: u32, result: u32 },
+    // A17 `undefined` poison op (AMENDMENT 4). Initializes the storage of
+    // `result` to the byte-exact 0xAA poison; the emitter maps it to
+    // `zig_poison_fill((void*)&<result>, (unsigned int)sizeof <result>)`. Lowering
+    // emits it only under `-fsafe`; `-ffast` keeps the deterministic zeroing
+    // (`undefined_const` array loops / `= 0` / the hoisted declaration), so the
+    // fast-path bytes are unchanged. The poison length is `sizeof <result>` (no
+    // type_id). Appended after `unwrap_optional_checked`; the 4 B payload keeps
+    // the Z98-folded `@sizeOf(LirInst)` at 32 B.
+    poison_init: struct { result: u32 },
+    // A18 checked `@intCast` op (AMENDMENT 4). Safe narrowing/sign-change cast:
+    // the emitter maps it to `result = (<target Ctype>)zig_cast_checked_<s|u>(
+    // (unsigned long long)value, src_width, src_signed, dst_width)`; the helper
+    // recovers the source value from `src_signed`/`src_width` and bound-checks it
+    // against `dst_signed`/`dst_width`, so no backend type inspection is needed
+    // (the `target` TypeId is only the C type name). Lowering emits it only under
+    // `-fsafe` and only when a check is required (narrowing or same-width sign
+    // change); `-ffast` and lossless casts keep the plain `int_cast`. This
+    // replaces the emitter's `__bootstrap_<dst>_from_<src>` helper selection and
+    // `emitWidthCheckedCheckStmt`, and gives every target class (fixed widths and
+    // arbitrary `iN/uN`) the same signed-aware bounds. Appended after
+    // `poison_init`; the 16 B payload keeps the Z98-folded `@sizeOf(LirInst)` at
+    // 32 B.
+    int_cast_checked: struct { value: u32, target: TypeId, result: u32, src_signed: u8, src_width: u8, dst_signed: u8, dst_width: u8 },
+    // A18 arbitrary-width normalization op (AMENDMENT 4). Maps the emitter's
+    // former `emitWidthWrapStmt` inline mask/sign-extend into backend-neutral
+    // LIR: `result = (<Ctype>)((value & <width mask>) [^ signbit] [- signbit])`.
+    // Lowering computes `result_type`/`width`/`is_signed` from the result temp's
+    // type, so the emitter does no type inspection. It is emitted in both modes
+    // (it is wrapping semantics, not a safety check) but writes the exact same
+    // in-place C text as before (`value == result`), so `-ffast` bytes are
+    // unchanged. Appended after `int_cast_checked`; the 14 B payload keeps the
+    // Z98-folded `@sizeOf(LirInst)` at 32 B.
+    width_wrap: struct { value: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
 };
 
 pub const CallDirectData = struct {
@@ -98,6 +197,15 @@ pub const CallDirectData = struct {
     result: u32,
     return_type: u32,
     is_extern: u8,
+    // Track1 Task 3R: callee calling-convention flag (0 or FN_FLAG_STDCALL).
+    // Applied at the use site as a cast to the convention-qualified fn-ptr
+    // typedef; the extern's own prototype is no longer forced.
+    call_conv: u8,
+    // P6 (Decision-vs-spelling): the callee's fn type id, recorded at lowering
+    // (the old emit-time `findCalleeFnTypeId` registry scan is deleted). The
+    // emitter spells the convention cast from this record only. 0xFFFFFFFF =
+    // no recorded fn type.
+    fn_type_id: u32,
 };
 
 pub const TailCallData = struct {
@@ -109,6 +217,13 @@ pub const TailCallData = struct {
     return_type: u32,
     is_indirect: u8,
     is_extern: u8,
+    // Track1 Task 3R: callee calling-convention flag (0 or FN_FLAG_STDCALL).
+    call_conv: u8,
+    // P6 (Decision-vs-spelling): the callee's fn type id, recorded at lowering
+    // (the old emit-time `findCalleeFnTypeId` registry scan is deleted). The
+    // emitter spells the convention cast from this record only. 0xFFFFFFFF =
+    // no recorded fn type (indirect callee / no convention lookup).
+    fn_type_id: u32,
 };
 
 // Per-fn side table for the 2 wide LirInst variants. LirInst holds the tag
@@ -157,6 +272,55 @@ pub fn lirSideEntryArrayListAppend(self: *LirSideEntryArrayList, value: LirSideE
 }
 
 pub fn lirSideEntryArrayListGetSlice(self: *LirSideEntryArrayList) []LirSideEntry {
+    return self.items[0..self.len];
+}
+
+// P3-M1 debug map: per-inst source-span side table. Kept OUT of LirInst (the
+// 32 B contract) and OUT of the lir_stream record format; lowering serializes
+// this list to a parallel debug spill keyed by LirSlot.disk_offset.
+pub const DebugSpanEntry = struct {
+    bb: u32,
+    inst: u32,
+    span_start: u32,
+};
+
+pub const DebugSpanArrayList = struct {
+    items: [*]DebugSpanEntry,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn debugSpanArrayListInit(allocator: *Sand) DebugSpanArrayList {
+    return DebugSpanArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn debugSpanArrayListEnsureCapacity(self: *DebugSpanArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
+    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(DebugSpanEntry)) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]DebugSpanEntry, raw);
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
+    }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
+pub fn debugSpanArrayListAppend(self: *DebugSpanArrayList, value: DebugSpanEntry) void {
+    debugSpanArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn debugSpanArrayListGetSlice(self: *DebugSpanArrayList) []DebugSpanEntry {
     return self.items[0..self.len];
 }
 
@@ -427,6 +591,16 @@ pub const LirFunction = struct {
     is_extern: u8,
     is_pub: u8,
     is_variadic: u8,
+    call_conv: u8,
+    // A17: transports the `-fsafe` `undefined` poison-net decision to the
+    // emitter (the "statically-unwritten hoisted temp" dataflow itself stays in
+    // the emitter; only the mode decision moves to lowering). Serialized in the
+    // `lir_stream.zig` function header via the repurposed `pad0` byte, so the
+    // 16-byte header / `expected_len` are unchanged.
+    poison_uninit: u8,
+    // Task 8-F: the AST `fn_decl` export flag (bit3 `0x08`). A suspending
+    // `export fn` is a synchronous-driver target exactly like root `main`.
+    is_export: u8,
 };
 
 pub fn lirSideAppendCallDirect(lfn: *LirFunction, d: CallDirectData) u32 {
@@ -454,6 +628,12 @@ pub const ModuleGlobalDecl = struct {
     module_id: u32,
     type_id: u32,
     has_runtime_init: u8,
+    // M2 T1C-F: root index into the ConstInit pool (0xFFFFFFFF = none); a
+    // constant-tree decl is emitted as C89 `static const`/`const` rodata and
+    // never stored from `__module_init`.
+    const_init: u32,
+    // 1 = pub|export (external linkage); 0 = module-private (`static`).
+    link_visible: u8,
 };
 
 pub const GlobalDeclArrayList = struct {

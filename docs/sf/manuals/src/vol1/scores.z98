@@ -1,0 +1,21 @@
+const std = @import("std");
+
+pub fn main() void {
+    const scores = [5]i32{ 90, 72, 85, 60, 98 };
+
+    std.io.print("the list has {} scores\n", .{scores.len});
+    std.io.print("first is {}, last is {}\n", .{ scores[0], scores[scores.len - 1] });
+
+    var total: i32 = 0;
+    for (scores) |score, i| {
+        std.io.print("scores[{}] is {}\n", .{ i, score });
+        total = total + score;
+    }
+    std.io.print("total is {}\n", .{total});
+
+    const all = scores[0..scores.len];
+    std.io.print("scores[0..len] has {} items, last is {}\n", .{ all.len, all[all.len - 1] });
+
+    const all_but_last = scores[0..scores.len - 1];
+    std.io.print("scores[0..len-1] has {} items, last is {}\n", .{ all_but_last.len, all_but_last[all_but_last.len - 1] });
+}

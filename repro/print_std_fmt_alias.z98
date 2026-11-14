@@ -1,0 +1,16 @@
+// print_std_fmt_alias.z98 — Task 1 fix round 1 standalone repro.
+//
+// The auto-import scan must find the `print` reference even when the callee is
+// an alias: `const p = io.print; p("...", .{...});` (direct `std_io` import,
+// no `std`). Before the fix the emitter wrote an unmangled `printI32(...)` and
+// the link failed; after the fix std_fmt is auto-imported and the call is a
+// mangled cross-module `std.fmt` call, exactly like a direct `io.print(...)`.
+//
+// Expected stdout (exact), rc 0:
+//   alias=99
+const io = @import("std_io.zig");
+
+pub fn main() void {
+    const p = io.print;
+    p("alias={}\n", .{99});
+}

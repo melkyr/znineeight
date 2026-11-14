@@ -441,7 +441,7 @@ Standard C89 does not allow array or struct assignment after declaration (e.g., 
 
 ### 4.5 Built-in Intrinsics
 - **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
-- **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
+- **@intCast / @floatCast**: Comptime-known constants are constant-folded (a comptime out-of-range `@intCast` is range-checked and rejected, not masked). For runtime values, they emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
 - **std.debug.print**: Lowered to a sequence of `__bootstrap_print(const char*)` and `__bootstrap_print_int(i32)` calls. The compiler parses the format string at compile-time and decomposes it into multiple calls, mapping `{}` placeholders to the positional arguments provided in the tuple literal.
 
 ### 4.6 Tuple Literals

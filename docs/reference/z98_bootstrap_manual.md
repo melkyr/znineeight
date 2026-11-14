@@ -2,6 +2,8 @@
 
 This manual provides a comprehensive, deep-dive guide to the Z98 language subset as supported by the `zig0` bootstrap compiler. Z98 is designed to target 1998-era hardware and software by generating portable, highly-compatible ANSI C89 code.
 
+> **Scope:** this manual describes the `zig0` (C++98 bootstrap) compiler. For the self-hosted `zig1` compiler's language and runtime-safety semantics (`-fsafe`/`-ffast`, trap behavior, compile-time diagnostics, the `std.arena` error union, `volatile`), see [`Language_Spec_Z98.md`](Language_Spec_Z98.md).
+
 ---
 
 ## 🏗️ Core Idioms and Architecture

@@ -13,6 +13,7 @@ pub fn main() void {
         .Int => |v| ra = @intCast(i32, v),
         .Flag => |f| ra = f,
         .Nil => ra = @intCast(i32, 0),
+        else => {},
     }
     __bootstrap_print_int(ra);
 }

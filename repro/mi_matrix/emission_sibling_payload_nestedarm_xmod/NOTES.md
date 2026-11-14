@@ -1,5 +1,10 @@
 # emission_sibling_payload_nestedarm_xmod — RED fixture for residual C₂ (nested arm, two-level equal-scope)
 
+> **Task 7D (2026-09-22) — re-baselined OK → FAIL (intentional Zig-matching reject).** The nested
+> switch-prong capture `|s|` shadows the enclosing prong's capture `|s|` (official Zig 0.15.2:
+> "capture 's' shadows capture from outer scope"). Task 7D now emits `error[3057]` (rc=2, 0 `.c`).
+> Deliberate corpus movement, not a regression.
+
 Task R-VAR (2026-08-21, AMENDMENT 7 Ruling 4). Branch `zig1_start`. Compiler under test: `/tmp/fx_subfolder/zig1`.
 
 ## Purpose

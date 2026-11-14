@@ -46,16 +46,23 @@ Types are mangled into short, safe strings:
 
 ## Examples
 
-| Original | Context | Mangled |
+Measured against the seed-built compiler (seed v89). A **function** symbol is
+`zF_<hash8>_<name>`: the `zF_` prefix, eight uppercase hex digits from the
+function's stable name hash, then the source name. A **type** symbol is
+`zT_<hash8>_<shape>`; an anonymous compiler temporary is `zT_<n>`.
+
+| Original | Context | Mangled (measured) |
 | :--- | :--- | :--- |
-| `foo` | Standard Function | `foo` |
-| `max` | Generic(i32, i32) | `max__i32_i32` |
-| `if` | Function Name | `z_if` |
-| `_Test` | Function Name | `z_Test` |
-| `!i32` | Type | `err_i32` |
-| `?u8` | Type | `opt_u8` |
-| `error{A}` | Type | `errset_A` |
-| `my_long_function_name_exceeding_31` | - | `my_long_function_name_exceedin` |
+| `main` | `pub fn main` in `hello.z98` | `zF_EA90E208_main` |
+| `print` | `std.io.print` | `zF_16378A88_print` |
+| `__module_init` | emitter-generated per module | `zF_780653D2___module_init` |
+| `close` | `std.net.close` | `zF_27CB3B23_close` |
+| `SockAddrIn` | struct type | `zT_4106788D_SockAddrIn` |
+| `[2]u8` | array type | `zT_22590979_Arr_unsigned_char_2` |
+
+The eight hex digits keep a name stable across builds and collision-resistant;
+the source name is kept as the suffix so the emitted C and a debugger stay
+readable.
 
 ## Integration
 

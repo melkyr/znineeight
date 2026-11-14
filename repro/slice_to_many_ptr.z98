@@ -1,0 +1,44 @@
+// repro/slice_to_many_ptr.z98 — standalone FC (Volume II D5) reproduction.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/slice_many_out
+//   <zig1> -o /tmp/slice_many_out repro/slice_to_many_ptr.z98
+//   cd /tmp/slice_many_out && sh build_target.sh linux slice_to_many_ptr
+//   ./slice_to_many_ptr
+//
+// EXPECTED (after the fix): the slice -> `[*]T` coercion extracts `.ptr` and
+// the many-item pointer aliases the slice's backing storage:
+//   sm=7 cs=20 rs=7 ar=7
+// rc=0.
+// DEFECT (before the fix): compile rc=0 but the emitted C cast the slice
+// STRUCT to a pointer (`zT = (int*)sl;`), so gcc rejected it with
+// `error: cannot convert to a pointer type`.
+//
+// See repro/mi_matrix/stdlib_slice_to_many_ptr_xmod for the pinned runtime
+// golden and repro/mi_matrix/const_discard_reject_xmod for the const-discard
+// reject contract (`[]const T` -> `[*]T` is forbidden).
+const std = @import("std");
+
+fn retMany(s: []i32) [*]i32 {
+    return s;
+}
+
+fn takeMany(mp: [*]i32) i32 {
+    return mp[1];
+}
+
+pub fn main() void {
+    var arr = [3]i32{ 3, 7, 11 };
+    const sl: []i32 = arr;
+    const mp: [*]i32 = sl;
+    mp[0] = 7;
+    const rm = retMany(sl);
+    if (rm[2] != 11) {
+        @panic("returned many pointer lost the slice backing");
+    }
+    const ca = [2]i32{ 10, 20 };
+    const cs: []const i32 = ca;
+    const cm: [*]const i32 = cs;
+    const am: [*]i32 = arr;
+    std.io.print("sm={} cs={} rs={} ar={}\n", .{ mp[0], cm[1], takeMany(sl), am[1] });
+}

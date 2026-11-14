@@ -1,0 +1,608 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# usage:
+#   scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> <out_tgz> \
+#       [--update-changelog] [--win9x-zip <out.zip>]
+#
+# Assemble a fresh zig1-seed/ tree (spec layout: docs/superpowers/specs/
+# 2026-09-07-seed-bootstrap-migration-design.md) and pack <out_tgz>. Used at
+# every future plan closeout to rotate the committed seed
+# (release/seed/zig1-seed.tgz). Idempotent — deterministic given the same
+# inputs.
+#
+# --win9x-zip additionally packs the Win9x companion seed: a
+# `zig1 -osw -o <dir> sf/src/main.zig` Windows-target dump (module C plus the
+# runtime) with the compiler's two static-CRT build scripts,
+# build_target_crt.bat (MSVC /MT) and build_owc_crt.bat (OpenWatcom static
+# CLIB), the MinGW fallback pair build_mingw_crt.bat/build_mingw_nocrt.bat,
+# lib/, and README.txt under top-level dir zig1-seed-w9/. No prebuilt
+# .exe and no hand-written scripts. The MSVC/OpenWatcom no-CRT compiler
+# scripts are not shipped: a no-CRT MSVC/OWC zig1 build is deferred to the
+# asm_x86 backend (emitted programs still default to no-CRT). `zip` is not
+# required: python3's zipfile
+# packs the archive deterministically (sorted entries, fixed date_time,
+# deflate).
+#
+# Tree assembled from the given inputs + the repo:
+#   zig1        copy of <zig1_binary>
+#   gen/        <gen_dir>/*.c + *.h  (the seed's self-emission C89 module set;
+#               spill/scratch files are NOT copied, and the six runtime/platform
+#               support files the emitter now writes into DIR are excluded — the
+#               four support .c are staged from runtime/ (+ top-level c_exit.c)
+#               and would double-link if left in gen/, while net_prelude.h is
+#               deliberately NOT shipped in runtime/ — see :74-75)
+#   c_exit.c    from the gen dir's emitted support when the gen dir is
+#               self-contained (gen/zig_runtime.c present), else repo
+#               sf/src/c_exit.c (top level) as a pre-EMITEMIT fallback
+#   runtime/    from the gen dir's emitted mode-specific support when
+#               self-contained (zig_compat.h, zig_runtime.h, zig_runtime.c,
+#               zig_pal.c, zig_nocrt.c; zig_special_types.h already in gen/), else the
+#               canonical repo sf/src/include/{…} as a pre-EMITEMIT fallback
+#               (net_prelude.h excluded — 0 references in a linux -osl dump)
+#   lib/        repo sf/src/{std.zig, std_io.zig, std_fmt.zig, std_arena.zig,
+#               std_net.zig, std_str.zig, std_mem.zig, std_math.zig,
+#               std_debug.zig, std_async.zig, std_bits.zig, std_os.zig,
+#               std_os_pal.zig, std_time.zig, std_time_pal.zig,
+#               std_page.zig, std_page_pal.zig, std_gpa.zig, std_pool.zig,
+#               std_buf.zig,
+#               std_file.zig, std_file_pal.zig, std_stdin.zig,
+#               std_stdin_pal.zig, std_stream.zig, std_crypto.zig,
+#               std_cipher.zig, std_ecc.zig, std_parse.zig, std_bencode.zig, std_map.zig,
+#               std_sort.zig, std_heap.zig,
+#               std_rle.zig, std_base64.zig, std_hex.zig, std_utf8.zig, std_http.zig,
+#               std_rand.zig, std_noise.zig, std_lz4.zig, std_zstd.zig,
+#               std_deflate.zig, std_num.zig,
+#               std_pathfind.zig, std_physics.zig, std_hpa.zig, std_asn1.zig,
+#               std_x509.zig, std_tls.zig, std_tls_io.zig, std_hpack.zig,
+#               std_http2.zig, std_wireguard.zig, std_tcpip.zig,
+#               std_gfx.zig, std_gfx_pal.zig, std_fold.zig, std_fft.zig,
+#               std_ddraw.zig, std_ddraw_pal.zig, std_dinput.zig,
+#               std_dinput_pal.zig, std_dsound.zig, std_dsound_pal.zig}
+#   SEED_README.txt  provenance + rebuild recipes + canonical flag-set rule
+#
+# Before packing, the archive's C is gcc-rebuilt self-contained in a scratch dir
+# (the module gen/ C plus the runtime support sources staged alongside it, one
+# alphabetical *.o glob — the same object order build_from_seed.sh uses) — this
+# proves the archive is gcc-only rebuildable AND yields the recorded
+# self-emission fixed-point md5.
+#
+# The CHANGELOG.md entry (date, HEAD sha, binary md5, C count, fixed-point md5,
+# archive md5; plus the zip path, zip md5, win/ C count, lib count and the two
+# static-CRT compiler script names when --win9x-zip is used) is always printed
+# to stdout.
+# With --update-changelog it is also prepended to the rotation changelog
+# (default release/seed/CHANGELOG.md; override with env SEED_CHANGELOG for
+# testing) — newest-first, after the file's preamble header.
+
+die() { echo "error: $*" >&2; exit 1; }
+
+# Windows-facing text ships CRLF. Rewrite in place with shell builtins only
+# (no sed/perl/python/awk transforms): drop any existing trailing CR, then
+# append CRLF per line. Preserves line content and order.
+crlf_normalize() {
+    local f="$1" tmp line
+    [ -f "$f" ] || return 0
+    tmp="$f.crlf.$$"
+    : > "$tmp"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        printf '%s\r\n' "$line" >> "$tmp"
+    done < "$f"
+    mv "$tmp" "$f"
+}
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+UPDATE_CHANGELOG=0
+WIN9X_ZIP=""
+POSITIONAL=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --update-changelog)
+            UPDATE_CHANGELOG=1
+            shift
+            ;;
+        --win9x-zip)
+            [ "$#" -ge 2 ] || die "--win9x-zip requires an output path"
+            WIN9X_ZIP="$2"
+            shift 2
+            ;;
+        -*)
+            die "unknown option '$1'"
+            ;;
+        *)
+            POSITIONAL[${#POSITIONAL[@]}]="$1"
+            shift
+            ;;
+    esac
+done
+[ "${#POSITIONAL[@]}" -ge 3 ] || die "usage: archive_seed.sh <zig1_binary> <gen_dir> <out_tgz> [--update-changelog] [--win9x-zip <out.zip>]"
+BIN="${POSITIONAL[0]}"
+GENDIR="${POSITIONAL[1]}"
+OUTTGZ="${POSITIONAL[2]}"
+
+[ -x "$BIN" ] || die "zig1 binary '$BIN' not found or not executable"
+BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
+[ -d "$GENDIR" ] || die "gen dir '$GENDIR' not found"
+C_COUNT=$(ls "$GENDIR"/*.c 2>/dev/null | wc -l)
+H_COUNT=$(ls "$GENDIR"/*.h 2>/dev/null | wc -l)
+[ "$C_COUNT" -gt 0 ] || die "no *.c in gen dir '$GENDIR'"
+[ "$H_COUNT" -gt 0 ] || die "no *.h in gen dir '$GENDIR'"
+
+DATE=$(date +%Y-%m-%d)
+HEAD=$(git -C "$ROOT" rev-parse --short HEAD)
+BIN_MD5=$(md5sum "$BIN" | cut -d' ' -f1)
+CHANGELOG="${SEED_CHANGELOG:-$ROOT/release/seed/CHANGELOG.md}"
+NEXT=0
+if [ -f "$CHANGELOG" ]; then
+    CUR=$(grep -oE 'seed v[0-9]+' "$CHANGELOG" | grep -oE '[0-9]+' | sort -n | tail -1) || true
+    if [ -n "$CUR" ]; then NEXT=$((CUR + 1)); fi
+fi
+SEED_VERSION="v$NEXT"
+
+STAGE=$(mktemp -d /tmp/zig1-seed-archive.XXXXXX)
+trap 'rm -rf "$STAGE"' EXIT
+SEED="$STAGE/zig1-seed"
+mkdir -p "$SEED/gen" "$SEED/runtime" "$SEED/lib"
+
+cp "$BIN" "$SEED/zig1"
+chmod +x "$SEED/zig1"
+cp "$GENDIR"/*.c "$GENDIR"/*.h "$SEED/gen/"
+# The emitter now copies its runtime/platform support into DIR (emit_support):
+# zig_runtime.c/zig_pal.c/zig_nocrt.c/c_exit.c + zig_compat.h/zig_runtime.h/net_prelude.h.
+# Those are staged into runtime/ + top-level c_exit.c from the gen dir itself
+# (the emitted, mode-specific support); the three support .c MUST NOT be
+# duplicated into gen/ or the archive C double-links against the runtime trio
+# (Phase-1 reproduced: link rc=1 multiple definition of std_panic). Keep gen/ =
+# the module emission only (net_prelude.h is deliberately not part of the seed
+# — see SEED_README.txt).
+for f in zig_runtime.c zig_pal.c zig_nocrt.c c_exit.c zig_compat.h zig_runtime.h net_prelude.h std_page_prelude.h; do
+    rm -f "$SEED/gen/$f"
+done
+C_COUNT=$(ls "$SEED/gen"/*.c 2>/dev/null | wc -l)
+H_COUNT=$(ls "$SEED/gen"/*.h 2>/dev/null | wc -l)
+[ "$C_COUNT" -gt 0 ] || die "gen dir '$GENDIR' has no module *.c after support exclusion"
+[ "$H_COUNT" -gt 0 ] || die "gen dir '$GENDIR' has no module *.h after support exclusion"
+if [ -f "$GENDIR/zig_runtime.c" ]; then
+    # The gen dir is a self-emission dump and carries the mode-specific support
+    # the compiler emitted (emit_support). Stage THOSE into runtime/ so a
+    # gcc-only rebuild of the archive C reproduces the seed binary's exact
+    # fixed point. Staging the canonical sf/src/include support instead mixes
+    # the -ffast module C with the -fsafe superset runtime (extra static
+    # helpers), which yields a different byte image than the archived binary
+    # (A13 discovery: 8a87ef6c vs 1467d932).
+    cp "$GENDIR/c_exit.c" "$SEED/c_exit.c"
+    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c zig_nocrt.c; do
+        cp "$GENDIR/$f" "$SEED/runtime/"
+    done
+else
+    # Pre-EMITEMIT gen dir (no emitted support) — fall back to the canonical
+    # repo runtime sources.
+    cp "$ROOT/sf/src/c_exit.c" "$SEED/c_exit.c"
+    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c zig_nocrt.c; do
+        cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
+    done
+fi
+for f in std.zig std_io.zig std_fmt.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_page.zig std_page_pal.zig std_gpa.zig std_pool.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_cipher.zig std_ecc.zig std_parse.zig std_bencode.zig std_map.zig std_sort.zig std_heap.zig std_rle.zig std_base64.zig std_hex.zig std_utf8.zig std_http.zig std_rand.zig std_noise.zig std_lz4.zig std_zstd.zig std_deflate.zig std_num.zig std_pathfind.zig std_physics.zig std_hpa.zig std_asn1.zig std_x509.zig std_tls.zig std_tls_io.zig std_hpack.zig std_http2.zig std_wireguard.zig std_tcpip.zig std_gfx.zig std_gfx_pal.zig std_fold.zig std_fft.zig std_ddraw.zig std_ddraw_pal.zig std_dinput.zig std_dinput_pal.zig std_dsound.zig std_dsound_pal.zig; do
+    cp "$ROOT/sf/src/$f" "$SEED/lib/"
+done
+( cd "$SEED/lib" && LC_ALL=C md5sum *.zig > manifest.md5 )
+MANIFEST_MD5=$(md5sum "$SEED/lib/manifest.md5" | cut -d' ' -f1)
+LIB_COUNT=$(ls "$SEED/lib"/*.zig | wc -l)
+
+GEN_BYTES=$(stat -c '%s' "$SEED"/gen/*.c "$SEED"/gen/*.h | awk '{s += $1} END {print s}')
+
+# --- self-contained gcc-of-C rebuild of the assembled tree (fixed point) ---
+mkdir -p "$STAGE/check"
+cp "$SEED"/gen/*.c "$SEED"/gen/*.h "$STAGE/check/"
+# gen/ holds the module emission only; stage the runtime support sources next to
+# it and compile/link everything with one alphabetical *.o glob — the same
+# object order build_from_seed.sh uses — so the recorded fixed point is the true
+# self-emission fixed point (the support sources live in runtime/ + top level).
+cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED"/runtime/zig_nocrt.c "$SEED/c_exit.c" "$STAGE/check/"
+( cd "$STAGE/check" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+    -Wno-implicit-function-declaration -I "$SEED/runtime" -c *.c ) \
+    || die "archive C gcc -c failed"
+( cd "$STAGE/check" && gcc -m32 -O0 *.o -o "$STAGE/check/zig1_fromC" ) \
+    || die "archive C gcc link failed"
+FP_MD5=$(md5sum "$STAGE/check/zig1_fromC" | cut -d' ' -f1)
+echo "[archive] gcc-only rebuild of archive C md5 (fixed point): $FP_MD5"
+
+# --- Win9x companion zip (Windows-target self-emission + emitted scripts) ---
+WIN9X_ZIP_MD5=""
+WIN9X_WIN_C_COUNT=0
+WIN9X_WIN_H_COUNT=0
+if [ -n "$WIN9X_ZIP" ]; then
+    command -v python3 >/dev/null 2>&1 || die "python3 is required to pack --win9x-zip"
+    WIN9X_WIN="$STAGE/win"
+    mkdir -p "$WIN9X_WIN"
+    ( cd "$ROOT" && timeout 300 "$BIN" -osw -o "$WIN9X_WIN" sf/src/main.zig ) \
+        || die "Windows-target self-emission dump failed"
+    rm -f "$WIN9X_WIN"/.zig1_*.tmp
+    for s in build_target_crt.bat build_owc_crt.bat build_mingw_crt.bat build_mingw_nocrt.bat; do
+        [ -f "$WIN9X_WIN/$s" ] || die "emitted Windows-target build script missing: $s"
+    done
+    for s in build_target_nocrt.bat build_owc_nocrt.bat build_target.bat build_owc.bat build_target.sh; do
+        rm -f "$WIN9X_WIN/$s"
+    done
+    # Windows text artifacts are CRLF in the shipped zip; .lnk/.rsp are only
+    # present if a build ran in place before packing, so normalize if found.
+    for f in "$WIN9X_WIN"/*.bat "$WIN9X_WIN"/*.lnk "$WIN9X_WIN"/*.rsp; do
+        [ -e "$f" ] && crlf_normalize "$f"
+    done
+    WIN9X_WIN_C_COUNT=$(ls "$WIN9X_WIN"/*.c 2>/dev/null | wc -l)
+    WIN9X_WIN_H_COUNT=$(ls "$WIN9X_WIN"/*.h 2>/dev/null | wc -l)
+    [ "$WIN9X_WIN_C_COUNT" -gt 0 ] || die "no Windows-target *.c emitted into $WIN9X_WIN"
+    WIN9X_STAGE="$STAGE/zig1-seed-w9"
+    mkdir -p "$WIN9X_STAGE"
+    cp -r "$WIN9X_WIN" "$WIN9X_STAGE/win"
+    cp -r "$SEED/lib" "$WIN9X_STAGE/lib"
+    cat > "$WIN9X_STAGE/README.txt" <<EOF
+Z98 Win9x companion seed ($SEED_VERSION)
+========================================
+
+Pinned HEAD: $HEAD
+Capture date: $DATE
+
+This is the Windows-target companion to the Linux seed
+release/seed/zig1-seed.tgz. It contains no prebuilt compiler executable.
+win/ is a zig1 -osw compiler dump: the compiler's Windows-target C89,
+runtime support, the two static-CRT build scripts the compiler emitted, and
+the MinGW fallback pair (build_mingw_crt.bat/build_mingw_nocrt.bat). It ships
+no MSVC/OpenWatcom no-CRT compiler scripts: that build is deferred to the
+asm_x86 backend. Do not use the Linux gen/ C for Win9x.
+
+Build the compiler on the Win9x machine
+---------------------------------------
+cd win
+Each script writes its full command/output log to 00.txt in win/; the final
+log line is Built: prog.exe on success or BUILD FAILED otherwise.
+Win9x command.com redirects stdout only: no stream-merge redirection is used.
+00.txt holds the executed commands plus stdout; OWC writes per-TU *.err files,
+and MinGW gcc stderr appears on the console.
+
+OpenWatcom (build_owc_crt.bat):
+    rem run C:\\WATCOM\\OWSETENV.BAT in this window first (sets INCLUDE/LIB)
+    build_owc_crt.bat
+    copy prog.exe ..\\zig1.exe
+  wcc386 reads its flags from z98_cc.rsp (/fpc /bt=nt /ox and the /d /i
+  flags), and wlink reads z98_link.lnk (system nt, stack 2097152, file
+  *.obj, library kernel32,winmm).
+
+MSVC 6 (build_target_crt.bat):
+    rem fresh window; do not keep the Watcom env in it
+    C:\\PROGRA~1\\MICROS~1\\VC98\\BIN\\VCVARS32.BAT
+    build_target_crt.bat
+    copy prog.exe ..\\zig1.exe
+  cl reads /c /Op /nologo /O2 /W3 /MT from z98_cc.rsp (plus the /D and /I
+  flags), and link reads z98_link.rsp. Keep CL_EXE/LINK_EXE unquoted.
+
+MinGW fallback (Windows-hosted gcc), if MSVC 6 / OpenWatcom are unavailable:
+    rem put the MinGW bin directory on PATH first
+    build_mingw_crt.bat
+    copy prog.exe ..\\zig1.exe
+    build_mingw_nocrt.bat
+    copy prog.exe ..\\zig1.exe
+  The MinGW scripts are response-file-free: gcc 3.4.5 has no @file support.
+  Every source is compiled by an explicit gcc line; objects are linked in
+  explicit partial \`gcc -r\` chunks (at most 18 objects each) plus one short
+  final link. The CRT script defines no ZIG_NO_CRT; the no-CRT script adds
+  -DZIG_NO_CRT and links -nostdlib -Wl,-e,_mainCRTStartup -lgcc.
+
+The MSVC/OpenWatcom scripts use a static CRT (/MT for MSVC 6, OpenWatcom
+static CLIB): a single EXE with no msvcrt.dll. They may import KERNEL32 names
+beyond the strict 9x whitelist; validate the result on the era machine.
+build_mingw_nocrt.bat is the -nostdlib single-EXE fallback; build_mingw_crt.bat
+is CRT-linked.
+
+The copied ..\\zig1.exe sits beside ..\\lib\\. That lib/ is the compiler's
+standard library. Run zig1.exe with no arguments to see usage.
+
+CRT note
+--------
+The compiler build here is CRT-only: build_target_crt.bat / build_owc_crt.bat
+use a static CRT (/MT or OpenWatcom static CLIB), producing a single EXE with
+no msvcrt.dll. The compiler's own no-CRT build is deferred until the asm_x86
+backend; emitted programs still default to no-CRT.
+
+Compiler status
+---------------
+The compiler source in win/ is -fsafe-clean (all intentional wraps and the
+three real safe-mode defects fixed). The Windows-hosted compiler previously
+rejected std-using programs at std_async.zig:259 (field resolution); that was
+root-caused to a C89 update-stream fseek elision in spill_store.zig and fixed,
+so the Windows-hosted compiler matches the Linux one on the 1188-dir corpus
+(1186/1188 identical classes) and this CRT build is app-ready.
+
+Build a program
+---------------
+zig1.exe -osw -o out hello.z98
+then run out\\build_owc_crt.bat (or build_target_crt.bat), or the emitted
+_nocrt variant; the program is out\\prog.exe (rename it if desired).
+
+If a toolchain rejects the C, report the exact error.
+EOF
+    crlf_normalize "$WIN9X_STAGE/README.txt"
+    mkdir -p "$(dirname "$WIN9X_ZIP")"
+    rm -f "$WIN9X_ZIP"
+    python3 - "$WIN9X_STAGE" "$WIN9X_ZIP" <<'PY'
+import os
+import sys
+import zipfile
+
+stage, out = sys.argv[1], sys.argv[2]
+base = os.path.dirname(os.path.abspath(stage))
+entries = []
+for root, dirs, files in os.walk(stage):
+    dirs.sort()
+    for name in sorted(files):
+        path = os.path.join(root, name)
+        arcname = os.path.relpath(path, base).replace(os.sep, "/")
+        entries.append((arcname, path))
+entries.sort()
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+    for arcname, path in entries:
+        info = zipfile.ZipInfo(arcname, date_time=(2026, 10, 24, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.create_system = 0
+        info.external_attr = 0
+        with open(path, "rb") as fh:
+            zf.writestr(info, fh.read())
+PY
+    WIN9X_ZIP_MD5=$(md5sum "$WIN9X_ZIP" | cut -d' ' -f1)
+    echo "[archive] wrote $WIN9X_ZIP (Windows-target C $WIN9X_WIN_C_COUNT .c + $WIN9X_WIN_H_COUNT .h; zip md5 $WIN9X_ZIP_MD5)"
+fi
+
+# --- SEED_README.txt ---
+cat > "$SEED/SEED_README.txt" <<EOF
+SEED - zig1 bootstrap seed (zig0-independent rebuild path)
+==========================================================
+
+Pinned HEAD: $HEAD
+Capture date: $DATE
+Spec: docs/superpowers/specs/2026-09-07-seed-bootstrap-migration-design.md
+
+Purpose: rebuild zig1 with ONLY gcc, never zig0. zig0 stays in-tree and active;
+this archive is the committed safety net, rotated once per completed plan.
+
+Contents
+--------
+zig1-seed/zig1        seed binary (md5 $BIN_MD5)
+zig1-seed/gen/        the seed's own self-emission C89 ($C_COUNT .c + $H_COUNT
+                      .h incl. zig_special_types.h, emitted from sf/src/main.zig
+                      at HEAD $HEAD; $GEN_BYTES bytes)
+zig1-seed/c_exit.c    link source (sf/src/c_exit.c, top level per spec layout)
+zig1-seed/runtime/    link/include sources needed to compile gen/:
+                      zig_compat.h, zig_runtime.h, zig_special_types.h,
+                      zig_runtime.c, zig_pal.c, zig_nocrt.c (the compiler's emitted,
+                      mode-specific support so a gcc-only rebuild reproduces
+                      the seed binary's fixed point; canonical repo copies for
+                      pre-EMITEMIT gen dirs)
+zig1-seed/lib/        the 65 std .zig (std.zig, std_io.zig, std_fmt.zig,
+                      std_arena.zig, std_net.zig, std_str.zig, std_mem.zig,
+                      std_math.zig, std_debug.zig, std_async.zig, std_bits.zig,
+                      std_os.zig, std_os_pal.zig, std_time.zig,
+                      std_time_pal.zig, std_page.zig, std_page_pal.zig,
+                      std_gpa.zig, std_pool.zig, std_buf.zig, std_file.zig,
+                      std_file_pal.zig, std_stdin.zig, std_stdin_pal.zig,
+                      std_stream.zig, std_crypto.zig, std_cipher.zig, std_ecc.zig, std_parse.zig,
+                      std_bencode.zig,
+                      std_map.zig, std_sort.zig, std_heap.zig, std_rle.zig,
+                      std_base64.zig, std_hex.zig, std_utf8.zig, std_http.zig,
+                      std_rand.zig, std_noise.zig, std_lz4.zig, std_zstd.zig,
+                      std_deflate.zig, std_num.zig, std_pathfind.zig,
+                      std_physics.zig,
+                      std_hpa.zig, std_asn1.zig, std_x509.zig, std_tls.zig,
+                      std_tls_io.zig, std_hpack.zig, std_http2.zig,
+                      std_wireguard.zig, std_tcpip.zig, std_gfx.zig,
+                      std_gfx_pal.zig, std_fold.zig, std_fft.zig,
+                      std_ddraw.zig, std_ddraw_pal.zig, std_dinput.zig,
+                      std_dinput_pal.zig, std_dsound.zig, std_dsound_pal.zig)
+zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (65 std files,
+                      the std attribution pin)
+zig1-seed/SEED_README.txt  this file
+
+Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts; CRT-only compiler build via build_target_crt.bat/build_owc_crt.bat with static CRT and no msvcrt.dll; compiler source -fsafe-clean; no-CRT zig1 deferred to asm_x86; the Win9x std_async field-resolution failure was root-caused to a C89 update-stream fseek elision in spill_store.zig and fixed, so the CRT build is app-ready)
+
+Windows companion build recipe (win/ in zig1_seed_w9.zip):
+  OpenWatcom: run C:\\WATCOM\\OWSETENV.BAT in the window first; then
+  build_owc_crt.bat (wcc386 @z98_cc.rsp with /fpc; wlink @z98_link.lnk).
+  MSVC 6: use a fresh window and run VCVARS32.BAT first (never with the
+  Watcom env); then build_target_crt.bat (%CL_EXE% @z98_cc.rsp with /Op;
+  %LINK_EXE% @z98_link.rsp).
+  MinGW: put the MinGW bin directory on PATH; then build_mingw_crt.bat (or
+  build_mingw_nocrt.bat, which adds -DZIG_NO_CRT and -nostdlib). The MinGW
+  scripts are @file-free (gcc 3.4.5 has no response-file support): explicit
+  compile lines plus explicit chunked \`gcc -r\` partial links (at most 18
+  objects each) and one short final link.
+  Every script echoes each command and its output to 00.txt in win/; the
+  final log line is Built: prog.exe on success or BUILD FAILED otherwise.
+  Win9x command.com redirects stdout only: no stream-merge redirection is
+  used. 00.txt holds commands+stdout; OWC writes per-TU *.err and MinGW gcc
+  stderr appears on the console.
+
+(net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
+included: 0 references in any emitted gen/*.c|*.h for a linux -osl gcc-only
+rebuild.) sf/src .zig sources are NOT duplicated in the archive - the pinned
+HEAD sha in release/seed/CHANGELOG.md identifies the source; the source lives
+in git.
+
+About these recipes (fixed-point measurement)
+---------------------------------------------
+These recipes are the fixed-point MEASUREMENT procedure, not merely a way to
+get a working binary. The "fixed point" is the md5 of the exact executable bytes
+this canonical build produces: every translation unit (the emitted modules AND
+the runtime support zig_runtime.c / zig_pal.c / zig_nocrt.c / c_exit.c) compiled with the full
+flag set via 'gcc -c', then every object linked together as '*.o'. Two builds of
+the same sources can run identically yet hash differently if they compile with
+different flags, compile a unit implicitly on the link line instead of with
+'gcc -c', or link a different object set/order. Because the fixed point is what
+proves seed self-reproduction and gates rotations, each recipe below (and
+scripts/seed/build_from_seed.sh, scripts/seed/archive_seed.sh) MUST reproduce it
+byte-for-byte. A md5 mismatch is a recipe deviation first - check the flags and
+the object set - not assumed to be a compiler bug.
+
+Binary vs fixed point (provenance)
+----------------------------------
+The archived binary md5 $BIN_MD5 and the self-emission fixed point $FP_MD5
+(gcc of the archive's gen/ C, verified at creation) represent the SAME compiler
+state at HEAD $HEAD. A gcc-only rebuild of the archive's C must reproduce
+$FP_MD5.
+
+Rebuild recipe 1 (primary, forward path) - from the seed binary
+---------------------------------------------------------------
+From the repo root (current sf/src):
+
+  timeout 120 ./zig1-seed/zig1 -ffast --dump-c89 --output-dir <fresh-dir> sf/src/main.zig
+
+  (run from the repo root with the RELATIVE sf/src/main.zig path: module
+  basename-hash tokens depend on the resolved source path; --output-dir must
+  already exist. The dump is self-contained: it contains the emitted runtime
+  support zig_runtime.c / zig_pal.c / zig_nocrt.c / c_exit.c alongside the module .c. Exclude
+  only the .zig1_*.tmp spill scratch the dump writes into the output dir.)
+
+  cd <fresh-dir>
+  gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+      -Wno-implicit-function-declaration -I . -c *.c
+  gcc -m32 -O0 *.o -o zig1_next
+
+  The emitted support is compiled by this same 'gcc -c *.c' step (with -Wall)
+  and linked as objects. Do NOT also append the repo runtime sources on the link
+  line - that double-links zig_runtime.c/zig_pal.c/zig_nocrt.c/c_exit.c.
+
+Verify two-hop fixed-point closure: dump sf/src/main.zig with zig1_next -ffast
+into a fresh dir, gcc the same way, link -> binary md5 must equal the fixed
+point $FP_MD5. (The compiler self-build always passes -ffast; the recorded
+fixed point is the -ffast binary. scripts/seed/build_from_seed.sh automates
+this.)
+
+Rebuild recipe 2 (fallback) - seed binary lost, rebuild from C only
+-------------------------------------------------------------------
+Self-contained; no repo include path, no zig0. The archive keeps the runtime
+support in runtime/ + top-level c_exit.c so gen/ is module-only; compile ALL of
+it together with one 'gcc -c' under the canonical flags, exactly as
+archive_seed.sh's fixed-point check does. Build in a scratch copy so the *.o
+files do not litter the archive:
+
+  cp -r zig1-seed /tmp/zig1-seed-build && cd /tmp/zig1-seed-build
+  gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+      -Wno-implicit-function-declaration -I runtime \
+      -c gen/*.c runtime/zig_runtime.c runtime/zig_pal.c runtime/zig_nocrt.c c_exit.c
+  gcc -m32 -O0 *.o -o zig1_fromC
+
+Binary md5 must equal the fixed point $FP_MD5. The four runtime support
+translation units MUST be compiled with 'gcc -c' under the same flag set and
+linked as objects; dropping them onto the link line as sources omits the
+canonical flags (notably -Wall) and links a different object set/order, so the
+fixed point is NOT reproduced.
+
+std install: the produced binary needs the std lib next to it (lib/ with the 65
+std .zig) - copied from zig1-seed/lib/ or the binary's lib-dir.
+
+CRITICAL FLAG SET RULE (operator amendment 2026-09-07)
+------------------------------------------------------
+Every gcc -c command MUST carry the FULL canonical flag set, INCLUDING -Wall:
+
+  gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+      -Wno-implicit-function-declaration -I <inc> -c ...
+
+The fixed point reproduces ONLY with -Wall present. -Wall does not change the
+generated instructions, but it changes the assembler's local-label numbering in
+the object files, so the linked bytes - and therefore the md5 - differ without
+it (.text stays instruction-identical: the binary is functionally equivalent,
+just not byte-identical). This is why the fixed point is defined by an exact
+recipe, and why EVERY translation unit - support included - must be compiled
+with 'gcc -c' under the full flag set rather than compiled implicitly on a link
+line.
+
+Link rule: the self-emission C89 needs zig_runtime.c + zig_pal.c +
+zig_nocrt.c + c_exit.c (all present in the dump/archive and swept into
+'*.o'). zig_pal.c alone is insufficient (undefined std_panic + c_exit).
+
+Archive inventory (sizes from sf/src at HEAD $HEAD):
+  runtime/: zig_compat.h, zig_runtime.h, zig_special_types.h, zig_runtime.c,
+  zig_pal.c, zig_nocrt.c (staged from the gen dir's emitted, mode-specific support so the
+  gcc-only rebuild reproduces the archived binary's fixed point; canonical repo
+  copies only for pre-EMITEMIT gen dirs). c_exit.c is at archive top level,
+  separate from runtime/, per spec layout. Emitted gen set: $C_COUNT .c +
+  $H_COUNT .h
+  = $GEN_BYTES bytes.
+EOF
+
+crlf_normalize "$SEED/SEED_README.txt"
+
+rm -f "$OUTTGZ"
+tar -czf "$OUTTGZ" -C "$STAGE" zig1-seed
+ARCHIVE_MD5=$(md5sum "$OUTTGZ" | cut -d' ' -f1)
+echo "[archive] wrote $OUTTGZ (archive md5 $ARCHIVE_MD5)"
+
+# --- CHANGELOG entry (printed always; prepended with --update-changelog) ---
+WIN9X_ENTRY_SECTION=""
+if [ -n "$WIN9X_ZIP" ]; then
+    WIN9X_ENTRY_SECTION=$(cat <<EOF
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | \`$WIN9X_ZIP\` |
+| zip md5 | \`$WIN9X_ZIP_MD5\` |
+| win/ C | $WIN9X_WIN_C_COUNT \`.c\` + $WIN9X_WIN_H_COUNT \`.h\` (full \`zig1 -osw\` compiler dump; MSVC/OWC no-CRT scripts, aliases, and \`build_target.sh\` removed; MinGW fallback pair shipped) |
+| compiler build scripts | \`build_target_crt.bat\`, \`build_owc_crt.bat\` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | \`-fsafe\`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted \`std_async.zig:259\` field-resolution failure root-caused to a C89 update-stream fseek elision in \`spill_store.zig\` and fixed; CRT build app-ready |
+| lib | $LIB_COUNT std \`.zig\` + \`manifest.md5\` |
+| HEAD/date | \`$HEAD\` / $DATE |
+EOF
+)
+fi
+ENTRY="$STAGE/changelog_entry.txt"
+cat > "$ENTRY" <<EOF
+## $DATE — seed $SEED_VERSION (HEAD $HEAD)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+\`zig1-seed/\` with \`zig1\`, \`gen/\` ($C_COUNT \`.c\` + $H_COUNT \`.h\` incl.
+emitted \`zig_special_types.h\`, $GEN_BYTES bytes), \`c_exit.c\` (top level),
+\`runtime/\`, \`lib/\`, \`SEED_README.txt\`.
+
+| field | value |
+|---|---|
+| date | $DATE |
+| HEAD | \`$HEAD\` |
+| seed binary md5 | \`$BIN_MD5\` |
+| self-emission C | $C_COUNT \`.c\` + $H_COUNT \`.h\` ($GEN_BYTES bytes) |
+| fixed point | \`$FP_MD5\` |
+| lib manifest | \`lib/manifest.md5\` ($LIB_COUNT std files; md5 \`$MANIFEST_MD5\`) |
+| archive md5 | \`$ARCHIVE_MD5\` |
+${WIN9X_ENTRY_SECTION}
+
+Provenance note: the archived binary (md5 $BIN_MD5) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+$HEAD; gcc of the archive's self-emission C reproduces the fixed point
+\`$FP_MD5\` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses \`-ffast\` (user programs
+default to \`-fsafe\`), so the recorded fixed point is the \`-ffast\` binary.
+Rebuild recipes + full canonical flag-set requirement (\`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration\`; the fixed point reproduces ONLY with
+\`-Wall\` present) are recorded in \`zig1-seed/SEED_README.txt\`.
+
+EOF
+
+echo "--- CHANGELOG entry ---"
+cat "$ENTRY"
+
+if [ "$UPDATE_CHANGELOG" = 1 ]; then
+    [ -f "$CHANGELOG" ] || die "release/seed/CHANGELOG.md not found (refusing --update-changelog)"
+    TMPC=$(mktemp)
+    awk -v entry="$ENTRY" '
+        NR == FNR { buf = buf $0 "\n"; next }
+        /^## / && !done { printf "%s", buf; done = 1 }
+        { print }
+    ' "$ENTRY" "$CHANGELOG" > "$TMPC"
+    mv "$TMPC" "$CHANGELOG"
+    echo "[archive] prepended entry to $CHANGELOG"
+fi

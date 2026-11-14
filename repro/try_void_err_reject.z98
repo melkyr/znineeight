@@ -1,0 +1,28 @@
+// repro/try_void_err_reject.z98 — FX12 (Volume II ch12) discovery evidence.
+//
+// Converted from the Task 1 Finding-A probe `/tmp/t1/probes/n_try_void_err.z98`
+// (task-1-report.md §3, A1): a `void` function whose `try` operand is an
+// erroring `!void`. Pre-FX12 Z98 compiled rc 0 and silently dropped the error
+// (`after-try` skipped, `main-done` printed; the emitted `f` contained
+// `return zT_0;` in a C void function). Zig 0.15.2 rejects with
+// `expected type 'void', found '<error set>'` + `note: function cannot return
+// an error`.
+//
+// Contract now: dump rc 2, 0 `.c`, exactly 1 level-0 `error[3075]`
+// (`expected type 'void', found error set` + `function cannot return an
+// error`), no signals.
+const std = @import("std");
+
+fn g() !void {
+    return error.Boom;
+}
+
+fn f() void {
+    try g();
+    std.io.print("after-try\n");
+}
+
+pub fn main() void {
+    f();
+    std.io.print("main-done\n");
+}

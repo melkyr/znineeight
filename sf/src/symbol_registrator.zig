@@ -11,6 +11,7 @@ const TypeKind = type_mod.TypeKind;
 const hash_mod = @import("util/hash.zig");
 const pal_mod = @import("pal.zig");
 const itoa_mod = @import("util/itoa.zig");
+const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 
 pub const DepEdge = struct { from: u32, to: u32 };
@@ -81,10 +82,10 @@ pub fn depGraphFinalize(self: *DepGraph, max_type_id: u32) void {
 fn addTypeDependencies(store: *AstStore, decl_idx: u32, tid: u32, g: *DepGraph) void {
     var node = ast_mod.astStoreNodeAt(store, decl_idx);
     if (ast_mod.astStoreNodePayload(store, decl_idx) == @intCast(u32, 0)) return;
-    var children = ast_mod.astStoreNodeExtraChildren(store, decl_idx);
+    var children_n = ast_mod.astStoreNodeExtraChildCount(store, decl_idx);
     var i: usize = 0;
-    while (i < children.len) {
-        var field_node = ast_mod.astStoreNodeAt(store, children[i]);
+    while (i < children_n) {
+        var field_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
         if (field_node.kind == AstKind.field_decl) {
             depGraphAddEdge(g, @intCast(u32, 0), tid);
         }
@@ -92,21 +93,52 @@ fn addTypeDependencies(store: *AstStore, decl_idx: u32, tid: u32, g: *DepGraph) 
     }
 }
 
-fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_kind: AstKind, decl_idx: u32, sym_reg: *SymbolRegistry) void {
+pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_kind: AstKind, decl_idx: u32, tid: u32, sym_reg: *SymbolRegistry) void {
     var node = ast_mod.astStoreNodeAt(store, decl_idx);
-    if (ast_mod.astStoreNodePayload(store, decl_idx) == @intCast(u32, 0)) return;
-    var children = ast_mod.astStoreNodeExtraChildren(store, decl_idx);
-    if (children.len == 0) return;
+    var is_container: bool = decl_kind == AstKind.struct_decl or decl_kind == AstKind.enum_decl or decl_kind == AstKind.union_decl or decl_kind == AstKind.error_set_decl;
+    if (!is_container and ast_mod.astStoreNodePayload(store, decl_idx) == @intCast(u32, 0)) return;
+    var children_n = ast_mod.astStoreNodeExtraChildCount(store, decl_idx);
+    if (!is_container and children_n == 0) return;
+
+    // FB (D4): a flagged positional `struct { T1, T2 }` is a tuple type. Its
+    // shell is `TuplePayload{elems_start, elems_count}` over `xt_items` with
+    // `TYPE_VOID` placeholders; `resolveDeclAggregateFieldTypes` fills the real
+    // element types later (the same shell+fill split the struct branch uses for
+    // `fe_items`).
+    if (decl_kind == AstKind.struct_decl and (@intCast(u16, node.flags) & @intCast(u16, 0x20)) != @intCast(u16, 0)) {
+        var estart: u32 = @intCast(u32, type_reg.xt_len);
+        var ecount: u32 = 0;
+        var ti: usize = 0;
+        while (ti < children_n) : (ti += 1) {
+            var efd = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, ti)));
+            if (efd.kind == AstKind.field_decl) {
+                type_mod.xtAppend(type_reg, type_mod.TYPE_VOID);
+                ecount += 1;
+            }
+        }
+        if (ecount > 0) {
+            type_mod.tupAppend(type_reg, type_mod.TuplePayload{
+                .elems_start = estart,
+                .elems_count = @intCast(u16, ecount),
+            });
+            var tup_last: usize = type_reg.tup_len - @intCast(usize, 1);
+            var tup_idx: u32 = @intCast(u32, tup_last);
+            var tty = type_reg.types_items[@intCast(usize, tid)];
+            tty.payload_idx = tup_idx;
+            type_reg.types_items[@intCast(usize, tid)] = tty;
+        }
+        return;
+    }
 
     if (decl_kind == AstKind.struct_decl) {
         var fstart: u32 = @intCast(u32, type_reg.fe_len);
         var fcount: u32 = 0;
         var i: usize = 0;
-        while (i < children.len) {
-            var fd = ast_mod.astStoreNodeAt(store, children[i]);
+        while (i < children_n) {
+            var fd = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
             if (fd.kind == AstKind.field_decl) {
                 type_mod.feAppend(type_reg, type_mod.FieldEntry{
-                    .name_id = ast_mod.astStoreNodePayload(store, children[i]),
+                    .name_id = ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i))),
                     .type_id = type_mod.TYPE_VOID,
                     .offset = @intCast(u32, 0),
                 });
@@ -114,27 +146,25 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             }
             i += 1;
         }
-        if (fcount > 0) {
-            type_mod.stAppend(type_reg, type_mod.StructPayload{
-                .fields_start = @intCast(u32, fstart),
-                .fields_count = @intCast(u16, fcount),
-            });
-        }
+        type_mod.stAppend(type_reg, type_mod.StructPayload{
+            .fields_start = @intCast(u32, fstart),
+            .fields_count = @intCast(u16, fcount),
+        });
         var st_last: usize = type_reg.st_len - @intCast(usize, 1);
         var st_idx: u32 = @intCast(u32, st_last);
-        var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+        var ty = type_reg.types_items[@intCast(usize, tid)];
         ty.payload_idx = st_idx;
-        type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+        type_reg.types_items[@intCast(usize, tid)] = ty;
     }
     if (decl_kind == AstKind.union_decl) {
         var fstart: u32 = @intCast(u32, type_reg.fe_len);
         var fcount: u32 = 0;
         var i: usize = 0;
-        while (i < children.len) {
-            var fd = ast_mod.astStoreNodeAt(store, children[i]);
+        while (i < children_n) {
+            var fd = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
             if (fd.kind == AstKind.field_decl) {
                 type_mod.feAppend(type_reg, type_mod.FieldEntry{
-                    .name_id = ast_mod.astStoreNodePayload(store, children[i]),
+                    .name_id = ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i))),
                     .type_id = type_mod.TYPE_VOID,
                     .offset = @intCast(u32, 0),
                 });
@@ -150,9 +180,9 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             });
             var tu_last: usize = type_reg.tu_len - @intCast(usize, 1);
             var tu_idx: u32 = @intCast(u32, tu_last);
-            var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+            var ty = type_reg.types_items[@intCast(usize, tid)];
             ty.payload_idx = tu_idx;
-            type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+            type_reg.types_items[@intCast(usize, tid)] = ty;
         } else {
             type_mod.unAppend(type_reg, type_mod.UnionPayload{
                 .fields_start = @intCast(u32, fstart),
@@ -161,63 +191,54 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
             });
             var un_last: usize = type_reg.un_len - @intCast(usize, 1);
             var un_idx: u32 = @intCast(u32, un_last);
-            var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+            var ty = type_reg.types_items[@intCast(usize, tid)];
             ty.payload_idx = un_idx;
-            type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+            type_reg.types_items[@intCast(usize, tid)] = ty;
         }
     }
     if (decl_kind == AstKind.enum_decl) {
-        var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner, .module_id = type_resolver.MODULE_ID_NONE };
+        var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner, .module_id = type_resolver.MODULE_ID_NONE, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
         var backing_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
         backing_box[0] = type_mod.TYPE_U32;
+        var expl_flag: u8 = @intCast(u8, 0);
         if (node.child_0 != 0) {
             var bt = type_resolver.resolveTypeExprFull(&tre_env, node.child_0, @intCast(u32, 0));
             if (bt != type_mod.TYPE_UNDEFINED and bt != type_mod.TYPE_VOID) { backing_box[0] = bt; }
+            expl_flag = @intCast(u8, 1);
         }
         var mstart: u32 = @intCast(u32, type_reg.em_len);
         var mcount: u32 = 0;
-        var auto_val: u32 = @intCast(u32, 0);
-        var i: usize = 0;
-        while (i < children.len) {
-            var mnode = ast_mod.astStoreNodeAt(store, children[i]);
-            if (mnode.kind == AstKind.field_decl) {
-                var mval: u32 = auto_val;
-                if (mnode.child_1 != 0) {
-                    var ev = type_resolver.evalConstU32Full(&tre_env, mnode.child_1);
-                    if (ev != @intCast(u32, 0xFFFFFFFF)) { mval = ev; }
-                }
-                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = ast_mod.astStoreNodePayload(store, children[i]), .value = @intCast(i64, mval) });
-                mcount += 1;
-                auto_val = mval + @intCast(u32, 1);
-            }
-            i += 1;
-        }
+        var fail_node: u32 = 0;
+        var fail_kind: u32 = 0;
+        _ = type_resolver.enumMembersResolve(&tre_env, decl_idx, true, @intCast(u32, 0), false, false, &mcount, &fail_node, &fail_kind);
+
         type_mod.enAppend(type_reg, type_mod.EnumPayload{
             .members_start = @intCast(u32, mstart),
             .members_count = @intCast(u16, mcount),
             .backing_type = backing_box[0],
+            .explicit_backing = expl_flag,
         });
         var en_last: usize = type_reg.en_len - @intCast(usize, 1);
         var en_idx: u32 = @intCast(u32, en_last);
-        var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+        var ty = type_reg.types_items[@intCast(usize, tid)];
         ty.payload_idx = en_idx;
-        type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+        type_reg.types_items[@intCast(usize, tid)] = ty;
     }
     if (decl_kind == AstKind.error_set_decl) {
         var tags_start_idx: u32 = @intCast(u32, type_reg.xn_len);
         var i: usize = 0;
-        while (i < children.len) : (i += 1) {
-            type_mod.xnAppend(type_reg, children[i]);
+        while (i < children_n) : (i += 1) {
+            type_mod.xnAppend(type_reg, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
         }
         type_mod.esAppend(type_reg, type_mod.ErrorSetPayload{
             .tags_start = tags_start_idx,
-            .tags_count = @intCast(u16, children.len),
+            .tags_count = @intCast(u16, children_n),
         });
         var es_last: usize = type_reg.es_len - @intCast(usize, 1);
         var es_idx: u32 = @intCast(u32, es_last);
-        var ty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+        var ty = type_reg.types_items[@intCast(usize, tid)];
         ty.payload_idx = es_idx;
-        type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = ty;
+        type_reg.types_items[@intCast(usize, tid)] = ty;
     }
 }
 
@@ -256,14 +277,17 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 }
                 if (init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.enum_decl or init_node.kind == AstKind.union_decl or init_node.kind == AstKind.error_set_decl) {
                     var type_kind: TypeKind = switch (init_node.kind) {
-                        AstKind.struct_decl => TypeKind.struct_type,
+                        AstKind.struct_decl => if ((@intCast(u16, init_node.flags) & @intCast(u16, 0x20)) != 0) TypeKind.tuple_type else TypeKind.struct_type,
                         AstKind.enum_decl => TypeKind.enum_type,
-                        AstKind.union_decl => if ((@intCast(u16, init_node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
+                        AstKind.union_decl => if ((@intCast(u16, init_node.flags) & @intCast(u16, 0x10)) != 0) TypeKind.packed_union_type else if ((@intCast(u16, init_node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
                         AstKind.error_set_decl => TypeKind.error_set_type,
                         else => TypeKind.void_type,
                     };
                     sym_type_id = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-                    if (populate) { populateTypePayload(type_reg, store, init_node.kind, node.child_1, sym_reg); }
+                    if ((init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.union_decl) and (@intCast(u16, init_node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
+                        type_mod.typeRegistrySetPacked(type_reg, sym_type_id);
+                    }
+                    if (populate) { populateTypePayload(type_reg, store, init_node.kind, node.child_1, sym_type_id, sym_reg); }
                     addTypeDependencies(store, node.child_1, sym_type_id, g);
                     sym_kind = sym_mod.SymbolKind.type_alias;
                     sym_mod_id = mod_id;
@@ -280,8 +304,25 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         sym_type_id = ct;
                         sym_kind = sym_mod.SymbolKind.type_alias;
                         sym_mod_id = mod_id;
+                    } else {
+                        // Arbitrary-width integer aliases (`const T = u7`) are not
+                        // cached at registration time — the arb-int TypeId is built
+                        // lazily by resolveTypeExprFull. Resolve it here so the alias
+                        // registers as a type (in-module and cross-module `pub`).
+                        var arb_u: bool = false;
+                        var ident_text = interner_mod.stringInternerGet(type_reg.interner, ident_name_id);
+                        if (type_mod.parseArbIntWidth(ident_text, &arb_u) != @intCast(u32, 0)) {
+                            var arb_tid = type_mod.typeRegistryGetOrCreateArbInt(type_reg, ident_text);
+                            if (arb_tid != type_mod.TYPE_UNDEFINED) {
+                                var atk: u64 = @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+                                type_mod.nameCachePut(type_reg, atk, arb_tid);
+                                sym_type_id = arb_tid;
+                                sym_kind = sym_mod.SymbolKind.type_alias;
+                                sym_mod_id = mod_id;
+                            }
+                        }
                     }
-                } else if (init_node.kind == AstKind.array_type or init_node.kind == AstKind.slice_type or init_node.kind == AstKind.many_ptr_type) {
+                } else if (init_node.kind == AstKind.array_type or init_node.kind == AstKind.slice_type or init_node.kind == AstKind.many_ptr_type or init_node.kind == AstKind.ptr_type or init_node.kind == AstKind.optional_type or init_node.kind == AstKind.error_union_type or init_node.kind == AstKind.fn_type) {
                     var at_m: []const u8 = "AT:p"; pal_mod.markerWriteInt(at_m, name_id);
                     var acached = type_mod.nameCacheGet(type_reg, @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id));
                     if (acached == null) { acached = type_mod.nameCacheGet(type_reg, @intCast(u64, name_id)); }
@@ -300,6 +341,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = sym_mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -332,6 +374,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -346,6 +389,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                     .flags = @intCast(u16, node.flags),
                     .decl_node = decl_idx,
                     .module_id = mod_id,
+                    .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                     .scope_level = @intCast(u32, 0),
                 };
                 var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -355,13 +399,16 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
         AstKind.struct_decl, AstKind.enum_decl, AstKind.union_decl => {
             var name_id: u32 = @intCast(u32, ast_mod.astStoreNodePayloadPacked(store, decl_idx, node.kind) & @intCast(u64, 0xFFFFFFFF));
             var type_kind: TypeKind = switch (node.kind) {
-                AstKind.struct_decl => TypeKind.struct_type,
+                AstKind.struct_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x20)) != 0) TypeKind.tuple_type else TypeKind.struct_type,
                 AstKind.enum_decl => TypeKind.enum_type,
-                AstKind.union_decl => if ((@intCast(u16, node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
+                AstKind.union_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x10)) != 0) TypeKind.packed_union_type else if ((@intCast(u16, node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
                 else => TypeKind.void_type,
             };
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, type_kind);
-            if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg); }
+            if ((node.kind == AstKind.struct_decl or node.kind == AstKind.union_decl) and (@intCast(u16, node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
+                type_mod.typeRegistrySetPacked(type_reg, tid);
+            }
+            if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, tid, sym_reg); }
             addTypeDependencies(store, decl_idx, tid, g);
             var sym = sym_mod.Symbol{
                 .name_id = name_id,
@@ -370,6 +417,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -378,7 +426,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
         AstKind.error_set_decl => {
             var name_id: u32 = @intCast(u32, ast_mod.astStoreNodePayloadPacked(store, decl_idx, node.kind) & @intCast(u64, 0xFFFFFFFF));
             var tid = type_mod.typeRegistryRegisterNamedType(type_reg, mod_id, name_id, TypeKind.error_set_type);
-            if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, sym_reg); }
+            if (populate) { populateTypePayload(type_reg, store, node.kind, decl_idx, tid, sym_reg); }
             var sym = sym_mod.Symbol{
                 .name_id = name_id,
                 .type_id = tid,
@@ -386,6 +434,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -402,6 +451,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                      .flags = @intCast(u16, 0),
                      .decl_node = decl_idx,
                      .module_id = tid,
+                     .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                      .scope_level = @intCast(u32, 0),
                  };
                  var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -422,7 +472,7 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
     if ((entry.state != mr_mod.ModuleState.parsed and entry.state != mr_mod.ModuleState.resolved) or entry.ast_root == 0) return;
     var root = ast_mod.astStoreNodeAt(store, entry.ast_root);
     if (root.kind != AstKind.module_root) return;
-    var decls = ast_mod.astStoreNodeExtraChildren(store, entry.ast_root);
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(store, entry.ast_root);
     if (module_id == @intCast(u32, 0)) {
         var dg: []const u8 = "RS"; pal_mod.markerWrite(dg);
         var pb: [20]u8 = undefined;
@@ -431,13 +481,13 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
         pal_mod.markerWrite(pb[ps..@intCast(usize, 19)]);
         var sc: []const u8 = ":"; pal_mod.markerWrite(sc);
         var i2: usize = 0;
-        while (i2 < decls.len) : (i2 += 1) {
+        while (i2 < @intCast(usize, decls_n)) : (i2 += 1) {
             var ii_buf: [20]u8 = undefined;
-            var ii_len = itoa_mod.itoa(decls[i2], ii_buf[0..]);
+            var ii_len = itoa_mod.itoa(ast_mod.astStoreNodeExtraChildAt(store, entry.ast_root, @intCast(u32, i2)), ii_buf[0..]);
             var ii_start: usize = @intCast(usize, 19) - @intCast(usize, ii_len);
             pal_mod.markerWrite(ii_buf[ii_start..@intCast(usize, 19)]);
             var ss: []const u8 = "="; pal_mod.markerWrite(ss);
-            var dc = ast_mod.astStoreNodeAt(store, decls[i2]);
+            var dc = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, entry.ast_root, @intCast(u32, i2)));
             var dk: u32 = @intCast(u32, @enumToInt(dc.kind));
             var db: [20]u8 = undefined;
             var dl = itoa_mod.itoa(dk, db[0..]);
@@ -448,8 +498,8 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
         var dn: []const u8 = "\n"; pal_mod.markerWrite(dn);
     }
     var i: usize = 0;
-    while (i < decls.len) {
-        registerDecl(sym_reg, type_reg, store, module_id, decls[i], g, reg, populate);
+    while (i < @intCast(usize, decls_n)) {
+        registerDecl(sym_reg, type_reg, store, module_id, ast_mod.astStoreNodeExtraChildAt(store, entry.ast_root, @intCast(u32, i)), g, reg, populate);
         i += 1;
     }
 }

@@ -1,5 +1,10 @@
 # emission_sibling_payload_scale_xmod — RED fixture for residual C₂ (sibling-variant payload conflation at scale)
 
+> **Task 7D (2026-09-22) — re-baselined OK → FAIL (intentional Zig-matching reject).** The local
+> `var s` shadows the enclosing switch-prong capture `|s|` (official Zig 0.15.2: "local variable 's'
+> shadows capture from outer scope"). Task 7D now emits `error[3057]` (rc=2, 0 `.c`). Deliberate
+> corpus movement, not a regression.
+
 Task R (2026-08-20). Branch `zig1_start`. Compiler under test: `/tmp/fx_subfolder/zig1`.
 
 ## Purpose

@@ -23,6 +23,7 @@ const lower_mod = @import("../lower.zig");
 const LirLowerer = lower_mod.LirLowerer;
 const SemanticContext = lower_mod.SemanticContext;
 const hash_mod = @import("../util/hash.zig");
+const ce_mod = @import("../comptime_eval.zig");
 
 var perm_buf: [2097152]u8 = undefined;
 var scratch_buf: [262144]u8 = undefined;
@@ -104,12 +105,19 @@ fn testLower() void {
         .in_defer_exec = @intCast(u8, 0),
         .lifetime_analysis_mode = @intCast(u8, 0),
         .doublefree_analysis_mode = @intCast(u8, 0),
+        .source_file_id = @intCast(u32, 0),
+        .comptime_folds = null,
+        .symbol_reg = null,
+        .target_is_windows = false,
+        .current_fn_span_start = @intCast(u32, 0),
+        .current_fn_span_end = @intCast(u32, 0),
     };
     az_mod.runAllAnalyzers(&ac, ast_root);
 
     var enum_value_table = hash_mod.u32ToU32MapInit(&scratch);
     var call_arg_types = hash_mod.u32ToU32MapInit(&scratch);
-    var comptime_values = hash_mod.u32ToU64MapInit(&scratch);
+    // Task 4: the fold table stores exact ComptimeVals.
+    var comptime_folds = ce_mod.comptimeFoldTableInit(&scratch);
     var error_code_registry = hash_mod.u32ToU32MapInit(&scratch);
     var ctx = SemanticContext{
         .store = &store,
@@ -121,23 +129,25 @@ fn testLower() void {
         .has_symbols = @intCast(u8, 0),
         .enum_value_table = &enum_value_table,
         .call_arg_types = &call_arg_types,
-        .comptime_values = &comptime_values,
+        .comptime_folds = &comptime_folds,
         .error_code_registry = &error_code_registry,
         .source_file_id = @intCast(u32, 0),
+        .print_value_lowered = @intCast(u8, 0),
     };
 
     var lowerer = lower_mod.lowererInit(&ctx, &scratch);
 
     var root = ast_mod.astStoreNodeAt(&store, ast_root);
-    var decls = ast_mod.astStoreNodeExtraChildren(&store, ast_root);
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(&store, ast_root);
     var di: usize = 0;
     var found_count: u32 = @intCast(u32, 0);
     var no_blocks: []const u8 = "function has no blocks";
     var expected_5: []const u8 = "expected at least 5 functions in lower_test/main.zig";
-    while (di < decls.len) : (di += @intCast(usize, 1)) {
-        var decl = ast_mod.astStoreNodeAt(&store, decls[di]);
+    while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+        var decl_idx = ast_mod.astStoreNodeExtraChildAt(&store, ast_root, @intCast(u32, di));
+        var decl = ast_mod.astStoreNodeAt(&store, decl_idx);
         if (decl.kind == AstKind.fn_decl) {
-            var lf = lower_mod.lowerFn(&lowerer, decls[di]);
+            var lf = lower_mod.lowerFn(&lowerer, decl_idx);
             found_count = found_count + @intCast(u32, 1);
             if (lf.blocks.len == @intCast(usize, 0)) {
                 fail(no_blocks);

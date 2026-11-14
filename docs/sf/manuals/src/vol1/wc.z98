@@ -1,0 +1,44 @@
+const std = @import("std");
+
+const END_OF_INPUT: u8 = 255;
+
+const Counts = struct {
+    lines: i32,
+    words: i32,
+    chars: i32,
+};
+
+fn isSpace(c: u8) bool {
+    return c == ' ' or c == '\t' or c == '\r' or c == '\n';
+}
+
+fn countInput() Counts {
+    var lines: i32 = 0;
+    var words: i32 = 0;
+    var chars: i32 = 0;
+    var in_word: bool = false;
+    var c: u8 = std.io.readByte();
+    while (c != END_OF_INPUT) {
+        chars = chars + 1;
+        if (c == '\n') {
+            lines = lines + 1;
+        }
+        if (isSpace(c)) {
+            in_word = false;
+        } else {
+            if (!in_word) {
+                words = words + 1;
+                in_word = true;
+            }
+        }
+        c = std.io.readByte();
+    }
+    return Counts{ .lines = lines, .words = words, .chars = chars };
+}
+
+pub fn main() void {
+    const counts = countInput();
+    std.io.print("lines: {}\n", .{counts.lines});
+    std.io.print("words: {}\n", .{counts.words});
+    std.io.print("chars: {}\n", .{counts.chars});
+}

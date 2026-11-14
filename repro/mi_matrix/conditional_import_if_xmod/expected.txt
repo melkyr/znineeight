@@ -1,0 +1,2 @@
+b ping
+cond import if ok

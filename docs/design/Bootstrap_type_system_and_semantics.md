@@ -623,7 +623,7 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
     -   **`@ptrCast(T, val)`**: Reinterprets the pointer `val` as a pointer of type `T`. Mapped to a C-style cast. Both `T` and the type of `val` must be pointer types.
     -   **`@intCast(T, val)`**: Converts an integer `val` to type `T`. Mapped to a C-style cast.
     -   **`@floatCast(T, val)`**: Converts a float `val` to type `T`. Mapped to a C-style cast.
-    -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within struct or union `T`. Evaluated at compile-time and replaced with a literal. Automatically resolves placeholders.
+    -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within **struct** `T` (struct-only, Zig-parity; unions reject `error[3072]`). Evaluated at compile-time and replaced with a literal. Automatically resolves placeholders.
     -   **`@enumToInt(val)`**: Returns the underlying integer value of an enum. Evaluated at compile-time for constants, or emitted as a cast to the backing type at runtime.
     -   **`@ptrToInt(val)`**: Returns the memory address of a pointer as a `usize`. Mapped to a C-style cast to `unsigned int`.
     -   **`@intToEnum(T, val)`**: Converts an integer to an enum of type `T`. Constant folded if `val` is a literal.
@@ -1718,7 +1718,7 @@ The bootstrap compiler supports a core set of built-in functions (intrinsics) th
 ### Summary of Supported Built-ins
 - **`@sizeOf(T)`**: Returns the size of type `T` in bytes.
 - **`@alignOf(T)`**: Returns the alignment requirement of type `T` in bytes.
-- **`@offsetOf(T, "field")`**: Returns the byte offset of a field within a struct or union.
+- **`@offsetOf(T, "field")`**: Returns the byte offset of a field within a struct (struct-only; unions clean-reject `error[3072]`).
 - **`@ptrCast(T, expr)`**: Performs an explicit pointer-to-pointer cast.
 - **`@intCast(T, expr)`**: Performs a range-checked integer conversion.
 - **`@floatCast(T, expr)`**: Performs a range-checked floating-point conversion.

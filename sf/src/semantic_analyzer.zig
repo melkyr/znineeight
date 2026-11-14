@@ -19,6 +19,34 @@ const itoa_mod = @import("util/itoa.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 const mr_mod = @import("module_registry.zig");
+const async_analysis = @import("async_analysis.zig");
+// Task 9B (b): the if-without-else comptime-true allowance consults the same
+// fold evaluator the lowering pass uses (`comptime_eval.zig`).
+const ce_mod = @import("comptime_eval.zig");
+// D3 fix (Phase 3.5): the switch-prong selector is shared with the deferred
+// import resolver so the same evaluated case labels drive registration/typing.
+const import_resolver = @import("import_resolver.zig");
+
+// Task 2b (iterative lowering, D9 mitigation): recursion-depth ceiling for
+// `semanticAnalyzerResolveExprDepthGuard`. `semanticAnalyzerResolveExpr` is
+// mutual recursion with its helpers at ~7.7 KB of C stack per AST level and
+// was explicitly NOT converted to a trampoline (operator ruling 2026-10-26)
+// -- this guard turns the deep-expression segfault into a clean limit-family
+// diagnostic (`error[3077]`). The cap sits at the real C-stack wall, not at
+// `EXPR_GUARD_MAX` (2048, lower.zig): the guard check runs only AFTER the
+// trip frame is allocated, so a cap above the wall could never fire before
+// the segfault, and a 2048 cap would leave case `gate_lower_depth.sh` 7
+// (200-term chain) dead on rc=139. Re-measured for Phase 2.5 Task 2 at 1 MB
+// (guard temporarily disabled): the runtime-valued left-deep `+` chain is
+// green through 138 terms, dies intermittently at 139 and reliably at 140
+// (the wall moves +-2 terms with argv/env size); the call-argument variant
+// survives 140. 130 trips at depth 131, an 8-frame data-dependent margin
+// below the shallowest observed wall, and keeps the 120-term gate fixtures
+// green. The lowerer's 2048 is a must-never-fire net over an already-iterative
+// walker; this one bounds live C-stack recursion. It does not raise the
+// ceiling -- it makes the failure honest (docs/sf/QUICK_REF.md
+// "expression / recursion depth").
+const SEMA_GUARD_MAX: u32 = 130;
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -29,6 +57,7 @@ pub const SemanticAnalyzer = struct {
     module_id: u32,
     source_file_id: u32,
     expected_type_stack_items: [*]TypeId,
+    expected_type_stack_kinds: [*]u8,
     expected_type_stack_len: usize,
     expected_type_stack_cap: usize,
     expected_type_stack_alloc: *Sand,
@@ -37,21 +66,101 @@ pub const SemanticAnalyzer = struct {
     stmt_work_cap: usize,
     current_fn_return: TypeId,
     current_fn_name: u32,
+    // FX12 (Volume II ch12): > 0 while a module-level `var`/`const`
+    // initializer is being resolved. Container scope has no function, so
+    // `current_fn_name == 0` there -- but also in the bare-resolver analyzer
+    // unit tests, which call `semanticAnalyzerResolveExpr` directly with no
+    // function context. This flag distinguishes the real container scope for
+    // the `error[3075]` "'try' outside function scope" reject.
+    container_init_depth: u32,
+    // Task 2b (iterative lowering, D9 mitigation): depth-guard counter for
+    // `semanticAnalyzerResolveExpr`, mirroring `LirLowerer.expr_guard` /
+    // `lowerExprDepthGuard` (sf/src/lower.zig). Incremented on entry to
+    // `semanticAnalyzerResolveExpr`, decremented on every exit path (the
+    // wrapper pairs it around the body); above `SEMA_GUARD_MAX` the resolver
+    // reports a clean `error[3077]` limit diagnostic and stops recursing
+    // instead of overflowing the C stack.
+    expr_guard: u32,
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
+    // FB (D4): index-access node -> folded tuple ordinal. `t[0]` folds its
+    // index in sema (covering local consts; lower's evaluator does not) and
+    // records the ordinal here, so lowering emits the same `load_field`/
+    // `store_field`/`addr_of_field` as `.0`/`._0` (one mechanism).
+    tuple_index_table: *hash_mod.U32ToU32Map,
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     call_param_map: *hash_mod.U32ToU32Map,
     current_switch_cond_tu: u32,
     switch_depth: u32,
+    // FX4 (D11 extras): 1 while the current case ITEM is being resolved, so an
+    // unknown shorthand member (`.bogus`) rejects 3071 in the case-item
+    // context only. An enum literal in a prong BODY (or any other value
+    // position that merely has `current_switch_cond_tu` in scope) keeps the
+    // pre-existing expected-type fall-through.
+    switch_case_item: u8,
+    // FX16-F (A+): 1 while resolving the prongs of a `switch (x.tag)` whose
+    // condition is a direct `.tag` access on a tagged union. The case context
+    // is the base union (member prongs resolve to tag ordinals); a `|c|`
+    // capture binds the u32 tag instead of a payload.
+    switch_is_tag: u8,
+    defer_depth: u32,
+    // Task 10D: scope-aware defer-context state for the Zig-matched control-flow
+    // check. `defer_depth` is the `any_defer_node` marker (return/try). These
+    // track targets DECLARED INSIDE the defer body being checked (the
+    // `cur_defer_node` walk): an unlabeled loop count plus a small stack of
+    // labeled loops/blocks. A nested `fn` resets everything (the walk stops).
+    defer_inner_loops: u32,
+    defer_label_stack: [16]u32,
+    defer_label_isloop: [16]u8,
+    defer_label_len: usize,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
+    // Task 7B: parallel constness bit (1 = immutable) for each registered
+    // local/param/capture; consulted by semanticAnalyzerIsLValueConst.
+    local_decl_consts: [*]u8,
+    // Task 18: parallel name-span pairs for each registered local/param/capture.
+    // The `error[3057]` shadow diagnostic renders a related span at the
+    // previous declaration's span (Zig's `note: previous declaration here`),
+    // so the span of every registration must be kept alongside its name.
+    local_decl_spans_start: [*]u32,
+    local_decl_spans_end: [*]u32,
     local_decl_count: usize,
     local_decl_cap: usize,
-    _stub_0: u32,
-    _stub_1: u32,
+    // Task 7D: the interned `_` (discard) name id. `_` may be re-bound freely
+    // (it is not an identifier), so the shadow check skips it.
+    discard_name_id: u32,
+    // Task 6b (D1-6): lazily-cached interned ids for the three field-name
+    // literals re-interned at every field access. 0 = not yet interned.
+    len_name_id: u32,
+    tag_name_id: u32,
+    payload_name_id: u32,
+    // A9-F (Volume IV Amendment A9, operator m1740): markers that let
+    // `semanticAnalyzerResolveOrelseExpr` tell a value-position value-less
+    // `orelse` fallback (rejected) from a direct `_ = ...;` discard RHS
+    // (accepted) and a bare-statement expression (parked tolerance).
+    // `discard_rhs_node` is the paren-unwrapped RHS of the active `_ = ...;`;
+    // `stmt_expr_node` is the paren-unwrapped expression of the active
+    // expression statement. Both are 0 when no such resolution is active.
+    discard_rhs_node: u32,
+    stmt_expr_node: u32,
+    // Task 2c-F: function-local `const` scope (variant (e)); reset per fn body.
+    local_consts: type_resolver.LocalConstScope,
+    // Task B2: function-local named-type scope; reset per fn body.
+    local_types: type_resolver.LocalTypeScope,
+    packed_gate_items: [*]u32,
+    packed_gate_len: usize,
+    packed_gate_cap: usize,
+    packed_struct_tids: [*]u32,
+    packed_struct_decl_nodes: [*]u32,
+    packed_struct_cache_len: usize,
+    packed_struct_cache_cap: usize,
+    checked_struct_tids: [*]u32,
+    checked_struct_tids_len: usize,
+    checked_struct_tids_cap: usize,
     interner: *interner_mod.StringInterner,
     ptrcast_name_id: u32,
+    volatilecast_name_id: u32,
     ptrtoint_name_id: u32,
     inttoptr_name_id: u32,
     int_from_ptr_name_id: u32,
@@ -62,6 +171,7 @@ pub const SemanticAnalyzer = struct {
     floatcast_name_id: u32,
     inttofloat_name_id: u32,
     inttoenum_name_id: u32,
+    enumtoint_name_id: u32,
     as_name_id: u32,
     size_of_name_id: u32,
     align_of_name_id: u32,
@@ -73,15 +183,28 @@ pub const SemanticAnalyzer = struct {
     stderr_write_name_id: u32,
     getchar_name_id: u32,
     exit_name_id: u32,
+    panic_name_id: u32,
     sleep_ms_name_id: u32,
     is_windows_name_id: u32,
     console_clear_name_id: u32,
     console_gotoxy_name_id: u32,
     console_set_color_name_id: u32,
+    async_frame_size_name_id: u32,
+    async_init_name_id: u32,
+    async_resume_name_id: u32,
+    async_suspend_name_id: u32,
+    async_analysis_ready: bool,
+    // T3: shared comptime fold table (`ctx.comptime_folds`). Consulted (and
+    // stamped) by `semanticAnalyzerIfComptimeCondition` so the spec §3
+    // untaken-arm gate and lowering's `if_fold`/`ie_fold` agree on the same
+    // arm. null when the caller has no table (front-resolution pass over-
+    // analyzes both arms — safe; the gate then only fires on literals).
+    comptime_folds: ?*ce_mod.ComptimeFoldTable,
     module_reg: *mr_mod.ModuleRegistry,
+    suspending_fns: *hash_mod.U64ToU32Map,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map, module_reg: *mr_mod.ModuleRegistry) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, tuple_idx_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map, module_reg: *mr_mod.ModuleRegistry, suspending_fns: *hash_mod.U64ToU32Map) SemanticAnalyzer {
     var und_text: []const u8 = "_";
     var und_name_id = interner_mod.stringInternerIntern(interner, und_text);
     var pc_text: []const u8 = "@ptrCast";
@@ -96,6 +219,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var pfi_id = interner_mod.stringInternerIntern(interner, pfi_s);
     var fpp_s: []const u8 = "@fieldParentPtr";
     var fpp_id = interner_mod.stringInternerIntern(interner, fpp_s);
+    var vc_s: []const u8 = "@volatileCast";
+    var vc_id = interner_mod.stringInternerIntern(interner, vc_s);
     var bc_s: []const u8 = "@bitCast";
     var bc_id = interner_mod.stringInternerIntern(interner, bc_s);
     var ic_s: []const u8 = "@intCast";
@@ -106,6 +231,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var if_id = interner_mod.stringInternerIntern(interner, if_s);
     var ie_s: []const u8 = "@intToEnum";
     var ie_id = interner_mod.stringInternerIntern(interner, ie_s);
+    var e2i_s: []const u8 = "@enumToInt";
+    var e2i_id = interner_mod.stringInternerIntern(interner, e2i_s);
     var as_s: []const u8 = "@as";
     var as_id = interner_mod.stringInternerIntern(interner, as_s);
     var so_s: []const u8 = "@sizeOf";
@@ -128,6 +255,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var gc_id = interner_mod.stringInternerIntern(interner, gc_s);
     var ex_s: []const u8 = "@exit";
     var ex_id = interner_mod.stringInternerIntern(interner, ex_s);
+    var pn_s: []const u8 = "@panic";
+    var pn_id = interner_mod.stringInternerIntern(interner, pn_s);
     var sm_s: []const u8 = "@sleepMs";
     var sm_id = interner_mod.stringInternerIntern(interner, sm_s);
     var iw_s: []const u8 = "@isWindows";
@@ -138,6 +267,14 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var cg_id = interner_mod.stringInternerIntern(interner, cg_s);
     var csc_s: []const u8 = "@consoleSetColor";
     var csc_id = interner_mod.stringInternerIntern(interner, csc_s);
+    var afs_s: []const u8 = "@asyncFrameSize";
+    var afs_id = interner_mod.stringInternerIntern(interner, afs_s);
+    var ain_s: []const u8 = "@asyncInit";
+    var ain_id = interner_mod.stringInternerIntern(interner, ain_s);
+    var ars_s: []const u8 = "@asyncResume";
+    var ars_id = interner_mod.stringInternerIntern(interner, ars_s);
+    var asu_s: []const u8 = "@asyncSuspend";
+    var asu_id = interner_mod.stringInternerIntern(interner, asu_s);
     return SemanticAnalyzer{
     .type_table = type_table,
         .diag = diag,
@@ -147,6 +284,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .module_id = module_id,
         .source_file_id = source_file_id,
         .expected_type_stack_items = undefined,
+        .expected_type_stack_kinds = undefined,
         .expected_type_stack_len = @intCast(usize, 0),
         .expected_type_stack_cap = @intCast(usize, 0),
         .expected_type_stack_alloc = alloc,
@@ -155,21 +293,51 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .stmt_work_cap = @intCast(usize, 0),
         .current_fn_return = @intCast(u32, 0),
         .current_fn_name = @intCast(u32, 0),
+        .container_init_depth = @intCast(u32, 0),
+        .expr_guard = @intCast(u32, 0),
         .coercion_table = coercion_tab,
         .enum_value_table = enum_val_tab,
+        .tuple_index_table = tuple_idx_tab,
         .error_code_registry = error_code_reg,
         .current_switch_cond_tu = @intCast(u32, 0),
         .switch_depth = @intCast(u32, 0),
+        .switch_case_item = @intCast(u8, 0),
+        .switch_is_tag = @intCast(u8, 0),
+        .defer_depth = @intCast(u32, 0),
+        .defer_inner_loops = @intCast(u32, 0),
+        .defer_label_stack = undefined,
+        .defer_label_isloop = undefined,
+        .defer_label_len = @intCast(usize, 0),
         .local_decl_names = undefined,
         .local_decl_types = undefined,
+        .local_decl_consts = undefined,
+        .local_decl_spans_start = undefined,
+        .local_decl_spans_end = undefined,
         .local_decl_count = @intCast(usize, 0),
         .local_decl_cap = @intCast(usize, 0),
-        ._stub_0 = und_name_id,
-        ._stub_1 = @intCast(u32, 0),
+        .discard_name_id = und_name_id,
+        .len_name_id = @intCast(u32, 0),
+        .tag_name_id = @intCast(u32, 0),
+        .payload_name_id = @intCast(u32, 0),
+        .discard_rhs_node = @intCast(u32, 0),
+        .stmt_expr_node = @intCast(u32, 0),
+        .local_consts = type_resolver.localConstScopeInit(alloc),
+        .local_types = type_resolver.localTypeScopeInit(alloc),
+        .packed_gate_items = undefined,
+        .packed_gate_len = @intCast(usize, 0),
+        .packed_gate_cap = @intCast(usize, 0),
+        .packed_struct_tids = undefined,
+        .packed_struct_decl_nodes = undefined,
+        .packed_struct_cache_len = @intCast(usize, 0),
+        .packed_struct_cache_cap = @intCast(usize, 0),
+        .checked_struct_tids = undefined,
+        .checked_struct_tids_len = @intCast(usize, 0),
+        .checked_struct_tids_cap = @intCast(usize, 0),
         .call_arg_types = cal_typs,
         .call_param_map = cp_map,
         .interner = interner,
         .ptrcast_name_id = pc_name_id,
+        .volatilecast_name_id = vc_id,
         .ptrtoint_name_id = ptin_id,
         .inttoptr_name_id = itp_id,
         .int_from_ptr_name_id = ifp_id,
@@ -180,6 +348,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .floatcast_name_id = fc_id,
         .inttofloat_name_id = if_id,
         .inttoenum_name_id = ie_id,
+        .enumtoint_name_id = e2i_id,
         .as_name_id = as_id,
         .size_of_name_id = so_id,
         .align_of_name_id = ao_id,
@@ -191,24 +360,217 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .stderr_write_name_id = sew_id,
         .getchar_name_id = gc_id,
         .exit_name_id = ex_id,
+        .panic_name_id = pn_id,
         .sleep_ms_name_id = sm_id,
         .is_windows_name_id = iw_id,
         .console_clear_name_id = cc_id,
         .console_gotoxy_name_id = cg_id,
         .console_set_color_name_id = csc_id,
+        .async_frame_size_name_id = afs_id,
+        .async_init_name_id = ain_id,
+        .async_resume_name_id = ars_id,
+        .async_suspend_name_id = asu_id,
+        .async_analysis_ready = true,
+        .comptime_folds = null,
         .module_reg = module_reg,
+        .suspending_fns = suspending_fns,
     };
 }
 
+// Task 6b (D1-6): cached interned ids for the field-name literals re-interned
+// at every field access. `which`: 0 = "len", 1 = "tag", 2 = "payload". The
+// first call interns exactly where the old inline intern ran, so interner id
+// assignment order is unchanged; later calls reuse the cached id.
+fn semanticAnalyzerFieldNameId(self: *SemanticAnalyzer, which: u8) u32 {
+    if (which == @intCast(u8, 0)) {
+        if (self.len_name_id == @intCast(u32, 0)) { var ln_s: []const u8 = "len"; self.len_name_id = interner_mod.stringInternerIntern(self.interner, ln_s); }
+        return self.len_name_id;
+    }
+    if (which == @intCast(u8, 1)) {
+        if (self.tag_name_id == @intCast(u32, 0)) { var tg_s: []const u8 = "tag"; self.tag_name_id = interner_mod.stringInternerIntern(self.interner, tg_s); }
+        return self.tag_name_id;
+    }
+    if (self.payload_name_id == @intCast(u32, 0)) { var pl_s: []const u8 = "payload"; self.payload_name_id = interner_mod.stringInternerIntern(self.interner, pl_s); }
+    return self.payload_name_id;
+}
+
+const BuiltinDesc = struct {
+    flags: u8,
+    arity: u8,
+    arity_kind: u8,
+    code: u16,
+    msg: []const u8,
+};
+
+// Task 6c (D3-4) + P8: the builtin-name set and its descriptor were spelled
+// in pieces -- the membership flags and, ad-hoc per arm, the expected arity.
+// This one central per-builtin table is the single authority: kind bits
+// (bit0 = a type-value cast, bit1 = supported), expected arity, and the
+// arity-reject class (0 = the established reject shape with this row's code
+// and message, 1 = the established introspection reject shape, 2 = P8 fix
+// round 1's accepted range 1..arity -- min 1, max `arity`, reject shape A --
+// the `@intCast` row). Id compares
+// come first, then the string-compared names, exactly matching the original
+// membership and order; both predicates preserve their exact sets.
+fn semanticAnalyzerBuiltinDesc(self: *SemanticAnalyzer, name_id: u32) BuiltinDesc {
+    var d_e3000: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3000_TYPE_MISMATCH));
+    var d_e3074: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED));
+    var d_e3049: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3049_PTRCAST_REQUIRES_TWO_ARGS));
+    var d_empty: []const u8 = "";
+    if (name_id == self.ptrcast_name_id) {
+        var d_m: []const u8 = "@ptrCast requires exactly two arguments: @ptrCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3049, .msg = d_m };
+    }
+    if (name_id == self.volatilecast_name_id) {
+        var d_m: []const u8 = "@volatileCast requires exactly 2 argument(s): @volatileCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.inttoptr_name_id) {
+        var d_m: []const u8 = "@intToPtr requires exactly 2 argument(s): @intToPtr(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.intcast_name_id) {
+        var d_m: []const u8 = "@intCast requires 1 or 2 argument(s): @intCast(T, expr) or @intCast(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 2), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.floatcast_name_id) {
+        var d_m: []const u8 = "@floatCast requires exactly 2 argument(s): @floatCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.inttofloat_name_id) {
+        var d_m: []const u8 = "@intToFloat requires exactly 2 argument(s): @intToFloat(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.inttoenum_name_id) {
+        var d_m: []const u8 = "@intToEnum requires exactly 2 argument(s): @intToEnum(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.as_name_id) {
+        var d_m: []const u8 = "@as requires exactly 2 argument(s): @as(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.ptrtoint_name_id) {
+        var d_m: []const u8 = "@ptrToInt requires exactly 1 argument(s): @ptrToInt(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.int_from_ptr_name_id) {
+        var d_m: []const u8 = "@intFromPtr requires exactly 1 argument(s): @intFromPtr(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.ptr_from_int_name_id) {
+        var d_m: []const u8 = "@ptrFromInt requires exactly one argument: @ptrFromInt(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.field_parent_ptr_name_id) {
+        var d_m: []const u8 = "@fieldParentPtr requires exactly 3 argument(s): @fieldParentPtr(T, \"field\", expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 3), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.bitcast_name_id) {
+        var d_m: []const u8 = "@bitCast requires exactly 2 argument(s): @bitCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.size_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.align_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.offset_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.bit_size_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.bit_offset_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.putchar_name_id) {
+        var d_m: []const u8 = "@putChar requires exactly 1 argument(s): @putChar(c)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.stdout_write_name_id) {
+        var d_m: []const u8 = "@stdoutWrite requires exactly 2 argument(s): @stdoutWrite(ptr, len)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.stderr_write_name_id) {
+        var d_m: []const u8 = "@stderrWrite requires exactly 2 argument(s): @stderrWrite(ptr, len)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.getchar_name_id) {
+        var d_m: []const u8 = "@getChar requires exactly 0 argument(s): @getChar()";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.exit_name_id) {
+        var d_m: []const u8 = "@exit requires exactly 1 argument(s): @exit(code)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.sleep_ms_name_id) {
+        var d_m: []const u8 = "@sleepMs requires exactly 1 argument(s): @sleepMs(ms)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.is_windows_name_id) {
+        var d_m: []const u8 = "@isWindows requires exactly 0 argument(s): @isWindows()";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.console_clear_name_id) {
+        var d_m: []const u8 = "@consoleClear requires exactly 0 argument(s): @consoleClear()";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.console_gotoxy_name_id) {
+        var d_m: []const u8 = "@consoleGotoxy requires exactly 2 argument(s): @consoleGotoxy(x, y)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.console_set_color_name_id) {
+        var d_m: []const u8 = "@consoleSetColor requires exactly 2 argument(s): @consoleSetColor(fg, bg)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_frame_size_name_id) {
+        var d_m: []const u8 = "@asyncFrameSize requires exactly 1 argument(s): @asyncFrameSize(fn)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_init_name_id) {
+        var d_m: []const u8 = "@asyncInit requires exactly 4 argument(s): @asyncInit(ctx, buf, fn, args)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 4), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_resume_name_id) {
+        var d_m: []const u8 = "@asyncResume requires exactly 2 argument(s): @asyncResume(frame, arg)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_suspend_name_id) {
+        var d_m: []const u8 = "@asyncSuspend requires exactly 1 argument(s): @asyncSuspend(data)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_e2i: []const u8 = "@enumToInt";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_e2i)) {
+        var d_m: []const u8 = "@enumToInt requires exactly 1 argument(s): @enumToInt(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_cvs: []const u8 = "@cVaStart";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cvs)) {
+        var d_m: []const u8 = "@cVaStart requires exactly 1 argument(s): @cVaStart(&vl)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_cva: []const u8 = "@cVaArg";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cva)) {
+        var d_m: []const u8 = "@cVaArg requires exactly 2 argument(s): @cVaArg(&vl, T)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_cve: []const u8 = "@cVaEnd";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cve)) {
+        var d_m: []const u8 = "@cVaEnd requires exactly 1 argument(s): @cVaEnd(&vl)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_pan: []const u8 = "@panic";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_pan)) {
+        var d_m: []const u8 = "@panic requires exactly 1 argument(s): @panic(msg)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var d_none: BuiltinDesc = BuiltinDesc{ .flags = @intCast(u8, 0), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_empty };
+    return d_none;
+}
+
 fn semanticAnalyzerIsTypeValueCast(self: *SemanticAnalyzer, name_id: u32) bool {
-    if (name_id == self.ptrcast_name_id) return true;
-    if (name_id == self.inttoptr_name_id) return true;
-    if (name_id == self.intcast_name_id) return true;
-    if (name_id == self.floatcast_name_id) return true;
-    if (name_id == self.inttofloat_name_id) return true;
-    if (name_id == self.inttoenum_name_id) return true;
-    if (name_id == self.as_name_id) return true;
-    return false;
+    return (semanticAnalyzerBuiltinDesc(self, name_id).flags & @intCast(u8, 1)) != @intCast(u8, 0);
 }
 
 fn semanticAnalyzerBuiltinNameEq(self: *SemanticAnalyzer, name_id: u32, lit: []const u8) bool {
@@ -222,81 +584,337 @@ fn semanticAnalyzerBuiltinNameEq(self: *SemanticAnalyzer, name_id: u32, lit: []c
 }
 
 fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) bool {
-    if (name_id == self.ptrcast_name_id) return true;
-    if (name_id == self.ptrtoint_name_id) return true;
-    if (name_id == self.inttoptr_name_id) return true;
-    if (name_id == self.int_from_ptr_name_id) return true;
-    if (name_id == self.ptr_from_int_name_id) return true;
-    if (name_id == self.field_parent_ptr_name_id) return true;
-    if (name_id == self.bitcast_name_id) return true;
-    if (name_id == self.intcast_name_id) return true;
-    if (name_id == self.floatcast_name_id) return true;
-    if (name_id == self.inttofloat_name_id) return true;
-    if (name_id == self.inttoenum_name_id) return true;
-    if (name_id == self.as_name_id) return true;
-    if (name_id == self.size_of_name_id) return true;
-    if (name_id == self.align_of_name_id) return true;
-    if (name_id == self.offset_of_name_id) return true;
-    if (name_id == self.bit_size_of_name_id) return true;
-    if (name_id == self.bit_offset_of_name_id) return true;
-    if (name_id == self.putchar_name_id) return true;
-    if (name_id == self.stdout_write_name_id) return true;
-    if (name_id == self.stderr_write_name_id) return true;
-    if (name_id == self.getchar_name_id) return true;
-    if (name_id == self.exit_name_id) return true;
-    if (name_id == self.sleep_ms_name_id) return true;
-    if (name_id == self.is_windows_name_id) return true;
-    if (name_id == self.console_clear_name_id) return true;
-    if (name_id == self.console_gotoxy_name_id) return true;
-    if (name_id == self.console_set_color_name_id) return true;
+    return (semanticAnalyzerBuiltinDesc(self, name_id).flags & @intCast(u8, 2)) != @intCast(u8, 0);
+}
 
-    var l_e2i: []const u8 = "@enumToInt";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_e2i)) return true;
-    var l_cvs: []const u8 = "@cVaStart";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cvs)) return true;
-    var l_cva: []const u8 = "@cVaArg";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cva)) return true;
-    var l_cve: []const u8 = "@cVaEnd";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cve)) return true;
-    var l_pan: []const u8 = "@panic";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_pan)) return true;
+fn semanticAnalyzerRejectIntrospectionArity(self: *SemanticAnalyzer, node_idx: u32, want: usize, found: usize) void {
+    var ib_wexp_buf: [10]u8 = undefined;
+    var ib_wexp_l = itoa_mod.itoa(@intCast(u32, want), ib_wexp_buf[0..]);
+    var ib_wfnd_buf: [10]u8 = undefined;
+    var ib_wfnd_l = itoa_mod.itoa(@intCast(u32, found), ib_wfnd_buf[0..]);
+    var ib_wexp_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wexp_l);
+    var ib_wfnd_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wfnd_l);
+    var ib_ap0: []const u8 = "expected ";
+    var ib_ap1: []const u8 = " argument(s), found ";
+    var ib_aparts: [4][]const u8 = [4][]const u8{ ib_ap0, ib_wexp_buf[ib_wexp_s..@intCast(usize, 9)], ib_ap1, ib_wfnd_buf[ib_wfnd_s..@intCast(usize, 9)] };
+    var ib_amsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_aparts[0], @intCast(u32, 4));
+    semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_amsg);
+}
+
+// P8: the arity decision for every builtin_call, consulted before the dispatch
+// ladder. Returns 0 = arity ok (the ladder resolves as before), 1 = rejected
+// with the established reject shape (the row's code and message, arg0-if-present
+// resolved for further diagnostics, TYPE_UNDEFINED at the call), 2 = rejected
+// with the established introspection shape (the house dynamic wording,
+// TYPE_INT_LIT at the call).
+fn semanticAnalyzerCheckBuiltinArity(self: *SemanticAnalyzer, node_idx: u32, name_id: u32, ec_n: usize) u8 {
+    var ba_desc = semanticAnalyzerBuiltinDesc(self, name_id);
+    if ((ba_desc.flags & @intCast(u8, 2)) == @intCast(u8, 0)) return @intCast(u8, 0);
+    if (ba_desc.arity_kind == @intCast(u8, 2)) {
+        if (ec_n >= @intCast(usize, 1) and ec_n <= @intCast(usize, ba_desc.arity)) return @intCast(u8, 0);
+    } else if (ec_n == @intCast(usize, ba_desc.arity)) {
+        return @intCast(u8, 0);
+    }
+    if (ba_desc.arity_kind == @intCast(u8, 1)) {
+        semanticAnalyzerRejectIntrospectionArity(self, node_idx, @intCast(usize, ba_desc.arity), ec_n);
+        return @intCast(u8, 2);
+    }
+    var ba_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), ba_desc.code, self.source_file_id, ba_node.span_start, ba_node.span_start + @intCast(u32, ba_node.span_len), ba_desc.msg);
+    if (ec_n >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0))); }
+    return @intCast(u8, 1);
+}
+
+// Task 6c (D3-4): resolve the first `n` extra children of a builtin call in
+// order, guarding each at `ec_n` -- exactly the per-arm `if (ec_n >= k) {
+// _ = semanticAnalyzerResolveExpr(child k); }` sequence the dispatch ladder
+// repeated for the simple builtins (same children, same order, same count).
+fn semanticAnalyzerResolveBuiltinArgs(self: *SemanticAnalyzer, node_idx: u32, ec_n: usize, n: usize) void {
+    var bi: usize = @intCast(usize, 0);
+    while (bi < n and bi < ec_n) : (bi += @intCast(usize, 1)) {
+        _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, bi)));
+    }
+}
+
+fn semanticAnalyzerDiagAsyncOutsideSuspending(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (!self.async_analysis_ready) return;
+    if (async_analysis.asyncIsSuspending(self.suspending_fns, self.module_id, self.current_fn_name)) return;
+    var a318_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var e318: []const u8 = "@asyncSuspend used outside a suspending function";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING)),
+        self.source_file_id, a318_node.span_start, a318_node.span_start + @intCast(u32, a318_node.span_len), e318);
+}
+
+fn semanticAnalyzerDiagAsyncBuiltinInDefer(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (self.defer_depth == @intCast(u32, 0)) return;
+    var a319_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var e319: []const u8 = "@async builtin used inside a defer/errdefer body";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3019_ASYNC_BUILTIN_IN_DEFER)),
+        self.source_file_id, a319_node.span_start, a319_node.span_start + @intCast(u32, a319_node.span_len), e319);
+}
+
+// Task 10D — Zig-matched control flow inside `defer`/`errdefer`.
+//
+// Official Zig (src/AstGen.zig) rejects a `return`/`try` anywhere inside a defer
+// body (its `any_defer_node` marker, inherited by nested sub-blocks) unless it
+// is inside a nested `fn` (which resets the marker). `break`/`continue` are
+// rejected only when their target is not found before the defer scope is
+// reached (the `cur_defer_node` marker): a loop or labeled block DECLARED
+// inside the body is a legal target, an outward transfer is not. This walk
+// mirrors that scope chain — a nested `fn` stops it, a loop/labeled block
+// pushes an inner target, and a nested `defer` is validated by its own
+// invocation (so it is not descended into here).
+fn semanticAnalyzerDiagDeferCtl(self: *SemanticAnalyzer, node_idx: u32, code: diag_mod.ErrorCode, msg: []const u8) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(code)), self.source_file_id,
+        node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+fn semanticAnalyzerDeferBreakAllowed(self: *SemanticAnalyzer, label: u32) bool {
+    if (label == @intCast(u32, 0)) { return self.defer_inner_loops > @intCast(u32, 0); }
+    var i: usize = @intCast(usize, 0);
+    while (i < self.defer_label_len) : (i += @intCast(usize, 1)) {
+        if (self.defer_label_stack[i] == label) return true;
+    }
     return false;
 }
 
-fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
-    var new_cap: usize = if (self.local_decl_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.local_decl_cap * @intCast(usize, 2);
-    var raw_names = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var raw_types = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var ndst = @ptrCast([*]u32, raw_names);
-    var tdst = @ptrCast([*]u32, raw_types);
-    if (self.local_decl_count > @intCast(usize, 0)) {
-        var ci: usize = 0;
-        while (ci < self.local_decl_count) : (ci += 1) {
-            ndst[ci] = self.local_decl_names[ci];
-            tdst[ci] = self.local_decl_types[ci];
+fn semanticAnalyzerDeferContinueAllowed(self: *SemanticAnalyzer, label: u32) bool {
+    if (label == @intCast(u32, 0)) { return self.defer_inner_loops > @intCast(u32, 0); }
+    var i: usize = @intCast(usize, 0);
+    while (i < self.defer_label_len) : (i += @intCast(usize, 1)) {
+        if (self.defer_label_stack[i] == label and self.defer_label_isloop[i] != @intCast(u8, 0)) return true;
+    }
+    return false;
+}
+
+fn semanticAnalyzerCheckDeferChildren(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // `builtin_call` stores its arguments in the extra-children pool but is not
+    // in `nodeHasExtraChildren` (see `astStoreNodePayload`); include it so a
+    // `try` nested in a builtin argument is still seen.
+    if (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call) {
+        var n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            semanticAnalyzerCheckDeferBody(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, i));
         }
     }
-    self.local_decl_names = ndst;
-    self.local_decl_types = tdst;
+    if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { semanticAnalyzerCheckDeferBody(self, node.child_2); }
+    if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { semanticAnalyzerCheckDeferBody(self, node.child_1); }
+    if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { semanticAnalyzerCheckDeferBody(self, node.child_0); }
+}
+
+fn semanticAnalyzerCheckDeferBody(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (node_idx == @intCast(u32, 0)) return;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var kind = node.kind;
+    // A nested `fn` resets both markers; its body is not walked. A nested
+    // defer/errdefer is checked by its own statement arm, so skip it here.
+    if (kind == AstKind.fn_decl) return;
+    if (kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) return;
+    if (kind == AstKind.return_stmt) {
+        var m: []const u8 = "cannot return from defer expression";
+        semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3051_RETURN_INSIDE_DEFER, m);
+    } else if (kind == AstKind.try_expr) {
+        var m: []const u8 = "'try' not allowed inside defer expression";
+        semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3054_TRY_INSIDE_DEFER, m);
+    } else if (kind == AstKind.break_stmt) {
+        var label = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (!semanticAnalyzerDeferBreakAllowed(self, label)) {
+            var m: []const u8 = "cannot break out of defer expression";
+            semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3052_BREAK_OUT_OF_DEFER, m);
+        }
+    } else if (kind == AstKind.continue_stmt) {
+        var label = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (!semanticAnalyzerDeferContinueAllowed(self, label)) {
+            var m: []const u8 = "cannot continue out of defer expression";
+            semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3053_CONTINUE_OUT_OF_DEFER, m);
+        }
+    } else if (kind == AstKind.while_stmt or kind == AstKind.for_stmt) {
+        var saved_loops = self.defer_inner_loops;
+        self.defer_inner_loops += @intCast(u32, 1);
+        semanticAnalyzerCheckDeferChildren(self, node_idx);
+        self.defer_inner_loops = saved_loops;
+        return;
+    } else if (kind == AstKind.labeled_stmt) {
+        var label = ast_mod.astStoreNodePayload(self.store, node_idx);
+        var is_loop: u8 = @intCast(u8, 0);
+        if (node.child_0 != @intCast(u32, 0)) {
+            var inner = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            if (inner.kind == AstKind.while_stmt or inner.kind == AstKind.for_stmt) { is_loop = @intCast(u8, 1); }
+        }
+        var pushed: u8 = @intCast(u8, 0);
+        if (self.defer_label_len < @intCast(usize, 16)) {
+            self.defer_label_stack[self.defer_label_len] = label;
+            self.defer_label_isloop[self.defer_label_len] = is_loop;
+            self.defer_label_len += @intCast(usize, 1);
+            pushed = @intCast(u8, 1);
+        }
+        semanticAnalyzerCheckDeferChildren(self, node_idx);
+        if (pushed != @intCast(u8, 0)) { self.defer_label_len -= @intCast(usize, 1); }
+        return;
+    }
+    semanticAnalyzerCheckDeferChildren(self, node_idx);
+}
+
+// Task 6b (D5-1): the shared grow primitive for the sand-backed u32 arrays:
+// allocate `4 * new_cap` bytes, copy `len` entries from `src`, return the new
+// buffer. Allocation size and order are exactly the hand-rolled bodies'.
+fn semanticAnalyzerAllocCopyU32(self: *SemanticAnalyzer, src: [*]u32, len: usize, new_cap: usize) [*]u32 {
+    var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var ndst = @ptrCast([*]u32, raw);
+    var ci: usize = 0;
+    while (ci < len) : (ci += @intCast(usize, 1)) { ndst[ci] = src[ci]; }
+    return ndst;
+}
+
+fn semanticAnalyzerGrowCapU32(cur_cap: usize, min_cap: usize) usize {
+    if (cur_cap < min_cap) return min_cap;
+    return cur_cap * @intCast(usize, 2);
+}
+
+fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
+    var new_cap: usize = semanticAnalyzerGrowCapU32(self.local_decl_cap, @intCast(usize, 8));
+    self.local_decl_names = semanticAnalyzerAllocCopyU32(self, self.local_decl_names, self.local_decl_count, new_cap);
+    self.local_decl_types = semanticAnalyzerAllocCopyU32(self, self.local_decl_types, self.local_decl_count, new_cap);
+    var raw_consts = alloc_mod.sandAlloc(self.expected_type_stack_alloc, new_cap, @intCast(usize, 1)) catch unreachable;
+    var cdst = @ptrCast([*]u8, raw_consts);
+    if (self.local_decl_count > @intCast(usize, 0)) {
+        var ci: usize = 0;
+        while (ci < self.local_decl_count) : (ci += 1) { cdst[ci] = self.local_decl_consts[ci]; }
+    }
+    self.local_decl_consts = cdst;
+    self.local_decl_spans_start = semanticAnalyzerAllocCopyU32(self, self.local_decl_spans_start, self.local_decl_count, new_cap);
+    self.local_decl_spans_end = semanticAnalyzerAllocCopyU32(self, self.local_decl_spans_end, self.local_decl_count, new_cap);
     self.local_decl_cap = new_cap;
 }
 
-fn registerLocalDecl(self: *SemanticAnalyzer, name_id: u32, type_id: u32) void {
+// Task 6b (D1-5): last-binding-wins reverse scan over the live local-decl SoA,
+// shared by ResolveIdent, CheckLocalShadow and IsLValueConst.
+fn findLocalBinding(self: *SemanticAnalyzer, name_id: u32) ?usize {
+    var li = self.local_decl_count;
+    while (li > @intCast(usize, 0)) {
+        li -= @intCast(usize, 1);
+        if (self.local_decl_names[li] == name_id) return li;
+    }
+    return null;
+}
+
+// Task 6b (D4-2): the 5-array local-decl SoA write, without the SCT markers
+// `registerLocalDecl` emits. Callers keep their own capacity check so the
+// sand-allocation sequence is unchanged.
+fn semanticAnalyzerRegisterLocalDeclWrite(self: *SemanticAnalyzer, name_id: u32, type_id: u32, is_const: u8, span_start: u32, span_end: u32) void {
+    self.local_decl_names[self.local_decl_count] = name_id;
+    self.local_decl_types[self.local_decl_count] = type_id;
+    self.local_decl_consts[self.local_decl_count] = is_const;
+    self.local_decl_spans_start[self.local_decl_count] = span_start;
+    self.local_decl_spans_end[self.local_decl_count] = span_end;
+    self.local_decl_count += @intCast(usize, 1);
+}
+
+fn registerLocalDecl(self: *SemanticAnalyzer, name_id: u32, type_id: u32, span_start: u32, span_end: u32) void {
     if (self.local_decl_count >= self.local_decl_cap) {
         semanticAnalyzerGrowLocalDecls(self);
     }
     var sct_nm: []const u8 = "SCT:n"; pal_mod.markerWriteInt(sct_nm, name_id);
     var sct_tm: []const u8 = "SCT:t"; pal_mod.markerWriteInt(sct_tm, type_id);
-    self.local_decl_names[self.local_decl_count] = name_id;
-    self.local_decl_types[self.local_decl_count] = type_id;
-    self.local_decl_count += @intCast(usize, 1);
+    // Task 7B: every registerLocalDecl caller registers an if/while/switch
+    // capture, which is immutable (Z98 spec: all captures are immutable).
+    // Task 18: keep the name span for the shadow diagnostic's related span.
+    semanticAnalyzerRegisterLocalDeclWrite(self, name_id, type_id, @intCast(u8, 1), span_start, span_end);
 }
 
-fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32) u32 {
+// Task 7D: Zig-matching shadow/redeclaration rejection. Called immediately
+// BEFORE every local-registration site (local `const`/`var`, function
+// parameters, `if`/`while`/`for` captures, switch-prong captures, `catch`
+// payloads, function-local named types). Thanks to the block-scoped
+// local-decl machinery, `local_decl_names[0..local_decl_count)` is exactly the
+// set of bindings currently in scope (enclosing + same scope), so a hit is a
+// strictly-enclosing or same-scope declaration — official Zig's shadow (any
+// depth) or redeclaration. Also rejects shadowing a container-level
+// declaration in the current module (global / function / named type / imported
+// module), matching Zig's "never allowed to shadow identifiers from an outer
+// scope". `_` (the discard) is not an identifier and may be re-bound freely.
+fn semanticAnalyzerCheckLocalShadow(self: *SemanticAnalyzer, name_id: u32, span_start: u32, span_end: u32) void {
+    if (name_id == self.discard_name_id) return;
+    if (findLocalBinding(self, name_id)) |li| {
+            var lsh_msg: []const u8 = "local declaration shadows an earlier declaration in an enclosing scope";
+            var lsh_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3057_LOCAL_SHADOW)), self.source_file_id, span_start, span_end, lsh_msg);
+            // Task 18: point the related span at the previous declaration, the
+            // way Zig renders `note: previous declaration here` (local case).
+            var lsh_note: []const u8 = "previous declaration here";
+            diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, lsh_di, self.source_file_id, self.local_decl_spans_start[li], self.local_decl_spans_end[li], lsh_note);
+            return;
+    }
+    if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id)) |s| {
+        if (s.kind == sym_mod.SymbolKind.global or s.kind == sym_mod.SymbolKind.function or
+            s.kind == sym_mod.SymbolKind.type_alias or s.kind == sym_mod.SymbolKind.module) {
+            var osh_msg: []const u8 = "local declaration shadows an outer-scope declaration";
+            var osh_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3057_LOCAL_SHADOW)), self.source_file_id, span_start, span_end, osh_msg);
+            // Task 18: container-level decls keep their decl node in the symbol
+            // registry; render Zig's `note: declared here` related span at it.
+            if (s.decl_node != @intCast(u32, 0)) {
+                var osh_decl = ast_mod.astStoreNodeAt(self.store, s.decl_node);
+                var osh_note: []const u8 = "declared here";
+                diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, osh_di, self.source_file_id, osh_decl.span_start, osh_decl.span_start + @intCast(u32, osh_decl.span_len), osh_note);
+            }
+        }
+    }
+}
+
+// Task 7D: if `item` is a scope-pop marker (`0x80000000 | saved_depth`), restore
+// the local-decl depth and return true. Shared by the stmt-walker worklist, the
+// switch-prong drain, and the expression-block drain.
+fn semanticAnalyzerPopScopeMarker(self: *SemanticAnalyzer, item: u32) bool {
+    if (item >= @intCast(u32, 0x80000000)) {
+        self.local_decl_count = @intCast(usize, item & @intCast(u32, 0x7FFFFFFF));
+        return true;
+    }
+    return false;
+}
+
+// Task 7D: the span of the `n`th (1-based) identifier token at or after `from`
+// within `[from, limit)`, used to point the shadow diagnostic at a declaration's
+// NAME token when the node carries the name only as a payload (var_decl, `for`
+// captures). Returns false (and leaves the out-params untouched) when the token
+// cannot be located.
+fn semanticAnalyzerNthIdentSpan(self: *SemanticAnalyzer, from: u32, limit: u32, n: u32, out_start: *u32, out_end: *u32) bool {
+    var f = from;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        var s: u32 = 0; var e: u32 = 0;
+        if (!diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, f, limit, &s, &e)) return false;
+        out_start.* = s;
+        out_end.* = e;
+        f = e;
+    }
+    return true;
+}
+
+// A8-F (Volume IV Amendment A8, operator option A): the no-else error-union
+// condition capture (`if (eu) |v|` / `while (eu) |v|`) is not supported. The
+// old behavior accepted it (rc 0) and emitted gcc-invalid C because the capture
+// bound the whole error union; Zig 0.15.2 rejects the same no-else shape
+// (`expected optional type, found 'E!T'`). Reject it cleanly with the existing
+// level-0 `ERR_3058` condition diagnostic so the post-sema `hasErrors` gate
+// exits rc 2 before any lowering. Optional captures are unchanged, and
+// `else |e|` remains the pre-existing parse reject (no feature added).
+fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32, cap_node_idx: u32) u32 {
     if (cond_type == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var capt_ty = self.registry.types_items[@intCast(usize, cond_type)];
     if (capt_ty.kind == type_mod.TypeKind.optional_type) {
         return self.registry.opt_items[@intCast(usize, capt_ty.payload_idx)].payload;
+    }
+    if (capt_ty.kind == type_mod.TypeKind.error_union_type) {
+        if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, cap_node_idx)) {
+            var eu_cap_msg: []const u8 = "error union capture is not supported; use 'catch', 'switch', or 'orelse'";
+            var eu_cap_node = ast_mod.astStoreNodeAt(self.store, cap_node_idx);
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3058_CONDITION_NOT_BOOL)), self.source_file_id, eu_cap_node.span_start, eu_cap_node.span_start + @intCast(u32, eu_cap_node.span_len), eu_cap_msg);
+        }
     }
     return cond_type;
 }
@@ -304,10 +922,7 @@ fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32) u32 {
 pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, name_id: u32, node_idx: u32) u32 {
     var ide: []const u8 = "IDE\n"; pal_mod.markerWrite(ide);
     if (name_id == @intCast(u32, 1)) { var sem_m: []const u8 = "SEM:vi"; pal_mod.markerWriteInt(sem_m, module_id); }
-    var li = self.local_decl_count;
-    while (li > @intCast(usize, 0)) {
-        li -= @intCast(usize, 1);
-            if (self.local_decl_names[li] == name_id) {
+    if (findLocalBinding(self, name_id)) |li| {
                 var lcl_t = self.local_decl_types[li];
                 var d7m: []const u8 = "D7:Yn"; pal_mod.markerWrite(d7m);
                 var d7n_m: []const u8 = "D7:n"; pal_mod.markerWriteInt(d7n_m, name_id);
@@ -316,7 +931,6 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
                 var id1: []const u8 = "L\n"; pal_mod.markerWrite(id1);
             var lt_m: []const u8 = "L:t"; pal_mod.markerWriteInt(lt_m, lcl_t);
             return lcl_t;
-        }
     }
     var key = @intCast(u64, name_id);
     var ncg = type_mod.nameCacheGet(self.registry, key);
@@ -326,14 +940,35 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     if (sym) |s| {
         var id2: []const u8 = "S\n"; pal_mod.markerWrite(id2);
         if (s.kind == sym_mod.SymbolKind.type_alias) {
+            semanticAnalyzerMaybeGateAliasDecl(self, s.decl_node, s.module_id);
             if (s.type_id != @intCast(u32, 0)) { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return s.type_id; }
             if (ncgm) |ctm| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ctm; }
             if (ncg) |ct| { var rdt_talias: []const u8 = "TAL\n"; pal_mod.markerWrite(rdt_talias); return ct; }
         var rdt_sv: []const u8 = "SVO\n"; pal_mod.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
         }
         if (s.type_id != @intCast(u32, 0)) { var rdt_nm: []const u8 = "STY:N"; pal_mod.markerWriteInt(rdt_nm, name_id); var rdt_tm: []const u8 = "STY:T"; pal_mod.markerWriteInt(rdt_tm, s.type_id); if (ncg) |nt| { var rdt_ntm: []const u8 = "STY:C"; pal_mod.markerWriteInt(rdt_ntm, nt); } return s.type_id; }
+        // T4 (spec §4): a module-scope `const impl = if (@isWindows())
+        // @import("a.zig") else @import("b.zig");` (the conditional-`@import`
+        // idiom). The module-var fixpoint types decls before
+        // `phase_ComptimeEvaluation` stamps the fold table, so the decl can
+        // carry no type yet; fold the initializer HERE (table-backed probes
+        // are target-correct in the later phases) and cache the live module's
+        // type on the symbol — exactly the `const std = @import("std")` shape
+        // downstream (field access, lowering) already consumes.
+        if (s.kind == sym_mod.SymbolKind.global and s.decl_node != @intCast(u32, 0)) {
+            var t4_dnn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
+            if (t4_dnn.kind == AstKind.var_decl and t4_dnn.child_1 != @intCast(u32, 0)) {
+                var t4_amt = semanticAnalyzerModuleAliasInitType(self, t4_dnn.child_1);
+                if (t4_amt != @intCast(u32, 0)) {
+                    s.type_id = t4_amt;
+                    var t4_am_m: []const u8 = "T4AM:n"; pal_mod.markerWriteInt(t4_am_m, name_id); var t4_am_t: []const u8 = "T4AM:t"; pal_mod.markerWriteInt(t4_am_t, t4_amt); var t4_am_nl: []const u8 = "\n"; pal_mod.markerWrite(t4_am_nl);
+                    return t4_amt;
+                }
+            }
+        }
             var rdt_sv: []const u8 = "SVO\n"; pal_mod.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
     }
+    if (ncgm) |m| { var id3m: []const u8 = "C2:M"; pal_mod.markerWriteInt(id3m, m); return m; }
     if (ncg) |t| { var id3: []const u8 = "C2:T"; pal_mod.markerWriteInt(id3, t); return t; }
      var d8n_m: []const u8 = "D8:Nn"; pal_mod.markerWriteInt(d8n_m, name_id);
      var d8c_m: []const u8 = "D8:C"; pal_mod.markerWriteInt(d8c_m, @intCast(u32, self.local_decl_count));
@@ -355,13 +990,780 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
            else { var d8z_m: []const u8 = "D8:Z\n"; pal_mod.markerWrite(d8z_m); }
           var d8nl2: []const u8 = "\n"; pal_mod.markerWrite(d8nl2);
       }
-    if (name_id == self._stub_0) {
+    if (name_id == self.discard_name_id) {
         return type_mod.TYPE_UNDEFINED;
     }
     var idm: []const u8 = "IDT:"; pal_mod.markerWrite(idm);
     var idnb: [10]u8 = undefined; var idnl = itoa_mod.itoa(name_id, idnb[0..]); var idns: usize = @intCast(usize, 9) - @intCast(usize, idnl); pal_mod.markerWrite(idnb[idns..@intCast(usize, 9)]);
     var idc: []const u8 = ":VOID\n"; pal_mod.markerWrite(idc);
+    var uin = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var uisp: u32 = uin.span_start;
+    var uiep = uisp + @intCast(u32, uin.span_len);
+    var uinm = interner_mod.stringInternerGet(self.interner, name_id);
+    var ui1: []const u8 = "identifier '";
+    var ui2: []const u8 = "' is not declared or imported in this module";
+    var uiparts: [3][]const u8 = [3][]const u8{ ui1, uinm, ui2 };
+    var uimsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &uiparts[0], @intCast(u32, 3));
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), self.source_file_id, uisp, uiep, uimsg);
     return type_mod.TYPE_VOID;
+}
+
+// Task 11N: `.len` on a struct/union array field. The generic field loop below
+// decays a `[N]T` field to a bare `*T`, so `.len` on `s.a` never matches the
+// `array_type` `.len` arm. Recover the declared array-field type from the
+// `.len` node's base (a field access, optionally through a pointer) and report
+// it as `usize`; returns 0 (the unused type id) when the field is not an array.
+//
+// Task 17 (F): the walk is factored into `semanticAnalyzerArrayFieldLength`,
+// which also feeds the compile-time index/slice bounds check -- the field's
+// declared length is exactly the bound Zig enforces for `s.a[i]` / `s.a[a..b]`.
+fn semanticAnalyzerArrayFieldLength(self: *SemanticAnalyzer, base_node_idx: u32) ?u32 {
+    var bn = ast_mod.astStoreNodeAt(self.store, base_node_idx);
+    if (bn.kind != AstKind.field_access) return null;
+    var fname: u32 = ast_mod.astStoreNodePayload(self.store, base_node_idx);
+    var cont = semanticAnalyzerResolveExpr(self, bn.child_0);
+    if (cont == type_mod.TYPE_VOID or cont == type_mod.TYPE_UNDEFINED) return null;
+    if (@intCast(usize, cont) >= self.registry.types_len) return null;
+    var cty = self.registry.types_items[@intCast(usize, cont)];
+    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+        cont = self.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+        if (@intCast(usize, cont) >= self.registry.types_len) return null;
+        cty = self.registry.types_items[@intCast(usize, cont)];
+    }
+    var fstart: usize = 0;
+    var fcount: usize = 0;
+    if (cty.kind == type_mod.TypeKind.struct_type) {
+        var sp = self.registry.st_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, sp.fields_start); fcount = @intCast(usize, sp.fields_count);
+    } else if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
+        var up = self.registry.un_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, up.fields_start); fcount = @intCast(usize, up.fields_count);
+    } else return null;
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        if (self.registry.fe_items[fstart + fi].name_id == fname) {
+            var ft = self.registry.fe_items[fstart + fi].type_id;
+            if (@intCast(usize, ft) < self.registry.types_len and
+                self.registry.types_items[@intCast(usize, ft)].kind == type_mod.TypeKind.array_type) {
+                return self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, ft)].payload_idx)].length;
+            }
+            return null;
+        }
+    }
+    return null;
+}
+
+fn semanticAnalyzerArrayFieldLen(self: *SemanticAnalyzer, base_node_idx: u32) u32 {
+    if (semanticAnalyzerArrayFieldLength(self, base_node_idx) != null) {
+        return type_mod.TYPE_USIZE;
+    }
+    return @intCast(u32, 0);
+}
+
+// Task 17 (F): compile-time bounds checking for a comptime-known array index
+// and for constant slice-range bounds, matching official Zig 0.15.2. The
+// runtime-index `-fsafe` `check_trap{kind=5}` guard is untouched: this frontend
+// check only fires when the fold can prove the value (a literal / `const`
+// chain / constant arithmetic / `.len` of a fixed array). Official Zig rejects
+// `scores[5]` and `scores[scores.len]` on `[5]i32`, `scores[1..10]`,
+// `scores[3..1]`, `scores[6..]`, and a negative index/bound; a runtime index
+// still lowers to the existing runtime check.
+//
+// The length comes from the base expression's declared type: an array value, a
+// pointer to a fixed array (`*[N]T`), or a struct/union array FIELD (whose
+// access decays to an element pointer). A slice / many-item pointer / scalar
+// has no compile-time length (its length is the runtime slice length, which is
+// a Zig runtime panic, not a compile reject) and is skipped. A string literal
+// is skipped too: its Zig type carries an implicit NUL sentinel (`[N:0]u8`),
+// so Zig's acceptable bound is N + 1 while this front end has no sentinel
+// array kind.
+fn semanticAnalyzerStaticArrayLen(self: *SemanticAnalyzer, base_node_idx: u32) ?u32 {
+    if (base_node_idx == @intCast(u32, 0)) return null;
+    var bn = ast_mod.astStoreNodeAt(self.store, base_node_idx);
+    var bt: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, base_node_idx)) |t| { bt = t; } else { return null; }
+    if (bt == @intCast(u32, 0) or bt == type_mod.TYPE_UNDEFINED or bt == type_mod.TYPE_VOID) return null;
+    if (@intCast(usize, bt) >= self.registry.types_len) return null;
+    var ty = self.registry.types_items[@intCast(usize, bt)];
+    if (ty.kind == type_mod.TypeKind.array_type) {
+        return self.registry.array_items[@intCast(usize, ty.payload_idx)].length;
+    }
+    if (ty.kind == type_mod.TypeKind.ptr_type) {
+        if (bn.kind == AstKind.string_literal) return null;
+        var pt = self.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        if (@intCast(usize, pt) < self.registry.types_len and
+            self.registry.types_items[@intCast(usize, pt)].kind == type_mod.TypeKind.array_type) {
+            return self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, pt)].payload_idx)].length;
+        }
+    }
+    if (bn.kind == AstKind.field_access) {
+        return semanticAnalyzerArrayFieldLength(self, base_node_idx);
+    }
+    return null;
+}
+
+// Task 17 (F): the comptime integer value of an index / slice-bound
+// expression, when the fold can know it. The shared fold evaluator resolves
+// literals, `const` chains and constant arithmetic; it has no field-access arm,
+// so `.len` on a fixed array is recovered from the base's declared type (the
+// shape the brief names explicitly: `scores[scores.len]`). Parens around the
+// index are unwrapped for that recovery. A runtime value (`var`, slice length,
+// call result) returns false and keeps the existing runtime behavior.
+// Task 6b (D5-3/D6-1): the ComptimeEval prologue shared by the ten sema call
+// sites -- a fresh evaluator with the function-local `const` scope bound.
+fn semaComptimeEvalInit(self: *SemanticAnalyzer) ce_mod.ComptimeEval {
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    ce.module_id = self.module_id;
+    ce.local_consts = &self.local_consts;
+    return ce;
+}
+
+fn semanticAnalyzerComptimeIntValue(self: *SemanticAnalyzer, ce: *ce_mod.ComptimeEval, node_idx: u32, out: *ce_mod.ComptimeInt) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    if (ce_mod.comptimeEvalEvaluate(ce, node_idx)) |cv| {
+        if (cv.kind == ce_mod.KIND_INT) { out.* = cv.v; return true; }
+        return false;
+    }
+    var cur = semaUnwrapParensBounded(self, node_idx, @intCast(u32, 4));
+    var ln = ast_mod.astStoreNodeAt(self.store, cur);
+    if (ln.kind == AstKind.field_access) {
+        var len_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 0));
+        if (ast_mod.astStoreNodePayload(self.store, cur) == len_id) {
+            if (semanticAnalyzerStaticArrayLen(self, ln.child_0)) |l| {
+                out.* = ce_mod.ciFromU64(@intCast(u64, l));
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Task 17 (F): render a comptime integer (possibly negative) into `buf` for a
+// diagnostic message; returns the slice excluding the NUL itoa appends. The
+// magnitude goes through the established 64-bit path (a bound beyond u64 is
+// still a rejection; only the printed digits are bounded).
+fn semanticAnalyzerComptimeIntText(ci: ce_mod.ComptimeInt, buf: []u8) []const u8 {
+    var is_neg = ci.neg and !ce_mod.ciIsZero(ci);
+    var mag = ci;
+    mag.neg = false;
+    var dl = itoa_mod.itoa64(ce_mod.ciToU64(mag), buf[1..]);
+    var ds: usize = @intCast(usize, buf.len) - @intCast(usize, dl) - @intCast(usize, 1);
+    if (is_neg) {
+        buf[ds - @intCast(usize, 1)] = @intCast(u8, 45);
+        return buf[ds - @intCast(usize, 1) .. @intCast(usize, buf.len) - @intCast(usize, 1)];
+    }
+    return buf[ds .. @intCast(usize, buf.len) - @intCast(usize, 1)];
+}
+
+fn semanticAnalyzerU32Text(v: u32, buf: []u8) []const u8 {
+    var l = itoa_mod.itoa(v, buf);
+    var s: usize = @intCast(usize, buf.len) - @intCast(usize, l) - @intCast(usize, 1);
+    return buf[s .. @intCast(usize, buf.len) - @intCast(usize, 1)];
+}
+
+// Task 17 (F): `index N outside array of length L` (Zig 0.15.2 wording; used
+// for an out-of-range index and, with the sign kept, for a negative one).
+fn semanticAnalyzerReportIndexOob(self: *SemanticAnalyzer, mark_node: u32, ci: ce_mod.ComptimeInt, len: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var idx_buf: [24]u8 = undefined;
+    var idx_text = semanticAnalyzerComptimeIntText(ci, idx_buf[0..]);
+    var len_buf: [12]u8 = undefined;
+    var len_text = semanticAnalyzerU32Text(len, len_buf[0..]);
+    var p0: []const u8 = "index ";
+    var p1: []const u8 = " outside array of length ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, idx_text, p1, len_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 17 (F): `end index N out of bounds for array of length L`.
+fn semanticAnalyzerReportSliceEndOob(self: *SemanticAnalyzer, mark_node: u32, ci: ce_mod.ComptimeInt, len: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var end_buf: [24]u8 = undefined;
+    var end_text = semanticAnalyzerComptimeIntText(ci, end_buf[0..]);
+    var len_buf: [12]u8 = undefined;
+    var len_text = semanticAnalyzerU32Text(len, len_buf[0..]);
+    var p0: []const u8 = "end index ";
+    var p1: []const u8 = " out of bounds for array of length ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, end_text, p1, len_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 17 (F): `start index S is larger than end index E` (the open-ended form
+// `a[s..]` compares against the array length, matching Zig).
+fn semanticAnalyzerReportSliceStartAfterEnd(self: *SemanticAnalyzer, mark_node: u32, start_ci: ce_mod.ComptimeInt, end_ci: ce_mod.ComptimeInt) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var start_buf: [24]u8 = undefined;
+    var start_text = semanticAnalyzerComptimeIntText(start_ci, start_buf[0..]);
+    var end_buf: [24]u8 = undefined;
+    var end_text = semanticAnalyzerComptimeIntText(end_ci, end_buf[0..]);
+    var p0: []const u8 = "start index ";
+    var p1: []const u8 = " is larger than end index ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, start_text, p1, end_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 17 (F): `type 'usize' cannot represent integer value '-N'` (Zig 0.15.2's
+// rejection for a negative comptime index/bound).
+fn semanticAnalyzerReportUsizeNegative(self: *SemanticAnalyzer, mark_node: u32, ci: ce_mod.ComptimeInt) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var num_buf: [24]u8 = undefined;
+    var num_text = semanticAnalyzerComptimeIntText(ci, num_buf[0..]);
+    var p0: []const u8 = "type 'usize' cannot represent integer value '";
+    var p1: []const u8 = "'";
+    var parts: [3][]const u8 = [3][]const u8{ p0, num_text, p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 3));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FB (D4): `index N outside tuple of length L` (Zig 0.15.2's primary wording
+// for a tuple index outside `0..arity`). New code 3070 (the plan's FB tuple
+// index-out-of-range allocation); level 0, span on the index expression.
+fn semanticAnalyzerReportTupleIndexOob(self: *SemanticAnalyzer, mark_node: u32, ord: u32, len: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var idx_buf: [12]u8 = undefined;
+    var idx_text = semanticAnalyzerU32Text(ord, idx_buf[0..]);
+    var len_buf: [12]u8 = undefined;
+    var len_text = semanticAnalyzerU32Text(len, len_buf[0..]);
+    var p0: []const u8 = "index ";
+    var p1: []const u8 = " outside tuple of length ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, idx_text, p1, len_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3070_TUPLE_INDEX_OUT_OF_RANGE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FB (D4): a `t[i]` whose index is not comptime-known. Zig 0.15.2's note
+// wording ("tuple field index must be comptime-known"); new code 3069. Level
+// 0, span on the index expression.
+fn semanticAnalyzerReportTupleIndexNotComptime(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "tuple field index must be comptime-known";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3069_TUPLE_INDEX_NOT_COMPTIME)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FH (Volume II D10): write `text` right-to-left ending at `pos`; returns the
+// new start index (`buf[start..pos0]` is the label). Truncates at buf[0].
+fn semanticAnalyzerSpellBytesBack(buf: []u8, pos: usize, text: []const u8) usize {
+    var p = pos;
+    var i = text.len;
+    while (i > 0) {
+        i -= 1;
+        if (p == 0) return @intCast(usize, 0);
+        p -= 1;
+        buf[p] = text[i];
+    }
+    return p;
+}
+
+// FH (Volume II D10): best-effort backward spelling of a type for the
+// `type '*T' does not support indexing` message. A registry `name_id` (all
+// primitives and named aggregates) wins; ptr/many-ptr/array/slice/optional
+// render structurally for a nested pointer (`**i32`) or a composite pointee,
+// with a depth cap that falls back to `T`; everything else uses the FF kind
+// word. The buffer lives in the caller's frame while the diagnostic builder
+// interns the message, so the returned slice is safe there.
+fn semanticAnalyzerSpellTypeBack(self: *SemanticAnalyzer, tid: u32, buf: []u8, pos: usize, depth: u32) usize {
+    if (depth > @intCast(u32, 3)) {
+        var fb: []const u8 = "T";
+        return semanticAnalyzerSpellBytesBack(buf, pos, fb);
+    }
+    if (@intCast(usize, tid) < self.registry.types_len) {
+        var ty = self.registry.types_items[@intCast(usize, tid)];
+        if (ty.name_id != @intCast(u32, 0)) {
+            var nm = interner_mod.stringInternerGet(self.interner, ty.name_id);
+            return semanticAnalyzerSpellBytesBack(buf, pos, nm);
+        }
+        if (ty.kind == type_mod.TypeKind.ptr_type or ty.kind == type_mod.TypeKind.many_ptr_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.ptr_len) {
+                var inner = self.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+                var p = semanticAnalyzerSpellTypeBack(self, inner, buf, pos, depth + @intCast(u32, 1));
+                if ((ty.flags & @intCast(u8, 2)) != @intCast(u8, 0)) {
+                    var vq: []const u8 = "volatile ";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, vq);
+                }
+                if ((ty.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
+                    var cq: []const u8 = "const ";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, cq);
+                }
+                if (ty.kind == type_mod.TypeKind.ptr_type) {
+                    var st: []const u8 = "*";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, st);
+                } else {
+                    var m3: []const u8 = "]";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, m3);
+                    var m2: []const u8 = "*";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, m2);
+                    var m1: []const u8 = "[";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, m1);
+                }
+                return p;
+            }
+        }
+        if (ty.kind == type_mod.TypeKind.slice_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.slice_len) {
+                var inner = self.registry.slice_items[@intCast(usize, ty.payload_idx)].elem;
+                var p = semanticAnalyzerSpellTypeBack(self, inner, buf, pos, depth + @intCast(u32, 1));
+                var s2: []const u8 = "]";
+                p = semanticAnalyzerSpellBytesBack(buf, p, s2);
+                var s1: []const u8 = "[";
+                p = semanticAnalyzerSpellBytesBack(buf, p, s1);
+                return p;
+            }
+        }
+        if (ty.kind == type_mod.TypeKind.array_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.array_len) {
+                var arr = self.registry.array_items[@intCast(usize, ty.payload_idx)];
+                var nb: [12]u8 = undefined;
+                var ntext = semanticAnalyzerU32Text(arr.length, nb[0..]);
+                var p = semanticAnalyzerSpellTypeBack(self, arr.elem, buf, pos, depth + @intCast(u32, 1));
+                var a3: []const u8 = "]";
+                p = semanticAnalyzerSpellBytesBack(buf, p, a3);
+                p = semanticAnalyzerSpellBytesBack(buf, p, ntext);
+                var a1: []const u8 = "[";
+                p = semanticAnalyzerSpellBytesBack(buf, p, a1);
+                return p;
+            }
+        }
+        if (ty.kind == type_mod.TypeKind.optional_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.opt_len) {
+                var inner = self.registry.opt_items[@intCast(usize, ty.payload_idx)].payload;
+                var p = semanticAnalyzerSpellTypeBack(self, inner, buf, pos, depth + @intCast(u32, 1));
+                var qm: []const u8 = "?";
+                p = semanticAnalyzerSpellBytesBack(buf, p, qm);
+                return p;
+            }
+        }
+    }
+    var fb2 = semanticAnalyzerIntrospectionTypeLabel(self, tid);
+    return semanticAnalyzerSpellBytesBack(buf, pos, fb2);
+}
+
+// FH (Volume II D10): 3066 for a single-item-pointer index (or a `type` base).
+fn semanticAnalyzerReportIllegalPtrIndex(self: *SemanticAnalyzer, mark_node: u32, base_tid: u32, is_type_base: bool) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    var sp = node.span_start;
+    var ep = sp + @intCast(u32, node.span_len);
+    if (is_type_base) {
+        var tm: []const u8 = "unable to resolve comptime value";
+        var tdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3066_SINGLE_PTR_INDEX)), self.source_file_id, sp, ep, tm);
+        diag_mod.diagnosticCollectorAddNote(self.diag, tdi, "types must be comptime-known");
+        return;
+    }
+    var sbuf: [160]u8 = undefined;
+    var spos = semanticAnalyzerSpellTypeBack(self, base_tid, sbuf[0..], sbuf.len, @intCast(u32, 0));
+    var label = sbuf[spos..sbuf.len];
+    var p0: []const u8 = "type '";
+    var p1: []const u8 = "' does not support indexing";
+    var parts: [3][]const u8 = [3][]const u8{ p0, label, p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 3));
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3066_SINGLE_PTR_INDEX)), self.source_file_id, sp, ep, msg);
+    diag_mod.diagnosticCollectorAddNote(self.diag, di, "operand must be an array, slice, tuple, or vector");
+}
+
+// FH (Volume II D10): 3067, an illegal comptime bound pair on a single-item
+// pointer (`[0..2]`, `[1..0]`, `[-1..1]`).
+fn semanticAnalyzerReportPtrSliceIllegal(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "slice of single-item pointer must have bounds [0..0], [0..1], or [1..1]";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FH (Volume II D10): 3067, a single-item-pointer slice bound that is not
+// comptime-known (`p[0..n]`; Zig's note wording).
+fn semanticAnalyzerReportPtrSliceRuntime(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "unable to resolve comptime value";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+    diag_mod.diagnosticCollectorAddNote(self.diag, di, "slice of single-item pointer must have comptime-known bounds");
+}
+
+// FH (Volume II D10): 3067, the open-ended form (`p[0..]`; formerly the
+// `error[3043]` ICE on the lowering path).
+fn semanticAnalyzerReportPtrSliceBounded(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "slice of single-item pointer must be bounded";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FH (Volume II D10): the single-item-pointer slice gate. Returns 0 when
+// `base_tid` is not a single-item pointer to a non-array pointee (the caller
+// keeps the ordinary slice path), 1 when one of the three Zig-legal comptime
+// pairs was accepted (`out_len` = end - start), and 2 when the form was
+// rejected (a 3067 diagnostic was emitted; the caller returns void).
+fn semanticAnalyzerCheckSinglePtrSlice(self: *SemanticAnalyzer, node_idx: u32, base_tid: u32, out_len: *u32) u8 {
+    if (@intCast(usize, base_tid) >= self.registry.types_len) return @intCast(u8, 0);
+    var bt = self.registry.types_items[@intCast(usize, base_tid)];
+    if (bt.kind != type_mod.TypeKind.ptr_type) return @intCast(u8, 0);
+    if (@intCast(usize, bt.payload_idx) >= self.registry.ptr_len) return @intCast(u8, 0);
+    var pointee = self.registry.ptr_items[@intCast(usize, bt.payload_idx)].base;
+    if (@intCast(usize, pointee) >= self.registry.types_len) return @intCast(u8, 0);
+    if (self.registry.types_items[@intCast(usize, pointee)].kind == type_mod.TypeKind.array_type) return @intCast(u8, 0);
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // A struct/union ARRAY FIELD base (`s.arr[a..b]`) decays to an element
+    // pointer like the index path; its declared array length marks it as an
+    // array slice, so it keeps the ordinary (FX5) slice path.
+    var sps_af_len = semanticAnalyzerStaticArrayLen(self, node.child_0);
+    if (sps_af_len != null) return @intCast(u8, 0);
+    if (node.child_2 == @intCast(u32, 0)) {
+        semanticAnalyzerReportPtrSliceBounded(self, node_idx);
+        return @intCast(u8, 2);
+    }
+    var ce = semaComptimeEvalInit(self);
+    var start_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    var start_known: u8 = @intCast(u8, 1);
+    if (node.child_1 != @intCast(u32, 0)) {
+        start_known = @intCast(u8, 0);
+        if (semanticAnalyzerComptimeIntValue(self, &ce, node.child_1, &start_ci)) { start_known = @intCast(u8, 1); }
+    }
+    var end_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (!semanticAnalyzerComptimeIntValue(self, &ce, node.child_2, &end_ci)) {
+        semanticAnalyzerReportPtrSliceRuntime(self, node.child_2);
+        return @intCast(u8, 2);
+    }
+    if (start_known == @intCast(u8, 0)) {
+        semanticAnalyzerReportPtrSliceRuntime(self, node.child_1);
+        return @intCast(u8, 2);
+    }
+    var start_v: u64 = @intCast(u64, 0);
+    var end_v: u64 = @intCast(u64, 0);
+    var start_ok: u8 = @intCast(u8, 0);
+    var end_ok: u8 = @intCast(u8, 0);
+    if (!start_ci.neg and start_ci.len <= @intCast(u8, 2)) {
+        start_v = ce_mod.ciToU64(start_ci);
+        if (start_v == @intCast(u64, 0) or start_v == @intCast(u64, 1)) { start_ok = @intCast(u8, 1); }
+    }
+    if (!end_ci.neg and end_ci.len <= @intCast(u8, 2)) {
+        end_v = ce_mod.ciToU64(end_ci);
+        end_ok = @intCast(u8, 1);
+    }
+    if (start_ok == @intCast(u8, 0)) {
+        var mn: u32 = node_idx;
+        if (node.child_1 != @intCast(u32, 0)) { mn = node.child_1; }
+        semanticAnalyzerReportPtrSliceIllegal(self, mn);
+        return @intCast(u8, 2);
+    }
+    if (end_ok == @intCast(u8, 0)) {
+        semanticAnalyzerReportPtrSliceIllegal(self, node.child_2);
+        return @intCast(u8, 2);
+    }
+    if (start_v == @intCast(u64, 0)) {
+        if (end_v > @intCast(u64, 1)) {
+            semanticAnalyzerReportPtrSliceIllegal(self, node.child_2);
+            return @intCast(u8, 2);
+        }
+    } else {
+        if (end_v != @intCast(u64, 1)) {
+            semanticAnalyzerReportPtrSliceIllegal(self, node.child_2);
+            return @intCast(u8, 2);
+        }
+    }
+    out_len.* = @intCast(u32, end_v - start_v);
+    return @intCast(u8, 1);
+}
+
+// Task 17 (F): the index-access check. The base's fixed length bounds a
+// comptime-known index; a negative value is Zig's coercion reject.
+fn semanticAnalyzerCheckComptimeIndexOob(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.child_1 == @intCast(u32, 0)) return;
+    var alen: u32 = @intCast(u32, 0);
+    if (semanticAnalyzerStaticArrayLen(self, node.child_0)) |l| { alen = l; } else { return; }
+    var ce = semaComptimeEvalInit(self);
+    var idx_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (!semanticAnalyzerComptimeIntValue(self, &ce, node.child_1, &idx_ci)) return;
+    if (idx_ci.neg and !ce_mod.ciIsZero(idx_ci)) {
+        semanticAnalyzerReportUsizeNegative(self, node.child_1, idx_ci);
+        return;
+    }
+    var len_ci = ce_mod.ciFromU64(@intCast(u64, alen));
+    if (ce_mod.ciCmp(idx_ci, len_ci) >= 0) {
+        semanticAnalyzerReportIndexOob(self, node.child_1, idx_ci, alen);
+    }
+}
+
+// Task 17 (F): the constant-slice-range check (the fixed-array analogue of the
+// index check). Zig's order: a negative bound is a coercion reject; then an
+// end beyond the length; then a start after the effective end (the open-ended
+// `a[s..]` end is the length). `a[len..]` and `a[len..len]` stay legal empty
+// slices. The start check runs only when the effective end is comptime-known:
+// for the open form (`child_2 == 0`) that end is `alen`; for a CLOSED form with
+// a runtime end (`a[7..ri]`) there is no comptime end to compare against, so
+// the shape keeps its pre-Task-17 runtime behavior (Zig accepts it too).
+fn semanticAnalyzerCheckComptimeSliceBounds(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var alen: u32 = @intCast(u32, 0);
+    if (semanticAnalyzerStaticArrayLen(self, node.child_0)) |l| { alen = l; } else { return; }
+    var ce = semaComptimeEvalInit(self);
+    var start_known: u8 = @intCast(u8, 0);
+    var start_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (node.child_1 != @intCast(u32, 0)) {
+        if (semanticAnalyzerComptimeIntValue(self, &ce, node.child_1, &start_ci)) { start_known = @intCast(u8, 1); }
+    }
+    var end_known: u8 = @intCast(u8, 0);
+    var end_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (node.child_2 != @intCast(u32, 0)) {
+        if (semanticAnalyzerComptimeIntValue(self, &ce, node.child_2, &end_ci)) { end_known = @intCast(u8, 1); }
+    }
+    if (start_known != @intCast(u8, 0) and start_ci.neg and !ce_mod.ciIsZero(start_ci)) {
+        semanticAnalyzerReportUsizeNegative(self, node.child_1, start_ci);
+        return;
+    }
+    if (end_known != @intCast(u8, 0) and end_ci.neg and !ce_mod.ciIsZero(end_ci)) {
+        semanticAnalyzerReportUsizeNegative(self, node.child_2, end_ci);
+        return;
+    }
+    var len_ci = ce_mod.ciFromU64(@intCast(u64, alen));
+    if (end_known != @intCast(u8, 0) and ce_mod.ciCmp(end_ci, len_ci) > 0) {
+        semanticAnalyzerReportSliceEndOob(self, node.child_2, end_ci, alen);
+        return;
+    }
+    if (start_known != @intCast(u8, 0) and node.child_2 == @intCast(u32, 0)) {
+        if (ce_mod.ciCmp(start_ci, len_ci) > 0) {
+            semanticAnalyzerReportSliceStartAfterEnd(self, node.child_1, start_ci, len_ci);
+        }
+    } else if (start_known != @intCast(u8, 0) and end_known != @intCast(u8, 0)) {
+        if (ce_mod.ciCmp(start_ci, end_ci) > 0) {
+            semanticAnalyzerReportSliceStartAfterEnd(self, node.child_1, start_ci, end_ci);
+        }
+    }
+}
+
+// Task 11N + Task 13 fix round (C1): `.len` on a struct/union array field whose
+// element is ANY kind (scalar, struct, union, enum, error set, ...). Consulted
+// in every "member not found" path, because the base's kind after the array
+// field decay + auto-deref depends on the element kind (a `[N]Point` field
+// derefs to `struct_type`, a `[N]u8` field to `u8`). Returns the resolved
+// `usize` type id when `node.child_0` names such a field, else 0.
+fn semanticAnalyzerArrayFieldLenCheck(self: *SemanticAnalyzer, node_idx: u32, field_name_id: u32) u32 {
+    var len_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 0));
+    if (field_name_id != len_id) return @intCast(u32, 0);
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var afl_ty = semanticAnalyzerArrayFieldLen(self, node.child_0);
+    if (afl_ty != @intCast(u32, 0)) {
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, afl_ty);
+    }
+    return afl_ty;
+}
+
+// Task 18 fix round: the type registry stores no declaration node, so recover
+// the named aggregate's declaration through the owning module's symbol table
+// (the `type_alias` symbol whose `type_id` is the base type). Returns false for
+// an anonymous/unnamed type (inline `struct { ... }`), which has no declaration
+// to point at.
+fn semanticAnalyzerFindTypeDecl(self: *SemanticAnalyzer, tid: u32, out_node: *u32, out_file: *u32) bool {
+    if (tid == @intCast(u32, 0)) return false;
+    if (@intCast(usize, tid) >= self.registry.types_len) return false;
+    var ty = self.registry.types_items[@intCast(usize, tid)];
+    var table = sym_mod.symbolRegistryGetTable(self.symbols, ty.module_id);
+    var ti: usize = 0;
+    while (ti < table.len) : (ti += 1) {
+        if (table.items[ti].kind == sym_mod.SymbolKind.type_alias and table.items[ti].type_id == tid and table.items[ti].decl_node != @intCast(u32, 0)) {
+            out_node.* = table.items[ti].decl_node;
+            out_file.* = table.items[ti].file_id;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Task 13 fix round (C1/I1): an unknown member on its base. Same dedicated
+// `error[3060]` code as the aggregate reject; the ASCII message tail names the
+// base kind. Deduped per node (the expression walk can revisit a field access).
+// Task 18 fix round: also render Zig's declaration-site note ("struct declared
+// here" / "union declared here" / "enum declared here"; an error set has no
+// note in Zig's wording, and a slice/array/non-aggregate has no declaration).
+fn semanticAnalyzerReportUnknownMember(self: *SemanticAnalyzer, node_idx: u32, field_name_id: u32, base_kind: type_mod.TypeKind, base_type_id: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var ukm1: []const u8 = "no field or member function named '";
+    var ukm2: []const u8 = "' in type";
+    if (base_kind == type_mod.TypeKind.struct_type) {
+        var ukm_s: []const u8 = "' in struct type";
+        ukm2 = ukm_s;
+    } else if (base_kind == type_mod.TypeKind.union_type or base_kind == type_mod.TypeKind.packed_union_type or base_kind == type_mod.TypeKind.tagged_union_type) {
+        var ukm_u: []const u8 = "' in union type";
+        ukm2 = ukm_u;
+    } else if (base_kind == type_mod.TypeKind.slice_type) {
+        var ukm_sl: []const u8 = "' in slice type";
+        ukm2 = ukm_sl;
+    } else if (base_kind == type_mod.TypeKind.array_type) {
+        var ukm_a: []const u8 = "' in array type";
+        ukm2 = ukm_a;
+    } else if (base_kind == type_mod.TypeKind.enum_type) {
+        var ukm_e: []const u8 = "' in enum type";
+        ukm2 = ukm_e;
+    } else if (base_kind == type_mod.TypeKind.error_set_type) {
+        var ukm_es: []const u8 = "' in error set type";
+        ukm2 = ukm_es;
+    }
+    var ukm_name = interner_mod.stringInternerGet(self.interner, field_name_id);
+    var ukmparts: [3][]const u8 = [3][]const u8{ ukm1, ukm_name, ukm2 };
+    var ukm_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ukmparts[0], @intCast(u32, 3));
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var ukm_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), ukm_msg);
+    var ukm_note: []const u8 = "";
+    if (base_kind == type_mod.TypeKind.struct_type) {
+        var ukm_ns: []const u8 = "struct declared here";
+        ukm_note = ukm_ns;
+    } else if (base_kind == type_mod.TypeKind.union_type or base_kind == type_mod.TypeKind.packed_union_type or base_kind == type_mod.TypeKind.tagged_union_type) {
+        var ukm_nu: []const u8 = "union declared here";
+        ukm_note = ukm_nu;
+    } else if (base_kind == type_mod.TypeKind.enum_type) {
+        var ukm_ne: []const u8 = "enum declared here";
+        ukm_note = ukm_ne;
+    }
+    if (ukm_note.len > 0) {
+        var ukm_tdecl: u32 = @intCast(u32, 0);
+        var ukm_tfile: u32 = @intCast(u32, 0);
+        if (semanticAnalyzerFindTypeDecl(self, base_type_id, &ukm_tdecl, &ukm_tfile)) {
+            var ukm_dnode = ast_mod.astStoreNodeAt(self.store, ukm_tdecl);
+            diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, ukm_di, ukm_tfile, ukm_dnode.span_start, ukm_dnode.span_start + @intCast(u32, ukm_dnode.span_len), ukm_note);
+        }
+    }
+}
+
+// FF (Volume II D9): emit one clean introspection-builtin reject, deduped per
+// node. Level 0, span on the builtin call; the surrounding pipeline exits rc=2
+// with 0 `.c` (the former lowering net exited rc=3 through `error[3043]`).
+fn semanticAnalyzerRejectIntrospection(self: *SemanticAnalyzer, node_idx: u32, code: u16, msg: []const u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var rj_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), code, self.source_file_id, rj_node.span_start, rj_node.span_start + @intCast(u32, rj_node.span_len), msg);
+}
+
+// FF (Volume II D9): best-effort type label for the "expected struct type,
+// found 'X'" / "no field named 'x' in struct 'S'" wording. A named aggregate or
+// primitive carries its interned `name_id`; an unnamed composite falls back to
+// a kind word (a full type-expression printer is out of scope).
+fn semanticAnalyzerIntrospectionTypeLabel(self: *SemanticAnalyzer, tid: u32) []const u8 {
+    if (@intCast(usize, tid) < self.registry.types_len) {
+        var lbl_ty = self.registry.types_items[@intCast(usize, tid)];
+        if (lbl_ty.name_id != @intCast(u32, 0)) {
+            return interner_mod.stringInternerGet(self.interner, lbl_ty.name_id);
+        }
+        if (lbl_ty.kind == type_mod.TypeKind.ptr_type or lbl_ty.kind == type_mod.TypeKind.many_ptr_type) { var lbl_p: []const u8 = "pointer"; return lbl_p; }
+        if (lbl_ty.kind == type_mod.TypeKind.slice_type) { var lbl_sl: []const u8 = "slice"; return lbl_sl; }
+        if (lbl_ty.kind == type_mod.TypeKind.array_type) { var lbl_ar: []const u8 = "array"; return lbl_ar; }
+        if (lbl_ty.kind == type_mod.TypeKind.optional_type) { var lbl_op: []const u8 = "optional"; return lbl_op; }
+        if (lbl_ty.kind == type_mod.TypeKind.error_union_type) { var lbl_eu: []const u8 = "error union"; return lbl_eu; }
+        if (lbl_ty.kind == type_mod.TypeKind.fn_type) { var lbl_fn: []const u8 = "function"; return lbl_fn; }
+        if (lbl_ty.kind == type_mod.TypeKind.enum_type) { var lbl_en: []const u8 = "enum"; return lbl_en; }
+        if (lbl_ty.kind == type_mod.TypeKind.union_type or lbl_ty.kind == type_mod.TypeKind.packed_union_type or lbl_ty.kind == type_mod.TypeKind.tagged_union_type) { var lbl_un: []const u8 = "union"; return lbl_un; }
+        if (lbl_ty.kind == type_mod.TypeKind.struct_type) { var lbl_st: []const u8 = "struct"; return lbl_st; }
+    }
+    var lbl_q: []const u8 = "?";
+    return lbl_q;
+}
+
+// FF (Volume II D9): validate `@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/
+// `@bitOffsetOf` at the sema builtin arm, before lowering. Zig 0.15.2 parity:
+// `@offsetOf`/`@bitOffsetOf` are struct-only (packed structs included; every
+// union kind and every scalar/pointer/enum/slice/array/optional target rejects
+// with `error[3072]`), the field name must be a string literal naming an
+// existing struct field (`error[3073]`; a resolvable string `const` stays a
+// documented clean-reject divergence — Zig folds it, Z98 has no string-const
+// resolver), and an unresolved/incomplete target type or a wrong argument
+// count rejects with `error[3074]`. `@sizeOf`/`@alignOf`/`@bitSizeOf` keep
+// accepting every complete type (values unchanged, `@alignOf(void)` 0 residual
+// untouched). This removes every `error[3043]` ICE on the path.
+fn semanticAnalyzerCheckIntrospectionBuiltin(self: *SemanticAnalyzer, node_idx: u32) void {
+    var ib_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var ib_is_offset = ib_node.child_0 == self.offset_of_name_id or ib_node.child_0 == self.bit_offset_of_name_id;
+    var ib_env = semanticAnalyzerTypeEnv(self, self.module_id);
+    var ib_tid = type_resolver.resolveTypeExprFull(&ib_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
+    if (ib_tid == type_mod.TYPE_UNDEFINED) {
+        var ib_umsg: []const u8 = "unable to resolve type argument";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_umsg);
+        return;
+    }
+    if (@intCast(usize, ib_tid) >= self.registry.types_len) {
+        var ib_umsg2: []const u8 = "unable to resolve type argument";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_umsg2);
+        return;
+    }
+    var ib_ty = self.registry.types_items[@intCast(usize, ib_tid)];
+    if (ib_ty.state != @intCast(u8, 2)) {
+        var ib_imsg: []const u8 = "type argument is not complete";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_imsg);
+        return;
+    }
+    if (!ib_is_offset) return;
+    if (ib_ty.kind != type_mod.TypeKind.struct_type) {
+        var ib_tn = semanticAnalyzerIntrospectionTypeLabel(self, ib_tid);
+        var ib_tp0: []const u8 = "expected struct type, found '";
+        var ib_tp1: []const u8 = "'";
+        var ib_tparts: [3][]const u8 = [3][]const u8{ ib_tp0, ib_tn, ib_tp1 };
+        var ib_tmsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_tparts[0], @intCast(u32, 3));
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3072_OFFSET_TARGET_NOT_STRUCT)), ib_tmsg);
+        return;
+    }
+    var ib_fidx = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1));
+    var ib_fnode = ast_mod.astStoreNodeAt(self.store, ib_fidx);
+    if (ib_fnode.kind != AstKind.string_literal) {
+        var ib_nmsg: []const u8 = "field name must be a string literal";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3073_OFFSET_UNKNOWN_FIELD)), ib_nmsg);
+        return;
+    }
+    var ib_sv = ast_mod.astStoreNodePayload(self.store, ib_fidx);
+    var ib_name = self.store.string_values.items[@intCast(usize, ib_sv)];
+    var ib_fields: []type_mod.FieldEntry = undefined;
+    type_mod.typeRegistryGetStructFields(self.registry, ib_tid, &ib_fields);
+    var ib_found: u8 = @intCast(u8, 0);
+    var ib_fi: usize = @intCast(usize, 0);
+    while (ib_fi < ib_fields.len) : (ib_fi += 1) {
+        if (ib_fields[ib_fi].name_id == ib_name) { ib_found = @intCast(u8, 1); break; }
+    }
+    if (ib_found == @intCast(u8, 0)) {
+        var ib_fname = interner_mod.stringInternerGet(self.interner, ib_name);
+        var ib_stname = semanticAnalyzerIntrospectionTypeLabel(self, ib_tid);
+        var ib_fp0: []const u8 = "no field named '";
+        var ib_fp1: []const u8 = "' in struct '";
+        var ib_fp2: []const u8 = "'";
+        var ib_fparts: [5][]const u8 = [5][]const u8{ ib_fp0, ib_fname, ib_fp1, ib_stname, ib_fp2 };
+        var ib_fmsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_fparts[0], @intCast(u32, 5));
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3073_OFFSET_UNKNOWN_FIELD)), ib_fmsg);
+    }
+}
+
+// Task 15 (S3): a cross-module reference to a declaration that is not `pub` is
+// a visibility violation, matching official Zig 0.15.2 ("'x' is not marked
+// 'pub'"). Z98 modules are named import bindings; every member access through
+// an imported module — flat (`mod.member`, resolved through the
+// `SymbolKind.module` arm) or nested (`mod.sub.member`, resolved through the
+// `module_type` arm) — must name a `pub` declaration of the module that owns
+// it. Same-module access never routes through these arms, so it is unchanged.
+// Deduped per node (the expression walk can revisit a field access); returns
+// false after emitting, and the callers map the expression to TYPE_VOID.
+fn semanticAnalyzerCheckMemberVisibility(self: *SemanticAnalyzer, node_idx: u32, name_id: u32, sym: *sym_mod.Symbol) bool {
+    if (sym.module_id == self.module_id) return true;
+    if (sym_mod.symbolIsPublic(sym)) return true;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return false;
+    var mv1: []const u8 = "'";
+    var mv2: []const u8 = "' is not marked 'pub'";
+    var mvnm = interner_mod.stringInternerGet(self.interner, name_id);
+    var mvparts: [3][]const u8 = [3][]const u8{ mv1, mvnm, mv2 };
+    var mvmsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &mvparts[0], @intCast(u32, 3));
+    var mvnode = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var mv_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), self.source_file_id, mvnode.span_start, mvnode.span_start + @intCast(u32, mvnode.span_len), mvmsg);
+    // Task 18 fix round: Zig notes the non-pub declaration's own location
+    // (possibly in another source file — `Symbol.file_id`).
+    if (sym.decl_node != @intCast(u32, 0)) {
+        var mv_decl = ast_mod.astStoreNodeAt(self.store, sym.decl_node);
+        var mv_note: []const u8 = "declared here";
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, mv_di, sym.file_id, mv_decl.span_start, mv_decl.span_start + @intCast(u32, mv_decl.span_len), mv_note);
+    }
+    return false;
 }
 
 pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
@@ -418,6 +1820,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 var target_mod = s.module_id;
                 var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, target_mod, field_name_id);
                 if (field_sym) |fs| {
+                    if (!semanticAnalyzerCheckMemberVisibility(self, node_idx, field_name_id, fs)) {
+                        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                        return type_mod.TYPE_VOID;
+                    }
                     var q1fl_m: []const u8 = "Q1:FL"; pal_mod.markerWriteInt(q1fl_m, @intCast(u32, fs.flags));
                     var q1kl_m: []const u8 = "Q1:KL"; pal_mod.markerWriteInt(q1kl_m, @intCast(u32, @enumToInt(fs.kind)));
                     var q1tl_m: []const u8 = "Q1:TL"; pal_mod.markerWriteInt(q1tl_m, fs.type_id);
@@ -443,23 +1849,23 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                                 var rtt_val: u32 = if (rtt) |rv| rv else @intCast(u32, 0);
                                 var bre2_m: []const u8 = "BR:rt"; pal_mod.markerWriteInt(bre2_m, rtt_val);
                                 if (rtt) |rtv| {
-                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
+                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, rtv, proto.call_conv);
                                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                                     return fn_ty;
                                 }
-                                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = fs.module_id };
+                                var tre_env = semanticAnalyzerTypeEnv(self, fs.module_id);
                                 var resolved_rt = type_resolver.resolveTypeExprFull(&tre_env, proto.return_type_node, @intCast(u32, 0));
                                 var brr1_m: []const u8 = "BR:treN"; pal_mod.markerWriteInt(brr1_m, proto.return_type_node);
                                 var brr2_m: []const u8 = "BR:treT"; pal_mod.markerWriteInt(brr2_m, resolved_rt);
                                 if (resolved_rt != type_mod.TYPE_UNDEFINED) {
                                     rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt);
-                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt);
+                                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt, proto.call_conv);
                                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                                     return fn_ty;
                                 }
                             }
                             var bre3_m: []const u8 = "BR:dv\n"; pal_mod.markerWrite(bre3_m);
-                            var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                            var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, fs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID, proto.call_conv);
                             var bre4_m: []const u8 = "BR:ft"; pal_mod.markerWriteInt(bre4_m, fn_ty);
                             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                             return fn_ty;
@@ -471,14 +1877,6 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 return type_mod.TYPE_VOID;
             }
         } else if (base_rt == type_mod.TYPE_VOID) {
-            var uisp: u32 = base_node.span_start;
-            var uiep = uisp + @intCast(u32, base_node.span_len);
-            var uinm = interner_mod.stringInternerGet(self.interner, base_ident_id);
-            var ui1: []const u8 = "identifier '";
-            var ui2: []const u8 = "' is not declared or imported in this module";
-            var uiparts: [3][]const u8 = [3][]const u8{ui1, uinm, ui2};
-            var uimsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &uiparts[0], @intCast(u32, 3));
-            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), self.source_file_id, uisp, uiep, uimsg);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
             return type_mod.TYPE_VOID;
         }
@@ -488,6 +1886,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         if (target) |mtid| {
             var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, mtid, field_name_id);
             if (field_sym) |fs| {
+                if (!semanticAnalyzerCheckMemberVisibility(self, node_idx, field_name_id, fs)) {
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                    return type_mod.TYPE_VOID;
+                }
                 if ((fs.flags & @intCast(u16, 2)) != @intCast(u16, 0)) {
                     if (fs.kind == sym_mod.SymbolKind.type_alias) {
                         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fs.type_id);
@@ -519,6 +1921,22 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var fapr_ok_m: []const u8 = "FAPR:OK"; pal_mod.markerWriteInt(fapr_ok_m, @intCast(u32, @enumToInt(pre_kind)));
         var fapr_dk_m: []const u8 = "FAPR:DK"; pal_mod.markerWriteInt(fapr_dk_m, @intCast(u32, @enumToInt(base_ty.kind)));
         var fapr_nl: []const u8 = "\n"; pal_mod.markerWrite(fapr_nl);
+        // Task 11S (b): `[*]T` has no `.len` (Z98 spec §1.2 / official Zig).
+        // The auto-deref above would otherwise resolve `p.len` to TYPE_VOID
+        // silently — a gcc-class failure (`zT_N undeclared`) or a silent 0 in a
+        // range position. Reject cleanly in any position.
+        if (pre_kind == type_mod.TypeKind.many_ptr_type) {
+            var mpl_len_s: []const u8 = "len";
+            var mpl_len_id = interner_mod.stringInternerIntern(self.interner, mpl_len_s);
+            if (field_name_id == mpl_len_id) {
+                var mpl_msg: []const u8 = "many-item pointer has no field 'len'";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
+                    self.source_file_id, node.span_start,
+                    node.span_start + @intCast(u32, node.span_len), mpl_msg);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
+            }
+        }
     }
     if (base_ty.kind == type_mod.TypeKind.optional_type) {
         var sp = node.span_start;
@@ -536,25 +1954,48 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             self.source_file_id, sp, ep, eu_msg);
         return type_mod.TYPE_VOID;
     }
+    if (base_ty.kind == type_mod.TypeKind.tuple_type) {
+        // FB (D4): `.N`/`._0` on a tuple base. The parser canonicalized `.N`
+        // to its decimal text, so the ordinal is decoded textually and only
+        // here — the name-id space is never consulted (closes the `.73`
+        // silent-alias hazard). A non-decimal name falls through to the
+        // unknown-member tail (3060).
+        var fa_tup_ord = type_mod.typeRegistryTupleOrdinalFromNameId(self.registry, field_name_id);
+        if (fa_tup_ord) |tord| {
+            var fa_tup = self.registry.tup_items[@intCast(usize, base_ty.payload_idx)];
+            if (tord >= @intCast(u32, fa_tup.elems_count)) {
+                semanticAnalyzerReportTupleIndexOob(self, node_idx, tord, @intCast(u32, fa_tup.elems_count));
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
+            }
+            var fa_elem = self.registry.xt_items[@intCast(usize, fa_tup.elems_start + tord)];
+            var fa_ety = self.registry.types_items[@intCast(usize, fa_elem)];
+            if (fa_ety.kind == type_mod.TypeKind.array_type) {
+                var fa_elem_i = self.registry.array_items[@intCast(usize, fa_ety.payload_idx)].elem;
+                fa_elem = type_mod.typeRegistryGetOrCreatePtr(self.registry, fa_elem_i, semanticAnalyzerIsLValueConst(self, node_idx));
+            }
+            var fa_rm: []const u8 = "FA:TUP"; pal_mod.markerWriteInt(fa_rm, fa_elem);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fa_elem);
+            return fa_elem;
+        }
+    }
     if (base_ty.kind == type_mod.TypeKind.struct_type) {
         var sp = self.registry.st_items[@intCast(usize, base_ty.payload_idx)];
         fields_start = @intCast(usize, sp.fields_start);
         fields_count = @intCast(usize, sp.fields_count);
-    } else if (base_ty.kind == type_mod.TypeKind.union_type) {
+    } else if (base_ty.kind == type_mod.TypeKind.union_type or base_ty.kind == type_mod.TypeKind.packed_union_type) {
         var up = self.registry.un_items[@intCast(usize, base_ty.payload_idx)];
         fields_start = @intCast(usize, up.fields_start);
         fields_count = @intCast(usize, up.fields_count);
     } else if (base_ty.kind == type_mod.TypeKind.tagged_union_type) {
         var tp = self.registry.tu_items[@intCast(usize, base_ty.payload_idx)];
-        var tag_s: []const u8 = "tag";
-        var tag_id = interner_mod.stringInternerIntern(self.interner, tag_s);
+        var tag_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 1));
         if (field_name_id == tag_id) {
             var ft_m: []const u8 = "FT:TAG\n"; pal_mod.markerWrite(ft_m);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, tp.tag_type);
             return tp.tag_type;
         }
-        var payload_s: []const u8 = "payload";
-        var payload_id = interner_mod.stringInternerIntern(self.interner, payload_s);
+        var payload_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 2));
         if (field_name_id == payload_id) {
             var fpe_count: usize = @intCast(usize, tp.fields_count);
             var fpei: usize = 0;
@@ -565,7 +2006,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     var payload_rt = self.registry.types_items[@intCast(usize, payload_res)];
                     if (payload_rt.kind == type_mod.TypeKind.array_type) {
                         var payload_elem = self.registry.array_items[@intCast(usize, payload_rt.payload_idx)].elem;
-                        payload_res = type_mod.typeRegistryGetOrCreatePtr(self.registry, payload_elem, false);
+                        payload_res = type_mod.typeRegistryGetOrCreatePtr(self.registry, payload_elem, semanticAnalyzerIsLValueConst(self, node_idx));
                     }
                     var fpe_m: []const u8 = "FP:PAYLOAD\n"; pal_mod.markerWrite(fpe_m);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, payload_res);
@@ -579,6 +2020,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var mfa: []const u8 = "MFA\n"; pal_mod.markerWrite(mfa);
         var mod_field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, base_ty.module_id, field_name_id);
         if (mod_field_sym) |mfs| {
+            if (!semanticAnalyzerCheckMemberVisibility(self, node_idx, field_name_id, mfs)) {
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
+            }
             if (mfs.type_id != @intCast(u32, 0)) {
                 var mf1: []const u8 = "MF1\n"; pal_mod.markerWrite(mf1);
                 rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, mfs.type_id);
@@ -599,20 +2044,20 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     if (proto.return_type_node != @intCast(u32, 0)) {
                         var rtt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
                         if (rtt) |rtv| {
-                             var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, rtv);
+                             var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, rtv, proto.call_conv);
                              rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                               return fn_ty;
                 }
-                var tre_env_b = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = mfs.module_id };
+                var tre_env_b = semanticAnalyzerTypeEnv(self, mfs.module_id);
                 var resolved_rt_b = type_resolver.resolveTypeExprFull(&tre_env_b, proto.return_type_node, @intCast(u32, 0));
                 if (resolved_rt_b != type_mod.TYPE_UNDEFINED) {
                     rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt_b);
-                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt_b);
+                    var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, resolved_rt_b, proto.call_conv);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                     return fn_ty;
                 }
             }
-                     var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID);
+                     var fn_ty = type_mod.typeRegistryGetOrCreateFn(self.registry, proto.name_id, mfs.module_id, @intCast(u8, 0), @intCast(u8, 0), proto.params_start, proto.params_count, type_mod.TYPE_VOID, proto.call_conv);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                     return fn_ty;
                 }
@@ -625,8 +2070,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         return type_mod.TYPE_VOID;
     } else if (base_ty.kind == type_mod.TypeKind.slice_type) {
         var sp = self.registry.slice_items[@intCast(usize, base_ty.payload_idx)];
-        var len_s: []const u8 = "len";
-        var len_id = interner_mod.stringInternerIntern(self.interner, len_s);
+        var len_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 0));
         if (field_name_id == len_id) {
             var fsl: []const u8 = "FSL:USIZE\n"; pal_mod.markerWrite(fsl);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_USIZE);
@@ -635,14 +2079,13 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var ptr_s: []const u8 = "ptr";
         var ptr_id = interner_mod.stringInternerIntern(self.interner, ptr_s);
         if (field_name_id == ptr_id) {
-            var pty = type_mod.typeRegistryGetOrCreatePtr(self.registry, sp.elem, false);
+            var pty = type_mod.typeRegistryGetOrCreateManyPtr(self.registry, sp.elem, (base_ty.flags & @intCast(u8, 1)) != @intCast(u8, 0));
             var fsp: []const u8 = "FSP:PTR\n"; pal_mod.markerWrite(fsp);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, pty);
             return pty;
         }
     } else if (base_ty.kind == type_mod.TypeKind.array_type) {
-        var len_s: []const u8 = "len";
-        var len_id = interner_mod.stringInternerIntern(self.interner, len_s);
+        var len_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 0));
         if (field_name_id == len_id) {
             var faa_m: []const u8 = "FAA:USIZE\n"; pal_mod.markerWrite(faa_m);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_USIZE);
@@ -654,6 +2097,11 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, base_type_id);
             return base_type_id;
         }
+        // Task 13 fix round (C1/I1): `.len` on an array field of error-set
+        // elements first; any other unknown member rejects.
+        var afl_es = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
+        if (afl_es != @intCast(u32, 0)) { return afl_es; }
+        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
     } else if (base_ty.kind == type_mod.TypeKind.enum_type) {
@@ -668,10 +2116,21 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             }
         }
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
+        // Task 13 fix round (C1/I1): `.len` on an array field of enum elements
+        // first; any other unknown member rejects.
+        var afl_en = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
+        if (afl_en != @intCast(u32, 0)) { return afl_en; }
+        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
     } else {
+        // Task 11N + Task 13 fix round (C1/I1): `.len` on a struct/union array
+        // field is valid for any element kind; any other unknown member on a
+        // non-aggregate base rejects with error[3060].
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
+        var afl_else = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
+        if (afl_else != @intCast(u32, 0)) { return afl_else; }
+        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
     }
@@ -684,7 +2143,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             var rt = self.registry.types_items[@intCast(usize, result)];
             if (rt.kind == type_mod.TypeKind.array_type) {
                 var elem = self.registry.array_items[@intCast(usize, rt.payload_idx)].elem;
-                result = type_mod.typeRegistryGetOrCreatePtr(self.registry, elem, false);
+                result = type_mod.typeRegistryGetOrCreatePtr(self.registry, elem, semanticAnalyzerIsLValueConst(self, node_idx));
             }
             var ff_m: []const u8 = "FF:R"; pal_mod.markerWriteInt(ff_m, result);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
@@ -695,8 +2154,371 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
 
     var fnf2: []const u8 = "NF\n"; pal_mod.markerWrite(fnf2);
     var ff2n_m: []const u8 = "FF2:N"; pal_mod.markerWriteInt(ff2n_m, node_idx); var ff2f_m: []const u8 = "FF2:F"; pal_mod.markerWriteInt(ff2f_m, field_name_id); var ff2b_m: []const u8 = "FF2:B"; pal_mod.markerWriteInt(ff2b_m, base_type_id);
+    // Task 13 (S1) + fix round (C1/I1): a non-existent member of an aggregate
+    // value, or any member of a non-aggregate value. Z98 aggregate types cannot
+    // contain function declarations, so the spec-forbidden method syntax
+    // `value.func()` is always this shape. Official Zig 0.15.2 rejects it
+    // ("no field or member function named '...'"); before this check the access
+    // resolved silently to TYPE_VOID and a call lowered to
+    // `zT_N = zT_undeclared();`. Try the Task-11N array-field `.len` recovery
+    // first (C1: a `[N]Point` field derefs to `struct_type` and lands here),
+    // then report the unknown member (MarkNodeOnce dedupes; the expression walk
+    // can revisit a field access).
+    var afl_p5 = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
+    if (afl_p5 != @intCast(u32, 0)) { return afl_p5; }
+    semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
     return type_mod.TYPE_VOID;
+}
+
+fn semanticAnalyzerPackedGateGrow(self: *SemanticAnalyzer) void {
+    var new_cap: usize = semanticAnalyzerGrowCapU32(self.packed_gate_cap, @intCast(usize, 8));
+    self.packed_gate_items = semanticAnalyzerAllocCopyU32(self, self.packed_gate_items, self.packed_gate_len, new_cap);
+    self.packed_gate_cap = new_cap;
+}
+
+fn semanticAnalyzerPackedGateMark(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (self.packed_gate_len >= self.packed_gate_cap) { semanticAnalyzerPackedGateGrow(self); }
+    self.packed_gate_items[self.packed_gate_len] = node_idx;
+    self.packed_gate_len += @intCast(usize, 1);
+}
+
+fn semanticAnalyzerPackedGateSeen(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var gi: usize = 0;
+    while (gi < self.packed_gate_len) : (gi += @intCast(usize, 1)) {
+        if (self.packed_gate_items[gi] == node_idx) return true;
+    }
+    return false;
+}
+
+fn semanticAnalyzerPackedStructCacheGrow(self: *SemanticAnalyzer) void {
+    var new_cap: usize = semanticAnalyzerGrowCapU32(self.packed_struct_cache_cap, @intCast(usize, 8));
+    self.packed_struct_tids = semanticAnalyzerAllocCopyU32(self, self.packed_struct_tids, self.packed_struct_cache_len, new_cap);
+    self.packed_struct_decl_nodes = semanticAnalyzerAllocCopyU32(self, self.packed_struct_decl_nodes, self.packed_struct_cache_len, new_cap);
+    self.packed_struct_cache_cap = new_cap;
+}
+
+fn semanticAnalyzerPackedStructCacheAppend(self: *SemanticAnalyzer, struct_tid: u32, decl_node: u32) void {
+    if (self.packed_struct_cache_len >= self.packed_struct_cache_cap) { semanticAnalyzerPackedStructCacheGrow(self); }
+    self.packed_struct_tids[self.packed_struct_cache_len] = struct_tid;
+    self.packed_struct_decl_nodes[self.packed_struct_cache_len] = decl_node;
+    self.packed_struct_cache_len += @intCast(usize, 1);
+}
+
+fn semanticAnalyzerCheckedStructTidsGrow(self: *SemanticAnalyzer) void {
+    var new_cap: usize = semanticAnalyzerGrowCapU32(self.checked_struct_tids_cap, @intCast(usize, 8));
+    self.checked_struct_tids = semanticAnalyzerAllocCopyU32(self, self.checked_struct_tids, self.checked_struct_tids_len, new_cap);
+    self.checked_struct_tids_cap = new_cap;
+}
+
+fn semanticAnalyzerCheckedStructTidsAppend(self: *SemanticAnalyzer, struct_tid: u32) void {
+    if (self.checked_struct_tids_len >= self.checked_struct_tids_cap) { semanticAnalyzerCheckedStructTidsGrow(self); }
+    self.checked_struct_tids[self.checked_struct_tids_len] = struct_tid;
+    self.checked_struct_tids_len += @intCast(usize, 1);
+}
+
+fn semanticAnalyzerPackedFieldTypeAllowed(self: *SemanticAnalyzer, tid: u32, allow_packed_struct_type: bool) bool {
+    if (@intCast(usize, tid) >= self.registry.types_len) return false;
+    var ty = self.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind == type_mod.TypeKind.bool_type) return true;
+    if (ty.kind == type_mod.TypeKind.integer_literal_type) return false;
+    if (allow_packed_struct_type and ty.kind == type_mod.TypeKind.struct_type and (ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) return true;
+    if (ty.kind == type_mod.TypeKind.enum_type) {
+        if (!type_mod.typeRegistryEnumHasExplicitBacking(self.registry, tid)) return false;
+        var ebt = type_mod.typeRegistryEnumBackingType(self.registry, tid);
+        if (ebt == type_mod.TYPE_UNDEFINED or @intCast(usize, ebt) >= self.registry.types_len) return false;
+        if (!type_mod.typeRegistryIsUnsigned(self.registry, ebt)) return false;
+        return true;
+    }
+    return type_mod.typeRegistryIsInteger(self.registry, tid);
+}
+
+fn semanticAnalyzerGatePackedMembers(self: *SemanticAnalyzer, node_idx: u32, module_id: u32, is_union: u8) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (is_union != @intCast(u8, 0)) {
+        if (node.kind != AstKind.union_decl) return;
+    } else {
+        if (node.kind != AstKind.struct_decl) return;
+    }
+    if ((node.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return;
+    if (semanticAnalyzerPackedGateSeen(self, node_idx)) return;
+    semanticAnalyzerPackedGateMark(self, node_idx);
+    var children_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+    var ci: usize = 0;
+    while (ci < @intCast(usize, children_n)) : (ci += @intCast(usize, 1)) {
+        var fd = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ci)));
+        if (fd.kind != AstKind.field_decl) continue;
+        var type_node: u32 = fd.child_0;
+        var gate_state: u8 = @intCast(u8, 0);
+        var gate_wide: u8 = @intCast(u8, 0);
+        if (type_node != @intCast(u32, 0)) {
+            var tre_env = semanticAnalyzerTypeEnv(self, module_id);
+            var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
+            if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
+                gate_state = @intCast(u8, 1);
+            } else if (semanticAnalyzerPackedFieldTypeAllowed(self, ft, true)) {
+                if (type_mod.typeRegistryIntWidthBits(self.registry, ft) > @intCast(u8, 31)) {
+                    gate_wide = @intCast(u8, 1);
+                } else {
+                    gate_state = @intCast(u8, 1);
+                }
+            }
+        }
+        if (gate_state == @intCast(u8, 1)) continue;
+        var fsp = fd.span_start;
+        var fep = fsp + @intCast(u32, fd.span_len);
+        if (gate_wide == @intCast(u8, 1)) {
+            var gw_msg: []const u8 = "packed struct field width must be <= 31 bits (u32/i64 etc. packed fields are not supported yet)";
+            if (is_union != @intCast(u8, 0)) { var gwu_msg: []const u8 = "packed union field width must be <= 31 bits (u32/i64 etc. packed fields are not supported yet)"; gw_msg = gwu_msg; }
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, gw_msg);
+        } else {
+            var gs_msg: []const u8 = "packed struct fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed struct";
+            if (is_union != @intCast(u8, 0)) { var gsu_msg: []const u8 = "packed union fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed union"; gs_msg = gsu_msg; }
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, fsp, fep, gs_msg);
+        }
+    }
+}
+
+fn semanticAnalyzerGatePackedFields(self: *SemanticAnalyzer, struct_node_idx: u32, module_id: u32) void {
+    semanticAnalyzerGatePackedMembers(self, struct_node_idx, module_id, @intCast(u8, 0));
+}
+
+fn semanticAnalyzerGatePackedDeclInner(self: *SemanticAnalyzer, decl_node: u32, module_id: u32) void {
+    if (decl_node == @intCast(u32, 0)) return;
+    var dnode = ast_mod.astStoreNodeAt(self.store, decl_node);
+    var target: u32 = @intCast(u32, 0);
+    var is_union: u8 = @intCast(u8, 0);
+    if (dnode.kind == AstKind.struct_decl) {
+        target = decl_node;
+    } else if (dnode.kind == AstKind.union_decl) {
+        if ((dnode.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { target = decl_node; is_union = @intCast(u8, 1); }
+    } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+        var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
+        if (inn.kind == AstKind.struct_decl) target = dnode.child_1;
+        if (inn.kind == AstKind.union_decl and (inn.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { target = dnode.child_1; is_union = @intCast(u8, 1); }
+    }
+    if (target != @intCast(u32, 0)) {
+        if (is_union == @intCast(u8, 0)) semanticAnalyzerGatePackedFields(self, target, module_id)
+        else semanticAnalyzerGatePackedUnionMembers(self, target, module_id);
+    }
+}
+
+fn semanticAnalyzerMaybeGateAliasDecl(self: *SemanticAnalyzer, decl_node: u32, module_id: u32) void {
+    semanticAnalyzerGatePackedDeclInner(self, decl_node, module_id);
+}
+
+pub fn semanticAnalyzerGateModulePackedDecl(self: *SemanticAnalyzer, decl_node: u32) void {
+    semanticAnalyzerGatePackedDeclInner(self, decl_node, self.module_id);
+}
+
+fn semanticAnalyzerGatePackedUnionMembers(self: *SemanticAnalyzer, union_node_idx: u32, module_id: u32) void {
+    semanticAnalyzerGatePackedMembers(self, union_node_idx, module_id, @intCast(u8, 1));
+}
+
+pub fn semanticAnalyzerGateEnumModuleDecl(self: *SemanticAnalyzer, decl_node: u32) void {
+    if (decl_node == @intCast(u32, 0)) return;
+    var dnode = ast_mod.astStoreNodeAt(self.store, decl_node);
+    var enum_node: u32 = @intCast(u32, 0);
+    var enum_name_id: u32 = @intCast(u32, 0);
+    var backing_node: u32 = @intCast(u32, 0);
+    if (dnode.kind == AstKind.enum_decl and dnode.child_1 != @intCast(u32, 0)) {
+        enum_node = decl_node;
+        enum_name_id = dnode.child_0;
+        backing_node = dnode.child_1;
+    } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+        var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
+        if (inn.kind == AstKind.enum_decl) {
+            enum_node = dnode.child_1;
+            enum_name_id = ast_mod.astStoreNodePayload(self.store, decl_node);
+            backing_node = inn.child_0;
+        }
+    }
+    if (enum_node == @intCast(u32, 0)) return;
+    var key: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, enum_name_id);
+    if (type_mod.nameCacheGet(self.registry, key)) |tid| {
+        semanticAnalyzerGateEnumTypeDecl(self, tid, enum_node, backing_node);
+    }
+}
+
+fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node: u32, backing_node: u32) void {
+    if (@intCast(usize, tid) >= self.registry.types_len) return;
+    var ety = self.registry.types_items[@intCast(usize, tid)];
+    if (ety.kind != type_mod.TypeKind.enum_type) return;
+    if (@intCast(usize, ety.payload_idx) >= self.registry.en_len) return;
+    var check_btid: u32 = self.registry.en_items[@intCast(usize, ety.payload_idx)].backing_type;
+    if (backing_node != @intCast(u32, 0)) {
+        var bnode = ast_mod.astStoreNodeAt(self.store, backing_node);
+        var bsp = bnode.span_start;
+        var bep = bsp + @intCast(u32, bnode.span_len);
+        var tre_env2 = semanticAnalyzerTypeEnv(self, self.module_id);
+        var bt = type_resolver.resolveTypeExprFull(&tre_env2, backing_node, @intCast(u32, 0));
+        if (bt == type_mod.TYPE_UNDEFINED or bt == type_mod.TYPE_VOID) {
+            var bg_msg: []const u8 = "invalid enum backing type; enum(uN) requires an unsigned integer type name (u1..u64)";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bg_msg);
+            return;
+        }
+        if (@intCast(usize, bt) < self.registry.types_len) {
+            var bty = self.registry.types_items[@intCast(usize, bt)];
+            if (bty.kind == type_mod.TypeKind.bool_type) {
+                var bb_msg: []const u8 = "bool is not a valid enum backing; use an unsigned integer type (uN)";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bb_msg);
+                return;
+            }
+            if (!type_mod.typeRegistryIsUnsigned(self.registry, bt)) {
+                if (!(type_mod.typeRegistryIsInteger(self.registry, bt) and type_mod.typeRegistryIntIsSigned(self.registry, bt))) {
+                    var bi_msg: []const u8 = "invalid enum backing type; enum(uN) requires an unsigned integer type (uN)";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bi_msg);
+                    return;
+                }
+            }
+            check_btid = bt;
+        }
+    }
+    var is_signed_backing: bool = type_mod.typeRegistryIsInteger(self.registry, check_btid) and type_mod.typeRegistryIntIsSigned(self.registry, check_btid);
+    var nbits: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, check_btid));
+    var maxv: u64 = @intCast(u64, 0xFFFFFFFFFFFFFFFF);
+    if (nbits < @intCast(u32, 64)) {
+        maxv = (@intCast(u64, 1) << @intCast(u64, nbits)) - @intCast(u64, 1);
+    }
+    var max_signed: i64 = @intCast(i64, 0x7FFFFFFFFFFFFFFF);
+    var min_signed: i64 = @bitCast(i64, @intCast(u64, 0x8000000000000000));
+    if (nbits < @intCast(u32, 64)) {
+        var half_u: u64 = @intCast(u64, 1) << @intCast(u64, nbits - @intCast(u32, 1));
+        var half: i64 = @intCast(i64, half_u);
+        max_signed = half - @intCast(i64, 1);
+        min_signed = -half;
+    }
+    var ep2 = self.registry.en_items[@intCast(usize, ety.payload_idx)];
+    var mstart2: usize = @intCast(usize, ep2.members_start);
+    var mcount2: usize = @intCast(usize, ep2.members_count);
+    var children2_n = ast_mod.astStoreNodeExtraChildCount(self.store, enum_node);
+    var fcount2: usize = @intCast(usize, 0);
+    var ci2: usize = 0;
+    var prev_vu: u64 = @intCast(u64, 0);
+    var prev_vs: i64 = @intCast(i64, 0);
+    var have_prev: bool = false;
+    while (ci2 < @intCast(usize, children2_n) and fcount2 < mcount2) : (ci2 += @intCast(usize, 1)) {
+        var fd2 = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, enum_node, @intCast(u32, ci2)));
+        if (fd2.kind != AstKind.field_decl) continue;
+        var mv: u64 = self.registry.em_items[mstart2 + fcount2].value;
+        var ms: i64 = @bitCast(i64, mv);
+        if (is_signed_backing) {
+            if (ms > max_signed or ms < min_signed) {
+                var msp = fd2.span_start;
+                var mep = msp + @intCast(u32, fd2.span_len);
+                var mv_msg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
+                return;
+            }
+        } else {
+            if (fd2.child_1 != @intCast(u32, 0)) {
+                var ne_env = semanticAnalyzerTypeEnv(self, self.module_id);
+                if (type_resolver.evalConstEnumSourceIsNegative(&ne_env, fd2.child_1)) {
+                    var msp = fd2.span_start;
+                    var mep = msp + @intCast(u32, fd2.span_len);
+                    var num_buf: [24]u8 = undefined;
+                    var mag: u64 = @intCast(u64, 0) -% mv;
+                    var dl = itoa_mod.itoa64(mag, num_buf[1..]);
+                    var ds: usize = @intCast(usize, num_buf.len) - @intCast(usize, dl) - @intCast(usize, 1);
+                    num_buf[ds - @intCast(usize, 1)] = @intCast(u8, 45);
+                    var num_text = num_buf[ds - @intCast(usize, 1) .. @intCast(usize, num_buf.len) - @intCast(usize, 1)];
+                    var ty_text = semanticAnalyzerIntrospectionTypeLabel(self, check_btid);
+                    var p0: []const u8 = "type '";
+                    var p1: []const u8 = "' cannot represent integer value '";
+                    var p2: []const u8 = "'";
+                    var parts: [5][]const u8 = [5][]const u8{ p0, ty_text, p1, num_text, p2 };
+                    var neg_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 5));
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, msp, mep, neg_msg);
+                    return;
+                }
+            }
+            if (mv > maxv) {
+                var msp = fd2.span_start;
+                var mep = msp + @intCast(u32, fd2.span_len);
+                var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
+                return;
+            }
+        }
+        var overflow = if (is_signed_backing) (prev_vs == max_signed) else (prev_vu == maxv);
+        if (have_prev and overflow and fd2.child_1 == @intCast(u32, 0)) {
+            var msp = fd2.span_start;
+            var mep = msp + @intCast(u32, fd2.span_len);
+            var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            if (is_signed_backing) {
+                var smsg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
+                mv_msg = smsg;
+            }
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
+            return;
+        }
+        prev_vu = mv;
+        prev_vs = ms;
+        have_prev = true;
+        fcount2 += @intCast(usize, 1);
+    }
+}
+
+// Task 11J fix round 1 (AMENDMENT 13): validate an enum declaration seen as an
+// expression (a function-local enum, whose type is not registered). Runs the
+// shared member walk in check-only strict mode so a duplicate tag value or an
+// unfoldable initializer is a clean ERR_3055, exactly as for a module enum.
+// Task 6b (D5-2): the two TypeResolveEnv shapes rebuilt at 17 sites: the
+// module-scope form (no local const/type scopes) and the function-scope form
+// (with both local scopes bound).
+fn semanticAnalyzerTypeEnv(self: *SemanticAnalyzer, module_id: u32) type_resolver.TypeResolveEnv {
+    return type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
+}
+
+fn semanticAnalyzerTypeEnvLocals(self: *SemanticAnalyzer, module_id: u32) type_resolver.TypeResolveEnv {
+    return type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
+}
+
+fn semanticAnalyzerCheckLocalEnum(self: *SemanticAnalyzer, enum_node: u32) void {
+    if (enum_node == @intCast(u32, 0)) return;
+    var env = semanticAnalyzerTypeEnv(self, self.module_id);
+    type_resolver.validateLocalEnum(&env, enum_node);
+}
+
+
+fn semanticAnalyzerPackedStructDeclForType(self: *SemanticAnalyzer, struct_tid: u32) u32 {
+    var hc: usize = 0;
+    while (hc < self.packed_struct_cache_len) : (hc += @intCast(usize, 1)) {
+        if (self.packed_struct_tids[hc] == struct_tid) return self.packed_struct_decl_nodes[hc];
+    }
+    var cc: usize = 0;
+    while (cc < self.checked_struct_tids_len) : (cc += @intCast(usize, 1)) {
+        if (self.checked_struct_tids[cc] == struct_tid) return @intCast(u32, 0);
+    }
+    if (@intCast(usize, struct_tid) >= self.registry.types_len) return @intCast(u32, 0);
+    var sty = self.registry.types_items[@intCast(usize, struct_tid)];
+    if (sty.kind != type_mod.TypeKind.struct_type) return @intCast(u32, 0);
+    var ti: usize = 0;
+    while (ti < self.symbols.tables_len) : (ti += @intCast(usize, 1)) {
+        var table = self.symbols.tables_items[ti];
+        var si: usize = 0;
+        while (si < table.len) : (si += @intCast(usize, 1)) {
+            var s = table.items[si];
+            if (s.kind != sym_mod.SymbolKind.type_alias) continue;
+            if (s.type_id != struct_tid or s.decl_node == @intCast(u32, 0)) continue;
+            var dnode = ast_mod.astStoreNodeAt(self.store, s.decl_node);
+            var target: u32 = @intCast(u32, 0);
+            if (dnode.kind == AstKind.struct_decl) {
+                target = s.decl_node;
+            } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+                var inn = ast_mod.astStoreNodeAt(self.store, dnode.child_1);
+                if (inn.kind == AstKind.struct_decl) target = dnode.child_1;
+            }
+            if (target == @intCast(u32, 0)) continue;
+            var tnode = ast_mod.astStoreNodeAt(self.store, target);
+            if ((tnode.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                semanticAnalyzerPackedStructCacheAppend(self, struct_tid, target);
+                return target;
+            }
+        }
+    }
+    semanticAnalyzerCheckedStructTidsAppend(self, struct_tid);
+    return @intCast(u32, 0);
 }
 
 fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
@@ -719,6 +2541,12 @@ fn semanticAnalyzerResolveArithmetic(self: *SemanticAnalyzer, node_idx: u32, op_
 
     if (!type_mod.typeRegistryIsNumeric(self.registry, lhs) or !type_mod.typeRegistryIsNumeric(self.registry, rhs)) return type_mod.TYPE_VOID;
     if (lhs == rhs) return lhs;
+    if (type_mod.typeRegistryIsInteger(self.registry, lhs) and type_mod.typeRegistryIsInteger(self.registry, rhs)) {
+        var lw = type_mod.typeRegistryIntWidthBits(self.registry, lhs);
+        var rw = type_mod.typeRegistryIntWidthBits(self.registry, rhs);
+        if (lw >= rw) return lhs;
+        return rhs;
+    }
     var ls = self.registry.types_items[@intCast(usize, lhs)].size;
     var rs = self.registry.types_items[@intCast(usize, rhs)].size;
     if (ls >= rs) return lhs;
@@ -736,6 +2564,46 @@ fn semanticAnalyzerResolveBitwise(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return lhs;
 }
 
+// FX16-F (A+): the base tagged-union type of a syntactic `.tag` access.
+// Paren-transparent (up to 8); the base's resolved type is consulted (with an
+// on-demand resolve fallback), never re-resolved from scratch; pointer and
+// many-pointer bases auto-deref exactly like field-access resolution. Returns
+// 0 when the node is not a `.tag` access on a tagged union.
+fn semanticAnalyzerTagAccessUnion(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var cur = semaUnwrapParensBounded(self, node_idx, @intCast(u32, 8));
+    var n = ast_mod.astStoreNodeAt(self.store, cur);
+    if (n.kind != AstKind.field_access) return @intCast(u32, 0);
+    var tag_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 1));
+    if (ast_mod.astStoreNodePayload(self.store, cur) != tag_id) return @intCast(u32, 0);
+    var br = rtt_mod.resolvedTypeTableGet(self.type_table, n.child_0);
+    if (br == null) { var fbr = semanticAnalyzerResolveExpr(self, n.child_0); if (fbr != @intCast(u32, 0) and fbr != type_mod.TYPE_VOID and fbr != type_mod.TYPE_UNDEFINED) { br = fbr; } }
+    if (br) |bt0| {
+        var bt = bt0;
+        if (bt == @intCast(u32, 0) or bt == type_mod.TYPE_VOID or bt == type_mod.TYPE_UNDEFINED) return @intCast(u32, 0);
+        var bty = self.registry.types_items[@intCast(usize, bt)];
+        if (bty.kind == type_mod.TypeKind.ptr_type or bty.kind == type_mod.TypeKind.many_ptr_type) {
+            bt = self.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
+            bty = self.registry.types_items[@intCast(usize, bt)];
+        }
+        if (bty.kind == type_mod.TypeKind.tagged_union_type) return bt;
+    }
+    return @intCast(u32, 0);
+}
+
+// FX16-F (A+): ordinal (field index) of `name_id` in tagged union `tu`, or
+// 0xFFFFFFFF when absent.
+fn semanticAnalyzerTagUnionMemberIndex(self: *SemanticAnalyzer, tu: u32, name_id: u32) u32 {
+    var ty = self.registry.types_items[@intCast(usize, tu)];
+    var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, tp.fields_start);
+    var fcount: usize = @intCast(usize, tp.fields_count);
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        if (self.registry.fe_items[fstart + fi].name_id == name_id) return @intCast(u32, fi);
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
 fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
     var cpe: []const u8 = "CPE"; pal_mod.markerWrite(cpe);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -748,20 +2616,91 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
     if (c0_lit == @intCast(u8, 0) and c1_lit != @intCast(u8, 0)) {
         lhs = semanticAnalyzerResolveExpr(self, node.child_0);
         var peerk: u32 = 0;
-        if (lhs != 0 and lhs != type_mod.TYPE_VOID and lhs != type_mod.TYPE_UNDEFINED) { peerk = self.registry.types_items[@intCast(usize, lhs)].kind; }
-        if ((c1n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c1n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
-            pushExpectedType(self, lhs); rhs = semanticAnalyzerResolveExpr(self, node.child_1); popExpectedType(self);
+        if (lhs != 0 and lhs != type_mod.TYPE_VOID and lhs != type_mod.TYPE_UNDEFINED) { peerk = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, lhs)].kind)); }
+        if ((c1n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c1n.kind == AstKind.enum_literal and (peerk == type_mod.TypeKind.tagged_union_type or peerk == type_mod.TypeKind.enum_type))) {
+            pushExpectedTypeKnown(self, lhs); rhs = semanticAnalyzerResolveExpr(self, node.child_1); popExpectedType(self);
         } else { rhs = semanticAnalyzerResolveExpr(self, node.child_1); }
     } else if (c0_lit != @intCast(u8, 0) and c1_lit == @intCast(u8, 0)) {
         rhs = semanticAnalyzerResolveExpr(self, node.child_1);
         var peerk: u32 = 0;
-        if (rhs != 0 and rhs != type_mod.TYPE_VOID and rhs != type_mod.TYPE_UNDEFINED) { peerk = self.registry.types_items[@intCast(usize, rhs)].kind; }
-        if ((c0n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c0n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
-            pushExpectedType(self, rhs); lhs = semanticAnalyzerResolveExpr(self, node.child_0); popExpectedType(self);
+        if (rhs != 0 and rhs != type_mod.TYPE_VOID and rhs != type_mod.TYPE_UNDEFINED) { peerk = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, rhs)].kind)); }
+        if ((c0n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c0n.kind == AstKind.enum_literal and (peerk == type_mod.TypeKind.tagged_union_type or peerk == type_mod.TypeKind.enum_type))) {
+            pushExpectedTypeKnown(self, rhs); lhs = semanticAnalyzerResolveExpr(self, node.child_0); popExpectedType(self);
         } else { lhs = semanticAnalyzerResolveExpr(self, node.child_0); }
     } else {
         lhs = semanticAnalyzerResolveExpr(self, node.child_0);
         rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    }
+    // FX16-F (A+): `.tag` contextual sugar. When exactly one operand is a
+    // direct `.tag` access on a tagged union and the other is a member
+    // reference (shorthand `.m`, or a qualifier denoting the SAME union:
+    // `Shape.m` / `lib.Shape.m` / an alias), resolve the member to its tag
+    // ordinal and type the comparison `bool` for all six ops. Unrecognized
+    // shapes fall through unchanged (numeric compares, `.tag == .tag`,
+    // `s.tag == 0`, `@enumToInt`).
+    var tag_tu: u32 = @intCast(u32, 0);
+    var member_node: u32 = @intCast(u32, 0);
+    var tu0 = semanticAnalyzerTagAccessUnion(self, node.child_0);
+    var tu1 = semanticAnalyzerTagAccessUnion(self, node.child_1);
+    if (tu0 != @intCast(u32, 0) and tu1 == @intCast(u32, 0)) { tag_tu = tu0; member_node = node.child_1; }
+    else if (tu1 != @intCast(u32, 0) and tu0 == @intCast(u32, 0)) { tag_tu = tu1; member_node = node.child_0; }
+    if (tag_tu != @intCast(u32, 0)) {
+        member_node = semaUnwrapParensBounded(self, member_node, @intCast(u32, 8));
+        var mn = ast_mod.astStoreNodeAt(self.store, member_node);
+        var m_name: u32 = @intCast(u32, 0);
+        var m_ok: u8 = @intCast(u8, 0);
+        if (mn.kind == AstKind.enum_literal) {
+            m_name = ast_mod.astStoreIdentifier(self.store, member_node);
+            m_ok = @intCast(u8, 1);
+        } else if (mn.kind == AstKind.field_access) {
+            var q_tid: u32 = @intCast(u32, 0);
+            var qn = ast_mod.astStoreNodeAt(self.store, mn.child_0);
+            if (qn.kind == AstKind.ident_expr) {
+                var q_name = ast_mod.astStoreIdentifier(self.store, mn.child_0);
+                var q_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, q_name);
+                if (q_sym) |qs| { if (qs.kind == sym_mod.SymbolKind.type_alias) { q_tid = qs.type_id; } }
+            } else {
+                var qr = rtt_mod.resolvedTypeTableGet(self.type_table, mn.child_0);
+                if (qr) |qt| { q_tid = qt; }
+            }
+            if (q_tid == tag_tu) { m_name = ast_mod.astStoreNodePayload(self.store, member_node); m_ok = @intCast(u8, 1); }
+        }
+        if (m_ok != @intCast(u8, 0)) {
+            var mi = semanticAnalyzerTagUnionMemberIndex(self, tag_tu, m_name);
+            if (mi != @intCast(u32, 0xFFFFFFFF)) {
+                var tt_ty = self.registry.types_items[@intCast(usize, tag_tu)];
+                var tt_tp = self.registry.tu_items[@intCast(usize, tt_ty.payload_idx)];
+                semanticAnalyzerSetEnumValue(self, member_node, mi, tt_tp.tag_type);
+                var cpt: []const u8 = "CPT"; pal_mod.markerWrite(cpt);
+                return type_mod.TYPE_BOOL;
+            }
+        }
+    }
+    // FX16-F (A4): a bare enum literal compared against a numeric operand with
+    // no expected enum context (the copied-tag case `const t = s.tag; t == .m`)
+    // is a clean level-0 reject instead of today's silent `void`/false. Scope
+    // is exactly that shape: no `.tag` sugar applied, a direct `enum_literal`
+    // child that resolved `void`, and a numeric peer. The reject is recorded
+    // once per literal node.
+    if (tag_tu == @intCast(u32, 0)) {
+        var el_node: u32 = @intCast(u32, 0);
+        var num_t: u32 = @intCast(u32, 0);
+        if (c1n.kind == AstKind.enum_literal and c0n.kind != AstKind.enum_literal and c0n.kind != AstKind.error_literal) { el_node = node.child_1; num_t = lhs; }
+        else if (c0n.kind == AstKind.enum_literal and c1n.kind != AstKind.enum_literal and c1n.kind != AstKind.error_literal) { el_node = node.child_0; num_t = rhs; }
+        if (el_node != @intCast(u32, 0)) {
+            var el_top: u32 = @intCast(u32, 0);
+            var el_rt = rtt_mod.resolvedTypeTableGet(self.type_table, el_node);
+            if (el_rt) |ert| { el_top = ert; }
+            if (el_top == @intCast(u32, 0) or el_top == type_mod.TYPE_VOID or el_top == type_mod.TYPE_UNDEFINED) {
+                if (type_mod.typeRegistryIsNumeric(self.registry, num_t)) {
+                    if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, el_node)) {
+                        var en = ast_mod.astStoreNodeAt(self.store, el_node);
+                        var en_msg: []const u8 = "unable to infer type of enum literal in comparison with a numeric operand";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3076_ENUM_LITERAL_NUMERIC_COMPARE)), self.source_file_id, en.span_start, en.span_start + @intCast(u32, en.span_len), en_msg);
+                    }
+                }
+            }
+        }
     }
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var cp0: []const u8 = "CP0"; pal_mod.markerWrite(cp0); return type_mod.TYPE_VOID; }
     if (lhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, rhs)) { var cp1: []const u8 = "CPB"; pal_mod.markerWrite(cp1); return type_mod.TYPE_BOOL; }
@@ -776,6 +2715,8 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
     if (lhs == rhs) {
         if (lhs == type_mod.TYPE_BOOL) { var cp5: []const u8 = "CPB"; pal_mod.markerWrite(cp5); return type_mod.TYPE_BOOL; }
         if (type_mod.typeRegistryIsPointer(self.registry, lhs)) { var cp6: []const u8 = "CPB"; pal_mod.markerWrite(cp6); return type_mod.TYPE_BOOL; }
+        var lk = self.registry.types_items[@intCast(usize, lhs)].kind;
+        if (lk == type_mod.TypeKind.enum_type) { var cp7: []const u8 = "CPB"; pal_mod.markerWrite(cp7); return type_mod.TYPE_BOOL; }
     }
     var cpv: []const u8 = "CPVl"; pal_mod.markerWrite(cpv); var cpv_lb: [10]u8 = undefined; var cpv_ll = itoa_mod.itoa(lhs, cpv_lb[0..]); var cpv_ls: usize = @intCast(usize, 9) - @intCast(usize, cpv_ll); pal_mod.markerWrite(cpv_lb[cpv_ls..@intCast(usize, 9)]); var cpv_rh: []const u8 = "r"; pal_mod.markerWrite(cpv_rh); var cpv_rb: [10]u8 = undefined; var cpv_rl = itoa_mod.itoa(rhs, cpv_rb[0..]); var cpv_rs: usize = @intCast(usize, 9) - @intCast(usize, cpv_rl); pal_mod.markerWrite(cpv_rb[cpv_rs..@intCast(usize, 9)]); var cpv_ih: []const u8 = "n"; pal_mod.markerWrite(cpv_ih); var cpv_ib: [10]u8 = undefined; var cpv_il = itoa_mod.itoa(node.child_0, cpv_ib[0..]); var cpv_is: usize = @intCast(usize, 9) - @intCast(usize, cpv_il); pal_mod.markerWrite(cpv_ib[cpv_is..@intCast(usize, 9)]); var cpv_nl: []const u8 = "\n"; pal_mod.markerWrite(cpv_nl);
     return type_mod.TYPE_VOID;
@@ -809,6 +2750,514 @@ fn semanticAnalyzerResolveBitNot(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return type_mod.TYPE_VOID;
 }
 
+fn semanticAnalyzerCoercionTypesInRange(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
+    if (src_type == @intCast(u32, 0) or dst_type == @intCast(u32, 0)) return false;
+    if (src_type == type_mod.TYPE_UNDEFINED or dst_type == type_mod.TYPE_UNDEFINED) return false;
+    if (src_type == dst_type) return false;
+    if (@intCast(usize, src_type) >= self.registry.types_len) return false;
+    if (@intCast(usize, dst_type) >= self.registry.types_len) return false;
+    return true;
+}
+
+fn semanticAnalyzerVolatileDrop(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerCoercionTypesInRange(self, src_type, dst_type)) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    if ((s.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0)) return false;
+    if (s.kind == type_mod.TypeKind.ptr_type) {
+        var sp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        var sp_base_eff = sp.base;
+        if (@intCast(usize, sp.base) < self.registry.types_len) {
+            var sp_pointee = self.registry.types_items[@intCast(usize, sp.base)];
+            if (sp_pointee.kind == type_mod.TypeKind.array_type) {
+                sp_base_eff = self.registry.array_items[@intCast(usize, sp_pointee.payload_idx)].elem;
+            }
+        }
+        if (d.kind == type_mod.TypeKind.ptr_type) {
+            var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+            return sp.base == dp.base or dp.base == type_mod.TYPE_VOID;
+        }
+        if (d.kind == type_mod.TypeKind.many_ptr_type) {
+            var dp2 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+            return sp_base_eff == dp2.base;
+        }
+        if (d.kind == type_mod.TypeKind.slice_type) {
+            var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+            if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+            return sp_base_eff == ds.elem or (sp_base_eff == type_mod.TYPE_C_CHAR and ds.elem == type_mod.TYPE_U8) or (sp_base_eff == type_mod.TYPE_U8 and ds.elem == type_mod.TYPE_C_CHAR);
+        }
+        if (d.kind == type_mod.TypeKind.optional_type) {
+            var opt = self.registry.opt_items[@intCast(usize, d.payload_idx)];
+            return semanticAnalyzerVolatileDrop(self, src_type, opt.payload);
+        }
+        return false;
+    }
+    if (s.kind == type_mod.TypeKind.many_ptr_type) {
+        var sp2 = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        if (d.kind == type_mod.TypeKind.many_ptr_type) {
+            var dp3 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+            return sp2.base == dp3.base;
+        }
+        if (d.kind == type_mod.TypeKind.ptr_type) {
+            var dp4 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+            return sp2.base == dp4.base or dp4.base == type_mod.TYPE_VOID;
+        }
+        if (d.kind == type_mod.TypeKind.optional_type) {
+            var opt2 = self.registry.opt_items[@intCast(usize, d.payload_idx)];
+            return semanticAnalyzerVolatileDrop(self, src_type, opt2.payload);
+        }
+        return false;
+    }
+    if (s.kind == type_mod.TypeKind.slice_type) {
+        var ss = self.registry.slice_items[@intCast(usize, s.payload_idx)];
+        if (d.kind == type_mod.TypeKind.slice_type) {
+            var ds2 = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+            if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+            return ss.elem == ds2.elem;
+        }
+        if (d.kind == type_mod.TypeKind.many_ptr_type) {
+            var dp5 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+            return ss.elem == dp5.base;
+        }
+        return false;
+    }
+    return false;
+}
+
+fn semanticAnalyzerMaybeDiagVolatileDrop(self: *SemanticAnalyzer, span_node: u32, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerVolatileDrop(self, src_type, dst_type)) return false;
+    var vdrop_node = ast_mod.astStoreNodeAt(self.store, span_node);
+    var vdrop_msg: []const u8 = "cannot implicitly discard 'volatile' qualifier; use @volatileCast to remove it";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, vdrop_node.span_start, vdrop_node.span_start + @intCast(u32, vdrop_node.span_len), vdrop_msg);
+    return true;
+}
+
+// FC (D12): a coercion must never discard a `const` qualifier (Language Spec
+// "Type Coercions / Const Correctness": "Coercions are only allowed if they do
+// not discard const qualifiers"; the `[]const T` -> `[*]T` bullet is
+// Forbidden). The frozen family is slice->slice, slice->many, ptr->ptr and
+// many->many with the same effective element/base where the source carries
+// const (flag bit 0) and the target does not; the legal const-ADDING
+// directions (target has const) never match. Volatile is handled by the
+// sibling check above (`pointerQualifiersMonotone` masks only volatile, which
+// is why const slips through the classifier).
+fn semanticAnalyzerConstDiscard(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerCoercionTypesInRange(self, src_type, dst_type)) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    if ((s.flags & type_mod.CONST_FLAG) == @intCast(u8, 0)) return false;
+    if ((d.flags & type_mod.CONST_FLAG) != @intCast(u8, 0)) return false;
+    if (s.kind == type_mod.TypeKind.ptr_type) {
+        var sp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        if (d.kind == type_mod.TypeKind.ptr_type) {
+            var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            return sp.base == dp.base;
+        }
+        // FX6: a pointer-to-KNOWN-LENGTH-array (the string-literal family:
+        // `"abc"` is `*const [3]u8`) decays to a slice / many-pointer only
+        // through the same discard that the assignability tables below accept
+        // (they require the pointee to be an array, exactly mirrored here).
+        if (d.kind == type_mod.TypeKind.slice_type) {
+            if (@intCast(usize, sp.base) >= self.registry.types_len) return false;
+            var spo = self.registry.types_items[@intCast(usize, sp.base)];
+            if (spo.kind != type_mod.TypeKind.array_type) return false;
+            var arr = self.registry.array_items[@intCast(usize, spo.payload_idx)];
+            var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+            return arr.elem == ds.elem;
+        }
+        if (d.kind == type_mod.TypeKind.many_ptr_type) {
+            if (@intCast(usize, sp.base) >= self.registry.types_len) return false;
+            var spo2 = self.registry.types_items[@intCast(usize, sp.base)];
+            if (spo2.kind != type_mod.TypeKind.array_type) return false;
+            var arr2 = self.registry.array_items[@intCast(usize, spo2.payload_idx)];
+            var dp2 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            return arr2.elem == dp2.base;
+        }
+        return false;
+    }
+    if (s.kind == type_mod.TypeKind.many_ptr_type) {
+        if (d.kind != type_mod.TypeKind.many_ptr_type) return false;
+        var sp2 = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        var dp2 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+        return sp2.base == dp2.base;
+    }
+    if (s.kind == type_mod.TypeKind.slice_type) {
+        var ss = self.registry.slice_items[@intCast(usize, s.payload_idx)];
+        if (d.kind == type_mod.TypeKind.slice_type) {
+            var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+            return ss.elem == ds.elem;
+        }
+        if (d.kind == type_mod.TypeKind.many_ptr_type) {
+            var dp3 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            return ss.elem == dp3.base;
+        }
+        return false;
+    }
+    return false;
+}
+
+fn semanticAnalyzerMaybeDiagConstDiscard(self: *SemanticAnalyzer, span_node: u32, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerConstDiscard(self, src_type, dst_type)) return false;
+    // The module-var front-resolution fixpoint revisits every initializer on
+    // each pass, so report once per node (the collector's shared marker is the
+    // established dedup for diagnostics in this file).
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, span_node)) return true;
+    var cdrop_node = ast_mod.astStoreNodeAt(self.store, span_node);
+    var cdrop_msg: []const u8 = "cannot implicitly discard 'const' qualifier";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, cdrop_node.span_start, cdrop_node.span_start + @intCast(u32, cdrop_node.span_len), cdrop_msg);
+    return true;
+}
+
+// FX11 (Volume II const-decay holes): a const aggregate's array FIELD is
+// materialised by `semanticAnalyzerResolveFieldAccess` as a pointer to the
+// element (the C array decay), so the field access's TYPE no longer says
+// `array` and the FX6 predicates miss the field-bound family. This helper
+// recovers the DECLARED array type of a field access that resolved through
+// that decay: the access must be a (paren-wrapped) `field_access` whose
+// resolved type is a pointer, and the accessed member's declared type must be
+// an array — a genuine pointer-typed field (`q: *T`) never matches. Returns 0
+// for every non-field access and every field that is not an array.
+fn semanticAnalyzerFieldAccessArrayType(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var cur = semaUnwrapParensBounded(self, node_idx, @intCast(u32, 8));
+    var bn = ast_mod.astStoreNodeAt(self.store, cur);
+    if (bn.kind != AstKind.field_access) return @intCast(u32, 0);
+    var fname: u32 = ast_mod.astStoreNodePayload(self.store, cur);
+    // The access itself must have resolved to the decayed element pointer.
+    var res_t: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, cur)) |t| { res_t = t; } else { return @intCast(u32, 0); }
+    if (res_t == @intCast(u32, 0) or res_t == type_mod.TYPE_UNDEFINED or res_t == type_mod.TYPE_VOID) return @intCast(u32, 0);
+    if (@intCast(usize, res_t) >= self.registry.types_len) return @intCast(u32, 0);
+    var rty = self.registry.types_items[@intCast(usize, res_t)];
+    if (rty.kind != type_mod.TypeKind.ptr_type and rty.kind != type_mod.TypeKind.many_ptr_type) return @intCast(u32, 0);
+    var cont: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, bn.child_0)) |t| { cont = t; } else { return @intCast(u32, 0); }
+    if (cont == @intCast(u32, 0) or cont == type_mod.TYPE_UNDEFINED or cont == type_mod.TYPE_VOID) return @intCast(u32, 0);
+    if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+    var cty = self.registry.types_items[@intCast(usize, cont)];
+    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+        cont = self.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+        if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+        cty = self.registry.types_items[@intCast(usize, cont)];
+    }
+    if (cty.kind == type_mod.TypeKind.tuple_type) {
+        var tord = type_mod.typeRegistryTupleOrdinalFromNameId(self.registry, fname) orelse return @intCast(u32, 0);
+        var tp = self.registry.tup_items[@intCast(usize, cty.payload_idx)];
+        if (tord >= @intCast(u32, tp.elems_count)) return @intCast(u32, 0);
+        var tet = self.registry.xt_items[@intCast(usize, tp.elems_start + tord)];
+        if (@intCast(usize, tet) < self.registry.types_len and self.registry.types_items[@intCast(usize, tet)].kind == type_mod.TypeKind.array_type) return tet;
+        return @intCast(u32, 0);
+    }
+    var fstart: usize = 0;
+    var fcount: usize = 0;
+    if (cty.kind == type_mod.TypeKind.struct_type) {
+        var sp = self.registry.st_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, sp.fields_start);
+        fcount = @intCast(usize, sp.fields_count);
+    } else if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
+        var up = self.registry.un_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, up.fields_start);
+        fcount = @intCast(usize, up.fields_count);
+    } else if (cty.kind == type_mod.TypeKind.tagged_union_type) {
+        var tp2 = self.registry.tu_items[@intCast(usize, cty.payload_idx)];
+        var payload_id = semanticAnalyzerFieldNameId(self, @intCast(u8, 2));
+        if (fname == payload_id) {
+            var pfi: usize = 0;
+            while (pfi < @intCast(usize, tp2.fields_count)) : (pfi += 1) {
+                var fpe = self.registry.fe_items[@intCast(usize, tp2.fields_start) + pfi];
+                if (fpe.type_id != type_mod.TYPE_VOID) {
+                    if (@intCast(usize, fpe.type_id) < self.registry.types_len and self.registry.types_items[@intCast(usize, fpe.type_id)].kind == type_mod.TypeKind.array_type) return fpe.type_id;
+                    return @intCast(u32, 0);
+                }
+            }
+            return @intCast(u32, 0);
+        }
+        fstart = @intCast(usize, tp2.fields_start);
+        fcount = @intCast(usize, tp2.fields_count);
+    } else {
+        return @intCast(u32, 0);
+    }
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        var fe = self.registry.fe_items[fstart + fi];
+        if (fe.name_id == fname) {
+            if (@intCast(usize, fe.type_id) < self.registry.types_len and self.registry.types_items[@intCast(usize, fe.type_id)].kind == type_mod.TypeKind.array_type) return fe.type_id;
+            return @intCast(u32, 0);
+        }
+    }
+    return @intCast(u32, 0);
+}
+
+// FX6 (Volume II const-decay holes): an array VALUE carries no `const` flag on
+// its type — the qualifier lives on the BINDING — so the type-level
+// `semanticAnalyzerConstDiscard` cannot see `const arr` -> `[]T`/`[*]T`. This
+// expression-level twin matches exactly when the source expression is a
+// const-bound array l-value and the target is a MUTABLE slice / many-pointer
+// of the same element; the const-ADDING targets (`[]const T`, `[*]const T`)
+// and mutable arrays never match. `arr[0..]`/`&arr` carry the qualifier in
+// their result TYPE (see `semanticAnalyzerResolveSliceExpr` /
+// `semanticAnalyzerResolveExpr`'s `address_of` arm), so they are rejected by
+// the type-level predicate through the ordinary sites.
+// FX11 extends the source side to a const aggregate's array FIELD: the access
+// resolved through `semanticAnalyzerResolveFieldAccess`'s decay to an element
+// pointer, so the declared array type (and the const binding behind it) is
+// recovered with `semanticAnalyzerFieldAccessArrayType`; the target families
+// are the same mutable slice / many-pointer.
+fn semanticAnalyzerConstArrayDecay(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerCoercionTypesInRange(self, src_type, dst_type)) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    var arr_elem: u32 = @intCast(u32, 0);
+    if (s.kind == type_mod.TypeKind.array_type) {
+        var arr = self.registry.array_items[@intCast(usize, s.payload_idx)];
+        arr_elem = arr.elem;
+    } else if (s.kind == type_mod.TypeKind.ptr_type or s.kind == type_mod.TypeKind.many_ptr_type) {
+        // FX11: the source is a const aggregate's array FIELD — the access
+        // decayed to the element pointer at field-resolution time, so the
+        // array-ness (and with it the binding's constness) is recovered from
+        // the field access; a real pointer-typed field never matches.
+        var fat = semanticAnalyzerFieldAccessArrayType(self, src_node);
+        if (fat == @intCast(u32, 0)) return false;
+        var farr = self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, fat)].payload_idx)];
+        arr_elem = farr.elem;
+        var sfp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        if (sfp.base != arr_elem) return false;
+    } else {
+        return false;
+    }
+    if (d.kind != type_mod.TypeKind.slice_type and d.kind != type_mod.TypeKind.many_ptr_type) return false;
+    if ((d.flags & type_mod.CONST_FLAG) != @intCast(u8, 0)) return false;
+    if (!semanticAnalyzerIsLValueConst(self, src_node)) return false;
+    if (d.kind == type_mod.TypeKind.slice_type) {
+        var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+        return arr_elem == ds.elem;
+    }
+    var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+    return arr_elem == dp.base;
+}
+
+fn semanticAnalyzerMaybeDiagConstArrayDecay(self: *SemanticAnalyzer, span_node: u32, src_node: u32, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerConstArrayDecay(self, src_node, src_type, dst_type)) return false;
+    // Same per-node dedup as the type-level twin: the module-var
+    // front-resolution fixpoint revisits initializers.
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, span_node)) return true;
+    var cdrop_node = ast_mod.astStoreNodeAt(self.store, span_node);
+    var cdrop_msg: []const u8 = "cannot implicitly discard 'const' qualifier";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, cdrop_node.span_start, cdrop_node.span_start + @intCast(u32, cdrop_node.span_len), cdrop_msg);
+    return true;
+}
+
+const QUALIFIER_GATE_NONE: u8 = 0;
+const QUALIFIER_GATE_VOLATILE: u8 = 1;
+const QUALIFIER_GATE_CONST: u8 = 2;
+const QUALIFIER_GATE_CONST_ARRAY: u8 = 3;
+
+// The three implicit qualifier-discard checks run as one ordered,
+// short-circuiting cascade at every coercion site that reports a discard
+// (try/assign/local-var/module-var); the MaybeDiag* wrappers keep their
+// individual diagnostics. Returns the first gate that fired, or NONE.
+fn semanticAnalyzerQualifierGate(self: *SemanticAnalyzer, node: u32, src_type: u32, dst_type: u32) u8 {
+    if (semanticAnalyzerMaybeDiagVolatileDrop(self, node, src_type, dst_type)) return QUALIFIER_GATE_VOLATILE;
+    if (semanticAnalyzerMaybeDiagConstDiscard(self, node, src_type, dst_type)) return QUALIFIER_GATE_CONST;
+    if (semanticAnalyzerMaybeDiagConstArrayDecay(self, node, node, src_type, dst_type)) return QUALIFIER_GATE_CONST_ARRAY;
+    return QUALIFIER_GATE_NONE;
+}
+
+fn semanticAnalyzerPtrCastDropsVolatile(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerCoercionTypesInRange(self, src_type, dst_type)) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    if (!(s.kind == type_mod.TypeKind.ptr_type or s.kind == type_mod.TypeKind.many_ptr_type)) return false;
+    if (!(d.kind == type_mod.TypeKind.ptr_type or d.kind == type_mod.TypeKind.many_ptr_type)) return false;
+    if ((s.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0)) return false;
+    return (d.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0);
+}
+
+fn semanticAnalyzerVolatileCastValid(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
+    if (src_type == @intCast(u32, 0) or dst_type == @intCast(u32, 0)) return false;
+    if (src_type == type_mod.TYPE_UNDEFINED or dst_type == type_mod.TYPE_UNDEFINED) return false;
+    if (@intCast(usize, src_type) >= self.registry.types_len) return false;
+    if (@intCast(usize, dst_type) >= self.registry.types_len) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    if (!(s.kind == type_mod.TypeKind.ptr_type or s.kind == type_mod.TypeKind.many_ptr_type)) return false;
+    if (!(d.kind == type_mod.TypeKind.ptr_type or d.kind == type_mod.TypeKind.many_ptr_type)) return false;
+    if ((s.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0)) return false;
+    if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+    var sp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+    var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+    return sp.base == dp.base;
+}
+
+// FX3 (Volume II D6 extras): value-aware narrowing to f32 at an expectation
+// site. Zig's rule: an untyped `comptime_float` (a float literal or a
+// literal-only float expression) is accepted and ROUNDED to f32; a typed
+// comptime-known f64 or integer is accepted only when the value is exactly
+// representable in f32; a runtime value stays rejected. This predicate owns
+// the value classification (never `classifyCoercion`, which is value-blind);
+// accepted values record `CoercionKind.float_narrow` for lowering, and
+// rejected ones get the site's existing `error[3000]` diagnostic. The
+// int-exactness half is Zig's: `takeF32(16777217)` rejects.
+const FLOAT_NARROW_NONE: u8 = 0;
+const FLOAT_NARROW_ACCEPT: u8 = 1;
+const FLOAT_NARROW_REJECT: u8 = 2;
+
+fn semanticAnalyzerFloatNarrowIsNumeric(self: *SemanticAnalyzer, ty: u32) bool {
+    if (ty == @intCast(u32, 0)) return false;
+    if (@intCast(usize, ty) >= self.registry.types_len) return false;
+    if (ty == type_mod.TYPE_F64) return true;
+    return type_mod.typeRegistryIsInteger(self.registry, ty);
+}
+
+fn semanticAnalyzerFloatNarrowStatus(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32) u8 {
+    return semanticAnalyzerFloatNarrowStatusDepth(self, src_node, src_ty, dst_ty, @intCast(u32, 0));
+}
+
+// FX3 fix round 1: an `if`/`switch` VALUE expression at an f32 site has its
+// arms' unified sema type (f64 here), which the value probe cannot fold, so
+// pre-fix the site fell through to the runtime-numeric reject and
+// over-rejected shapes both the seed and Zig 0.15.2 accept
+// (`return if (c > 0) 1.5 else 2.5;`). Classify the ARMS instead: every value
+// arm must be value-aware acceptable (noreturn arms are neutral); a
+// runtime/inexact/oversized arm makes the whole expression reject at the
+// site. The accepted expression is materialised by lowering's `lowerExpr`
+// wrapper (the joined f64 temp gets one `float_cast` to f32).
+// FX9: the interception now runs BEFORE the numeric guard so a runtime
+// non-float arm rejects even when the mismatched arms gave the expression a
+// non-numeric sema type (`void`/bool/pointer); a comptime-known condition
+// makes the untaken arm unreachable (Zig skips it).
+fn semanticAnalyzerFloatNarrowStatusDepth(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32, depth: u32) u8 {
+    if (dst_ty != type_mod.TYPE_F32) return FLOAT_NARROW_NONE;
+    if (depth < @intCast(u32, 24)) {
+        var sn = ast_mod.astStoreNodeAt(self.store, src_node);
+        if (sn.kind == AstKind.paren_expr) {
+            return semanticAnalyzerFloatNarrowStatusDepth(self, sn.child_0, src_ty, dst_ty, depth + @intCast(u32, 1));
+        }
+        if (sn.kind == AstKind.if_expr) {
+            if (sn.child_2 == @intCast(u32, 0)) return FLOAT_NARROW_NONE;
+            var ie_then_reach: u8 = @intCast(u8, 1);
+            var ie_else_reach: u8 = @intCast(u8, 1);
+            if (semanticAnalyzerConditionComptimeBool(self, sn.child_0)) |ie_cb| {
+                if (ie_cb) { ie_else_reach = @intCast(u8, 0); } else { ie_then_reach = @intCast(u8, 0); }
+            }
+            var ia: u8 = FLOAT_NARROW_ACCEPT;
+            if (ie_then_reach != @intCast(u8, 0)) { ia = semanticAnalyzerFloatNarrowArmStatus(self, sn.child_1, depth + @intCast(u32, 1)); }
+            if (ia != FLOAT_NARROW_ACCEPT) return ia;
+            var pa: u8 = FLOAT_NARROW_ACCEPT;
+            if (ie_else_reach != @intCast(u8, 0)) { pa = semanticAnalyzerFloatNarrowArmStatus(self, sn.child_2, depth + @intCast(u32, 1)); }
+            if (pa != FLOAT_NARROW_ACCEPT) return pa;
+            // A non-numeric all-acceptable `if` has no value type to narrow
+            // (the resolver FX9 branch types real f32 sites); keep the
+            // pre-FX9 no-decision for every other caller.
+            if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
+            return FLOAT_NARROW_ACCEPT;
+        }
+        if (sn.kind == AstKind.swt_ex) {
+            var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, src_node);
+            if (prongs_n == @intCast(usize, 0)) return FLOAT_NARROW_NONE;
+            var pi: usize = 0;
+            while (pi < prongs_n) : (pi += 1) {
+                var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, src_node, @intCast(u32, pi));
+                var prong = ast_mod.astStoreNodeAt(self.store, prong_i);
+                var pa = semanticAnalyzerFloatNarrowArmStatus(self, prong.child_0, depth + @intCast(u32, 1));
+                if (pa != FLOAT_NARROW_ACCEPT) return pa;
+            }
+            if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
+            return FLOAT_NARROW_ACCEPT;
+        }
+    }
+    if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
+
+    var sk = self.registry.types_items[@intCast(usize, src_ty)].kind;
+    var ce = semaComptimeEvalInit(self);
+    if (sk == type_mod.TypeKind.f64_type) {
+        var fv = ce_mod.comptimeEvalFloatNarrow(&ce, src_node);
+        if (!fv.ok) return FLOAT_NARROW_NONE;
+        if (!fv.typed) return FLOAT_NARROW_ACCEPT;
+        if (ce_mod.comptimeEvalF64IsF32Exact(fv.v)) return FLOAT_NARROW_ACCEPT;
+        return FLOAT_NARROW_REJECT;
+    }
+    if (ce_mod.comptimeEvalEvaluate(&ce, src_node)) |cv| {
+        if (cv.kind == ce_mod.KIND_INT) {
+            if (ce_mod.comptimeIntF32Exact(cv.v)) return FLOAT_NARROW_ACCEPT;
+            return FLOAT_NARROW_REJECT;
+        }
+    }
+    return FLOAT_NARROW_NONE;
+}
+
+// One `if`-expression arm / `switch`-prong value at an f32 site. The arm's
+// own sema type comes from the resolved-type table; a genuine `f32` arm
+// (mixed-type shapes) and a `noreturn` arm (a diverging branch) are accepted
+// neutrally, anything else must classify as an accepted narrowing. NEVER
+// returns NONE: inside an `if`/`switch`, an arm that is not classifiable is a
+// reject of the whole expression.
+fn semanticAnalyzerFloatNarrowArmStatus(self: *SemanticAnalyzer, arm_node: u32, depth: u32) u8 {
+    if (arm_node == @intCast(u32, 0)) return FLOAT_NARROW_REJECT;
+    var arm_ty: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, arm_node)) |t| { arm_ty = t; }
+    if (arm_ty == type_mod.TYPE_NORETURN) return FLOAT_NARROW_ACCEPT;
+    // FX9 fix round 1: `undefined` coerces to every type, so it is neutral
+    // exactly like a noreturn arm — the runtime-arm reject must not fire for
+    // it (`if (c) undefined else 2.5` is Zig-valid and was accepted by the
+    // seed and PRE `89aaf0ec`).
+    if (arm_ty == type_mod.TYPE_UNDEFINED) return FLOAT_NARROW_ACCEPT;
+    if (arm_ty == @intCast(u32, 0) or arm_ty == type_mod.TYPE_VOID) return FLOAT_NARROW_REJECT;
+    // Only a genuine f32 arm is neutral. An `integer_literal` arm is
+    // ASSIGNABLE to f32 but still has to pass the int-exactness check, so it
+    // must fall through to the status (`if (c) 16777217 else 2.5` rejects).
+    if (arm_ty == type_mod.TYPE_F32) return FLOAT_NARROW_ACCEPT;
+    var a = semanticAnalyzerFloatNarrowStatusDepth(self, arm_node, arm_ty, type_mod.TYPE_F32, depth);
+    if (a == FLOAT_NARROW_NONE) return FLOAT_NARROW_REJECT;
+    return a;
+}
+
+// The value-aware accept record for the sites that do not route through
+// `tryRecordCoercion` (local/module declarations and assignments).
+fn semanticAnalyzerFloatNarrowRecord(self: *SemanticAnalyzer, src_node: u32, dst_ty: u32) void {
+    coercion_mod.coercionTableAdd(self.coercion_table, src_node, coercion_mod.CoercionKind.float_narrow, dst_ty);
+}
+
+// Level-0 reject diagnostic for a genuinely-invalid f32 narrowing: the
+// site's existing `error[3000]` message plus source/target notes.
+// `mark_once` dedups a node an expected-type pass may revisit (field
+// initializers).
+fn semanticAnalyzerTypeMismatchReport(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32, msg: []const u8, mark_once: bool) void {
+    if (mark_once and !diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, src_node)) return;
+    var sn = ast_mod.astStoreNodeAt(self.store, src_node);
+    var sp = sn.span_start;
+    var ep = sp + @intCast(u32, sn.span_len);
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, sp, ep, msg);
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, src_ty)].kind));
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, dst_ty)].kind));
+}
+
+fn semanticAnalyzerReportTypeMismatchDeep(self: *SemanticAnalyzer, node_idx: u32, src_type: u32, dst_type: u32, msg: []const u8) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var sp = node.span_start;
+    var ep = sp + @intCast(u32, node.span_len);
+    var sk = self.registry.types_items[@intCast(usize, src_type)].kind;
+    var tk = self.registry.types_items[@intCast(usize, dst_type)].kind;
+    var level: u8 = 1;
+    if (semanticAnalyzerFnPtrConvMismatch(self, src_type, dst_type)) level = 0;
+    if (isBShapeMismatch(self, src_type, dst_type, true)) level = 0;
+    if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
+        var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, src_type)].payload_idx)];
+        var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, dst_type)].payload_idx)];
+        if (eu_src.error_set == eu_tgt.error_set) {
+            level = 0;
+        }
+    }
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, level, @intCast(u16, 3000), self.source_file_id, sp, ep, msg);
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
+}
+
 fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) void {
     var coe_nm: []const u8 = "COE:N"; pal_mod.markerWriteInt(coe_nm, src_node);
     var coe_sm: []const u8 = "COE:S"; pal_mod.markerWriteInt(coe_sm, src_type);
@@ -824,7 +3273,19 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
         var coe_nkm: []const u8 = "COE:NK"; pal_mod.markerWriteInt(coe_nkm, @intCast(u32, @enumToInt(snode.kind)));
     }
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
-    if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
+    if (semanticAnalyzerQualifierGate(self, src_node, src_type, dst_type) != QUALIFIER_GATE_NONE) return;
+    if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) {
+        // FX3: a value-aware f64/integer -> f32 narrowing is recorded here, so
+        // every `tryRecordCoercion` caller (call arguments, returns, field
+        // initializers, if/switch result arms) materialises it through
+        // `lowerExpr`'s existing coercion wrapper.
+        if (dst_type == type_mod.TYPE_F32) {
+            if (semanticAnalyzerFloatNarrowStatus(self, src_node, src_type, dst_type) == FLOAT_NARROW_ACCEPT) {
+                semanticAnalyzerFloatNarrowRecord(self, src_node, dst_type);
+            }
+        }
+        return;
+    }
     if (src_type == type_mod.TYPE_NULL) { var cs1_m: []const u8 = "CS1\n"; pal_mod.markerWrite(cs1_m); }
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
     var cka_m: []const u8 = "CCK:ca"; pal_mod.markerWriteInt(cka_m, @intCast(u32, @enumToInt(ck)));
@@ -832,6 +3293,13 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
         coercion_mod.coercionTableAdd(self.coercion_table, src_node, ck, dst_type);
         var cor_nm: []const u8 = "COR:N"; pal_mod.markerWriteInt(cor_nm, src_node); var cor_km: []const u8 = "COR:K"; pal_mod.markerWriteInt(cor_km, @intCast(u32, @enumToInt(ck)));
     }
+}
+
+// Track4 S22 F-M4 (A1): a string literal is now typed `*const [N]u8`, so the
+// literal -> slice coercion is `array_to_slice` (pointer-to-array decay).
+// `string_to_slice` is retained for any pre-existing recorded entry.
+fn isStringLiteralSliceCoercion(k: coercion_mod.CoercionKind) bool {
+    return k == coercion_mod.CoercionKind.string_to_slice or k == coercion_mod.CoercionKind.array_to_slice;
 }
 
 fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, target_ty: u32, ret_val: u32) u32 {
@@ -847,18 +3315,190 @@ fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, target_ty: u32, ret_val:
 
 fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.child_0 == @intCast(u32, 0)) {
+        if (fnReturnRequiresValue(self, self.current_fn_return)) {
+            var brsp = node.span_start;
+            var brep = brsp + @intCast(u32, node.span_len);
+            var br_msg: []const u8 = "return with no value in function returning non-void";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3003), self.source_file_id, brsp, brep, br_msg);
+        }
+        return;
+    }
     if (node.child_0 != @intCast(u32, 0)) {
-        pushExpectedType(self, self.current_fn_return);
+        pushExpectedTypeDeclared(self, self.current_fn_return);
         var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
         popExpectedType(self);
+        // A5-F: reject a TYPE VALUE referenced by name in a return
+        // (`return A;`), reusing the site's level-0 `error[3000]`.
+        if (self.current_fn_return != @intCast(u32, 0) and semanticAnalyzerExprIsTypeValue(self, node.child_0)) {
+            var rtv_msg: []const u8 = "type mismatch in return statement -- value type may not be compatible with the function return type";
+            semanticAnalyzerTypeMismatchReport(self, node.child_0, type_mod.TYPE_TYPE, self.current_fn_return, rtv_msg, false);
+        }
         if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
 
             var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
             var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
             var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
-            tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, self.current_fn_return, ret_val), self.current_fn_return);
+            var ret_eff = errLitSrcType(self, node.child_0, self.current_fn_return, ret_val);
+            var fr_assign = type_mod.typeRegistryIsAssignable(self.registry, ret_eff, self.current_fn_return);
+            // FX3 (Volume II D6 extras): a value-aware f64/integer -> f32
+            // return is accepted; an inexact comptime value or a runtime
+            // numeric source rejects (the latter previously fell through to a
+            // silent implicit C narrow).
+            var ret_fst = semanticAnalyzerFloatNarrowStatus(self, node.child_0, ret_eff, self.current_fn_return);
+            var fr_reject: bool = ret_fst == FLOAT_NARROW_REJECT;
+            if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and isBShapeMismatch(self, ret_eff, self.current_fn_return, false)) { fr_reject = true; }
+            if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and self.current_fn_return == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, ret_eff)) { fr_reject = true; }
+            if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and semanticAnalyzerFnPtrSigMismatch(self, ret_eff, self.current_fn_return)) { fr_reject = true; }
+            if (fr_reject) {
+                var rsp = node.span_start;
+                var rep = rsp + @intCast(u32, node.span_len);
+                var rtm_msg: []const u8 = "type mismatch in return statement -- value type may not be compatible with the function return type";
+                var rdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, rsp, rep, rtm_msg);
+                _ = diag_mod.diagnosticCollectorAddNote(self.diag, rdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, ret_eff)].kind));
+                _ = diag_mod.diagnosticCollectorAddNote(self.diag, rdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, self.current_fn_return)].kind));
+            }
+            if (ret_fst != FLOAT_NARROW_REJECT) {
+                tryRecordCoercion(self, node.child_0, ret_eff, self.current_fn_return);
+            }
         }
     }
+}
+
+// Task 14 (S2): report a call whose argument count does not match the callee's
+// fixed parameter count. `variadic` selects Zig's "expected at least N"
+// wording; deduped per call node (the expression walk can revisit a call).
+// Task 18 fix round: when the callee is a direct named function
+// (`decl_node != 0`), also render Zig's `note: function declared here` related
+// span at the function declaration (in the decl's own source file).
+fn semanticAnalyzerReportCallArity(self: *SemanticAnalyzer, node_idx: u32, expected: usize, found: usize, variadic: bool, decl_node: u32, decl_file: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var exp_buf: [10]u8 = undefined;
+    var exp_l = itoa_mod.itoa(@intCast(u32, expected), exp_buf[0..]);
+    var found_buf: [10]u8 = undefined;
+    var found_l = itoa_mod.itoa(@intCast(u32, found), found_buf[0..]);
+    var p0: []const u8 = "expected ";
+    if (variadic) { p0 = "expected at least "; }
+    var p1: []const u8 = " argument(s), found ";
+    var exp_s: usize = @intCast(usize, 9) - @intCast(usize, exp_l);
+    var found_s: usize = @intCast(usize, 9) - @intCast(usize, found_l);
+    var parts: [4][]const u8 = [4][]const u8{ p0, exp_buf[exp_s..@intCast(usize, 9)], p1, found_buf[found_s..@intCast(usize, 9)] };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var ar_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3061_WRONG_ARGUMENT_COUNT)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+    if (decl_node != @intCast(u32, 0)) {
+        var ar_decl = ast_mod.astStoreNodeAt(self.store, decl_node);
+        var ar_note: []const u8 = "function declared here";
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, ar_di, decl_file, ar_decl.span_start, ar_decl.span_start + @intCast(u32, ar_decl.span_len), ar_note);
+    }
+}
+
+// Task 18 fix round: the parameter declaration node for call argument `ai` of
+// the direct function declaration `fn_decl_node` (its `fn_decl` node), or 0
+// when the callee is not a direct named function / the node cannot be located.
+// Used for Zig's `note: parameter type declared here` related span.
+fn semanticAnalyzerParamDeclNode(self: *SemanticAnalyzer, fn_decl_node: u32, ai: u32) u32 {
+    if (fn_decl_node == @intCast(u32, 0)) return @intCast(u32, 0);
+    var dn = ast_mod.astStoreNodeAt(self.store, fn_decl_node);
+    if (dn.kind != AstKind.fn_decl) return @intCast(u32, 0);
+    var proto = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, fn_decl_node))];
+    if (ai >= @intCast(u32, proto.params_count)) return @intCast(u32, 0);
+    var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
+    if (ast_mod.astStoreGetExtraChildCount(self.store, p_payload) <= ai) return @intCast(u32, 0);
+    return ast_mod.astStoreGetExtraChildAt(self.store, p_payload, ai);
+}
+
+// Task 14 (S2): the call-site assignability check rejects only CROSS-FAMILY
+// argument mismatches (e.g. a `bool` passed for an `i32` parameter — the
+// silent `bool` -> `i32` coercion this task was opened for). Z98's
+// established implicit conversions stay valid:
+//   * integer <-> integer of any width/signedness (the compiler's own source
+//     and the corpus use them pervasively; Zig's strictly-wider rule would
+//     break self-hosting);
+//   * the pointer/slice/array interop family — consulted only AFTER the `(b)`
+//     shape reject (`isBShapeMismatch`: `*T` -> `[]T`, mismatched
+//     `[N]T` -> `[M]T`, error-union mismatch, enum -> int) at the call site,
+//     so those invalid shapes keep rejecting while the valid decays/qualifier
+//     conversions pass;
+//   * an error-set source into an integer (Z98's `@enumToInt(<error set>)`
+//     keeps the error-set type in the front end);
+//   * a void/unresolved source (an undeclared identifier already got
+//     `error[20]`; some front-end folds type void where the program is valid).
+// Everything else that is not assignable now rejects at the call site.
+fn semanticAnalyzerReportCallArgMismatch(self: *SemanticAnalyzer, carg_n: u32, carg_eff: u32, tgt_ty: u32, ai: u32, note_decl: u32, note_file: u32) void {
+    var argn = ast_mod.astStoreNodeAt(self.store, carg_n);
+    var csp = argn.span_start;
+    var cep = csp + @intCast(u32, argn.span_len);
+    var ctm_msg: []const u8 = "type mismatch in function argument -- argument type may not be compatible with the parameter type";
+    var cdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, csp, cep, ctm_msg);
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, carg_eff)].kind));
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, tgt_ty)].kind));
+    var pad_n = semanticAnalyzerParamDeclNode(self, note_decl, ai);
+    if (pad_n != @intCast(u32, 0)) {
+        var pad_d = ast_mod.astStoreNodeAt(self.store, pad_n);
+        var pad_note: []const u8 = "parameter type declared here";
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, cdi, note_file, pad_d.span_start, pad_d.span_start + @intCast(u32, pad_d.span_len), pad_note);
+    }
+}
+
+fn semanticAnalyzerIsPointerFamilyKind(k: type_mod.TypeKind) bool {
+    if (k == type_mod.TypeKind.ptr_type) return true;
+    if (k == type_mod.TypeKind.many_ptr_type) return true;
+    if (k == type_mod.TypeKind.slice_type) return true;
+    if (k == type_mod.TypeKind.array_type) return true;
+    return false;
+}
+
+fn semanticAnalyzerCallArgTolerated(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32) bool {
+    if (src_ty == @intCast(u32, 0) or tgt_ty == @intCast(u32, 0)) return false;
+    if (@intCast(usize, src_ty) >= self.registry.types_len or @intCast(usize, tgt_ty) >= self.registry.types_len) return false;
+    var sk = self.registry.types_items[@intCast(usize, src_ty)];
+    var tk = self.registry.types_items[@intCast(usize, tgt_ty)];
+    if (src_ty == type_mod.TYPE_VOID) return true;
+    if (semanticAnalyzerCallArgIntegerKind(self, src_ty) and semanticAnalyzerCallArgIntegerKind(self, tgt_ty)) return true;
+    if (sk.kind == type_mod.TypeKind.error_set_type and semanticAnalyzerCallArgIntegerKind(self, tgt_ty)) return true;
+    // FX17: a function-pointer signature mismatch is never a tolerated
+    // conversion -- the pointer-family blanket below must not swallow it.
+    if (semanticAnalyzerFnPtrSigMismatch(self, src_ty, tgt_ty)) return false;
+    if (semanticAnalyzerIsPointerFamilyKind(sk.kind) and semanticAnalyzerIsPointerFamilyKind(tk.kind)) return true;
+    return false;
+}
+
+// Task 14 (S2): the integer family for the call-site check — every integer
+// kind plus Z98's distinct `c_char` (spec: u8/c_char interchange).
+fn semanticAnalyzerCallArgIntegerKind(self: *SemanticAnalyzer, ty: u32) bool {
+    if (ty == type_mod.TYPE_C_CHAR) return true;
+    return type_mod.typeRegistryIsInteger(self.registry, ty);
+}
+
+// Task 18 fix round: the declaration symbol behind a call's callee, for the
+// Zig-style related spans ("function declared here" / "parameter type declared
+// here"). Handles an identifier callee and the single-level module-member forms
+// `mod.fn` (flat module alias) and `@import("x.zig").fn`; a deeper nested chain
+// (`std.io.print`) has no symbol at this level and stays un-noted.
+fn semanticAnalyzerCalleeDeclSymbol(self: *SemanticAnalyzer, callee_idx: u32) ?*sym_mod.Symbol {
+    var cn = ast_mod.astStoreNodeAt(self.store, callee_idx);
+    if (cn.kind == AstKind.ident_expr) {
+        return sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, ast_mod.astStoreIdentifier(self.store, callee_idx));
+    }
+    if (cn.kind != AstKind.field_access) return null;
+    var field_name_id: u32 = ast_mod.astStoreNodePayload(self.store, callee_idx);
+    var cbase = ast_mod.astStoreNodeAt(self.store, cn.child_0);
+    if (cbase.kind == AstKind.ident_expr) {
+        var bs = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, ast_mod.astStoreIdentifier(self.store, cn.child_0));
+        if (bs) |b| {
+            if (b.kind == sym_mod.SymbolKind.module) {
+                return sym_mod.symbolRegistryQualifiedLookup(self.symbols, b.module_id, field_name_id);
+            }
+        }
+    } else if (cbase.kind == AstKind.import_expr) {
+        var path_id: u32 = ast_mod.astStoreNodePayload(self.store, cn.child_0);
+        var target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, path_id);
+        if (target) |mtid| {
+            return sym_mod.symbolRegistryQualifiedLookup(self.symbols, mtid, field_name_id);
+        }
+    }
+    return null;
 }
 
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
@@ -867,10 +3507,14 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var callee_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
     var direct_ret: u32 = @intCast(u32, 0);
     var decl_cap: u32 = 0;
+    var note_decl: u32 = @intCast(u32, 0);
+    var note_file: u32 = @intCast(u32, 0);
     if (callee_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, ast_mod.astStoreIdentifier(self.store, node.child_0));
         if (sym) |s| { var xf: []const u8 = "XF\n"; pal_mod.markerWrite(xf);
             decl_cap = s.decl_node;
+            note_decl = s.decl_node;
+            note_file = s.file_id;
             if (s.type_id != @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, s.type_id); }
             if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
                 var dn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
@@ -883,7 +3527,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         if (rt) |t| { direct_ret = t; }
                         else {
                             var drfb_m: []const u8 = "DRETFB:n"; pal_mod.markerWriteInt(drfb_m, node_idx);
-                            var tre_env_fc = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = s.module_id };
+                            var tre_env_fc = semanticAnalyzerTypeEnv(self, s.module_id);
                             var fc_rt = type_resolver.resolveTypeExprFull(&tre_env_fc, proto.return_type_node, @intCast(u32, 0));
                             var brfc_m: []const u8 = "BR:fc"; pal_mod.markerWriteInt(brfc_m, fc_rt);
                             if (fc_rt != type_mod.TYPE_UNDEFINED) { direct_ret = fc_rt; }
@@ -894,13 +3538,23 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             }
         } else { var xs: []const u8 = "xS\n"; pal_mod.markerWrite(xs); }
     }
+    // Task 18 fix round: a module-member callee (`helper.fn`) carries no
+    // `decl_cap`, so resolve its declaration symbol separately for the notes.
+    if (note_decl == 0 and callee_node.kind == AstKind.field_access) {
+        var csym = semanticAnalyzerCalleeDeclSymbol(self, node.child_0);
+        if (csym) |cs| {
+            note_decl = cs.decl_node;
+            note_file = cs.file_id;
+        }
+    }
     if (direct_ret != @intCast(u32, 0)) {
         var fn1: []const u8 = "FN1\n"; pal_mod.markerWrite(fn1);
         var fn1r_m: []const u8 = "FN1:R"; pal_mod.markerWriteInt(fn1r_m, direct_ret);
-        var args = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+        var args_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
         var has_params: u8 = @intCast(u8, 0);
         var pcount: u16 = @intCast(u16, 0);
         var pstart: u32 = @intCast(u32, 0);
+        var direct_variadic: u8 = @intCast(u8, 0);
         if (decl_cap != 0) {
             var ft = rtt_mod.resolvedTypeTableGet(self.type_table, decl_cap);
             if (ft) |ftid| { var sfm: []const u8 = "SF:H\n"; pal_mod.markerWrite(sfm);
@@ -910,23 +3564,57 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 pcount = ftp.params_count;
                 pstart = ftp.params_start;
                 has_params = @intCast(u8, 1);
+                if ((ftp.flags_packed & type_mod.FN_FLAG_VARIADIC) != @intCast(u8, 0)) { direct_variadic = @intCast(u8, 1); }
             }
             }
             }
+        // Task 14 (S2): enforce the callee's arity at the call site.
+        if (has_params != @intCast(u8, 0)) {
+            if (direct_variadic != @intCast(u8, 0)) {
+                if (args_n < @intCast(usize, pcount)) {
+                    semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, true, note_decl, note_file);
+                }
+            } else if (args_n != @intCast(usize, pcount)) {
+                semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, false, note_decl, note_file);
+            }
+        }
         var ai: usize = 0;
-        while (ai < args.len) : (ai += 1) {
+        while (ai < args_n) : (ai += 1) {
             var expected: u32 = @intCast(u32, 0);
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
-                var cpp_key = (@intCast(u32, decl_cap) << @intCast(u32, 16)) | @intCast(u32, ai);
+                var cpp_key = ((@intCast(u32, decl_cap) & @intCast(u32, 0xFFFF)) << @intCast(u32, 16)) | @intCast(u32, ai);
                 expected = type_mod.TYPE_UNDEFINED;
                 if (hash_mod.u32ToU32MapGet(self.call_param_map, cpp_key)) |cpp_v| { expected = cpp_v; } else { expected = self.registry.xt_items[@intCast(usize, pstart) + ai]; }
-                hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], expected);
+                hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), expected);
             }
-            pushExpectedType(self, expected);
-            var dxc_at = semanticAnalyzerResolveExpr(self, args[ai]);
+            pushExpectedTypeMaybe(self, expected);
+            var dxc_at = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
             popExpectedType(self);
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
-                tryRecordCoercion(self, args[ai], errLitSrcType(self, args[ai], expected, dxc_at), expected);
+                var carg_n = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai));
+                var carg_eff = errLitSrcType(self, carg_n, expected, dxc_at);
+                // A5-F: reject a TYPE VALUE referenced by name as a call
+                // argument (`f(A)`), reusing the site's level-0 `error[3000]`.
+                if (semanticAnalyzerExprIsTypeValue(self, carg_n)) {
+                    var cav_msg: []const u8 = "type mismatch in function argument -- argument type may not be compatible with the parameter type";
+                    semanticAnalyzerTypeMismatchReport(self, carg_n, type_mod.TYPE_TYPE, expected, cav_msg, false);
+                }
+                // FX3 (Volume II D6 extras): a value-aware f64/integer -> f32
+                // argument is accepted (and recorded) instead of rejected; an
+                // inexact comptime integer literal (an otherwise-assignable
+                // int_literal source) is rejected by the status.
+                var carg_fst = semanticAnalyzerFloatNarrowStatus(self, carg_n, carg_eff, expected);
+                // Task 14 (S2): enforce per-argument assignability, matching
+                // official Zig 0.15.2; the `(b)` shape rejects (ptr->slice,
+                // mismatched array->array, ...) fire first, then the tolerated
+                // Z98 conversion families keep their shapes (see
+                // semanticAnalyzerCallArgTolerated).
+                if (carg_fst == FLOAT_NARROW_REJECT or (carg_eff != @intCast(u32, 0) and expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID and carg_fst != FLOAT_NARROW_ACCEPT and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and (isBShapeMismatch(self, carg_eff, expected, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, expected)))) {
+                    semanticAnalyzerReportCallArgMismatch(self, carg_n, carg_eff, expected, @intCast(u32, ai), note_decl, note_file);
+                }
+                if (carg_fst != FLOAT_NARROW_REJECT) {
+                    tryRecordCoercion(self, carg_n, carg_eff, expected);
+                }
             }
         }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, direct_ret);
@@ -947,11 +3635,11 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var fn3: []const u8 = "FN3:N"; pal_mod.markerWriteInt(fn3, node_idx);
         var fn3_ct_m: []const u8 = "FN3:T"; pal_mod.markerWriteInt(fn3_ct_m, callee_type);
         var fn3_ck_m: []const u8 = "FN3:K"; pal_mod.markerWriteInt(fn3_ck_m, @intCast(u32, @enumToInt(callee_ty.kind)));
-        var fn3_args = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+        var fn3_args_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
         var fn3_i: usize = @intCast(usize, 0);
-        while (fn3_i < fn3_args.len) : (fn3_i += @intCast(usize, 1)) {
-            pushExpectedType(self, @intCast(u32, 0));
-            _ = semanticAnalyzerResolveExpr(self, fn3_args[fn3_i]);
+        while (fn3_i < @intCast(usize, fn3_args_n)) : (fn3_i += @intCast(usize, 1)) {
+            pushExpectedTypeNone(self);
+            _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, fn3_i)));
             popExpectedType(self);
         }
         return type_mod.TYPE_VOID;
@@ -962,44 +3650,69 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var pcount: usize = @intCast(usize, fnp.params_count);
     var pstart: usize = @intCast(usize, fnp.params_start);
     var fn4c: []const u8 = "FN4c\n"; pal_mod.markerWrite(fn4c);
-    var args = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+    var args_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
     var fn4d: []const u8 = "FN4d\n"; pal_mod.markerWrite(fn4d);
     var is_var: u8 = @intCast(u8, 0);
     if ((fnp.flags_packed & @intCast(u8, 1)) != @intCast(u8, 0)) { is_var = @intCast(u8, 1); }
     var fixed: usize = pcount;
+    // Task 14 (S2): report an arity mismatch instead of silently returning the
+    // declared return type; analysis continues so the present arguments are
+    // still resolved (the sema error gate rejects before lowering).
     if (is_var != @intCast(u8, 0)) {
-        if (args.len < fixed) {
-            return fnp.return_type;
+        if (args_n < fixed) {
+            semanticAnalyzerReportCallArity(self, node_idx, fixed, args_n, true, note_decl, note_file);
         }
-    } else if (args.len != pcount) {
-        return fnp.return_type;
+    } else if (args_n != pcount) {
+        semanticAnalyzerReportCallArity(self, node_idx, pcount, args_n, false, note_decl, note_file);
     }
+    var check_n: usize = fixed;
+    if (args_n < check_n) { check_n = args_n; }
     var ai: usize = 0;
     var fn4e: []const u8 = "FN4e\n"; pal_mod.markerWrite(fn4e);
     var fn4x_m: []const u8 = "FN4x:X"; pal_mod.markerWriteInt(fn4x_m, @intCast(u32, self.registry.xt_len));
-    var fn4y_m: []const u8 = "FN4y:P"; pal_mod.markerWriteInt(fn4y_m, @intCast(u32, pstart));    while (ai < fixed) : (ai += 1) {
+    var fn4y_m: []const u8 = "FN4y:P"; pal_mod.markerWriteInt(fn4y_m, @intCast(u32, pstart));    while (ai < check_n) : (ai += 1) {
         var fn4f: []const u8 = "FN4f\n"; pal_mod.markerWrite(fn4f);
         var param_type = self.registry.xt_items[pstart + ai];
-        hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], param_type);
+        hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), param_type);
         var ptm_am: []const u8 = "PTM:A"; pal_mod.markerWriteInt(ptm_am, @intCast(u32, ai));
         var ptm_tm: []const u8 = "PTM:T"; pal_mod.markerWriteInt(ptm_tm, param_type);
-        var ptm_nm: []const u8 = "PTM:N"; pal_mod.markerWriteInt(ptm_nm, args[ai]);
+        var ptm_nm: []const u8 = "PTM:N"; pal_mod.markerWriteInt(ptm_nm, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
         var fn4g: []const u8 = "FN4g\n"; pal_mod.markerWrite(fn4g);
-        pushExpectedType(self, param_type);
-        var arg_type = semanticAnalyzerResolveExpr(self, args[ai]);
+        pushExpectedTypeMaybe(self, param_type);
+        var arg_type = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
         popExpectedType(self);
-        if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
-        if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
-        tryRecordCoercion(self, args[ai], errLitSrcType(self, args[ai], param_type, arg_type), param_type);
+        if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
+        if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
+        var carg_n = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai));
+        var carg_eff = errLitSrcType(self, carg_n, param_type, arg_type);
+        // A5-F: reject a TYPE VALUE referenced by name as a call argument on
+        // the fn-value path, reusing the site's level-0 `error[3000]`.
+        if (semanticAnalyzerExprIsTypeValue(self, carg_n)) {
+            var cav_msg: []const u8 = "type mismatch in function argument -- argument type may not be compatible with the parameter type";
+            semanticAnalyzerTypeMismatchReport(self, carg_n, type_mod.TYPE_TYPE, param_type, cav_msg, false);
+        }
+        // FX3 (Volume II D6 extras): value-aware f64/integer -> f32 argument
+        // acceptance/reject, same rule as the direct-call path above.
+        var carg_fst = semanticAnalyzerFloatNarrowStatus(self, carg_n, carg_eff, param_type);
+        // Task 14 (S2): enforce per-argument assignability, matching official
+        // Zig 0.15.2; the `(b)` shape rejects (ptr->slice, mismatched
+        // array->array, ...) fire first, then the tolerated Z98 conversion
+        // families keep their shapes (see semanticAnalyzerCallArgTolerated).
+        if (carg_fst == FLOAT_NARROW_REJECT or (carg_eff != @intCast(u32, 0) and param_type != type_mod.TYPE_UNDEFINED and param_type != type_mod.TYPE_VOID and carg_fst != FLOAT_NARROW_ACCEPT and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and (isBShapeMismatch(self, carg_eff, param_type, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, param_type)))) {
+            semanticAnalyzerReportCallArgMismatch(self, carg_n, carg_eff, param_type, @intCast(u32, ai), note_decl, note_file);
+        }
+        if (carg_fst != FLOAT_NARROW_REJECT) {
+            tryRecordCoercion(self, carg_n, carg_eff, param_type);
+        }
     }
     if (is_var != @intCast(u8, 0)) {
         var vi: usize = fixed;
-        while (vi < args.len) : (vi += 1) {
-            pushExpectedType(self, @intCast(u32, 0));
-            var varg_type = semanticAnalyzerResolveExpr(self, args[vi]);
+        while (vi < args_n) : (vi += 1) {
+            pushExpectedTypeNone(self);
+            var varg_type = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, vi)));
             popExpectedType(self);
             if (varg_type != type_mod.TYPE_UNDEFINED) {
-                hash_mod.u32ToU32MapPut(self.call_arg_types, args[vi], varg_type);
+                hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, vi)), varg_type);
             }
         }
     }
@@ -1007,13 +3720,78 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return fnp.return_type;
 }
 
+// FX12 (Volume II ch12): shared level-0 `error[3075]` emitter for the `try`
+// enclosing-return rules. Deduped per try node (`diagnosticCollectorMarkNodeOnce`),
+// span on the `try`; an empty `note` adds no note. Every reject returns
+// `TYPE_UNDEFINED` (poison) so the enclosing site's ordinary compatibility
+// checks skip the already-rejected expression instead of cascading.
+fn semanticAnalyzerTryReject(self: *SemanticAnalyzer, node_idx: u32, msg: []const u8, note: []const u8) u32 {
+    if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+        var tr_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+        var tr_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3075_TRY_ENCLOSING_RETURN)), self.source_file_id, tr_node.span_start, tr_node.span_start + @intCast(u32, tr_node.span_len), msg);
+        if (note.len > @intCast(usize, 0)) {
+            _ = diag_mod.diagnosticCollectorAddNote(self.diag, tr_di, note);
+        }
+    }
+    return type_mod.TYPE_UNDEFINED;
+}
+
+// FX12 (Volume II ch12): Zig-0.15.2 `try` context rules. Check order mirrors
+// Zig: a `try` in real container scope rejects first (`'try' outside function
+// scope`, source order: module-level initializers), then a non-error-union
+// OPERAND (`expected error union type, found 'X'` + `consider omitting
+// 'try'`), then the enclosing function's return type (`expected type 'X',
+// found error set` + `function cannot return an error` for a non-error-union
+// return; `try error set may not be compatible with the enclosing function's
+// return type` for a set that is not a subset — set-only comparison, payload
+// equality is deliberately NOT required). A bare analyzer-resolver call with
+// no function/container context (the semantic unit tests) keeps the pre-3075
+// payload result for a well-formed operand. Anonymous/opaque operand sets
+// cannot be compared, so a non-error-union enclosing function is an
+// unconditional reject (documented bounded divergence).
 fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var inner = semanticAnalyzerResolveExpr(self, node.child_0);
-    if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
+    if (inner == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
+    if (self.current_fn_name == @intCast(u32, 0) and self.container_init_depth > @intCast(u32, 0)) {
+        var tc_msg: []const u8 = "'try' outside function scope";
+        var tc_none: []const u8 = "";
+        return semanticAnalyzerTryReject(self, node_idx, tc_msg, tc_none);
+    }
     if (ty.kind != type_mod.TypeKind.error_union_type) {
-        return type_mod.TYPE_VOID;
+        var to_p0: []const u8 = "expected error union type, found '";
+        var to_kind: []const u8 = diag_mod.typeKindSrcStr(ty.kind);
+        var to_p1: []const u8 = "'";
+        var to_parts: [3][]const u8 = [3][]const u8{ to_p0, to_kind[8..], to_p1 };
+        var to_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &to_parts[0], @intCast(u32, 3));
+        var to_note: []const u8 = "consider omitting 'try'";
+        return semanticAnalyzerTryReject(self, node_idx, to_msg, to_note);
+    }
+    if (self.current_fn_name == @intCast(u32, 0)) {
+        // No function to consult (bare-resolver unit-test context).
+        var tn_eu = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
+        return tn_eu.payload;
+    }
+    var fn_ret = self.current_fn_return;
+    if (fn_ret != @intCast(u32, 0) and @intCast(usize, fn_ret) < self.registry.types_len) {
+        var fr_ty = self.registry.types_items[@intCast(usize, fn_ret)];
+        if (fr_ty.kind != type_mod.TypeKind.error_union_type) {
+            var ta_p0: []const u8 = "expected type '";
+            var ta_kind: []const u8 = diag_mod.typeKindSrcStr(fr_ty.kind);
+            var ta_p1: []const u8 = "', found error set";
+            var ta_parts: [3][]const u8 = [3][]const u8{ ta_p0, ta_kind[8..], ta_p1 };
+            var ta_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ta_parts[0], @intCast(u32, 3));
+            var ta_note: []const u8 = "function cannot return an error";
+            return semanticAnalyzerTryReject(self, node_idx, ta_msg, ta_note);
+        }
+        var eu_src = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
+        var eu_tgt = self.registry.eu_items[@intCast(usize, fr_ty.payload_idx)];
+        if (!type_mod.errorSetIsSubset(self.registry, eu_src.error_set, eu_tgt.error_set)) {
+            var tb_msg: []const u8 = "try error set may not be compatible with the enclosing function's return type";
+            var tb_none: []const u8 = "";
+            return semanticAnalyzerTryReject(self, node_idx, tb_msg, tb_none);
+        }
     }
     var eu = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
     return eu.payload;
@@ -1025,8 +3803,15 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
     if (ty.kind == type_mod.TypeKind.null_type and self.expected_type_stack_len > @intCast(u32, 0)) {
-        var expected = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - @intCast(u32, 1))];
-        if (expected != @intCast(u32, 0)) {
+        var oe_kind = topExpectedTypeKind(self);
+        if (oe_kind == EXPECTED_KIND_UNDETERMINED) {
+            var oe_ud_msg: []const u8 = "cannot resolve expected type for orelse expression";
+            semanticAnalyzerReportUnresolvedExpected(self, node_idx, oe_ud_msg);
+            return type_mod.TYPE_VOID;
+        }
+        var expected: u32 = @intCast(u32, 0);
+        if (oe_kind == EXPECTED_KIND_KNOWN) { expected = topExpectedTypeId(self); }
+        if (expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID) {
             var oe_et = self.registry.types_items[@intCast(usize, expected)];
             var payload_type: u32 = expected;
             if (oe_et.kind == type_mod.TypeKind.optional_type) {
@@ -1040,27 +3825,530 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         return type_mod.TYPE_VOID;
     }
     if (ty.kind != type_mod.TypeKind.optional_type) {
-        return type_mod.TYPE_VOID;
+        if (ty.kind == type_mod.TypeKind.null_type or ty.kind == type_mod.TypeKind.undefined_type or inner == type_mod.TYPE_NORETURN) {
+            return type_mod.TYPE_VOID;
+        }
+        var oe_msg: []const u8 = "orelse requires an optional operand; use 'catch' for error unions";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3016_ORELSE_REQUIRES_OPTIONAL)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), oe_msg);
+        return type_mod.TYPE_UNDEFINED;
     }
     var opt = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
     coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, opt.payload);
     if (node.child_1 != @intCast(u32, 0)) {
-        pushExpectedType(self, opt.payload);
+        pushExpectedTypeMaybe(self, opt.payload);
         var rhs_result = semanticAnalyzerResolveExpr(self, node.child_1);
         popExpectedType(self);
         if (rhs_result != @intCast(u32, 0) and rhs_result != type_mod.TYPE_VOID) {
             tryRecordCoercion(self, node.child_1, rhs_result, opt.payload);
         }
+        // A9-F: a non-diverging value-less `orelse { ... }` fallback in a
+        // value position emits C that references an undeclared TYPE_VOID temp
+        // (or, for a non-empty block, reads the uninitialized target); Zig
+        // 0.15.2 rejects it (`expected type 'T', found 'void'`). Reject it at
+        // level 0 with the reused ERR_3059 code. The direct `_ = ...;` discard
+        // and a bare-statement expression stay accepted (parked tolerance).
+        // A value-less fallback is either AST-shaped (empty/statement-ended/
+        // assignment-ended block, no-else `if`) or resolves to `void` (a bare
+        // void call the parser did not wrap in `expr_stmt`). The AST shape is
+        // still required for assignment-ended blocks, whose last child resolves
+        // to the assignment's type rather than `void`.
+        if ((semaOrelseFallbackIsValueless(self, node.child_1) or rhs_result == type_mod.TYPE_VOID)
+            and !semaOrelseFallbackDiverges(self, node.child_1)
+            and semaUnwrapParens(self, node_idx) != self.discard_rhs_node
+            and semaUnwrapParens(self, node_idx) != self.stmt_expr_node) {
+            if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                var ov_msg: []const u8 = "orelse block fallback without a value cannot be used as a value";
+                var ov_fb = ast_mod.astStoreNodeAt(self.store, node.child_1);
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3059_IF_WITHOUT_ELSE)), self.source_file_id, ov_fb.span_start, ov_fb.span_start + @intCast(u32, ov_fb.span_len), ov_msg);
+            }
+            return type_mod.TYPE_VOID;
+        }
     }
     return opt.payload;
 }
 
+// A9-F (Volume IV Amendment A9, operator m1740). `lowerCatchBodyIsValueless`
+// (sf/src/lower.zig) is mirrored here so sema's value-position reject and
+// lowering's join-assignment guard stay in lockstep.
+fn semaIsNoValueStmtKind(kind: AstKind) bool {
+    if (kind == AstKind.return_stmt) return true;
+    if (kind == AstKind.break_stmt) return true;
+    if (kind == AstKind.continue_stmt) return true;
+    if (kind == AstKind.block) return true;
+    if (kind == AstKind.var_decl) return true;
+    if (kind == AstKind.expr_stmt) return true;
+    if (kind == AstKind.defer_stmt) return true;
+    if (kind == AstKind.if_stmt) return true;
+    if (kind == AstKind.while_stmt) return true;
+    if (kind == AstKind.for_stmt) return true;
+    return false;
+}
+
+fn semaIsAssignmentKind(kind: AstKind) bool {
+    if (kind == AstKind.plain_assign) return true;
+    if (kind == AstKind.add_assign) return true;
+    if (kind == AstKind.sub_assign) return true;
+    if (kind == AstKind.mul_assign) return true;
+    if (kind == AstKind.div_assign) return true;
+    if (kind == AstKind.mod_assign) return true;
+    if (kind == AstKind.shl_assign) return true;
+    if (kind == AstKind.shr_assign) return true;
+    if (kind == AstKind.and_assign) return true;
+    if (kind == AstKind.xor_assign) return true;
+    if (kind == AstKind.or_assign) return true;
+    if (kind == AstKind.wrap_add_assign) return true;
+    if (kind == AstKind.wrap_sub_assign) return true;
+    if (kind == AstKind.wrap_mul_assign) return true;
+    if (kind == AstKind.sat_add_assign) return true;
+    if (kind == AstKind.sat_sub_assign) return true;
+    if (kind == AstKind.sat_mul_assign) return true;
+    if (kind == AstKind.sat_shl_assign) return true;
+    return false;
+}
+
+fn semaOrelseFallbackIsValueless(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var nd = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // A labeled block (`blk: { ... }`) is a statement whose value is void; its
+    // valuelessness follows its body (child_0).
+    if (nd.kind == AstKind.labeled_stmt) {
+        if (nd.child_0 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackIsValueless(self, nd.child_0);
+    }
+    if (nd.kind == AstKind.block) {
+        var n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        if (n == @intCast(u32, 0)) return true;
+        var last = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, n - @intCast(u32, 1));
+        var last_nd = ast_mod.astStoreNodeAt(self.store, last);
+        if (semaIsNoValueStmtKind(last_nd.kind)) return true;
+        if (semaIsAssignmentKind(last_nd.kind)) return true;
+        if (last_nd.kind == AstKind.if_expr and last_nd.child_2 == @intCast(u32, 0)) return true;
+        return false;
+    }
+    if (semaIsNoValueStmtKind(nd.kind)) return true;
+    if (semaIsAssignmentKind(nd.kind)) return true;
+    return false;
+}
+
+// A9-F: true when a non-diverging value-less `orelse` fallback is impossible —
+// i.e. every path through it leaves the expression (return / break / continue /
+// noreturn). This is `astTerminates` extended with break/continue, which do
+// diverge from the enclosing `orelse` (Zig accepts `var x = f() orelse
+// { continue; };`) but are NOT "definitely return" for the missing-return gate.
+fn semaOrelseFallbackDiverges(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.return_stmt) return true;
+    if (node.kind == AstKind.break_stmt) return true;
+    if (node.kind == AstKind.continue_stmt) return true;
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |t| {
+        if (t == type_mod.TYPE_NORETURN) return true;
+    }
+    // A labeled block (`blk: { return x; }`) diverges when its body does.
+    if (node.kind == AstKind.labeled_stmt) {
+        if (node.child_0 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackDiverges(self, node.child_0);
+    }
+    if (node.kind == AstKind.block) {
+        var ch_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < @intCast(usize, ch_n)) : (bi += 1) {
+            if (semaOrelseFallbackDiverges(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, bi)))) return true;
+        }
+        return false;
+    }
+    if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
+        if (node.child_2 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackDiverges(self, node.child_1) and semaOrelseFallbackDiverges(self, node.child_2);
+    }
+    if (node.kind == AstKind.expr_stmt) {
+        if (node.child_0 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackDiverges(self, node.child_0);
+    }
+    // switch / while / declarations: reuse the definite-return probe.
+    return astTerminates(self, node_idx);
+}
+
+// Task 6b (D7-2): depth-capped paren unwrap. Stops at a non-paren node, an
+// empty paren (child_0 == 0, returning that paren node), or after `max_depth`
+// unwraps (returning the node reached) -- exactly the hand-rolled loops'.
+fn semaUnwrapParensBounded(self: *SemanticAnalyzer, node_idx: u32, max_depth: u32) u32 {
+    return ast_mod.astUnwrapParensBounded(self.store, node_idx, max_depth);
+}
+
+fn semaUnwrapParens(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var n = node_idx;
+    while (n != @intCast(u32, 0)) {
+        var nd = ast_mod.astStoreNodeAt(self.store, n);
+        if (nd.kind != AstKind.paren_expr) return n;
+        n = nd.child_0;
+    }
+    return n;
+}
+
+// Task 9B (b, m1240 ruling 3): is an `if`/`while` condition comptime-known-true?
+// Official Zig accepts a value `if` without `else` only when the condition is
+// comptime-true (the taken arm alone is analyzed) or the then-branch is
+// void/noreturn. Z98's comptime fold (`comptime_eval.zig`) folds bool literals,
+// const-bool chains, and the folding builtins (`@isWindows`); the result must be
+// a bool (`kind == KIND_BOOL`, the Task 2 replacement for `width_bits == 1`) so
+// a non-bool condition is never mistaken for a suitable `if` condition. A fresh
+// evaluator with `diag = null` is used so this probe never emits a diagnostic
+// of its own.
+// FX9: the tri-state form of the probe below -- `?false` (comptime-known
+// false) must be distinguishable from "not comptime-known" so an if VALUE
+// expression's untaken arm can be skipped exactly like Zig (a bad arm behind
+// a comptime-known condition is not analyzed).
+fn semanticAnalyzerConditionComptimeBool(self: *SemanticAnalyzer, cond_idx: u32) ?bool {
+    if (cond_idx == @intCast(u32, 0)) return null;
+    var cond = ast_mod.astStoreNodeAt(self.store, cond_idx);
+    if (cond.kind == AstKind.bool_literal) {
+        return (cond.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+    }
+    // Task 9D (Gap B): the probe must see function-local `const`s (pushed into
+    // `self.local_consts` by the var_decl path); the module symbol registry
+    // alone cannot resolve them.
+    var ce = semaComptimeEvalInit(self);
+    var folded = ce_mod.comptimeEvalEvaluate(&ce, cond_idx);
+    if (folded) |cv| {
+        if (cv.kind == ce_mod.KIND_BOOL) {
+            return !ce_mod.ciIsZero(cv.v);
+        }
+    }
+    return null;
+}
+
+fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u32) bool {
+    if (semanticAnalyzerConditionComptimeBool(self, cond_idx)) |cb| return cb;
+    return false;
+}
+
+// T3 (spec §3, the Zig rule): the narrow fixture-pinned trigger set for
+// comptime-if arm elimination. `if_node_idx` is the `if_expr`/`if_stmt` node.
+// Returns the comptime-known condition value, or null (untouched) when the
+// shape is outside the trigger set (capture conditions, runtime conditions,
+// and anything the shared fold machinery does not know).
+//
+// Trigger set (spec §3):
+//   * literal `true`/`false` conditions;
+//   * conditions the shared comptime fold table already carries to KIND_BOOL
+//     (`@isWindows()` via the builtin sweep, comptime `const` conditions and
+//     constant folds via T3's if-condition sweep in `phase_ComptimeEvaluation`
+//     — the entry is target-correct, so `@isWindows()` polarity follows the
+//     CLI target);
+//   * a function-local comptime `const` bool (the evaluator below, local-const
+//     aware) — folded here and STAMPED into the shared table so lowering's
+//     `if_fold`/`ie_fold` eliminate the same arm (sema/lowering coherence).
+// Nothing else triggers. A fold-table entry is never consulted for a capture
+// (`if (opt) |v|`) — the untaken-arm rule is stated for `if`/`else` bool
+// conditions.
+fn semanticAnalyzerIfComptimeCondition(self: *SemanticAnalyzer, if_node_idx: u32) ?bool {
+    if (if_node_idx == @intCast(u32, 0)) return null;
+    var ifn = ast_mod.astStoreNodeAt(self.store, if_node_idx);
+    if (ast_mod.astStoreNodePayload(self.store, if_node_idx) != @intCast(u32, 0)) return null;
+    return semanticAnalyzerCondComptimeBool(self, ifn.child_0);
+}
+
+// T3 (factored out of `semanticAnalyzerIfComptimeCondition` for T4's switch
+// form — behavior IDENTICAL to the pre-T4 inline body): the comptime-known
+// bool value of a CONDITION node, or null. Table-first (target-correct via
+// `phase_ComptimeEvaluation`'s builtin/condition sweeps); literal `true`/
+// `false`; narrow local-const evaluator fallback stamped into the table.
+fn semanticAnalyzerCondComptimeBool(self: *SemanticAnalyzer, cond_idx: u32) ?bool {
+    if (cond_idx == @intCast(u32, 0)) return null;
+    var cond = ast_mod.astStoreNodeAt(self.store, cond_idx);
+    if (cond.kind == AstKind.bool_literal) {
+        return (cond.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+    }
+    if (self.comptime_folds) |ft| {
+        if (ce_mod.comptimeFoldTableGet(ft, cond_idx)) |cv| {
+            if (cv.kind == ce_mod.KIND_BOOL) {
+                return !ce_mod.ciIsZero(cv.v);
+            }
+            return null;
+        }
+        // Narrow evaluator fallback: an ident of a comptime `const` bool
+        // (function-local scope included). The value is stamped into the
+        // shared table so lowering folds the same arm. Without a table to
+        // stamp (the front-resolution pass) the fallback does not trigger.
+        if (cond.kind == AstKind.ident_expr) {
+            var ce = semaComptimeEvalInit(self);
+            if (ce_mod.comptimeEvalEvaluate(&ce, cond_idx)) |fv| {
+                if (fv.kind == ce_mod.KIND_BOOL) {
+                    ce_mod.comptimeFoldTablePut(ft, cond_idx, fv);
+                    return !ce_mod.ciIsZero(fv.v);
+                }
+            }
+        }
+    }
+    return null;
+}
+
+// T4 (spec §4): the `module_type` of an `import_expr` node in expression
+// position, or 0 when the path did not resolve to a registered module.
+fn semanticAnalyzerImportExprModuleType(self: *SemanticAnalyzer, import_idx: u32) u32 {
+    if (import_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var t4_in = ast_mod.astStoreNodeAt(self.store, import_idx);
+    if (t4_in.kind != AstKind.import_expr) return @intCast(u32, 0);
+    var t4_path_id: u32 = ast_mod.astStoreNodePayload(self.store, import_idx);
+    var t4_target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, t4_path_id);
+    if (t4_target) |t4_mtid| {
+        return type_mod.typeRegistryGetOrCreateModule(self.registry, t4_mtid);
+    }
+    return @intCast(u32, 0);
+}
+
+// D3 (Phase 3.5): recursive conditional-`@import` shape — a bare
+// `import_expr`, or a capture-free `if_expr`/`swt_ex` whose arms/prong bodies
+// are themselves import-alias shapes (paren-transparent). Mirrors lowering's
+// `lowerInitIsImportAliasShaped`, so a NESTED selection
+// (`if (c1) (if (c2) @import(a) else @import(b)) else @import(c)`) binds the
+// live module instead of leaking a `module_type` into the emitted C.
+fn semanticAnalyzerImportAliasShape(self: *SemanticAnalyzer, expr_idx: u32) bool {
+    var t4_as_idx = expr_idx;
+    var t4_as_uw: usize = @intCast(usize, 0);
+    while (t4_as_uw < @intCast(usize, 8)) : (t4_as_uw += 1) {
+        if (t4_as_idx == @intCast(u32, 0)) return false;
+        var t4_as_n = ast_mod.astStoreNodeAt(self.store, t4_as_idx);
+        if (t4_as_n.kind == AstKind.paren_expr) { t4_as_idx = t4_as_n.child_0; continue; }
+        break;
+    }
+    if (t4_as_idx == @intCast(u32, 0)) return false;
+    var t4_as_n2 = ast_mod.astStoreNodeAt(self.store, t4_as_idx);
+    if (t4_as_n2.kind == AstKind.import_expr) return true;
+    if (t4_as_n2.kind == AstKind.if_expr) {
+        if (ast_mod.astStoreNodePayload(self.store, t4_as_idx) != @intCast(u32, 0)) return false;
+        if (t4_as_n2.child_1 == @intCast(u32, 0) or t4_as_n2.child_2 == @intCast(u32, 0)) return false;
+        return semanticAnalyzerImportAliasShape(self, t4_as_n2.child_1) and
+            semanticAnalyzerImportAliasShape(self, t4_as_n2.child_2);
+    }
+    if (t4_as_n2.kind == AstKind.swt_ex) {
+        var t4_as_sp_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_as_idx);
+        if (t4_as_sp_n == @intCast(usize, 0)) return false;
+        var t4_as_si: usize = 0;
+        while (t4_as_si < t4_as_sp_n) : (t4_as_si += 1) {
+            var t4_as_sp = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, t4_as_idx, @intCast(u32, t4_as_si)));
+            if (t4_as_sp.child_0 == @intCast(u32, 0)) return false;
+            if (!semanticAnalyzerImportAliasShape(self, t4_as_sp.child_0)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+// T4 (spec §4): is this `switch` the conditional-`@import` idiom — every prong
+// body an import-alias shape (paren-transparent, nested selections included)?
+// Only then is the switch a comptime module selection; every other switch
+// keeps the pre-T4 paths.
+fn semanticAnalyzerSwitchIsImportIdiom(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var t4_sn = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (t4_sn.kind != AstKind.swt_ex) return false;
+    return semanticAnalyzerImportAliasShape(self, node_idx);
+}
+
+// T4 (spec §4): the module type bound by a module-scope `const impl = <init>`
+// whose initializer is the conditional-`@import` idiom — a bare `import_expr`,
+// an `if_expr`/`swt_ex` over `import_expr`s with a comptime-known condition
+// (T3's table-backed probes select the LIVE arm/prong), or 0 for anything
+// else. Used by `semanticAnalyzerResolveIdent` so a use of `impl` resolves to
+// the live module exactly like the `const std = @import("std");` binding (the
+// module-var fixpoint runs before `phase_ComptimeEvaluation` stamps the fold
+// table, so the decl itself may still carry no type when the use is resolved).
+fn semanticAnalyzerModuleAliasInitType(self: *SemanticAnalyzer, init_idx: u32) u32 {
+    var t4_idx = init_idx;
+    var t4_unwrap: usize = @intCast(usize, 0);
+    while (t4_unwrap < @intCast(usize, 8)) : (t4_unwrap += 1) {
+        var t4_n = ast_mod.astStoreNodeAt(self.store, t4_idx);
+        if (t4_n.kind == AstKind.paren_expr) { t4_idx = t4_n.child_0; continue; }
+        break;
+    }
+    if (t4_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var t4_n2 = ast_mod.astStoreNodeAt(self.store, t4_idx);
+    if (t4_n2.kind == AstKind.import_expr) {
+        return semanticAnalyzerImportExprModuleType(self, t4_idx);
+    }
+    if (t4_n2.kind == AstKind.if_expr) {
+        if (ast_mod.astStoreNodePayload(self.store, t4_idx) != @intCast(u32, 0)) return @intCast(u32, 0);
+        if (semanticAnalyzerIfComptimeCondition(self, t4_idx)) |t4_tv| {
+            var t4_arm: u32 = if (t4_tv) t4_n2.child_1 else t4_n2.child_2;
+            if (t4_arm == @intCast(u32, 0)) return @intCast(u32, 0);
+            // D3: recurse so a NESTED conditional import
+            // (`if (c1) (if (c2) @import(a) else @import(b)) else @import(c)`)
+            // selects its live module instead of leaving the binding untyped.
+            return semanticAnalyzerModuleAliasInitType(self, t4_arm);
+        }
+        return @intCast(u32, 0);
+    }
+    if (t4_n2.kind == AstKind.swt_ex) {
+        if (!semanticAnalyzerSwitchIsImportIdiom(self, t4_idx)) return @intCast(u32, 0);
+        var t4_cv_opt = semanticAnalyzerCondComptimeBool(self, t4_n2.child_0);
+        if (t4_cv_opt == null) {
+            // D3: `phase_ComptimeEvaluation` sweeps `if` conditions (and
+            // builtin calls) but not `switch` selectors, so an evaluator-
+            // foldable selector like `switch (1 == 1)` has no table entry.
+            // Fold it here with the same evaluator the deferred import walk
+            // uses; a table hit keeps the target-correct `@isWindows()` value.
+            var t4_ce = semaComptimeEvalInit(self);
+            t4_ce.host_is_windows = self.module_reg.target_is_windows;
+            if (ce_mod.comptimeEvalEvaluate(&t4_ce, t4_n2.child_0)) |t4_sv| {
+                if (t4_sv.kind == ce_mod.KIND_BOOL) {
+                    t4_cv_opt = !ce_mod.ciIsZero(t4_sv.v);
+                }
+            }
+        }
+        if (t4_cv_opt) |t4_cv| {
+            // D3 fix: evaluate the case labels with the SAME shared selector the
+            // deferred import resolver uses. This matches evaluated labels
+            // (`const T = true; switch (x) { T => ... }`) rather than only
+            // `bool_literal`s, so registration and typing cannot diverge. An
+            // undecidable label (range, foldable-but-unevaluated, ...) makes the
+            // selection non-decisive and the alias stays untyped rather than
+            // binding the wrong module.
+            var t4_ce = semaComptimeEvalInit(self);
+            t4_ce.host_is_windows = self.module_reg.target_is_windows;
+            var t4_selv = ce_mod.ComptimeVal{ .v = if (t4_cv) ce_mod.ciFromU64(@intCast(u64, 1)) else ce_mod.ciZeroInt(), .kind = ce_mod.KIND_BOOL, .float_bits = @intCast(u64, 0) };
+            var t4_sel = import_resolver.importSwitchSelectProng(self.store, &t4_ce, t4_idx, t4_selv);
+            if (t4_sel.decisive and t4_sel.prong != @intCast(u32, 0)) {
+                var t4_lb = ast_mod.astStoreNodeAt(self.store, t4_sel.prong).child_0;
+                if (t4_lb == @intCast(u32, 0)) return @intCast(u32, 0);
+                // D3: recurse — a prong body may itself be a nested
+                // conditional import.
+                return semanticAnalyzerModuleAliasInitType(self, t4_lb);
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    return @intCast(u32, 0);
+}
+
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // A7-F: the `if (x) |v|` capture is scoped to the THEN arm only (Zig
+    // parity). Save before the header registers it and restore right after the
+    // then-branch, before the else-branch is resolved, so an else-arm use
+    // resolves as undeclared (`error[20]`).
+    var ifexpr_cap_saved: u32 = @intCast(u32, self.local_decl_count);
     semanticAnalyzerResolveIfHeader(self, node_idx);
-    var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
-    if (node.child_2 == @intCast(u32, 0)) { var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
-    var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
+    // T3 (spec §3 Zig rule): when the `if`/`else` condition is comptime-known
+    // (narrow trigger set), the untaken arm is NOT semantically analyzed and
+    // the `if` takes the live arm's value/type. The untaken arm is stamped
+    // `TYPE_NORETURN` so the result-typing tail below resolves exactly the
+    // live arm (the same paths a diverging arm already takes).
+    // C5 Variant B (operator-ruled): an ELSE-LESS `if` whose condition is
+    // comptime-known-FALSE also skips its then arm (Zig langref: the compiler
+    // "skip[s] analysis of the branch not taken" — no `else`-form
+    // qualification). The error[3059] value-use rejection is kept EXACTLY:
+    // it fires unconditionally below (an else-less `if` with no taken arm is
+    // `void`-typed, so every value use is an error regardless of what the
+    // skipped arm would have typed — the `if_noelse_reject_xmod` rows with
+    // folding conditions, `andFalse`/`u64Lt0`, keep their 3059 at the same
+    // site). Variant A's `TYPE_NORETURN`-stamp transplant is NOT used here
+    // (it would drop those rows). The `TYPE_UNDEFINED` result is the error
+    // sentinel — every downstream check guards it out, so no cascading
+    // diagnostics. Comptime-known-TRUE else-less ifs keep the pre-T3 walk
+    // (the arm is the TAKEN branch) and ruling-3 acceptance.
+    var t3_egate: ?bool = semanticAnalyzerIfComptimeCondition(self, node_idx);
+    if (node.child_2 == @intCast(u32, 0)) {
+        if (t3_egate) |t3_bv| {
+            if (!t3_bv) {
+                self.local_decl_count = @intCast(usize, ifexpr_cap_saved);
+                if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                    var t3b_msg: []const u8 = "if expression without 'else' cannot be used as a value (its type is 'void')";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3059_IF_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), t3b_msg);
+                }
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_UNDEFINED);
+                return type_mod.TYPE_UNDEFINED;
+            }
+        }
+    }
+    var then_type: u32 = undefined;
+    if (t3_egate) |t3_ev| {
+        if (t3_ev) {
+            then_type = semanticAnalyzerResolveExpr(self, node.child_1);
+        } else {
+            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, type_mod.TYPE_NORETURN);
+            then_type = type_mod.TYPE_NORETURN;
+        }
+    } else {
+        then_type = semanticAnalyzerResolveExpr(self, node.child_1);
+    }
+    self.local_decl_count = @intCast(usize, ifexpr_cap_saved);
+    if (node.child_2 == @intCast(u32, 0)) {
+        // Task 9B (b, m1240 ruling 3): a value `if` without `else` is rejected
+        // unless the then-branch is void/noreturn or the condition is
+        // comptime-known-true (Zig analyzes only the taken arm). A no-`else`
+        // `if` is typed `void`, so a value use is an error. A capture condition
+        // (`if (opt) |v| v`) is optional/error-union rather than bool, so the
+        // validity gate accepts either a bool condition (no capture) or an
+        // optional/error-union condition (capture); an invalid condition already
+        // got its error[3058] from the header and is not double-reported.
+        if (then_type != type_mod.TYPE_VOID and then_type != type_mod.TYPE_NORETURN and then_type != @intCast(u32, 0) and then_type != type_mod.TYPE_UNDEFINED) {
+            var iw_ok = semanticAnalyzerConditionIsComptimeTrue(self, node.child_0);
+            if (!iw_ok) {
+                var iw_has_capture = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);
+                var iw_cond_valid = false;
+                var iw_ct = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
+                if (iw_ct) |ct| {
+                    if (ct != @intCast(u32, 0) and ct != type_mod.TYPE_VOID and ct != type_mod.TYPE_UNDEFINED) {
+                        var iw_kind = self.registry.types_items[@intCast(usize, ct)].kind;
+                        if (iw_has_capture) {
+                            if (iw_kind == type_mod.TypeKind.optional_type or iw_kind == type_mod.TypeKind.error_union_type) { iw_cond_valid = true; }
+                        } else {
+                            if (iw_kind == type_mod.TypeKind.bool_type) { iw_cond_valid = true; }
+                        }
+                    }
+                }
+                if (iw_cond_valid and diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                    var iw_msg: []const u8 = "if expression without 'else' cannot be used as a value (its type is 'void')";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3059_IF_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), iw_msg);
+                }
+            }
+        }
+        var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type;
+    }
+    var else_type: u32 = undefined;
+    if (t3_egate) |t3_ev2| {
+        if (t3_ev2) {
+            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_2, type_mod.TYPE_NORETURN);
+            else_type = type_mod.TYPE_NORETURN;
+        } else {
+            else_type = semanticAnalyzerResolveExpr(self, node.child_2);
+        }
+    } else {
+        else_type = semanticAnalyzerResolveExpr(self, node.child_2);
+    }
+    var ie_kind = topExpectedTypeKind(self);
+    if (ie_kind == EXPECTED_KIND_UNDETERMINED) {
+        var ie_ud_msg: []const u8 = "type mismatch in if expression -- branch type may not be compatible with the if expression type";
+        semanticAnalyzerReportUnresolvedExpected(self, node_idx, ie_ud_msg);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN);
+        return type_mod.TYPE_NORETURN;
+    }
+    var ie_exp: u32 = @intCast(u32, 0);
+    if (ie_kind == EXPECTED_KIND_KNOWN) {
+        ie_exp = topExpectedTypeId(self);
+        if (ie_exp == type_mod.TYPE_UNDEFINED) ie_exp = @intCast(u32, 0);
+    }
+    if (ie_exp == @intCast(u32, 0) or ie_exp == type_mod.TYPE_VOID) {
+        var ie_then_lit: bool = then_type != type_mod.TYPE_NORETURN and ast_mod.astStoreNodeAt(self.store, node.child_1).kind == AstKind.string_literal;
+        var ie_else_lit: bool = else_type != type_mod.TYPE_NORETURN and ast_mod.astStoreNodeAt(self.store, node.child_2).kind == AstKind.string_literal;
+        if (ie_then_lit or ie_else_lit) { ie_exp = type_mod.typeRegistryGetOrCreateSlice(self.registry, type_mod.TYPE_U8, true); }
+    }
+    if (ie_exp != @intCast(u32, 0) and ie_exp != type_mod.TYPE_VOID) {
+        var ie_then_str: bool = then_type != type_mod.TYPE_NORETURN and isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, then_type, ie_exp));
+        var ie_else_str: bool = else_type != type_mod.TYPE_NORETURN and isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, else_type, ie_exp));
+        var ie_then_ok: bool = then_type == ie_exp or then_type == type_mod.TYPE_NORETURN or ie_then_str
+                                or type_mod.typeRegistryIsAssignable(self.registry, then_type, ie_exp);
+        var ie_else_ok: bool = else_type == ie_exp or else_type == type_mod.TYPE_NORETURN or ie_else_str
+                                or type_mod.typeRegistryIsAssignable(self.registry, else_type, ie_exp);
+        if (ie_then_ok and ie_else_ok) {
+            if (then_type != ie_exp) tryRecordCoercion(self, node.child_1, then_type, ie_exp);
+            if (else_type != ie_exp) tryRecordCoercion(self, node.child_2, else_type, ie_exp);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, ie_exp);
+            return ie_exp;
+        }
+
+    }
     if (then_type == else_type) { var sif_m: []const u8 = "SIF:1N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     if (then_type == type_mod.TYPE_NORETURN) { var sif2m: []const u8 = "SIF:2N"; pal_mod.markerWriteInt(sif2m, node_idx); var sif2tm: []const u8 = "T"; pal_mod.markerWriteInt(sif2tm, else_type); var sif2nl: []const u8 = " "; pal_mod.markerWrite(sif2nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
     if (else_type == type_mod.TYPE_NORETURN) { var sif3m: []const u8 = "SIF:3N"; pal_mod.markerWriteInt(sif3m, node_idx); var sif3tm: []const u8 = "T"; pal_mod.markerWriteInt(sif3tm, then_type); var sif3nl: []const u8 = " "; pal_mod.markerWrite(sif3nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
@@ -1068,6 +4356,44 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (else_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, then_type)) { var sif5m: []const u8 = "SIF:5N"; pal_mod.markerWriteInt(sif5m, node_idx); var sif5tm: []const u8 = "T"; pal_mod.markerWriteInt(sif5tm, then_type); var sif5nl: []const u8 = " "; pal_mod.markerWrite(sif5nl); coercion_mod.coercionTableAdd(self.coercion_table, node.child_2, coercion_mod.CoercionKind.int_literal_coerce, then_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     if (then_type == type_mod.TYPE_VOID) { var sif6m: []const u8 = "SIF:6N"; pal_mod.markerWriteInt(sif6m, node_idx); var sif6tm: []const u8 = "T"; pal_mod.markerWriteInt(sif6tm, else_type); var sif6nl: []const u8 = " "; pal_mod.markerWrite(sif6nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
     if (else_type == type_mod.TYPE_VOID) { var sif7m: []const u8 = "SIF:7N"; pal_mod.markerWriteInt(sif7m, node_idx); var sif7tm: []const u8 = "T"; pal_mod.markerWriteInt(sif7tm, then_type); var sif7nl: []const u8 = " "; pal_mod.markerWrite(sif7nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    // FX9 (Volume II D6 extras follow-up): value-aware result typing for a
+    // mismatched-arm `if` at an f32 expectation site. Pre-fix the arms did not
+    // unify under Z98's peer rules, the whole `if` was void-typed, and
+    // `if (c) n else 2.5` (runtime `n: i32`) silently produced no value
+    // (`return 0`). Classify the REACHABLE arms with the FX3 value rules (a
+    // comptime-known condition makes the untaken arm unreachable, matching
+    // Zig). All-acceptable arms type the `if` f32 and record the arm
+    // narrowing; otherwise the `if` takes the offending arm's type so the
+    // enclosing f32 site's FX3 status rejects it with the source/target notes.
+    if (ie_exp == type_mod.TYPE_F32) {
+        var ie_then_reach: u8 = @intCast(u8, 1);
+        var ie_else_reach: u8 = @intCast(u8, 1);
+        // T3: arm reachability is the gate's verdict when the trigger set
+        // fired (the untaken arm is un-analyzed — its float-narrow status must
+        // not be walked); otherwise the pre-T3 probe stands.
+        if (t3_egate) |ie_cb| {
+            if (ie_cb) { ie_else_reach = @intCast(u8, 0); } else { ie_then_reach = @intCast(u8, 0); }
+        } else if (semanticAnalyzerConditionComptimeBool(self, node.child_0)) |ie_cb2| {
+            if (ie_cb2) { ie_else_reach = @intCast(u8, 0); } else { ie_then_reach = @intCast(u8, 0); }
+        }
+        var ie_then_st: u8 = FLOAT_NARROW_ACCEPT;
+        if (ie_then_reach != @intCast(u8, 0)) { ie_then_st = semanticAnalyzerFloatNarrowArmStatus(self, node.child_1, @intCast(u32, 1)); }
+        var ie_else_st: u8 = FLOAT_NARROW_ACCEPT;
+        if (ie_else_reach != @intCast(u8, 0)) { ie_else_st = semanticAnalyzerFloatNarrowArmStatus(self, node.child_2, @intCast(u32, 1)); }
+        if (ie_then_st == FLOAT_NARROW_ACCEPT and ie_else_st == FLOAT_NARROW_ACCEPT) {
+            if (ie_then_reach != @intCast(u8, 0) and then_type != type_mod.TYPE_F32) { tryRecordCoercion(self, node.child_1, then_type, ie_exp); }
+            if (ie_else_reach != @intCast(u8, 0) and else_type != type_mod.TYPE_F32) { tryRecordCoercion(self, node.child_2, else_type, ie_exp); }
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, ie_exp);
+            return ie_exp;
+        }
+        if (ie_then_st != FLOAT_NARROW_ACCEPT) {
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type);
+            return then_type;
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type);
+        return else_type;
+    }
+
     var siffm: []const u8 = "SIF:FN"; pal_mod.markerWriteInt(siffm, node_idx); var sifftm: []const u8 = "\n"; pal_mod.markerWrite(sifftm); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID;
 }
 
@@ -1091,8 +4417,7 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                 var elv_m: []const u8 = "EL:V"; pal_mod.markerWriteInt(elv_m, @intCast(u32, fe.name_id));
                 if (fe.name_id == n) {
                     var elm_m: []const u8 = "EL:M"; pal_mod.markerWriteInt(elm_m, @intCast(u32, self.enum_value_table.count));
-                    hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi));
-                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, self.current_switch_cond_tu);
+                    semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, fi), self.current_switch_cond_tu);
                     return self.current_switch_cond_tu;
                 }
             }
@@ -1105,16 +4430,32 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
             while (emi < ecount) : (emi += 1) {
                 var member = self.registry.em_items[estart + emi];
                 if (member.name_id == n) {
-                    hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, member.value));
-                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, self.current_switch_cond_tu);
+                    semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, member.value & @intCast(u64, 0xFFFFFFFF)), self.current_switch_cond_tu);
                     return self.current_switch_cond_tu;
                 }
             }
         }
+        // FX4 (D11 extras): a shorthand switch case item (`.bogus`) whose name
+        // matches no member of the condition type rejects 3071. Gated on the
+        // case-item context flag so an enum literal in a prong BODY (or any
+        // other value position that merely has `current_switch_cond_tu` in
+        // scope) keeps the pre-existing expected-type fall-through.
+        if (node.kind == AstKind.enum_literal and self.switch_case_item != @intCast(u8, 0)) {
+            semanticAnalyzerReportSwitchCaseQualifier(self, node_idx, node_idx, n, self.current_switch_cond_tu, @intCast(u8, 0));
+            return type_mod.TYPE_VOID;
+        }
     }
     if (self.expected_type_stack_len > 0) {
-        var top: u32 = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - 1)];
-        if (top != @intCast(u32, 0)) {
+        var el_kind = topExpectedTypeKind(self);
+        if (el_kind == EXPECTED_KIND_UNDETERMINED) {
+            var elu_ud_msg: []const u8 = "cannot infer enum literal type from an unresolved annotation";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3010_CANNOT_INFER_ENUM_LITERAL_TYPE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), elu_ud_msg);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        var top: u32 = @intCast(u32, 0);
+        if (el_kind == EXPECTED_KIND_KNOWN) { top = topExpectedTypeId(self); }
+        if (top != @intCast(u32, 0) and top != type_mod.TYPE_UNDEFINED and top != type_mod.TYPE_VOID) {
             var top_ty = self.registry.types_items[@intCast(usize, top)];
             if (top_ty.kind == type_mod.TypeKind.tagged_union_type) {
                 var tp = self.registry.tu_items[@intCast(usize, top_ty.payload_idx)];
@@ -1125,8 +4466,7 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                     var fe = self.registry.fe_items[fstart2 + fi2];
                     if (fe.name_id == n) {
                         if (fe.type_id == type_mod.TYPE_VOID) {
-                            hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi2));
-                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, top);
+                            semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, fi2), top);
                             return top;
                         } else {
                             var sp = node.span_start;
@@ -1142,6 +4482,18 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                 var elu_msg: []const u8 = "unknown enum literal member";
                 _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3009_UNKNOWN_ENUM_LITERAL_MEMBER)), self.source_file_id, sp, ep, elu_msg);
                 return type_mod.TYPE_VOID;
+            } else if (top_ty.kind == type_mod.TypeKind.enum_type) {
+                var enp2 = self.registry.en_items[@intCast(usize, top_ty.payload_idx)];
+                var estart2: usize = @intCast(usize, enp2.members_start);
+                var ecount2: usize = @intCast(usize, enp2.members_count);
+                var emi2: usize = 0;
+                while (emi2 < ecount2) : (emi2 += 1) {
+                    var member2 = self.registry.em_items[estart2 + emi2];
+                    if (member2.name_id == n) {
+                        semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, member2.value & @intCast(u64, 0xFFFFFFFF)), top);
+                        return top;
+                    }
+                }
             }
         }
     }
@@ -1150,100 +4502,198 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
     return type_mod.TYPE_VOID;
 }
 
+// Task 6b (D4-1): the paired enum-member ordinal + resolved-type writes,
+// repeated at nine literal/member resolution sites.
+fn semanticAnalyzerSetEnumValue(self: *SemanticAnalyzer, node_idx: u32, ord: u32, tid: u32) void {
+    hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, ord);
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, tid);
+}
+
+// Task 6b (D3-7): the field-initializer loop shared by the tagged-union,
+// struct and union arms of `semanticAnalyzerResolveStructInit`. `fstart`/
+// `fcount` locate the container's `fe_items` field range.
+fn semanticAnalyzerInitStructFields(self: *SemanticAnalyzer, node_idx: u32, target_type: u32, fstart: usize, fcount: usize) u32 {
+    var field_inits_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+    var fii: usize = 0;
+    while (fii < field_inits_n) : (fii += 1) {
+        var fi_child = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, fii));
+        var fi_node = ast_mod.astStoreNodeAt(self.store, fi_child);
+        var fname_id: u32 = ast_mod.astStoreNodePayload(self.store, fi_child);
+        if (fname_id != @intCast(u32, 0)) {
+            var fi: usize = 0;
+            while (fi < fcount) : (fi += 1) {
+                if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
+                    if (fi_node.child_0 != @intCast(u32, 0)) {
+                        var field_type = self.registry.fe_items[fstart + fi].type_id;
+                        pushExpectedTypeMaybe(self, field_type);
+                        var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
+                        popExpectedType(self);
+                        semanticAnalyzerCoerceFieldInit(self, fi_node.child_0, init_type, field_type);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
+    return target_type;
+}
+
+fn semanticAnalyzerCoerceFieldInit(self: *SemanticAnalyzer, init_node: u32, init_type: u32, field_type: u32) void {
+    var fi_fst = semanticAnalyzerFloatNarrowStatus(self, init_node, init_type, field_type);
+    var fi_assign = type_mod.typeRegistryIsAssignable(self.registry, init_type, field_type);
+    if (fi_fst == FLOAT_NARROW_REJECT) {
+        var fi_msg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+        semanticAnalyzerTypeMismatchReport(self, init_node, init_type, field_type, fi_msg, true);
+    } else if (fi_assign) {
+        tryRecordCoercion(self, init_node, init_type, field_type);
+    } else if (fi_fst == FLOAT_NARROW_ACCEPT) {
+        semanticAnalyzerFloatNarrowRecord(self, init_node, field_type);
+    } else if (semanticAnalyzerFnPtrSigMismatch(self, init_type, field_type)) {
+        var fi_fmsg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+        semanticAnalyzerTypeMismatchReport(self, init_node, init_type, field_type, fi_fmsg, true);
+    } else if (field_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, init_type)) {
+        var fi_msg2: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+        semanticAnalyzerTypeMismatchReport(self, init_node, init_type, field_type, fi_msg2, true);
+    } else {
+        tryRecordCoercion(self, init_node, init_type, field_type);
+    }
+}
+
 fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var target_type: u32 = @intCast(u32, 0);
     if (node.child_0 != @intCast(u32, 0)) {
         target_type = semanticAnalyzerResolveExpr(self, node.child_0);
     }
-    if (target_type == @intCast(u32, 0)) { target_type = topExpectedType(self); }
+    if (target_type == @intCast(u32, 0)) {
+        var si_kind = topExpectedTypeKind(self);
+        if (si_kind == EXPECTED_KIND_UNDETERMINED) {
+            var si_ud_msg: []const u8 = "cannot resolve expected type for struct initialization";
+            semanticAnalyzerReportUnresolvedExpected(self, node_idx, si_ud_msg);
+            return type_mod.TYPE_VOID;
+        }
+        if (si_kind == EXPECTED_KIND_KNOWN) {
+            target_type = topExpectedTypeId(self);
+            if (target_type == type_mod.TYPE_UNDEFINED or target_type == type_mod.TYPE_VOID) target_type = @intCast(u32, 0);
+        }
+    }
     if (target_type == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     var tgt = self.registry.types_items[@intCast(usize, target_type)];
     if (tgt.kind == type_mod.TypeKind.tagged_union_type) {
         var tp = self.registry.tu_items[@intCast(usize, tgt.payload_idx)];
-        var fstart: usize = @intCast(usize, tp.fields_start);
-        var fcount: usize = @intCast(usize, tp.fields_count);
-        var field_inits = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        var fii: usize = 0;
-        while (fii < field_inits.len) : (fii += 1) {
-            var fi_node = ast_mod.astStoreNodeAt(self.store, field_inits[fii]);
-            var fname_id: u32 = ast_mod.astStoreNodePayload(self.store, field_inits[fii]);
-            if (fname_id != @intCast(u32, 0)) {
-                var fi: usize = 0;
-                while (fi < fcount) : (fi += 1) {
-                    if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
-                        if (fi_node.child_0 != @intCast(u32, 0)) {
-                            var field_type = self.registry.fe_items[fstart + fi].type_id;
-                            pushExpectedType(self, field_type);
-                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
-                            popExpectedType(self);
-                            tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
-        return target_type;
+        return semanticAnalyzerInitStructFields(self, node_idx, target_type, @intCast(usize, tp.fields_start), @intCast(usize, tp.fields_count));
     }
     if (tgt.kind == type_mod.TypeKind.struct_type) {
         var sp = self.registry.st_items[@intCast(usize, tgt.payload_idx)];
-        var fstart: usize = @intCast(usize, sp.fields_start);
-        var fcount: usize = @intCast(usize, sp.fields_count);
-        var field_inits = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        var fii: usize = 0;
-        while (fii < field_inits.len) : (fii += 1) {
-            var fi_node = ast_mod.astStoreNodeAt(self.store, field_inits[fii]);
-            var fname_id: u32 = ast_mod.astStoreNodePayload(self.store, field_inits[fii]);
-            if (fname_id != @intCast(u32, 0)) {
-                var fi: usize = 0;
-                while (fi < fcount) : (fi += 1) {
-                    if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
-                        if (fi_node.child_0 != @intCast(u32, 0)) {
-                            var field_type = self.registry.fe_items[fstart + fi].type_id;
-                            pushExpectedType(self, field_type);
-                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
-                            popExpectedType(self);
-                            tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
-        return target_type;
+        return semanticAnalyzerInitStructFields(self, node_idx, target_type, @intCast(usize, sp.fields_start), @intCast(usize, sp.fields_count));
     }
-    if (tgt.kind == type_mod.TypeKind.union_type) {
+    if (tgt.kind == type_mod.TypeKind.union_type or tgt.kind == type_mod.TypeKind.packed_union_type) {
         var up = self.registry.un_items[@intCast(usize, tgt.payload_idx)];
-        var fstart: usize = @intCast(usize, up.fields_start);
-        var fcount: usize = @intCast(usize, up.fields_count);
-        var field_inits = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        var fii: usize = 0;
-        while (fii < field_inits.len) : (fii += 1) {
-            var fi_node = ast_mod.astStoreNodeAt(self.store, field_inits[fii]);
-            var fname_id: u32 = ast_mod.astStoreNodePayload(self.store, field_inits[fii]);
-            if (fname_id != @intCast(u32, 0)) {
-                var fi: usize = 0;
-                while (fi < fcount) : (fi += 1) {
-                    if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
-                        if (fi_node.child_0 != @intCast(u32, 0)) {
-                            var field_type = self.registry.fe_items[fstart + fi].type_id;
-                            pushExpectedType(self, field_type);
-                            var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
-                            popExpectedType(self);
-                            tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
-                        }
-                        break;
-                    }
+        return semanticAnalyzerInitStructFields(self, node_idx, target_type, @intCast(usize, up.fields_start), @intCast(usize, up.fields_count));
+    }
+
+    return type_mod.TYPE_VOID;
+}
+
+// Task 7B: is the l-value at `node_idx` immutable? Mirrors zig0's
+// `TypeChecker::isLValueConst` (src/bootstrap/type_checker.cpp:6470): an
+// identifier whose binding is const, a `*const T` deref, a `[]const T`/`*const
+// T` element, a const-array element (inherits the binding), a read-only
+// optional/tagged-union member, a const module member, or a paren wrapping any
+// of these. The l-value was already resolved by `semanticAnalyzerResolveAssign`
+// (every node/subexpression carries a resolved-type entry), so this predicate
+// only READS the resolved-type table and the symbol/local tables — it never
+// re-resolves, so an undeclared base keeps its single `error[3001]`.
+fn semanticAnalyzerIsLValueConst(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.paren_expr) {
+        return semanticAnalyzerIsLValueConst(self, node.child_0);
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        if (findLocalBinding(self, name_id)) |li| {
+            return self.local_decl_consts[li] != @intCast(u8, 0);
+        }
+        if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id)) |s| {
+            if (s.kind == sym_mod.SymbolKind.global and s.decl_node != @intCast(u32, 0)) {
+                var dn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
+                if (dn.kind == AstKind.var_decl) {
+                    return (s.flags & @intCast(u16, 1)) == @intCast(u16, 0);
                 }
             }
         }
-        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, target_type);
-        return target_type;
+        return false;
     }
-    return type_mod.TYPE_VOID;
+    if (node.kind == AstKind.deref) {
+        if (rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0)) |base_t| {
+            if (@intCast(usize, base_t) < self.registry.types_len) {
+                var bt = self.registry.types_items[@intCast(usize, base_t)];
+                if (bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
+                    return (bt.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                }
+            }
+        }
+        return false;
+    }
+    if (node.kind == AstKind.index_access) {
+        if (rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0)) |base_t| {
+            if (@intCast(usize, base_t) < self.registry.types_len) {
+                var bt = self.registry.types_items[@intCast(usize, base_t)];
+                if (bt.kind == type_mod.TypeKind.slice_type or bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
+                    return (bt.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                }
+                if (bt.kind == type_mod.TypeKind.array_type) {
+                    return semanticAnalyzerIsLValueConst(self, node.child_0);
+                }
+            }
+        }
+        return false;
+    }
+    if (node.kind == AstKind.field_access) {
+        var field_name_id = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0)) |base_t| {
+            if (@intCast(usize, base_t) < self.registry.types_len) {
+                var bt = self.registry.types_items[@intCast(usize, base_t)];
+                // A write through a const pointer (`*const T`/`[*]const T`) is
+                // immutable; a mutable pointer's pointee is writable.
+                if (bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
+                    return (bt.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                }
+                // A module member is const iff its `var_decl` is immutable.
+                // (Z98 supports `.tag`/optional-member writes on a mutable
+                // binding, so those are NOT special-cased here — the binding
+                // check below covers a const union/optional.)
+                if (bt.kind == type_mod.TypeKind.module_type) {
+                    if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, bt.module_id, field_name_id)) |fs| {
+                        if (fs.kind == sym_mod.SymbolKind.global and fs.decl_node != @intCast(u32, 0)) {
+                            var fdn = ast_mod.astStoreNodeAt(self.store, fs.decl_node);
+                            if (fdn.kind == AstKind.var_decl) {
+                                return (fs.flags & @intCast(u16, 1)) == @intCast(u16, 0);
+                            }
+                        }
+                    }
+                    return false;
+                }
+            }
+        }
+        // A struct/union field write inherits the binding's constness.
+        return semanticAnalyzerIsLValueConst(self, node.child_0);
+    }
+    return false;
+}
+
+// D7.3 (Phase 3.5): a whole-array store through a field/index/deref l-value
+// chain (`arr[i].field = srcArray`). Field access decays an array field to its
+// element pointer, so the type-level assignability test sees `array ->
+// pointer` and warns even though lowering copies the elements into the field
+// storage. Accept exactly the same-array-type shape; any other pair keeps the
+// existing mismatch diagnostic.
+fn semanticAnalyzerAssignArrayFieldSameType(self: *SemanticAnalyzer, lhs_node_idx: u32, rhs_type: u32) bool {
+    var lhs_array = semanticAnalyzerFieldAccessArrayType(self, lhs_node_idx);
+    if (lhs_array == @intCast(u32, 0)) return false;
+    return lhs_array == rhs_type;
 }
 
 fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
@@ -1253,44 +4703,255 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (node.child_0 != @intCast(u32, 0)) {
         var lhs_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
         if (lhs_node.kind == AstKind.ident_expr) {
-            var us_str: []const u8 = "_";
-            if (ast_mod.astStoreIdentifier(self.store, node.child_0) == interner_mod.stringInternerIntern(self.interner, us_str)) {
+            if (ast_mod.astStoreIdentifier(self.store, node.child_0) == self.discard_name_id) {
+                // A9-F: expose the discard RHS to the orelse reject so
+                // `_ = maybe(-1) orelse {};` (Zig: discard an undefined value)
+                // stays accepted while a value-position fallback rejects.
+                var ase_drn_saved: u32 = self.discard_rhs_node;
+                self.discard_rhs_node = semaUnwrapParens(self, node.child_1);
                 _ = semanticAnalyzerResolveExpr(self, node.child_1);
+                self.discard_rhs_node = ase_drn_saved;
                 return type_mod.TYPE_VOID;
             }
         }
     }
-    pushExpectedType(self, lhs);
+    // Task 7B: reject assignment to an immutable l-value (const local/param/
+    // capture, module const, `*const T` deref, `[]const T` element). Mirrors
+    // zig0's TypeChecker::isLValueConst (src/bootstrap/type_checker.cpp:6470).
+    // `_ = expr;` is exempted above. Level 0 so the post-sema gate exits rc=2
+    // with 0 `.c`; code literal 3002 (the enum ordinal is 21 — do not use it).
+    if (semanticAnalyzerIsLValueConst(self, node.child_0)) {
+        var lv = ast_mod.astStoreNodeAt(self.store, node.child_0);
+        var csp: u32 = lv.span_start;
+        var cep = csp + @intCast(u32, lv.span_len);
+        var c_msg: []const u8 = "cannot assign to immutable variable";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3002), self.source_file_id, csp, cep, c_msg);
+        return type_mod.TYPE_VOID;
+    }
+    pushExpectedTypeMaybe(self, lhs);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     popExpectedType(self);
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var as0: []const u8 = "AS0"; pal_mod.markerWrite(as0); return type_mod.TYPE_VOID; }
+    // A5-F: reject a TYPE VALUE referenced by name on the RHS of an assignment
+    // (`x = A;`), reusing the site's level-0 `error[3000]`.
+    if (semanticAnalyzerExprIsTypeValue(self, node.child_1)) {
+        var asv_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+        semanticAnalyzerTypeMismatchReport(self, node.child_1, type_mod.TYPE_TYPE, lhs, asv_msg, false);
+        return type_mod.TYPE_VOID;
+    }
     var eff_src = errLitSrcType(self, node.child_1, lhs, rhs);
-    if (type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs)) {
+    if (semanticAnalyzerMaybeDiagVolatileDrop(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
+    if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
+    if (semanticAnalyzerMaybeDiagConstArrayDecay(self, node.child_1, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
+    // FX3 (Volume II D6 extras): value-aware f64/integer -> f32 assignment.
+    // An inexact comptime value rejects (it is otherwise assignable as an
+    // int_literal); a literal/exact value records the narrowing. A runtime
+    // numeric source rejects level-0 instead of the old warning + implicit C
+    // narrow.
+    var as_fst = semanticAnalyzerFloatNarrowStatus(self, node.child_1, eff_src, lhs);
+    var as_assign = type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs);
+    if (!as_assign and semanticAnalyzerAssignArrayFieldSameType(self, node.child_0, eff_src)) {
+        as_assign = true;
+    }
+    if (as_fst == FLOAT_NARROW_REJECT) {
+        var asr_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+        semanticAnalyzerTypeMismatchReport(self, node.child_1, eff_src, lhs, asr_msg, false);
+        return type_mod.TYPE_VOID;
+    }
+    if (as_assign) {
         tryRecordCoercion(self, node.child_1, eff_src, lhs);
         var as1: []const u8 = "AS1"; pal_mod.markerWrite(as1);
         return lhs;
     }
+    if (as_fst == FLOAT_NARROW_ACCEPT) {
+        semanticAnalyzerFloatNarrowRecord(self, node.child_1, lhs);
+        return lhs;
+    }
+    if (as_fst == FLOAT_NARROW_NONE and lhs == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, eff_src)) {
+        var asn_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+        semanticAnalyzerTypeMismatchReport(self, node.child_1, eff_src, lhs, asn_msg, false);
+        return type_mod.TYPE_VOID;
+    }
     var as2: []const u8 = "AS2"; pal_mod.markerWrite(as2);
     if (lhs != type_mod.TYPE_VOID) {
-            var sp = node.span_start;
-            var ep = sp + @intCast(u32, node.span_len);
-            var tma_msg: []const u8 = "type mismatch in assignment — internal type representations differ; generated code may be incorrect";
-            var sk = self.registry.types_items[@intCast(usize, eff_src)].kind;
-            var tk = self.registry.types_items[@intCast(usize, lhs)].kind;
-            var level: u8 = 1;
-            if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
-                var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, eff_src)].payload_idx)];
-                var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, lhs)].payload_idx)];
-                if (eu_src.error_set == eu_tgt.error_set) {
-                    level = 0;
-                }
-            }
-            var di = diag_mod.diagnosticCollectorAdd(self.diag, level, @intCast(u16, 3000),
-                self.source_file_id, sp, ep, tma_msg);
-            _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
-            _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
+            var tma_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+            semanticAnalyzerReportTypeMismatchDeep(self, node_idx, eff_src, lhs, tma_msg);
     }
     return type_mod.TYPE_VOID;
+}
+
+// FA-a fix round 1 (D3): shared reporter for a `switch` without an `else`
+// prong. The zero-prong early returns in `semanticAnalyzerResolveSwitchExpr`
+// (`payload == 0` and `prongs_n == 0`) previously escaped the end-of-function
+// gate, so `switch (x) {}` was accepted and (in value position) read the
+// poisoned result temp. Level 0 at the switch node's span, deduped per node.
+fn semanticAnalyzerReportSwitchWithoutElse(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var swe_msg: []const u8 = "switch must have an 'else' prong";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3068_SWITCH_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), swe_msg);
+}
+
+// FX4 (Volume II D11 extras): one invalid-prong reject, level-0
+// `error[3071]` (deduped per case-item node; rc 2 / 0 `.c`). `foreign` 1 is a
+// qualifier that denotes a known type other than the switch condition's
+// enum/tagged-union type (`B.x` on an `A` switch) with the span on the
+// qualifier; `foreign` 0 is an unknown member (`Shape.bogus` / `.bogus`) with
+// the span on the member. `note_type_id` selects the Zig-style related span
+// (`union declared here` / `enum declared here`). No suppression is applied to
+// the pre-existing unbound-capture `error[20]` cascade.
+fn semanticAnalyzerReportSwitchCaseQualifier(self: *SemanticAnalyzer, node_idx: u32, span_node_idx: u32, name_id: u32, note_type_id: u32, foreign: u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var span_node = ast_mod.astStoreNodeAt(self.store, span_node_idx);
+    var sp = span_node.span_start;
+    var ep = sp + @intCast(u32, span_node.span_len);
+    var msg: []const u8 = "";
+    if (foreign != @intCast(u8, 0)) {
+        var fmsg: []const u8 = "type mismatch in switch case item -- case item type may not be compatible with the switch condition type";
+        msg = fmsg;
+    } else {
+        var cond_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+        var m1: []const u8 = "no field or member function named '";
+        var m2: []const u8 = "' in union type";
+        if (cond_ty.kind == type_mod.TypeKind.enum_type) { var m2e: []const u8 = "' in enum type"; m2 = m2e; }
+        var uk_name = interner_mod.stringInternerGet(self.interner, name_id);
+        var parts: [3][]const u8 = [3][]const u8{ m1, uk_name, m2 };
+        msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 3));
+    }
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3071_SWITCH_CASE_QUALIFIER)), self.source_file_id, sp, ep, msg);
+    var note: []const u8 = "union declared here";
+    if (note_type_id != @intCast(u32, 0) and @intCast(usize, note_type_id) < self.registry.types_len) {
+        if (self.registry.types_items[@intCast(usize, note_type_id)].kind == type_mod.TypeKind.enum_type) { var ne: []const u8 = "enum declared here"; note = ne; }
+    }
+    var decl_node: u32 = @intCast(u32, 0);
+    var decl_file: u32 = @intCast(u32, 0);
+    if (semanticAnalyzerFindTypeDecl(self, note_type_id, &decl_node, &decl_file)) {
+        var dn = ast_mod.astStoreNodeAt(self.store, decl_node);
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, di, decl_file, dn.span_start, dn.span_start + @intCast(u32, dn.span_len), note);
+    }
+}
+
+// FE (D11): a container-qualified switch prong (`Shape.circle`, `Color.red`,
+// `shapes.Shape.circle`) parses as a `field_access`, not an `enum_literal`, so
+// it never reached `semanticAnalyzerResolveEnumLiteral` and left no
+// `enum_value_table` entry; the payload-capture binding below then found no
+// entry, registered no local, and every use of the capture rejected
+// `error[20]`. Resolve the member name against the switch condition's type
+// exactly like the shorthand (tagged-union field index / enum member value) so
+// qualified prongs bind identically.
+// FX4 (D11 extras): qualify first, then verify the member. A qualifier that
+// resolves to a KNOWN enum/tagged-union type other than the condition's is a
+// foreign qualifier and rejects 3071 before the member walk (Zig's
+// mismatch-wins order, e.g. `B.z` on an `A` switch reports the mismatch, not
+// the missing member). A qualifier that resolves to a MODULE namespace
+// (`helper.LOMEM`, FX1's const-item shape) is not an FX4 prong at all: it is
+// left to lowering's const-item resolution. A same-type qualifier whose
+// member does not exist (`Shape.bogus`) rejects 3071. Conservative fallback:
+// a qualifier whose identity cannot be established (0 / void / undefined --
+// its own diagnostic already fired) or whose kind is neither enum/tagged-union
+// nor module is NOT rejected as foreign; the member walk still runs.
+fn semanticAnalyzerResolveSwitchCaseMember(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    if (self.current_switch_cond_tu == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var name_id = ast_mod.astStoreNodePayload(self.store, node_idx);
+    if (node.child_0 != @intCast(u32, 0)) {
+        var q_tid = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (q_tid != @intCast(u32, 0) and q_tid != type_mod.TYPE_VOID and q_tid != type_mod.TYPE_UNDEFINED) {
+            if (@intCast(usize, q_tid) < self.registry.types_len) {
+                var q_kind = self.registry.types_items[@intCast(usize, q_tid)].kind;
+                if (q_kind == type_mod.TypeKind.module_type) {
+                    return type_mod.TYPE_VOID;
+                }
+                if (q_tid != self.current_switch_cond_tu and
+                    (q_kind == type_mod.TypeKind.enum_type or q_kind == type_mod.TypeKind.tagged_union_type)) {
+                    semanticAnalyzerReportSwitchCaseQualifier(self, node_idx, node.child_0, @intCast(u32, 0), q_tid, @intCast(u8, 1));
+                    return type_mod.TYPE_VOID;
+                }
+            }
+        }
+    }
+    var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+    if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
+        var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
+        var fstart: usize = @intCast(usize, tp.fields_start);
+        var fcount: usize = @intCast(usize, tp.fields_count);
+        var fi: usize = 0;
+        while (fi < fcount) : (fi += 1) {
+            var fe = self.registry.fe_items[fstart + fi];
+            if (fe.name_id == name_id) {
+                semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, fi), self.current_switch_cond_tu);
+                return self.current_switch_cond_tu;
+            }
+        }
+    } else if (tu_ty.kind == type_mod.TypeKind.enum_type) {
+        var enp = self.registry.en_items[@intCast(usize, tu_ty.payload_idx)];
+        var estart: usize = @intCast(usize, enp.members_start);
+        var ecount: usize = @intCast(usize, enp.members_count);
+        var emi: usize = 0;
+        while (emi < ecount) : (emi += 1) {
+            var member = self.registry.em_items[estart + emi];
+            if (member.name_id == name_id) {
+                semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, member.value & @intCast(u64, 0xFFFFFFFF)), self.current_switch_cond_tu);
+                return self.current_switch_cond_tu;
+            }
+        }
+    }
+    semanticAnalyzerReportSwitchCaseQualifier(self, node_idx, node_idx, name_id, self.current_switch_cond_tu, @intCast(u8, 0));
+    return type_mod.TYPE_VOID;
+}
+
+// F1: a negative literal / named-constant case item (or range endpoint) is
+// rejected when the switch condition is a concrete unsigned integer type,
+// matching Zig's `type '<T>' cannot represent integer value '<v>'` wording.
+// The check also runs for `bool` conditions (a negative integer item is not a
+// valid bool value); signed integers, the untyped integer-literal type, and
+// enum/tagged-union conditions are not validated here.
+fn semanticAnalyzerCheckUnsignedCaseItem(self: *SemanticAnalyzer, item_idx: u32, cond_tid: u32) void {
+    if (item_idx == @intCast(u32, 0)) return;
+    var item = ast_mod.astStoreNodeAt(self.store, item_idx);
+    if (item.kind == AstKind.range_inclusive or item.kind == AstKind.range_exclusive) {
+        if (semanticAnalyzerReportUnsignedNegativeCaseItem(self, item_idx, item.child_0, cond_tid)) return;
+        _ = semanticAnalyzerReportUnsignedNegativeCaseItem(self, item_idx, item.child_1, cond_tid);
+        return;
+    }
+    _ = semanticAnalyzerReportUnsignedNegativeCaseItem(self, item_idx, item_idx, cond_tid);
+}
+
+fn semanticAnalyzerReportUnsignedNegativeCaseItem(self: *SemanticAnalyzer, mark_node: u32, value_node: u32, cond_tid: u32) bool {
+    if (value_node == @intCast(u32, 0)) return false;
+    var ce = semaComptimeEvalInit(self);
+    var ci: ce_mod.ComptimeInt = undefined;
+    if (!semanticAnalyzerComptimeIntValue(self, &ce, value_node, &ci)) return false;
+    if (!ci.neg or ce_mod.ciIsZero(ci)) return false;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return true;
+    var num_buf: [24]u8 = undefined;
+    var num_text = semanticAnalyzerComptimeIntText(ci, num_buf[0..]);
+    var ty_text = semanticAnalyzerIntrospectionTypeLabel(self, cond_tid);
+    var p0: []const u8 = "type '";
+    var p1: []const u8 = "' cannot represent integer value '";
+    var p2: []const u8 = "'";
+    var parts: [5][]const u8 = [5][]const u8{ p0, ty_text, p1, num_text, p2 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 5));
+    var sp: u32 = @intCast(u32, 0);
+    var ep: u32 = @intCast(u32, 0);
+    semanticAnalyzerCaseItemValueSpan(self, value_node, &sp, &ep);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, sp, ep, msg);
+    return true;
+}
+
+// The parser's `negate` node spans only the `-` token, so extend it to the
+// operand's end to match Zig's two-character `-1` caret.
+fn semanticAnalyzerCaseItemValueSpan(self: *SemanticAnalyzer, value_node: u32, sp_out: *u32, ep_out: *u32) void {
+    var vn = ast_mod.astStoreNodeAt(self.store, value_node);
+    var sp = vn.span_start;
+    var ep = vn.span_start + @intCast(u32, vn.span_len);
+    if (vn.kind == AstKind.negate and vn.child_0 != @intCast(u32, 0)) {
+        var op = ast_mod.astStoreNodeAt(self.store, vn.child_0);
+        var ope = op.span_start + @intCast(u32, op.span_len);
+        if (ope > ep) ep = ope;
+    }
+    sp_out.* = sp;
+    ep_out.* = ep;
 }
 
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
@@ -1299,11 +4960,18 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var swu_im: []const u8 = "SWI:n"; pal_mod.markerWriteInt(swu_im, node_idx); var swu_pm: []const u8 = "SWI:p"; pal_mod.markerWriteInt(swu_pm, @intCast(u32, ast_mod.astStoreNodePayloadPacked(self.store, node_idx, node.kind) & @intCast(u64, 0xFFFFFFFF)));
     var swi_dm: []const u8 = "SWI:d"; pal_mod.markerWriteInt(swi_dm, self.switch_depth);
-    if (ast_mod.astStoreNodePayload(self.store, node_idx) == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    if (ast_mod.astStoreNodePayload(self.store, node_idx) == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
     self.current_switch_cond_tu = @intCast(u32, 0);
+    self.switch_is_tag = @intCast(u8, 0);
     var cond_es: u32 = @intCast(u32, 0);
-    if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
+    var cond_tag_tu = semanticAnalyzerTagAccessUnion(self, node.child_0);
+    if (cond_tag_tu != @intCast(u32, 0)) {
+        // FX16-F (A+): `switch (x.tag)` resolves member prongs against the
+        // base union; the condition VALUE stays the u32 tag.
+        self.current_switch_cond_tu = cond_tag_tu;
+        self.switch_is_tag = @intCast(u8, 1);
+    } else if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
         var cond_ty = self.registry.types_items[@intCast(usize, cond_type)];
         if (cond_ty.kind == type_mod.TypeKind.tagged_union_type or
             cond_ty.kind == type_mod.TypeKind.enum_type) {
@@ -1320,44 +4988,183 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             var sweu_nl: []const u8 = "\n"; pal_mod.markerWrite(sweu_nl);
         }
     }
-    var prongs = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-    if (prongs.len == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); self.switch_is_tag = @intCast(u8, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    // T4 (spec §4): the conditional-`@import` idiom — `switch (@isWindows())
+    // { true => @import("a.zig"), else => @import("b.zig") }`. When EVERY prong
+    // body is an `import_expr` the switch is a comptime module selection, never
+    // a runtime value: with a comptime-known condition (T3's table-backed
+    // probe, target-correct through `phase_ComptimeEvaluation`) only the LIVE
+    // prong is analyzed (the Zig untaken-arm rule), its module type is the
+    // switch's type, and the untaken bodies are stamped `TYPE_NORETURN` (the
+    // same sema/lowering coherence stamp as the `if` fold). A not-comptime-known
+    // condition keeps the pre-T4 `void` result (runtime-selected imports are
+    // out of scope) and analyzes nothing — the arms cannot unify to a module.
+    if (semanticAnalyzerSwitchIsImportIdiom(self, node_idx)) {
+        var t4_sw_has_else: u8 = @intCast(u8, 0);
+        var t4_sw_he_i: usize = 0;
+        while (t4_sw_he_i < prongs_n) : (t4_sw_he_i += 1) {
+            var t4_he_sp = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_sw_he_i)));
+            if ((t4_he_sp.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { t4_sw_has_else = @intCast(u8, 1); break; }
+        }
+        if (t4_sw_has_else == @intCast(u8, 0)) { semanticAnalyzerReportSwitchWithoutElse(self, node_idx); }
+        var t4_sw_cv_opt = semanticAnalyzerCondComptimeBool(self, node.child_0);
+        if (t4_sw_cv_opt == null) {
+            // D3 fix: same evaluator fallback as the alias typing path — a
+            // selector like `switch (1 == 1)` has no fold-table entry.
+            var t4_sw_ce0 = semaComptimeEvalInit(self);
+            t4_sw_ce0.host_is_windows = self.module_reg.target_is_windows;
+            if (ce_mod.comptimeEvalEvaluate(&t4_sw_ce0, node.child_0)) |t4_sw_sv0| {
+                if (t4_sw_sv0.kind == ce_mod.KIND_BOOL) {
+                    t4_sw_cv_opt = !ce_mod.ciIsZero(t4_sw_sv0.v);
+                }
+            }
+        }
+        if (t4_sw_cv_opt) |t4_sw_cv| {
+            // D3 fix: one shared selector with the deferred import resolver so
+            // evaluated case labels drive BOTH registration and typing. A
+            // non-decisive selection (range/undecidable label) leaves the
+            // switch `void` rather than typing the wrong module.
+            var t4_sw_ce = semaComptimeEvalInit(self);
+            t4_sw_ce.host_is_windows = self.module_reg.target_is_windows;
+            var t4_sw_selv = ce_mod.ComptimeVal{ .v = if (t4_sw_cv) ce_mod.ciFromU64(@intCast(u64, 1)) else ce_mod.ciZeroInt(), .kind = ce_mod.KIND_BOOL, .float_bits = @intCast(u64, 0) };
+            var t4_sw_sel = import_resolver.importSwitchSelectProng(self.store, &t4_sw_ce, node_idx, t4_sw_selv);
+            var t4_sw_live: u32 = @intCast(u32, 0);
+            if (t4_sw_sel.decisive) { t4_sw_live = t4_sw_sel.prong; }
+            if (t4_sw_live != @intCast(u32, 0)) {
+                var t4_sw_pj: usize = 0;
+                while (t4_sw_pj < prongs_n) : (t4_sw_pj += 1) {
+                    var t4_dp_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_sw_pj));
+                    var t4_dp = ast_mod.astStoreNodeAt(self.store, t4_dp_i);
+                    if (t4_dp.child_0 != @intCast(u32, 0) and t4_dp_i != t4_sw_live) {
+                        rtt_mod.resolvedTypeTableSet(self.type_table, t4_dp.child_0, type_mod.TYPE_NORETURN);
+                    }
+                }
+                var t4_live_body = ast_mod.astStoreNodeAt(self.store, t4_sw_live).child_0;
+                var t4_sw_bt: u32 = type_mod.TYPE_VOID;
+                if (t4_live_body != @intCast(u32, 0)) { t4_sw_bt = semanticAnalyzerResolveExpr(self, t4_live_body); }
+                self.current_switch_cond_tu = @intCast(u32, 0);
+                self.switch_is_tag = @intCast(u8, 0);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, t4_sw_bt);
+                self.switch_depth -= @intCast(u32, 1);
+                return t4_sw_bt;
+            }
+        }
+        self.current_switch_cond_tu = @intCast(u32, 0);
+        self.switch_is_tag = @intCast(u8, 0);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        self.switch_depth -= @intCast(u32, 1);
+        return type_mod.TYPE_VOID;
+    }
+    var cond_unsigned: u8 = @intCast(u8, 0);
+    if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID and cond_type != type_mod.TYPE_UNDEFINED and @intCast(usize, cond_type) < self.registry.types_len) {
+        var cond_kind = self.registry.types_items[@intCast(usize, cond_type)].kind;
+        if (type_mod.typeKindIsUnsignedIntBase(cond_kind) != @intCast(u8, 0)) cond_unsigned = @intCast(u8, 1);
+        if (cond_kind == type_mod.TypeKind.bool_type) cond_unsigned = @intCast(u8, 1);
+    }
     var unified: u32 = @intCast(u32, 0);
     var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
     var i: usize = 0;
     var sw_base: usize = self.stmt_work_len;
+    // FX10 (Volume II D6 extras follow-up): a switch VALUE expression at an
+    // f32 expectation site is typed value-aware AFTER the prong loop (mirror
+    // of `semanticAnalyzerResolveIfExpr`'s FX9 branch); the value-blind
+    // unification below is skipped for it so no widening is recorded on a
+    // prong. `unified` then only carries the first value prong's type as the
+    // no-type fallback for a rejecting switch.
+    var sw_f32_site: u8 = @intCast(u8, 0);
+    if (topExpectedTypeKind(self) == EXPECTED_KIND_KNOWN and topExpectedTypeId(self) == type_mod.TYPE_F32) { sw_f32_site = @intCast(u8, 1); }
+    // A `switch` in bare expression-statement position has no value consumer:
+    // heterogeneous prong types are irrelevant (Task F4 statement-switch
+    // behavior), so the D15 mismatch reject/poison applies only to value
+    // switches (typed nodes and inferred bindings).
+    var sw_is_stmt_expr: u8 = @intCast(u8, 0);
+    if (self.stmt_expr_node != @intCast(u32, 0) and semaUnwrapParens(self, node_idx) == self.stmt_expr_node) { sw_is_stmt_expr = @intCast(u8, 1); }
+    // D15 (Task 9k): for a value-result switch with a known non-f32 expected
+    // type, every prong must be assignable to it (expected-type-first,
+    // mirroring the if-expression path). Absent/void expected type falls
+    // through to peer resolution; statement switches keep their behavior.
+    var sw_exp: u32 = @intCast(u32, 0);
+    var sw_undetermined: u8 = @intCast(u8, 0);
+    var sw_exp_kind = topExpectedTypeKind(self);
+    if (sw_exp_kind == EXPECTED_KIND_KNOWN) {
+        sw_exp = topExpectedTypeId(self);
+        if (sw_exp == type_mod.TYPE_VOID or sw_exp == type_mod.TYPE_UNDEFINED) sw_exp = @intCast(u32, 0);
+    } else if (sw_exp_kind == EXPECTED_KIND_UNDETERMINED) {
+        sw_undetermined = @intCast(u8, 1);
+    }
 
-    while (i < prongs.len) : (i += 1) {
-        var prong = ast_mod.astStoreNodeAt(self.store, prongs[i]);
+    while (i < @intCast(usize, prongs_n)) : (i += 1) {
+        var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
+        var prong = ast_mod.astStoreNodeAt(self.store, prong_i);
+        // Task 7D: scope this prong's payload capture to the prong.
+        var prong_scope_saved: u32 = @intCast(u32, self.local_decl_count);
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
             var swec_msg: []const u8 = "switch else-prong capture (else => |capture|) is not supported";
             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3001), self.source_file_id, node_idx, node_idx, swec_msg);
             return type_mod.TYPE_VOID;
         }
-        var pct = self.current_switch_cond_tu; var pp = ast_mod.astStoreNodePayload(self.store, prongs[i]);
+        var pct = self.current_switch_cond_tu; var pp = ast_mod.astStoreNodePayload(self.store, prong_i);
         var pct_m2: []const u8 = "PCT:C"; pal_mod.markerWriteInt(pct_m2, pct);
-        var ppt_m: []const u8 = "PCT:P"; pal_mod.markerWriteInt(ppt_m, @intCast(u32, ast_mod.astStoreNodePayloadPacked(self.store, prongs[i], prong.kind) & @intCast(u64, 0xFFFFFFFF)));
-        if (self.current_switch_cond_tu != @intCast(u32, 0) and ast_mod.astStoreNodePayload(self.store, prongs[i]) != @intCast(u32, 0)) {
-            var case_ec = ast_mod.astStoreNodeExtraChildren(self.store, prongs[i]);
+        var ppt_m: []const u8 = "PCT:P"; pal_mod.markerWriteInt(ppt_m, @intCast(u32, ast_mod.astStoreNodePayloadPacked(self.store, prong_i, prong.kind) & @intCast(u64, 0xFFFFFFFF)));
+        if (cond_unsigned != @intCast(u8, 0) and ast_mod.astStoreNodePayload(self.store, prong_i) != @intCast(u32, 0)) {
+            var uc_n = ast_mod.astStoreNodeExtraChildCount(self.store, prong_i);
+            var uci: usize = 0;
+            while (uci < @intCast(usize, uc_n)) : (uci += 1) {
+                var uc_item = ast_mod.astStoreNodeExtraChildAt(self.store, prong_i, @intCast(u32, uci));
+                semanticAnalyzerCheckUnsignedCaseItem(self, uc_item, cond_type);
+            }
+        }
+        if (self.current_switch_cond_tu != @intCast(u32, 0) and ast_mod.astStoreNodePayload(self.store, prong_i) != @intCast(u32, 0)) {
+            var case_n = ast_mod.astStoreNodeExtraChildCount(self.store, prong_i);
             var ci: usize = 0;
-            while (ci < case_ec.len) : (ci += 1) {
-                var case_node = ast_mod.astStoreNodeAt(self.store, case_ec[ci]);
+            while (ci < @intCast(usize, case_n)) : (ci += 1) {
+                var case_i = ast_mod.astStoreNodeExtraChildAt(self.store, prong_i, @intCast(u32, ci));
+                var case_node = ast_mod.astStoreNodeAt(self.store, case_i);
                 var cc_val = @intCast(u32, @enumToInt(case_node.kind));
                 var cc_m: []const u8 = "CC:K"; pal_mod.markerWriteInt(cc_m, cc_val);
                     if (case_node.kind == AstKind.enum_literal) {
-                        _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
+                        // FX4 (D11 extras): mark case-ITEM context so the
+                        // resolver reports an unknown shorthand member (3071)
+                        // instead of falling through to the expected-type path.
+                        self.switch_case_item = @intCast(u8, 1);
+                        _ = semanticAnalyzerResolveEnumLiteral(self, case_i);
+                        self.switch_case_item = @intCast(u8, 0);
                     } else if (case_node.kind == AstKind.undefined_literal) {
-                        _ = semanticAnalyzerResolveEnumLiteral(self, @intCast(u32, case_ec[ci]));
+                        _ = semanticAnalyzerResolveEnumLiteral(self, case_i);
+                    } else if (case_node.kind == AstKind.field_access) {
+                        _ = semanticAnalyzerResolveSwitchCaseMember(self, case_i);
                     }
             }
             if ((prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                 var cap_name = prong.child_1;
+                // Task 7D: a switch-prong capture may not shadow/redeclare an
+                // enclosing binding or a container-level decl. The capture name
+                // is a payload; locate its token after the prong's `=>`.
+                var sp_ns: u32 = prong.span_start;
+                var sp_ne: u32 = prong.span_start + @intCast(u32, prong.span_len);
+                if (prong.child_0 != @intCast(u32, 0)) {
+                    var sp_body = ast_mod.astStoreNodeAt(self.store, prong.child_0);
+                    var sp_arrow = diag_mod.diagnosticCollectorFindFirstByte(self.diag, self.source_file_id, prong.span_start, sp_body.span_start, '>');
+                    if (sp_arrow != @intCast(u32, 4294967295)) {
+                        _ = diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, sp_arrow, sp_body.span_start, &sp_ns, &sp_ne);
+                    }
+                }
+                semanticAnalyzerCheckLocalShadow(self, cap_name, sp_ns, sp_ne);
+                if (self.switch_is_tag != @intCast(u8, 0)) {
+                    // FX16-F (A1): a `.tag` switch capture binds a u32 COPY of
+                    // the tag ordinal (lowering's non-tagged-union capture arm
+                    // already emits exactly this copy).
+                    var tct_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+                    var tct_tp = self.registry.tu_items[@intCast(usize, tct_ty.payload_idx)];
+                    registerLocalDecl(self, cap_name, tct_tp.tag_type, sp_ns, sp_ne);
+                } else {
                 var sce_pm: []const u8 = "SCE:p"; pal_mod.markerWriteInt(sce_pm, cap_name);
-                var sce_lm: []const u8 = "SCE:l"; pal_mod.markerWriteInt(sce_lm, @intCast(u32, case_ec.len));
-                if (case_ec.len > @intCast(usize, 0)) {
-                    var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, case_ec[0]);
+                var sce_lm: []const u8 = "SCE:l"; pal_mod.markerWriteInt(sce_lm, @intCast(u32, case_n));
+                if (@intCast(usize, case_n) > @intCast(usize, 0)) {
+                    var ev = hash_mod.u32ToU32MapGet(self.enum_value_table, ast_mod.astStoreNodeExtraChildAt(self.store, prong_i, @intCast(u32, 0)));
                     if (ev) |idx| {
                         var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
                         if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
@@ -1367,27 +5174,32 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                             var scfe_tm: []const u8 = "SCFE:t"; pal_mod.markerWriteInt(scfe_tm, fe.type_id);
                             var scfe_km: []const u8 = "SCFE:k"; pal_mod.markerWriteInt(scfe_km, @intCast(u32, @enumToInt(tu_ty.kind)));
                             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-                            self.local_decl_names[self.local_decl_count] = cap_name;
-                            self.local_decl_types[self.local_decl_count] = fe.type_id;
-                            self.local_decl_count += @intCast(usize, 1);
+                            semanticAnalyzerRegisterLocalDeclWrite(self, cap_name, fe.type_id, @intCast(u8, 1), sp_ns, sp_ne);
                             var scax_m: []const u8 = "SCAX:N"; pal_mod.markerWriteInt(scax_m, cap_name);
                             var scax_tm: []const u8 = "SCAX:T"; pal_mod.markerWriteInt(scax_tm, fe.type_id);
+                        } else if (tu_ty.kind == type_mod.TypeKind.enum_type) {
+                            // FE (D11): Zig-style enum-operand capture. An enum
+                            // prong's capture binds the switch operand's value
+                            // (the enum type), exactly like the shorthand.
+                            registerLocalDecl(self, cap_name, self.current_switch_cond_tu, sp_ns, sp_ne);
                         }
                     }
                 } else {
                     var sce_rm: []const u8 = "SCE:R"; pal_mod.markerWriteInt(sce_rm, cap_name);
-                    registerLocalDecl(self, cap_name, self.current_switch_cond_tu);
+                    registerLocalDecl(self, cap_name, self.current_switch_cond_tu, sp_ns, sp_ne);
+                }
                 }
             }
         }
-        if (cond_es != @intCast(u32, 0) and ast_mod.astStoreNodePayload(self.store, prongs[i]) != @intCast(u32, 0)) {
-            var es_case_ec = ast_mod.astStoreNodeExtraChildren(self.store, prongs[i]);
+        if (cond_es != @intCast(u32, 0) and ast_mod.astStoreNodePayload(self.store, prong_i) != @intCast(u32, 0)) {
+            var es_case_n = ast_mod.astStoreNodeExtraChildCount(self.store, prong_i);
             var es_ci: usize = 0;
-            while (es_ci < es_case_ec.len) : (es_ci += 1) {
-                var es_case_node = ast_mod.astStoreNodeAt(self.store, es_case_ec[es_ci]);
+            while (es_ci < @intCast(usize, es_case_n)) : (es_ci += 1) {
+                var es_case_i = ast_mod.astStoreNodeExtraChildAt(self.store, prong_i, @intCast(u32, es_ci));
+                var es_case_node = ast_mod.astStoreNodeAt(self.store, es_case_i);
                 if (es_case_node.kind == AstKind.error_literal) {
-                    pushExpectedType(self, cond_es);
-                    _ = semanticAnalyzerResolveExpr(self, @intCast(u32, es_case_ec[es_ci]));
+                    pushExpectedTypeKnown(self, cond_es);
+                    _ = semanticAnalyzerResolveExpr(self, es_case_i);
                     popExpectedType(self);
                 }
             }
@@ -1397,18 +5209,62 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
          if (pbd_b0 != @intCast(u32, 0)) { var pbd_n = ast_mod.astStoreNodeAt(self.store, pbd_b0); pbd_k0 = @intCast(u32, @enumToInt(pbd_n.kind)); }
          var pbd_nm: []const u8 = "PBD:N"; pal_mod.markerWriteInt(pbd_nm, pbd_b0);
          var pbd_km: []const u8 = "PBD:K"; pal_mod.markerWriteInt(pbd_km, pbd_k0);
-          var saved_tu = self.current_switch_cond_tu;
-          var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
-         self.current_switch_cond_tu = saved_tu;
+           var saved_tu = self.current_switch_cond_tu;
+           var saved_tag = self.switch_is_tag;
+           var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
+          self.current_switch_cond_tu = saved_tu;
+          self.switch_is_tag = saved_tag;
         while (self.stmt_work_len > sw_base) {
             self.stmt_work_len -= @intCast(usize, 1);
             var wi = self.stmt_work_items[self.stmt_work_len];
-            if (wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, wi); }
+            if (!semanticAnalyzerPopScopeMarker(self, wi) and wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, wi); }
         }
+        // Task 7D: pop the prong's payload capture.
+        self.local_decl_count = @intCast(usize, prong_scope_saved);
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWriteInt(pct_m, prong.child_0); var pct_bm: []const u8 = "PCT:b"; pal_mod.markerWriteInt(pct_bm, bt); var pct_fm: []const u8 = "PCT:f"; pal_mod.markerWriteInt(pct_fm, self.current_fn_return);
         var swpb_im: []const u8 = "SWPB:i"; pal_mod.markerWriteInt(swpb_im, @intCast(u32, i)); var swpb_tm: []const u8 = "SWPB:t"; pal_mod.markerWriteInt(swpb_tm, bt);
         if (bt == type_mod.TYPE_NORETURN) {}
-        else if (unified == @intCast(u32, 0)) { unified = bt; unified_node = prong.child_0; }
+        else if (sw_exp != @intCast(u32, 0) and sw_f32_site == @intCast(u8, 0) and sw_is_stmt_expr == @intCast(u8, 0)) {
+            var sw_arm_str = isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, bt, sw_exp));
+            var sw_arm_ok = bt == sw_exp or bt == type_mod.TYPE_NORETURN or sw_arm_str
+                or type_mod.typeRegistryIsAssignable(self.registry, bt, sw_exp);
+            if (sw_arm_ok) {
+                if (bt != sw_exp) tryRecordCoercion(self, prong.child_0, bt, sw_exp);
+                if (unified != type_mod.TYPE_NORETURN) {
+                    unified = sw_exp;
+                    unified_node = prong.child_0;
+                }
+            } else {
+                if (unified != type_mod.TYPE_NORETURN and diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                    var sw_mix_tm_msg: []const u8 = "type mismatch in switch expression -- prong type may not be compatible with the switch expression type";
+                    semanticAnalyzerTypeMismatchReport(self, prong.child_0, bt, sw_exp, sw_mix_tm_msg, false);
+                }
+                unified = type_mod.TYPE_NORETURN;
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN);
+            }
+        }
+        else if (sw_f32_site != @intCast(u8, 0)) {
+            if (unified == @intCast(u32, 0) and bt != @intCast(u32, 0)) { unified = bt; unified_node = prong.child_0; }
+        }
+        else if (unified == @intCast(u32, 0)) {
+            var sw_exp0: u32 = @intCast(u32, 0);
+            if (topExpectedTypeKind(self) == EXPECTED_KIND_KNOWN) {
+                sw_exp0 = topExpectedTypeId(self);
+                if (sw_exp0 == type_mod.TYPE_VOID or sw_exp0 == type_mod.TYPE_UNDEFINED) sw_exp0 = @intCast(u32, 0);
+            }
+            var sw_peer: u32 = sw_exp0;
+            if (prong.child_0 != @intCast(u32, 0) and
+                ast_mod.astStoreNodeAt(self.store, prong.child_0).kind == AstKind.string_literal and
+                (sw_exp0 == @intCast(u32, 0) or sw_exp0 == type_mod.TYPE_VOID)) {
+                sw_peer = type_mod.typeRegistryGetOrCreateSlice(self.registry, type_mod.TYPE_U8, true);
+            }
+            if (sw_peer != @intCast(u32, 0) and sw_peer != type_mod.TYPE_VOID and
+                isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, bt, sw_peer))) {
+                unified = sw_peer;
+                unified_node = prong.child_0;
+                tryRecordCoercion(self, prong.child_0, bt, sw_peer);
+            } else { unified = bt; unified_node = prong.child_0; }
+        }
         else if (bt == unified) {}
         else if (coercion_mod.classifyCoercion(self.registry, bt, unified) != coercion_mod.CoercionKind.none) {
             tryRecordCoercion(self, prong.child_0, bt, unified);
@@ -1418,27 +5274,125 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             unified = bt;
             unified_node = prong.child_0;
         }
+        // `undefined` coerces to every prong type, so it is neutral in both
+        // directions: neither a later `undefined` prong nor an `undefined`
+        // first prong may poison the switch or report a mismatch.
+        else if (bt == type_mod.TYPE_UNDEFINED) {}
+        else if (unified == type_mod.TYPE_UNDEFINED) {}
 
         else {
             var unum: u32 = @intCast(u32, 0);
             if (type_mod.typeRegistryIsNumeric(self.registry, bt)) { unum = @intCast(u32, 1); }
             if (unified == type_mod.TYPE_INT_LIT and unum != @intCast(u32, 0)) { unified = bt; }
-            else { var mix_pm: []const u8 = "MIX:P"; pal_mod.markerWriteInt(mix_pm, @intCast(u32, i)); var mix_um: []const u8 = "MIX:U"; pal_mod.markerWriteInt(mix_um, unified); var mix_bm: []const u8 = "MIX:B"; pal_mod.markerWriteInt(mix_bm, bt); var mix_tk_m: []const u8 = "MIX:tk"; var mix_tk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, bt)].kind)); pal_mod.markerWriteInt(mix_tk_m, mix_tk_v); var mix_uk_m: []const u8 = "MIX:uk"; var mix_uk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, unified)].kind)); pal_mod.markerWriteInt(mix_uk_m, mix_uk_v); var mix_cd_m: []const u8 = "MIX:cd"; pal_mod.markerWriteInt(mix_cd_m, node.child_0); var mix_b_m: []const u8 = "MIX:b"; pal_mod.markerWriteInt(mix_b_m, prong.child_0); var mix_pf_m: []const u8 = "MIX:pf"; pal_mod.markerWriteInt(mix_pf_m, @intCast(u32, prong.flags)); var mix_pn_m: []const u8 = "MIX:pn"; pal_mod.markerWriteInt(mix_pn_m, @intCast(u32, prongs.len)); var mix_ni_m: []const u8 = "MIX:ni"; pal_mod.markerWriteInt(mix_ni_m, node_idx); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); continue; }
+            else { var mix_pm: []const u8 = "MIX:P"; pal_mod.markerWriteInt(mix_pm, @intCast(u32, i)); var mix_um: []const u8 = "MIX:U"; pal_mod.markerWriteInt(mix_um, unified); var mix_bm: []const u8 = "MIX:B"; pal_mod.markerWriteInt(mix_bm, bt); var mix_tk_m: []const u8 = "MIX:tk"; var mix_tk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, bt)].kind)); pal_mod.markerWriteInt(mix_tk_m, mix_tk_v); var mix_uk_m: []const u8 = "MIX:uk"; var mix_uk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, unified)].kind)); pal_mod.markerWriteInt(mix_uk_m, mix_uk_v); var mix_cd_m: []const u8 = "MIX:cd"; pal_mod.markerWriteInt(mix_cd_m, node.child_0); var mix_b_m: []const u8 = "MIX:b"; pal_mod.markerWriteInt(mix_b_m, prong.child_0); var mix_pf_m: []const u8 = "MIX:pf"; pal_mod.markerWriteInt(mix_pf_m, @intCast(u32, prong.flags)); var mix_pn_m: []const u8 = "MIX:pn"; pal_mod.markerWriteInt(mix_pn_m, @intCast(u32, prongs_n)); var mix_ni_m: []const u8 = "MIX:ni"; pal_mod.markerWriteInt(mix_ni_m, node_idx); if (sw_is_stmt_expr != @intCast(u8, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); } else { if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) { var mix_tm_msg: []const u8 = "type mismatch in switch expression -- prong type may not be compatible with the switch expression type"; semanticAnalyzerTypeMismatchReport(self, prong.child_0, bt, unified, mix_tm_msg, false); } unified = type_mod.TYPE_NORETURN; rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN); } continue; }
         }
     }
 
-    self.current_switch_cond_tu = @intCast(u32, 0);
-    if (has_else == @intCast(u8, 0)) {
+    if (sw_undetermined != @intCast(u8, 0) and sw_is_stmt_expr == @intCast(u8, 0)) {
+        var sw_ud_msg: []const u8 = "type mismatch in switch expression -- prong type may not be compatible with the switch expression type";
+        semanticAnalyzerReportUnresolvedExpected(self, node_idx, sw_ud_msg);
+        unified = type_mod.TYPE_NORETURN;
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN);
     }
-    if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_VOID;
+    self.current_switch_cond_tu = @intCast(u32, 0);
+    self.switch_is_tag = @intCast(u8, 0);
+    if (has_else == @intCast(u8, 0)) {
+        // FA-a (D3): §3.1 makes the `else` prong mandatory in ALL switch
+        // expressions (value and statement position). Deduped per switch node;
+        // the zero-prong early returns above use the same reporter.
+        semanticAnalyzerReportSwitchWithoutElse(self, node_idx);
+    }
+    // FX10 (Volume II D6 extras follow-up): value-aware result typing for a
+    // switch VALUE expression at an f32 expectation site, mirroring
+    // `semanticAnalyzerResolveIfExpr`'s FX9 branch. Every prong value is
+    // classified with the FX3 value rules (`semanticAnalyzerFloatNarrowArmStatus`):
+    // all acceptable => the switch types f32 and each non-f32 prong records its
+    // narrowing (lowering materialises it like the `if` path); otherwise the
+    // switch takes the offending prong's type so the enclosing f32 site's FX3
+    // status rejects with the offending arm's source/target notes. The switch
+    // OPERAND's comptime-ness is deliberately NOT used to skip prong
+    // classification (the `if` condition reachability has no switch analog
+    // here), so the documented `switch (0)` over-reject is unchanged.
+    if (sw_f32_site != @intCast(u8, 0)) {
+        var sw_all_ok: u8 = @intCast(u8, 1);
+        var sw_off_ty: u32 = @intCast(u32, 0);
+        var si: usize = 0;
+        while (si < @intCast(usize, prongs_n)) : (si += 1) {
+            var si_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, si));
+            var si_prong = ast_mod.astStoreNodeAt(self.store, si_i);
+            var si_st = semanticAnalyzerFloatNarrowArmStatus(self, si_prong.child_0, @intCast(u32, 1));
+            if (si_st != FLOAT_NARROW_ACCEPT) {
+                sw_all_ok = @intCast(u8, 0);
+                if (rtt_mod.resolvedTypeTableGet(self.type_table, si_prong.child_0)) |si_t| { sw_off_ty = si_t; }
+                break;
+            }
+        }
+        if (sw_all_ok != @intCast(u8, 0)) {
+            si = 0;
+            while (si < @intCast(usize, prongs_n)) : (si += 1) {
+                var sw_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, si));
+                var sw_prong = ast_mod.astStoreNodeAt(self.store, sw_i);
+                var sw_bt: u32 = @intCast(u32, 0);
+                if (rtt_mod.resolvedTypeTableGet(self.type_table, sw_prong.child_0)) |sw_t| { sw_bt = sw_t; }
+                if (sw_bt != @intCast(u32, 0) and sw_bt != type_mod.TYPE_F32) {
+                    tryRecordCoercion(self, sw_prong.child_0, sw_bt, type_mod.TYPE_F32);
+                }
+            }
+            var swu2_m: []const u8 = "SWU:n"; pal_mod.markerWriteInt(swu2_m, node_idx); var swu2_tm: []const u8 = "SWU:t"; pal_mod.markerWriteInt(swu2_tm, type_mod.TYPE_F32);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_F32);
+            self.switch_depth -= @intCast(u32, 1);
+            return type_mod.TYPE_F32;
+        }
+        if (sw_off_ty != @intCast(u32, 0)) { unified = sw_off_ty; }
+    }
+    if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_NORETURN;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);
     var swu_m: []const u8 = "SWU:n"; pal_mod.markerWriteInt(swu_m, node_idx); var swu_tm: []const u8 = "SWU:t"; pal_mod.markerWriteInt(swu_tm, unified);
     self.switch_depth -= @intCast(u32, 1);
     return unified;
 }
 
+// Task 2b (iterative lowering, D9 mitigation): recursion-depth safety net,
+// mirroring `lowerExprDepthGuard` (sf/src/lower.zig:2174). Increments
+// `expr_guard`; above `SEMA_GUARD_MAX` it reports a clean level-0 diagnostic
+// (ERR_3077_EXPR_NESTING_LIMIT, a limit-family reject -- NOT the
+// ERR_9001_ICE used by `lowerExprDepthGuard` and the emitter's own
+// nesting-depth cap) and stops recursing. Never fires on legal input in the
+// final state; it only converts the D9 deep-expression segfault into an
+// honest error.
+fn semanticAnalyzerResolveExprDepthGuard(self: *SemanticAnalyzer) void {
+    self.expr_guard += @intCast(u32, 1);
+    if (self.expr_guard > SEMA_GUARD_MAX) {
+        var msg: []const u8 = "expression nesting too deep for semantic analysis (limit 130)";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3077_EXPR_NESTING_LIMIT)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+    }
+}
+
+// Task 2b (iterative lowering, D9 mitigation): the guarded driver around
+// `semanticAnalyzerResolveExprImpl`, mirroring `lowerExprDriver`'s
+// guard/decrement bracket (sf/src/lower.zig:2240). The body has multiple
+// `return` points and 86 recursive call sites in mutual recursion with its
+// helpers; funneling every exit through here pairs `expr_guard` exactly once
+// per entry. On a trip the wrapper returns TYPE_VOID WITHOUT recursing (the
+// body is never entered) and still decrements -- unlike `lowerExprDriver`,
+// which leaves the guard elevated for its loop to observe, the sema callers
+// (86 sites) cannot observe the counter, so an elevated guard would poison
+// every later expression in the file (each would trip and be left unanalyzed).
+// TYPE_VOID is the resolver's established no-information fallback (the
+// arithmetic/bitwise helpers propagate it silently -- no diagnostic cascade).
 pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var result: u32;
+    semanticAnalyzerResolveExprDepthGuard(self);
+    if (self.expr_guard > SEMA_GUARD_MAX) {
+        self.expr_guard -= @intCast(u32, 1);
+        return type_mod.TYPE_VOID;
+    }
+    var r: u32 = semanticAnalyzerResolveExprImpl(self, node_idx);
+    self.expr_guard -= @intCast(u32, 1);
+    return r;
+}
+
+fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var result: u32 = @intCast(u32, 0);
     result = @intCast(u32, 0);
     if (node_idx == @intCast(u32, 0)) return result;
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -1463,13 +5417,33 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.unreachable_expr) {
         result = type_mod.TYPE_NORETURN;
     } else if (node.kind == AstKind.string_literal) {
-        result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_C_CHAR, true);
+        // Track4 S22 F-M4 (A1 root cause): a string literal is typed
+        // `*const [N]u8` — the length is IN the type (the emitter supplies the
+        // trailing NUL). A literal AND a variable bound to one therefore carry
+        // the REAL length through `array_to_slice`; a bare `*const u8` has no
+        // length and is no longer silently coerced to a length-1 slice.
+        var sl_len: u32 = @intCast(u32, 0);
+        var sl_payload = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (@intCast(usize, sl_payload) < self.store.string_values.len) {
+            var sl_str_id = self.store.string_values.items[@intCast(usize, sl_payload)];
+            var sl_bytes = interner_mod.stringInternerGet(self.registry.interner, sl_str_id);
+            sl_len = @intCast(u32, sl_bytes.len);
+        }
+        var sl_arr = type_mod.typeRegistryGetOrCreateArray(self.registry, type_mod.TYPE_U8, sl_len);
+        result = type_mod.typeRegistryGetOrCreatePtr(self.registry, sl_arr, true);
     } else if (node.kind == AstKind.enum_literal) {
         result = semanticAnalyzerResolveEnumLiteral(self, node_idx);
     } else if (node.kind == AstKind.error_literal) {
         if (self.expected_type_stack_len > 0) {
-            var top = self.expected_type_stack_items[self.expected_type_stack_len - 1];
-            if (top != 0) {
+            var el_kind2 = topExpectedTypeKind(self);
+            if (el_kind2 == EXPECTED_KIND_UNDETERMINED) {
+                var elt_ud_msg: []const u8 = "cannot resolve expected type for error literal";
+                semanticAnalyzerReportUnresolvedExpected(self, node_idx, elt_ud_msg);
+                result = type_mod.TYPE_VOID;
+            } else {
+            var top: u32 = @intCast(u32, 0);
+            if (el_kind2 == EXPECTED_KIND_KNOWN) { top = topExpectedTypeId(self); }
+            if (top != 0 and top != type_mod.TYPE_UNDEFINED and top != type_mod.TYPE_VOID) {
                 var es: u32 = 0;
                 var tty = self.registry.types_items[@intCast(usize, top)];
                 var eff_top: u32 = top;
@@ -1485,8 +5459,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     var ord = type_mod.typeRegistryErrorSetMemberIndex(self.registry, es, name_id);
                     if (ord != @intCast(u32, 0xFFFFFFFF)) {
                         var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.error_code_registry, name_id);
-                        hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, reg_code);
-                        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, es);
+                        semanticAnalyzerSetEnumValue(self, node_idx, reg_code, es);
                         result = es;
                     } else {
                         var sp = node.span_start;
@@ -1500,6 +5473,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     result = eff_top;
                 } else { result = type_mod.TYPE_VOID; }
             } else { result = type_mod.TYPE_VOID; }
+            }
         } else { result = type_mod.TYPE_VOID; }
     } else if (node.kind == AstKind.ident_expr) {
         result = semanticAnalyzerResolveIdent(self, self.module_id, ast_mod.astStoreIdentifier(self.store, node_idx), node_idx);
@@ -1526,7 +5500,66 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.address_of) {
         var base = semanticAnalyzerResolveExpr(self, node.child_0);
         if (base != @intCast(u32, 0) and base != type_mod.TYPE_VOID) {
-            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, base, false);
+            var base_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            if (base_node.kind == AstKind.field_access) {
+                var fa_base_t = semanticAnalyzerResolveExpr(self, base_node.child_0);
+                var st = fa_base_t;
+                if (fa_base_t != @intCast(u32, 0) and fa_base_t != type_mod.TYPE_VOID) {
+                    var st_ty = self.registry.types_items[@intCast(usize, st)];
+                    if (st_ty.kind == type_mod.TypeKind.ptr_type or st_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                        st = self.registry.ptr_items[@intCast(usize, st_ty.payload_idx)].base;
+                        st_ty = self.registry.types_items[@intCast(usize, st)];
+                    }
+                    if (st_ty.kind == type_mod.TypeKind.struct_type) {
+                        var sd = semanticAnalyzerPackedStructDeclForType(self, st);
+                        if (sd != @intCast(u32, 0)) {
+                            var aps = node.span_start;
+                            var ape = aps + @intCast(u32, node.span_len);
+                            var aof_msg: []const u8 = "cannot take the address of a field of a packed struct; packed fields have no address";
+                            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, aps, ape, aof_msg);
+                        }
+                    }
+                    if (st_ty.kind == type_mod.TypeKind.packed_union_type) {
+                        var apu_s = node.span_start;
+                        var apu_e = apu_s + @intCast(u32, node.span_len);
+                        var aou_msg: []const u8 = "cannot take the address of a field of a packed union; packed fields have no address";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, apu_s, apu_e, aou_msg);
+                    }
+                }
+            }
+            // FX6 (Volume II const-decay holes): the address of a
+            // const-bound ARRAY is `*const [N]T` — the array type itself
+            // carries no flag, so `&arr` must consult the binding's
+            // constness. Deliberately array-only (a non-array operand keeps
+            // the pre-existing pointer spelling) so the FX6 blast radius
+            // stays inside the const-array-decay family.
+            // FX11 extends the const case to a const aggregate's array FIELD:
+            // the field access resolved through the decay as an element
+            // pointer, so the declared array type is recovered from the
+            // access and the pointer is rebuilt as `*[N]T` / `*const [N]T`
+            // (the constness comes from the l-value path). Non-array
+            // operands keep the pre-existing pointer spelling.
+            var ao_const: bool = false;
+            var ao_base: u32 = base;
+            if (self.registry.types_items[@intCast(usize, base)].kind == type_mod.TypeKind.array_type) {
+                ao_const = semanticAnalyzerIsLValueConst(self, node.child_0);
+            } else {
+                var ao_node = semaUnwrapParensBounded(self, node.child_0, @intCast(u32, 8));
+                var ao_an = ast_mod.astStoreNodeAt(self.store, ao_node);
+                var ao_fat = semanticAnalyzerFieldAccessArrayType(self, ao_node);
+                if (ao_fat != @intCast(u32, 0)) {
+                    ao_base = ao_fat;
+                    ao_const = semanticAnalyzerIsLValueConst(self, ao_node);
+                } else if (ao_an.kind == AstKind.index_access) {
+                    // `&const_field_array[i]`: the element address of a const
+                    // aggregate's array field is `*const elem`.
+                    var ao_elem_base = ao_an.child_0;
+                    if (semanticAnalyzerFieldAccessArrayType(self, ao_elem_base) != @intCast(u32, 0) and semanticAnalyzerIsLValueConst(self, ao_elem_base)) {
+                        ao_const = true;
+                    }
+                }
+            }
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, ao_base, ao_const);
         } else {
             result = type_mod.TYPE_VOID;
         }
@@ -1537,25 +5570,31 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), ub_msg);
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.builtin_call) {
-        var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
-            if (ec.len >= @intCast(usize, 1)) {
-                var so_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
-                _ = type_resolver.resolveTypeExprFull(&so_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
-            }
+        var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
+        var cva: []const u8 = "@cVaArg";
+        var ba_res = semanticAnalyzerCheckBuiltinArity(self, node_idx, node.child_0, ec_n);
+        if (ba_res == @intCast(u8, 1)) {
+            result = type_mod.TYPE_UNDEFINED;
+        } else if (ba_res == @intCast(u8, 2)) {
+            result = type_mod.TYPE_INT_LIT;
+        } else if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
+            semanticAnalyzerCheckIntrospectionBuiltin(self, node_idx);
             result = type_mod.TYPE_INT_LIT;
         } else if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
-            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 1);
             result = type_mod.TYPE_USIZE;
         } else if (node.child_0 == self.ptr_from_int_name_id) {
             var pfi_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
-            if (ec.len >= @intCast(usize, 1)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-                var pfi_top = topExpectedType(self);
-                if (pfi_top != @intCast(u32, 0) and pfi_top != type_mod.TYPE_UNDEFINED) {
-                    var pfi_ty = self.registry.types_items[@intCast(usize, pfi_top)];
-                    if (pfi_ty.kind == type_mod.TypeKind.ptr_type or pfi_ty.kind == type_mod.TypeKind.many_ptr_type) {
-                        pfi_res = pfi_top;
+            if (ec_n >= @intCast(usize, 1)) {
+                _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+                var pfi_kind = topExpectedTypeKind(self);
+                if (pfi_kind == EXPECTED_KIND_KNOWN) {
+                    var pfi_top = topExpectedTypeId(self);
+                    if (pfi_top != @intCast(u32, 0) and pfi_top != type_mod.TYPE_UNDEFINED and pfi_top != type_mod.TYPE_VOID) {
+                        var pfi_ty = self.registry.types_items[@intCast(usize, pfi_top)];
+                        if (pfi_ty.kind == type_mod.TypeKind.ptr_type or pfi_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                            pfi_res = pfi_top;
+                        }
                     }
                 }
             }
@@ -1566,22 +5605,22 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             result = pfi_res;
         } else if (node.child_0 == self.field_parent_ptr_name_id) {
             var fpp_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
-            if (ec.len >= @intCast(usize, 3)) {
-                var fpp_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
-                var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+            if (ec_n >= @intCast(usize, 3)) {
+                var fpp_env = semanticAnalyzerTypeEnv(self, self.module_id);
+                var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                 if (fpp_outer != type_mod.TYPE_UNDEFINED) {
-                    _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 2)]);
+                    _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 2)));
                     fpp_res = type_mod.typeRegistryGetOrCreatePtr(self.registry, fpp_outer, false);
                 }
             }
             result = fpp_res;
         } else if (node.child_0 == self.bitcast_name_id) {
             var bc_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
-            if (ec.len >= @intCast(usize, 2)) {
-                var bc_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
-                var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+            if (ec_n >= @intCast(usize, 2)) {
+                var bc_env = semanticAnalyzerTypeEnv(self, self.module_id);
+                var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                 if (bc_dst != type_mod.TYPE_UNDEFINED) {
-                    var bc_src = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
+                    var bc_src = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
                     var bc_ok: u8 = @intCast(u8, 0);
                     if (bc_src != type_mod.TYPE_UNDEFINED and type_mod.typeRegistryIsInteger(self.registry, bc_dst) and type_mod.typeRegistryIsInteger(self.registry, bc_src)) {
                         var bc_dty = self.registry.types_items[@intCast(usize, bc_dst)];
@@ -1601,41 +5640,95 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         } else if (node.child_0 == self.getchar_name_id) {
             result = type_mod.TYPE_U8;
         } else if (node.child_0 == self.exit_name_id) {
-            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 1);
+            result = type_mod.TYPE_NORETURN;
+        } else if (node.child_0 == self.panic_name_id) {
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 1);
             result = type_mod.TYPE_NORETURN;
         } else if (node.child_0 == self.putchar_name_id or node.child_0 == self.sleep_ms_name_id) {
-            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 1);
             result = type_mod.TYPE_VOID;
         } else if (node.child_0 == self.stdout_write_name_id or node.child_0 == self.stderr_write_name_id) {
-            if (ec.len >= @intCast(usize, 2)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-            } else if (ec.len >= @intCast(usize, 1)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-            }
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 2);
             result = type_mod.TYPE_VOID;
         } else if (node.child_0 == self.is_windows_name_id) {
             result = type_mod.TYPE_BOOL;
         } else if (node.child_0 == self.console_clear_name_id) {
             result = type_mod.TYPE_VOID;
         } else if (node.child_0 == self.console_gotoxy_name_id or node.child_0 == self.console_set_color_name_id) {
-            if (ec.len >= @intCast(usize, 2)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-            } else if (ec.len >= @intCast(usize, 1)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
-            }
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 2);
             result = type_mod.TYPE_VOID;
-        } else if (ec.len >= @intCast(usize, 2)) {
-            if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
-                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
-                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
-                result = type_resolver.resolveTypeExprFull(&tre_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
-            } else {
-                result = semanticAnalyzerResolveExpr(self, ec[0]);
+        } else if (node.child_0 == self.async_frame_size_name_id) {
+            if (ec_n >= @intCast(usize, 1)) {
+                _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+                var afs_susp: bool = false;
+                if (async_analysis.resolveCalleeKey(self.store, self.symbols, self.module_id, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)))) |afs_k| {
+                    var afs_mid: u32 = @intCast(u32, afs_k >> @intCast(u64, 32));
+                    var afs_nid: u32 = @intCast(u32, afs_k & @intCast(u64, 0xFFFFFFFF));
+                    if (async_analysis.asyncIsSuspending(self.suspending_fns, afs_mid, afs_nid)) afs_susp = true;
+                }
+                if (!afs_susp) {
+                    var e3046: []const u8 = "@asyncFrameSize argument must be a known suspending function";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+                        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3046_ASYNC_FRAME_SIZE_INVALID)),
+                        self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), e3046);
+                }
             }
-        } else if (ec.len >= @intCast(usize, 1)) {
-            result = semanticAnalyzerResolveExpr(self, ec[0]);
+            result = type_mod.TYPE_INT_LIT;
+        } else if (node.child_0 == self.async_init_name_id) {
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 4);
+            semanticAnalyzerDiagAsyncBuiltinInDefer(self, node_idx);
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
+        } else if (node.child_0 == self.async_resume_name_id) {
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 2);
+            semanticAnalyzerDiagAsyncBuiltinInDefer(self, node_idx);
+            result = type_mod.typeRegistryGetOrCreateOptional(self.registry, type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false));
+        } else if (node.child_0 == self.async_suspend_name_id) {
+            semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 1);
+            semanticAnalyzerDiagAsyncBuiltinInDefer(self, node_idx);
+            semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
+        } else if (semanticAnalyzerBuiltinNameEq(self, node.child_0, cva)) {
+            if (ec_n >= @intCast(usize, 2)) {
+                _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+                var cva_env = semanticAnalyzerTypeEnv(self, self.module_id);
+                result = type_resolver.resolveTypeExprFull(&cva_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)), @intCast(u32, 0));
+            } else { result = type_mod.TYPE_VOID; }
+        } else if (ec_n >= @intCast(usize, 2)) {
+            if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
+                var tv_src = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
+                var tre_env = semanticAnalyzerTypeEnv(self, self.module_id);
+                result = type_resolver.resolveTypeExprFull(&tre_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
+                if (node.child_0 == self.ptrcast_name_id and tv_src != type_mod.TYPE_UNDEFINED and result != type_mod.TYPE_UNDEFINED) {
+                    if (semanticAnalyzerPtrCastDropsVolatile(self, tv_src, result)) {
+                        var pcq_msg: []const u8 = "@ptrCast cannot discard the 'volatile' qualifier; use @volatileCast to remove it";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pcq_msg);
+                    }
+                }
+                if (node.child_0 == self.volatilecast_name_id and tv_src != type_mod.TYPE_UNDEFINED and result != type_mod.TYPE_UNDEFINED) {
+                    if (!semanticAnalyzerVolatileCastValid(self, tv_src, result)) {
+                        var vcc_msg: []const u8 = "@volatileCast requires a volatile pointer source and a destination with the same base type";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vcc_msg);
+                    }
+                }
+            } else {
+                result = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+            }
+        } else if (node.child_0 == self.enumtoint_name_id and ec_n >= @intCast(usize, 1)) {
+            var e2i_arg = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+            var e2i_res = e2i_arg;
+            if (e2i_arg != type_mod.TYPE_UNDEFINED) {
+                var e2i_ty = self.registry.types_items[@intCast(usize, e2i_arg)];
+                if (e2i_ty.kind == type_mod.TypeKind.enum_type) {
+                    var e2i_bt = type_mod.typeRegistryEnumBackingType(self.registry, e2i_arg);
+                    if (e2i_bt != type_mod.TYPE_UNDEFINED and @intCast(usize, e2i_bt) < self.registry.types_len) {
+                        e2i_res = e2i_bt;
+                    }
+                }
+            }
+            result = e2i_res;
+        } else if (ec_n >= @intCast(usize, 1)) {
+            result = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         } else {
             result = type_mod.TYPE_VOID;
         }
@@ -1657,41 +5750,61 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, result);
             }
         }
+        // Task 7D: scope the catch payload to the handler. Save the depth
+        // before the payload is registered, then restore after resolving the
+        // handler SYNCHRONOUSLY (a deferred pop marker could truncate a later
+        // sibling decl — see Task 7B §9.2).
+        var catch_scope_saved: u32 = @intCast(u32, self.local_decl_count);
         if (node.child_2 != 0) {
             var capture_node = ast_mod.astStoreNodeAt(self.store, node.child_2);
+            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node.child_2), capture_node.span_start, capture_node.span_start + @intCast(u32, capture_node.span_len));
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-            self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node.child_2);
-            self.local_decl_types[self.local_decl_count] = if (catch_es != 0) catch_es else type_mod.TYPE_I32;
-            self.local_decl_count += @intCast(usize, 1);
+            semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node.child_2), if (catch_es != 0) catch_es else type_mod.TYPE_I32, @intCast(u8, 1), capture_node.span_start, capture_node.span_start + @intCast(u32, capture_node.span_len));
         }
         if (node.child_1 != @intCast(u32, 0)) {
             if (catch_es != 0) {
                 var child1 = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 if (child1.kind == AstKind.error_literal) {
-                    pushExpectedType(self, catch_es);
+                    pushExpectedTypeKnown(self, catch_es);
                     _ = semanticAnalyzerResolveExpr(self, node.child_1);
                     popExpectedType(self);
                 }
             }
-            semanticAnalyzerStmtWorkPush(self, node.child_1);
+            semanticAnalyzerResolveStmtIter(self, node.child_1);
         }
+        self.local_decl_count = @intCast(usize, catch_scope_saved);
     } else if (node.kind == AstKind.orelse_expr) {
+        // Task 7D: scope any locals introduced by the orelse body (an
+        // expression-position block is not walked by the stmt scope machinery).
+        var orelse_scope_saved: u32 = @intCast(u32, self.local_decl_count);
         result = semanticAnalyzerResolveOrelseExpr(self, node_idx);
+        self.local_decl_count = @intCast(usize, orelse_scope_saved);
      } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {
          result = type_mod.TYPE_VOID;
      } else if (node.kind == AstKind.var_decl or node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt or node.kind == AstKind.labeled_stmt) {
          semanticAnalyzerResolveStmtIter(self, node_idx);
          result = type_mod.TYPE_VOID;
       } else if (node.kind == AstKind.if_expr) {
+          // Task 7D: scope the if-expression capture (and branch locals) to the
+          // expression.
+          var ifexpr_scope_saved: u32 = @intCast(u32, self.local_decl_count);
           result = semanticAnalyzerResolveIfExpr(self, node_idx);
+          self.local_decl_count = @intCast(usize, ifexpr_scope_saved);
       } else if (node.kind == AstKind.if_stmt) {
+          var ies_scope_saved: u32 = @intCast(u32, self.local_decl_count);
           semanticAnalyzerResolveIfHeader(self, node_idx);
           if (node.child_2 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_2); }
+          semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | ies_scope_saved);
           if (node.child_1 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
           result = type_mod.TYPE_VOID;
        } else if (node.kind == AstKind.for_stmt) {
            semanticAnalyzerResolveForHeader(self, node_idx);
            if (node.child_1 != 0) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
+           // Task 3 (Phase 2.5, review fix round 1): fall through so the
+           // STX/A4/STB marker writes stay byte-identical; the generic tail's
+           // type-table write is guarded below because the mutable-capture
+           // channel already wrote the pointer type at this same `for_stmt` node
+           // and the node has no value consumer.
            result = type_mod.TYPE_VOID;
       } else if (node.kind == AstKind.while_stmt) {
           semanticAnalyzerResolveWhileHeader(self, node_idx);
@@ -1712,6 +5825,12 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.fn_type or node.kind == AstKind.struct_decl or
                node.kind == AstKind.enum_decl or node.kind == AstKind.union_decl or
                node.kind == AstKind.error_set_decl) {
+        if (node.kind == AstKind.struct_decl) {
+            semanticAnalyzerGatePackedFields(self, node_idx, self.module_id);
+        }
+        if (node.kind == AstKind.enum_decl) {
+            semanticAnalyzerCheckLocalEnum(self, node_idx);
+        }
         result = type_mod.TYPE_TYPE;
     } else if (node.kind == AstKind.paren_expr) {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -1719,25 +5838,51 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         resolveReturnStmt(self, node_idx);
         result = type_mod.TYPE_NORETURN;
     } else if (node.kind == AstKind.expr_stmt) {
+        // A9-F: expose the bare-statement expression to the orelse reject so
+        // `maybe(-1) orelse {};` (a statement-position expression whose value
+        // is dropped, DCE-clean) stays accepted (parked tolerance), while a
+        // value-position fallback rejects.
+        var ee_saved: u32 = self.stmt_expr_node;
+        self.stmt_expr_node = semaUnwrapParens(self, node.child_0);
         result = semanticAnalyzerResolveExpr(self, node.child_0);
+        self.stmt_expr_node = ee_saved;
     } else if (node.kind == AstKind.import_expr) {
-        result = type_mod.TYPE_VOID;
+        // T4 (spec §4): an `@import` in EXPRESSION position resolves to the
+        // imported module's `module_type` (the conditional-`@import` idiom
+        // `const impl = if (@isWindows()) @import("a.zig") else @import("b.zig");`
+        // binds one comptime-selected module value). A path that failed to
+        // resolve keeps the pre-T4 `void` result so no cascading diagnostics
+        // follow error[3048].
+        var t4_imp_t = semanticAnalyzerImportExprModuleType(self, node_idx);
+        result = if (t4_imp_t != @intCast(u32, 0)) t4_imp_t else type_mod.TYPE_VOID;
      } else if (node.kind == AstKind.block) {
+          // Task 7D: an expression-position block scopes its own locals. Resolve
+          // the trailing expression, then drain any statement work it deferred
+          // (e.g. an `if`/`while`/`for` used as the block's last child) BEFORE
+          // restoring, so the block's locals are still in scope for that work.
+          var eblk_scope_saved: u32 = @intCast(u32, self.local_decl_count);
+          var eblk_work_base: usize = self.stmt_work_len;
           var eblk_m: []const u8 = "EBLK:N"; pal_mod.markerWriteInt(eblk_m, node_idx);
-          var children = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-          var eblk_cm: []const u8 = "EBLK:C"; pal_mod.markerWriteInt(eblk_cm, @intCast(u32, children.len));
-         if (children.len > @intCast(usize, 0)) {
+          var children_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+          var eblk_cm: []const u8 = "EBLK:C"; pal_mod.markerWriteInt(eblk_cm, @intCast(u32, children_n));
+         if (children_n > @intCast(usize, 0)) {
              var si: usize = 0;
-             while (si < children.len - @intCast(usize, 1)) : (si += 1) {
+             while (si < @intCast(usize, children_n) - 1) : (si += 1) {
                  var eblk_sm: []const u8 = "EBLK:S"; pal_mod.markerWriteInt(eblk_sm, @intCast(u32, si));
-                 var eblk_cm2: []const u8 = "EBLK:D"; pal_mod.markerWriteInt(eblk_cm2, children[si]);
-                 semanticAnalyzerResolveStmtIter(self, children[si]);
+                 var eblk_cm2: []const u8 = "EBLK:D"; pal_mod.markerWriteInt(eblk_cm2, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, si)));
+                 semanticAnalyzerResolveStmtIter(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, si)));
             }
-            var last_child = children[children.len - @intCast(usize, 1)];
+            var last_child = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, children_n) - @intCast(u32, 1));
             result = semanticAnalyzerResolveExpr(self, last_child);
         } else {
             result = type_mod.TYPE_VOID;
         }
+        while (self.stmt_work_len > eblk_work_base) {
+            self.stmt_work_len -= @intCast(usize, 1);
+            var eblk_wi = self.stmt_work_items[self.stmt_work_len];
+            if (!semanticAnalyzerPopScopeMarker(self, eblk_wi) and eblk_wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, eblk_wi); }
+        }
+        self.local_decl_count = @intCast(usize, eblk_scope_saved);
     } else if (node.kind == AstKind.add or node.kind == AstKind.sub or
                node.kind == AstKind.mul or node.kind == AstKind.div or
                node.kind == AstKind.mod_op or node.kind == AstKind.wrap_add or
@@ -1755,20 +5900,20 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.cmp_lt or node.kind == AstKind.cmp_le or
                node.kind == AstKind.cmp_gt or node.kind == AstKind.cmp_ge) {
         result = semanticAnalyzerResolveComparison(self, node_idx, node.kind);
-    } else if (node.kind == AstKind.plain_assign or
-               node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
-               node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
-               node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or
-               node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
-               node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign or
-               node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or
-               node.kind == AstKind.wrap_mul_assign or node.kind == AstKind.sat_add_assign or
-               node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or
-               node.kind == AstKind.sat_shl_assign) {
+    } else if (semaIsAssignmentKind(node.kind)) {
         result = semanticAnalyzerResolveAssign(self, node_idx);
     } else if (node.kind == AstKind.range_exclusive or node.kind == AstKind.range_inclusive) {
+        // Task 11P: the start/end operands are part of the range's semantics. Resolve
+        // them so an operand whose lowering needs the resolved-type table (e.g. `.len`
+        // on a struct/union array or slice field) lowers correctly; without this the
+        // end silently lowered to 0 and the start form failed at gcc.
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (node.child_1 != 0) { _ = semanticAnalyzerResolveExpr(self, node.child_1); }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
         return type_mod.TYPE_U32;
+     } else if (node.kind == AstKind.for_index_range) {
+        // Task 11 (Part II): `for (iterable, start..end)` explicit index range.
+        return semanticAnalyzerResolveForIndexRange(self, node_idx);
      } else {
           var st_m: []const u8 = "ST:N"; pal_mod.markerWriteInt(st_m, node_idx);
           var st_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var st_km: []const u8 = "ST:K"; pal_mod.markerWriteInt(st_km, st_kv);
@@ -1783,85 +5928,419 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
      var a4_nm: []const u8 = "A4:N"; pal_mod.markerWriteInt(a4_nm, node_idx);
      var a4_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var a4_km: []const u8 = "A4:K"; pal_mod.markerWriteInt(a4_km, a4_kv);
      var a4_rm: []const u8 = "A4:R"; pal_mod.markerWriteInt(a4_rm, result);
-     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
+     // Task 3 (Phase 2.5, review fix round 1): the mutable-capture channel writes
+     // the ptr type at a `for_stmt` node inside `ResolveForHeader`; do not let
+     // the generic tail clobber it with TYPE_VOID. For every other kind this is
+     // the single writer, unchanged.
+     if (node.kind != AstKind.for_stmt) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result); }
      var stb_nm: []const u8 = "STB:N"; pal_mod.markerWriteInt(stb_nm, node_idx);
      var stb_rm: []const u8 = "STB:R"; pal_mod.markerWriteInt(stb_rm, result);
     return result;
 }
 
+// FX17 (Volume II ch16): unwrap a function-pointer VALUE type to its `fn_type`.
+// A bare `fn(...)` type expression resolves to `*fn(...)`, and a
+// `?fn(...)`/`?*fn(...)` value adds one optional layer; both are unwrapped.
+// Returns 0 when the type is not a (possibly optional) function pointer.
+fn semanticAnalyzerFnValueType(self: *SemanticAnalyzer, tid: u32) u32 {
+    if (tid == @intCast(u32, 0)) return @intCast(u32, 0);
+    if (@intCast(usize, tid) >= self.registry.types_len) return @intCast(u32, 0);
+    var cur: u32 = tid;
+    var t = self.registry.types_items[@intCast(usize, cur)];
+    if (t.kind == type_mod.TypeKind.optional_type) {
+        cur = self.registry.opt_items[@intCast(usize, t.payload_idx)].payload;
+        if (@intCast(usize, cur) >= self.registry.types_len) return @intCast(u32, 0);
+        t = self.registry.types_items[@intCast(usize, cur)];
+    }
+    if (t.kind == type_mod.TypeKind.fn_type) return cur;
+    if (t.kind == type_mod.TypeKind.ptr_type) {
+        var b = self.registry.ptr_items[@intCast(usize, t.payload_idx)].base;
+        if (@intCast(usize, b) < self.registry.types_len and
+            self.registry.types_items[@intCast(usize, b)].kind == type_mod.TypeKind.fn_type) return b;
+    }
+    return @intCast(u32, 0);
+}
+
+// FX17: two (possibly optional) function-pointer values whose signatures
+// differ in return type, parameter count/types, variadic flag or calling
+// convention. `false` when either side is not a function pointer or when the
+// signatures match (callers must already know the pair is not assignable).
+fn semanticAnalyzerFnPtrSigMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32) bool {
+    if (src == tgt) return false;
+    var sf = semanticAnalyzerFnValueType(self, src);
+    if (sf == @intCast(u32, 0)) return false;
+    var tf = semanticAnalyzerFnValueType(self, tgt);
+    if (tf == @intCast(u32, 0)) return false;
+    if (sf == tf) return false;
+    var sfp = self.registry.fn_items[@intCast(usize, self.registry.types_items[@intCast(usize, sf)].payload_idx)];
+    var tfp = self.registry.fn_items[@intCast(usize, self.registry.types_items[@intCast(usize, tf)].payload_idx)];
+    if (sfp.return_type != tfp.return_type) return true;
+    if (sfp.params_count != tfp.params_count) return true;
+    if ((sfp.flags_packed & @intCast(u8, 3)) != (tfp.flags_packed & @intCast(u8, 3))) return true;
+    var fi: u16 = @intCast(u16, 0);
+    while (fi < sfp.params_count) : (fi += 1) {
+        if (self.registry.xt_items[@intCast(usize, sfp.params_start + @as(u32, fi))] !=
+            self.registry.xt_items[@intCast(usize, tfp.params_start + @as(u32, fi))]) return true;
+    }
+    return false;
+}
+
+fn semanticAnalyzerFnPtrConvMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32) bool {
+    return semanticAnalyzerFnPtrSigMismatch(self, src, tgt);
+}
+
+// Track4 S25 Task 0q: the `(b)` invalid-Zig shapes promoted to a hard
+// `error[3000]` (real Zig rejects each): bare `*T` -> `[]T`, bare `*T` ->
+// `[*]T`, array element/length mismatch, error-set superset -> subset, and
+// enum -> integer without `@enumToInt`. Scoped to these shapes ONLY so the 48
+// `(a)` valid-Z98 cases (cleared by Task 0m) are never caught. Callers must
+// already know the pair is NOT assignable; this is the shape test alone.
+//
+// `full` now selects only the bare `*T` -> `[*]T` promotion at return/
+// call-argument (var-decl/assignment promote all five shapes). The compiler's
+// OWN source relies on that shape silently in return/argument positions via
+// the valid array->pointer `&arr[0]` idiom (spec:382), so hard-erroring it
+// there would break self-hosting; declared residual, out of Task 0q3 scope.
+// enum -> integer is promoted in ALL four contexts (Task 0q3 migrated the 7
+// self enum call-argument sites to `@intCast(u32, @enumToInt(...))`).
+fn isBShapeMismatch(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32, full: bool) bool {
+    if (src_ty == @intCast(u32, 0) or tgt_ty == @intCast(u32, 0)) return false;
+    if (@intCast(usize, src_ty) >= self.registry.types_len or @intCast(usize, tgt_ty) >= self.registry.types_len) return false;
+    var sk = self.registry.types_items[@intCast(usize, src_ty)].kind;
+    var tk = self.registry.types_items[@intCast(usize, tgt_ty)].kind;
+    if (sk == type_mod.TypeKind.ptr_type and tk == type_mod.TypeKind.slice_type) return true;
+    if (full and sk == type_mod.TypeKind.ptr_type and tk == type_mod.TypeKind.many_ptr_type) return true;
+    if (sk == type_mod.TypeKind.array_type and tk == type_mod.TypeKind.array_type) return true;
+    if (sk == type_mod.TypeKind.tuple_type and tk == type_mod.TypeKind.tuple_type) return true;
+    if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) return true;
+    if (sk == type_mod.TypeKind.enum_type and type_mod.typeRegistryIsInteger(self.registry, tgt_ty)) return true;
+    return false;
+}
+
+// D5/D10 fix round 2: extern linkage is global, so convention agreement is a
+// whole-compilation-unit check. The AST store is shared by every module, and
+// each module's root is reachable from the module registry. Within the
+// defining module the pre-Task-5 scan is preserved (any same-name fn_decl);
+// in every other module only extern fn_decls share the original C symbol (a
+// same-named local function there is a distinct, mangled symbol).
+fn semanticAnalyzerCheckFnConventionAgreement(self: *SemanticAnalyzer, def_node: u32, name_id: u32, def_conv: u8) void {
+    var mods = mr_mod.moduleRegistryGetModules(self.module_reg);
+    var mi: usize = @intCast(usize, 0);
+    while (mi < mods.len) : (mi += @intCast(usize, 1)) {
+        var root: u32 = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        var same_module = mods[mi].id == self.module_id;
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(self.store, root);
+        var di: usize = @intCast(usize, 0);
+        while (di < decls_n) : (di += @intCast(usize, 1)) {
+            var dn_idx = ast_mod.astStoreNodeExtraChildAt(self.store, root, @intCast(u32, di));
+            if (dn_idx == def_node) continue;
+            var dn = ast_mod.astStoreNodeAt(self.store, dn_idx);
+            if (dn.kind != AstKind.fn_decl) continue;
+            if (!same_module and (dn.flags & @intCast(u8, 0x04)) == @intCast(u8, 0)) continue;
+            var p = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, dn_idx))];
+            if (p.name_id != name_id) continue;
+            if (p.call_conv == def_conv) continue;
+            var msg: []const u8 = "prototype and definition calling conventions disagree";
+            var d = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), mods[mi].source_file_id, dn.span_start, dn.span_start + @intCast(u32, dn.span_len), msg);
+            var defn = ast_mod.astStoreNodeAt(self.store, def_node);
+            var note: []const u8 = "definition declared here";
+            diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, d, self.source_file_id, defn.span_start, defn.span_start + @intCast(u32, defn.span_len), note);
+            return;
+        }
+    }
+}
+
 pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32) void {
      var fb: []const u8 = "FB"; pal_mod.markerWrite(fb);
      self.local_decl_count = @intCast(usize, 0);
+     self.local_consts.count = @intCast(usize, 0);
+     self.local_types.count = @intCast(usize, 0);
      var decl = ast_mod.astStoreNodeAt(self.store, fn_decl_node);
     if (decl.kind != AstKind.fn_decl) return;
     var store = self.store;
     var proto = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, fn_decl_node))];
+    if (decl.child_0 != @intCast(u32, 0) and (decl.flags & @intCast(u8, 0x04)) != @intCast(u8, 0)) {
+        semanticAnalyzerCheckFnConventionAgreement(self, fn_decl_node, proto.name_id, proto.call_conv);
+    }
+    var vsc_tt = rtt_mod.resolvedTypeTableGet(self.type_table, fn_decl_node);
+    if (vsc_tt) |vsc_tid| {
+        if (@intCast(usize, vsc_tid) < self.registry.types_len) {
+            var vsc_ty = self.registry.types_items[@intCast(usize, vsc_tid)];
+            if (vsc_ty.kind == type_mod.TypeKind.fn_type) {
+                var vsc_fp = self.registry.fn_items[@intCast(usize, vsc_ty.payload_idx)];
+                if ((vsc_fp.flags_packed & @intCast(u8, 1)) != @intCast(u8, 0) and
+                    (vsc_fp.flags_packed & type_mod.FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+                    var vs_msg: []const u8 = "variadic functions cannot use the stdcall calling convention";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3012_VARARGS_INVALID)), self.source_file_id, decl.span_start, decl.span_start + @intCast(u32, decl.span_len), vs_msg);
+                }
+            }
+        }
+    }
     if (decl.child_0 == @intCast(u32, 0)) return;
     if (proto.params_count > @intCast(u16, 0)) {
         var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
-        var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
+        var pnodes_n = ast_mod.astStoreGetExtraChildCount(store, p_payload);
         var pi: usize = @intCast(usize, 0);
-        while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
-            var pnode = ast_mod.astStoreNodeAt(store, pnodes[pi]);
+        while (pi < @intCast(usize, pnodes_n)) : (pi += @intCast(usize, 1)) {
+            var pnode = ast_mod.astStoreNodeAt(store, ast_mod.astStoreGetExtraChildAt(store, p_payload, @intCast(u32, pi)));
             if (pnode.child_0 != @intCast(u32, 0)) {
+                // Task 7D: a parameter may not shadow/redeclare an enclosing
+                // binding, an earlier parameter, or a container-level decl.
+                semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(store, ast_mod.astStoreGetExtraChildAt(store, p_payload, @intCast(u32, pi))), pnode.span_start, pnode.span_start + @intCast(u32, pnode.span_len));
                 if (self.local_decl_count >= self.local_decl_cap) {
                     semanticAnalyzerGrowLocalDecls(self);
                 }
-                self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(store, pnodes[pi]);
-                var rtp_m: []const u8 = "RT:P"; pal_mod.markerWriteInt(rtp_m, ast_mod.astStoreNodePayload(store, pnodes[pi]));
+                var rtp_name: u32 = ast_mod.astStoreNodePayload(store, ast_mod.astStoreGetExtraChildAt(store, p_payload, @intCast(u32, pi)));
+                var rtp_m: []const u8 = "RT:P"; pal_mod.markerWriteInt(rtp_m, rtp_name);
                 var rta_m: []const u8 = "RT:A"; pal_mod.markerWriteInt(rta_m, pnode.child_0);
+                var rtp_ty: u32 = type_mod.TYPE_UNDEFINED;
                 var rt = rtt_mod.resolvedTypeTableGet(self.type_table, pnode.child_0);
                 if (rt) |t| {
                     var rth_m: []const u8 = "RT:T"; pal_mod.markerWriteInt(rth_m, t);
-                    self.local_decl_types[self.local_decl_count] = t;
+                    rtp_ty = t;
                 } else {
                     var rtm2: []const u8 = "RT:M\n"; pal_mod.markerWrite(rtm2);
-                    self.local_decl_types[self.local_decl_count] = type_mod.TYPE_UNDEFINED;
                 }
-                self.local_decl_count += @intCast(usize, 1);
+                semanticAnalyzerRegisterLocalDeclWrite(self, rtp_name, rtp_ty, @intCast(u8, 1), pnode.span_start, pnode.span_start + @intCast(u32, pnode.span_len));
             }
         }
     }
     var fn_rt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
     if (fn_rt) |frt| {
         self.current_fn_return = frt;
+    } else if (proto.return_type_node == @intCast(u32, 0)) {
+        // FX12 (Volume II ch12) hygiene: a function with no return-type
+        // annotation is `void` by construction (type_resolver's `rt_box`),
+        // not "unresolvable"; record the truthful type so `try` in it gets
+        // the non-error-union-enclosing reject.
+        self.current_fn_return = type_mod.TYPE_VOID;
+    } else {
+        // FX12 hygiene (ruled): a declared but UNRESOLVABLE return type must
+        // not let a later function inherit a stale `current_fn_return`.
+        self.current_fn_return = @intCast(u32, 0);
     }
+    self.current_fn_name = proto.name_id;
     semanticAnalyzerResolveStmt(self, decl.child_0);
+    self.current_fn_name = @intCast(u32, 0);
+    if (fnReturnRequiresValue(self, self.current_fn_return) and
+        !astTerminates(self, decl.child_0)) {
+        var mrsp = decl.span_start;
+        var mrep = mrsp + @intCast(u32, decl.span_len);
+        var mr_msg: []const u8 = "missing return: not all control paths return a value";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3003), self.source_file_id, mrsp, mrep, mr_msg);
+    }
     var evcap = self.enum_value_table.capacity; var evcnt = self.enum_value_table.count;
     var vm: []const u8 = "EVC:N"; pal_mod.markerWriteInt(vm, @intCast(u32, evcnt));
     var vcm: []const u8 = "EVC:C"; pal_mod.markerWriteInt(vcm, @intCast(u32, evcap));
 }
 
+// A7F: a function must produce a value on every path only when its result type
+// carries actual data. `void`/`noreturn`, and the void-payload forms of error
+// unions and optionals (`!void`, `?void`, `E!void`) implicitly succeed by
+// falling off the end (Zig-faithful); a bare `return;` is likewise valid there.
+fn fnReturnRequiresValue(self: *SemanticAnalyzer, ty: u32) bool {
+    if (ty == @intCast(u32, 0) or ty == type_mod.TYPE_VOID or ty == type_mod.TYPE_NORETURN) return false;
+    if (@intCast(usize, ty) >= self.registry.types_len) return false;
+    var t = self.registry.types_items[@intCast(usize, ty)];
+    if (t.kind == type_mod.TypeKind.error_union_type) {
+        var eu = self.registry.eu_items[@intCast(usize, t.payload_idx)];
+        if (eu.payload == type_mod.TYPE_VOID) return false;
+    }
+    if (t.kind == type_mod.TypeKind.optional_type) {
+        var op = self.registry.opt_items[@intCast(usize, t.payload_idx)];
+        if (op.payload == type_mod.TYPE_VOID) return false;
+    }
+    return true;
+}
+
+// A7F definitely-returns reachability predicate over the AST (block / if /
+// if-expression / switch / switch-expression / while(true) / declarations and
+// assignments whose initializer terminates). Terminators: explicit `return`,
+// plus any node whose resolved type is noreturn (`unreachable`, `@panic`, or
+// noreturn-propagating expressions). It deliberately does NOT reuse the lowering
+// `block_terminated` flag (reset at joins; unsound for this purpose).
+fn astTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.return_stmt) return true;
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |t| {
+        if (t == type_mod.TYPE_NORETURN) return true;
+    }
+    if (node.kind == AstKind.block) {
+        var ch_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < @intCast(usize, ch_n)) : (bi += 1) {
+            if (astTerminates(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, bi)))) return true;
+        }
+        return false;
+    }
+    if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
+        if (node.child_2 == @intCast(u32, 0)) return false;
+        return astTerminates(self, node.child_1) and astTerminates(self, node.child_2);
+    }
+    if (node.kind == AstKind.expr_stmt) {
+        if (node.child_0 == @intCast(u32, 0)) return false;
+        return astTerminates(self, node.child_0);
+    }
+    if (node.kind == AstKind.swt_ex) return astSwitchTerminates(self, node_idx);
+    if (node.kind == AstKind.while_stmt) return astWhileTerminates(self, node_idx);
+    if (node.kind == AstKind.var_decl) {
+        if (node.child_1 == @intCast(u32, 0)) return false;
+        return astTerminates(self, node.child_1);
+    }
+    if (semaIsAssignmentKind(node.kind)) {
+        if (node.child_1 == @intCast(u32, 0)) return false;
+        return astTerminates(self, node.child_1);
+    }
+    return false;
+}
+
+fn astSwitchTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+    if (prongs_n == @intCast(usize, 0)) return false;
+    var has_else: bool = false;
+    var pi: usize = @intCast(usize, 0);
+    while (pi < @intCast(usize, prongs_n)) : (pi += 1) {
+        var pr = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, pi)));
+        if ((pr.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = true;
+        if (!astTerminates(self, pr.child_0)) return false;
+    }
+    if (has_else) return true;
+    return astSwitchExhaustive(self, node.child_0, node_idx);
+}
+
+fn astSwitchExhaustive(self: *SemanticAnalyzer, cond_idx: u32, switch_node_idx: u32) bool {
+    var ct = rtt_mod.resolvedTypeTableGet(self.type_table, cond_idx) orelse return false;
+    if (ct == @intCast(u32, 0) or @intCast(usize, ct) >= self.registry.types_len) return false;
+    var ty = self.registry.types_items[@intCast(usize, ct)];
+    var member_count: u32 = @intCast(u32, 0);
+    if (ty.kind == type_mod.TypeKind.enum_type) {
+        member_count = @intCast(u32, self.registry.en_items[@intCast(usize, ty.payload_idx)].members_count);
+    } else if (ty.kind == type_mod.TypeKind.tagged_union_type) {
+        member_count = @intCast(u32, self.registry.tu_items[@intCast(usize, ty.payload_idx)].fields_count);
+    } else if (ty.kind == type_mod.TypeKind.error_set_type) {
+        member_count = @intCast(u32, self.registry.es_items[@intCast(usize, ty.payload_idx)].tags_count);
+    } else if (ty.kind == type_mod.TypeKind.bool_type) {
+        member_count = @intCast(u32, 2);
+    } else {
+        return false;
+    }
+    var covered: u32 = @intCast(u32, 0);
+    var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, switch_node_idx);
+    var pi: usize = @intCast(usize, 0);
+    while (pi < @intCast(usize, prongs_n)) : (pi += 1) {
+        var items_n = ast_mod.astStoreNodeExtraChildCount(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, switch_node_idx, @intCast(u32, pi)));
+        covered += @intCast(u32, items_n);
+    }
+    return covered >= member_count;
+}
+
+// A7F: `while (true) { ... }` whose condition is the literal `true` and whose
+// body terminates can never complete normally -- provided the loop has no way
+// to `break` out. Conservative on purpose: any `break` anywhere in the body
+// (even one in a nested loop that cannot target this loop) disqualifies it, so
+// the predicate never accepts a loop that can actually fall out. False
+// negatives here only mean we keep diagnosing some valid programs, never that
+// we accept an invalid one.
+fn astWhileTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.child_0 == @intCast(u32, 0) or node.child_1 == @intCast(u32, 0)) return false;
+    var cond = ast_mod.astStoreNodeAt(self.store, node.child_0);
+    if (cond.kind != AstKind.bool_literal) return false;
+    if ((cond.flags & @intCast(u8, 1)) == @intCast(u8, 0)) return false;
+    if (astSubtreeHasBreak(self, node.child_1)) return false;
+    return astTerminates(self, node.child_1);
+}
+
+fn astSubtreeHasBreak(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.break_stmt) return true;
+    if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0)) and astSubtreeHasBreak(self, node.child_0)) return true;
+    if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1)) and astSubtreeHasBreak(self, node.child_1)) return true;
+    if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2)) and astSubtreeHasBreak(self, node.child_2)) return true;
+    if (ast_mod.nodeHasNodeExtraChildren(node.kind) and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
+        var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
+        var ei: usize = @intCast(usize, 0);
+        while (ei < ec_n) : (ei += 1) {
+            if (astSubtreeHasBreak(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ei)))) return true;
+        }
+    }
+    return false;
+}
+
 fn semanticAnalyzerStmtWorkPush(self: *SemanticAnalyzer, node_idx: u32) void {
     if (self.stmt_work_len >= self.stmt_work_cap) {
-        var new_cap: usize = if (self.stmt_work_cap < @intCast(usize, 64)) @intCast(usize, 64) else self.stmt_work_cap * @intCast(usize, 2);
-        var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-        var ndst = @ptrCast([*]u32, raw);
-        var ci: usize = 0;
-        while (ci < self.stmt_work_len) : (ci += @intCast(usize, 1)) {
-            ndst[ci] = self.stmt_work_items[ci];
-        }
-        self.stmt_work_items = ndst;
+        var new_cap: usize = semanticAnalyzerGrowCapU32(self.stmt_work_cap, @intCast(usize, 64));
+        self.stmt_work_items = semanticAnalyzerAllocCopyU32(self, self.stmt_work_items, self.stmt_work_len, new_cap);
         self.stmt_work_cap = new_cap;
     }
     self.stmt_work_items[self.stmt_work_len] = node_idx;
     self.stmt_work_len += @intCast(usize, 1);
 }
 
-pub fn pushExpectedType(self: *SemanticAnalyzer, ty: u32) void {
+// Operator-approved explicit expected-type contract (Task 12.2-F). A stack
+// entry is one of: no expectation (`none`), a real expected type (`known`), or
+// an annotation that is present but could not be resolved (`undetermined`).
+// Consumers must never use `undetermined` as a TypeId; they reject (or fall
+// back to peer/no expectation) cleanly instead.
+const EXPECTED_KIND_NONE: u8 = 0;
+const EXPECTED_KIND_KNOWN: u8 = 1;
+const EXPECTED_KIND_UNDETERMINED: u8 = 2;
+
+fn pushExpectedTypeRaw(self: *SemanticAnalyzer, kind: u8, ty: u32) void {
     if (self.expected_type_stack_len >= self.expected_type_stack_cap) {
-        var new_cap: usize = if (self.expected_type_stack_cap < @intCast(usize, 64)) @intCast(usize, 64) else self.expected_type_stack_cap * @intCast(usize, 2);
-        var raw = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
-        var ndst = @ptrCast([*]u32, raw);
-        var ci: usize = 0;
-        while (ci < self.expected_type_stack_len) : (ci += @intCast(usize, 1)) {
-            ndst[ci] = self.expected_type_stack_items[ci];
-        }
-        self.expected_type_stack_items = ndst;
+        var new_cap: usize = semanticAnalyzerGrowCapU32(self.expected_type_stack_cap, @intCast(usize, 64));
+        self.expected_type_stack_items = semanticAnalyzerAllocCopyU32(self, self.expected_type_stack_items, self.expected_type_stack_len, new_cap);
+        var raw_k = alloc_mod.sandAlloc(self.expected_type_stack_alloc, new_cap, @intCast(usize, 1)) catch unreachable;
+        var kdst = @ptrCast([*]u8, raw_k);
+        var ki: usize = @intCast(usize, 0);
+        while (ki < self.expected_type_stack_len) : (ki += @intCast(usize, 1)) { kdst[ki] = self.expected_type_stack_kinds[ki]; }
+        self.expected_type_stack_kinds = kdst;
         self.expected_type_stack_cap = new_cap;
     }
     self.expected_type_stack_items[self.expected_type_stack_len] = ty;
+    self.expected_type_stack_kinds[self.expected_type_stack_len] = kind;
     self.expected_type_stack_len += @intCast(usize, 1);
+}
+
+fn pushExpectedTypeNone(self: *SemanticAnalyzer) void {
+    pushExpectedTypeRaw(self, EXPECTED_KIND_NONE, @intCast(u32, 0));
+}
+
+fn pushExpectedTypeKnown(self: *SemanticAnalyzer, ty: u32) void {
+    pushExpectedTypeRaw(self, EXPECTED_KIND_KNOWN, ty);
+}
+
+fn pushExpectedTypeUndetermined(self: *SemanticAnalyzer) void {
+    pushExpectedTypeRaw(self, EXPECTED_KIND_UNDETERMINED, @intCast(u32, 0));
+}
+
+// Value/argument positions: an absent or unresolved type carries no usable
+// expectation; peers decide. An unresolved call-argument parameter is
+// therefore `none`, not `undetermined`. A resolved `void` is still a known
+// type; consumers keep the pre-existing "void means no coercion" rule.
+fn pushExpectedTypeMaybe(self: *SemanticAnalyzer, ty: u32) void {
+    if (ty == @intCast(u32, 0) or ty == type_mod.TYPE_UNDEFINED) {
+        pushExpectedTypeNone(self);
+    } else {
+        pushExpectedTypeKnown(self, ty);
+    }
+}
+
+// Annotated declarations: `0` means no annotation; a resolved annotation
+// (including `void`) is `known`; an unresolved annotation stays
+// distinguishable as `undetermined`.
+fn pushExpectedTypeDeclared(self: *SemanticAnalyzer, ty: u32) void {
+    if (ty == @intCast(u32, 0)) {
+        pushExpectedTypeNone(self);
+    } else if (ty == type_mod.TYPE_UNDEFINED) {
+        pushExpectedTypeUndetermined(self);
+    } else {
+        pushExpectedTypeKnown(self, ty);
+    }
 }
 
 pub fn popExpectedType(self: *SemanticAnalyzer) void {
@@ -1870,9 +6349,45 @@ pub fn popExpectedType(self: *SemanticAnalyzer) void {
     }
 }
 
-pub fn topExpectedType(self: *SemanticAnalyzer) u32 {
+fn topExpectedTypeKind(self: *SemanticAnalyzer) u8 {
+    if (self.expected_type_stack_len == @intCast(usize, 0)) return EXPECTED_KIND_NONE;
+    return self.expected_type_stack_kinds[self.expected_type_stack_len - @intCast(usize, 1)];
+}
+
+fn topExpectedTypeId(self: *SemanticAnalyzer) u32 {
     if (self.expected_type_stack_len == @intCast(usize, 0)) return @intCast(u32, 0);
     return self.expected_type_stack_items[self.expected_type_stack_len - @intCast(usize, 1)];
+}
+
+// A value consumer that needed an expected type but found only an unresolved
+// annotation rejects with one clean level-0 diagnostic (never a sentinel id).
+fn semanticAnalyzerReportUnresolvedExpected(self: *SemanticAnalyzer, node_idx: u32, msg: []const u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var n = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, n.span_start, n.span_start + @intCast(u32, n.span_len), msg);
+}
+
+// Task 9B (c, m1240 ruling 5): validate an `if`/`while` condition. With no
+// capture the condition must be `bool` (Zig: "expected type 'bool', found
+// ..."); with a capture it must be optional or error-union (Zig: "expected
+// optional type, found ..."). A condition already typed void/undefined/noreturn
+// is skipped — an earlier diagnostic (e.g. an undeclared identifier) fired.
+fn semanticAnalyzerCheckConditionType(self: *SemanticAnalyzer, node_idx: u32, cond_idx: u32, cond_t: u32, has_capture: bool) void {
+    if (cond_t == @intCast(u32, 0) or cond_t == type_mod.TYPE_VOID or cond_t == type_mod.TYPE_NORETURN or cond_t == type_mod.TYPE_UNDEFINED) return;
+    var ck = self.registry.types_items[@intCast(usize, cond_t)].kind;
+    var ok = false;
+    var cc_msg: []const u8 = "invalid condition";
+    if (has_capture) {
+        if (ck == type_mod.TypeKind.optional_type or ck == type_mod.TypeKind.error_union_type) { ok = true; }
+        else { cc_msg = "capture condition must be an optional or error union type"; }
+    } else {
+        if (ck == type_mod.TypeKind.bool_type) { ok = true; }
+        else { cc_msg = "condition must be of type 'bool'"; }
+    }
+    if (ok) return;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var cond_node = ast_mod.astStoreNodeAt(self.store, cond_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3058_CONDITION_NOT_BOOL)), self.source_file_id, cond_node.span_start, cond_node.span_start + @intCast(u32, cond_node.span_len), cc_msg);
 }
 
 fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void {
@@ -1882,9 +6397,12 @@ fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void 
         var icap_idx = ast_mod.astStoreNodePayload(self.store, node_idx);
         var icap_node = ast_mod.astStoreNodeAt(self.store, icap_idx);
         if (icap_node.kind == AstKind.if_capture) {
-            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, icap_idx), semanticAnalyzerCaptureType(self, icond_t));
+            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, icap_idx), icap_node.span_start, icap_node.span_start + @intCast(u32, icap_node.span_len));
+            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, icap_idx), semanticAnalyzerCaptureType(self, icond_t, icap_idx), icap_node.span_start, icap_node.span_start + @intCast(u32, icap_node.span_len));
         }
     }
+    var icap_present = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);
+    semanticAnalyzerCheckConditionType(self, node_idx, node.child_0, icond_t, icap_present);
     var ifs_b: [1]u32 = [1]u32{node.child_1};
     var ifs_k: [1]u32 = [1]u32{@intCast(u32, 0)};
     if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = ast_mod.astStoreNodeAt(self.store, ifs_b[0]); ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
@@ -1897,12 +6415,152 @@ fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void 
     var ifst_k2m: []const u8 = "IFST:K2"; pal_mod.markerWriteInt(ifst_k2m, ifs_k2[0]);
 }
 
+// Task 11 (Part II): `for (iterable, start..end)` explicit index range. The
+// pattern node types as its ITERABLE so `semanticAnalyzerResolveForHeader`
+// extracts the element type from the array/slice exactly as for the plain
+// `for (iterable)` form. The start/end operands follow Zig 0.15.2: each must be
+// a `usize`-compatible unsigned integer (a literal, or an unsigned int whose
+// width fits the target's 32-bit `usize`); a comptime-known bound must fit
+// `usize`; and a comptime-known range whose span differs from a fixed array's
+// length is the Zig "non-matching for loop lengths" reject. Everything that is
+// not comptime-known keeps its runtime check in lowering.
+fn semanticAnalyzerResolveForIndexRange(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var it_t = semanticAnalyzerResolveExpr(self, node.child_0);
+    var st_t = semanticAnalyzerResolveExpr(self, node.child_1);
+    var en_t: u32 = @intCast(u32, 0);
+    if (node.child_2 != @intCast(u32, 0)) { en_t = semanticAnalyzerResolveExpr(self, node.child_2); }
+    if (!semanticAnalyzerForIndexBoundOk(self, st_t)) {
+        var st_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
+        semanticAnalyzerReportForIndexRange(self, node.child_1, st_node.span_start, st_node.span_start + @intCast(u32, st_node.span_len), "for index range bound must be a 'usize'-compatible unsigned integer");
+    }
+    if (node.child_2 != @intCast(u32, 0) and !semanticAnalyzerForIndexBoundOk(self, en_t)) {
+        var en_node = ast_mod.astStoreNodeAt(self.store, node.child_2);
+        semanticAnalyzerReportForIndexRange(self, node.child_2, en_node.span_start, en_node.span_start + @intCast(u32, en_node.span_len), "for index range bound must be a 'usize'-compatible unsigned integer");
+    }
+    semanticAnalyzerCheckForIndexRangeComptime(self, node_idx, it_t);
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, it_t);
+    return it_t;
+}
+
+fn semanticAnalyzerForIndexBoundOk(self: *SemanticAnalyzer, tid: u32) bool {
+    if (tid == @intCast(u32, 0) or tid == type_mod.TYPE_UNDEFINED or tid == type_mod.TYPE_VOID) return true;
+    if (tid == type_mod.TYPE_INT_LIT) return true;
+    if (!type_mod.typeRegistryIsInteger(self.registry, tid)) return false;
+    if (!type_mod.typeRegistryIsUnsigned(self.registry, tid)) return false;
+    return type_mod.typeRegistryIntWidthBits(self.registry, tid) <= @intCast(u8, 32);
+}
+
+fn semanticAnalyzerReportForIndexRange(self: *SemanticAnalyzer, mark_node: u32, span_start: u32, span_end: u32, msg: []const u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, span_start, span_end, msg);
+}
+
+fn semanticAnalyzerCheckForIndexRangeComptime(self: *SemanticAnalyzer, node_idx: u32, it_t: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var ce = semaComptimeEvalInit(self);
+    var st_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    var st_known: u8 = @intCast(u8, 0);
+    var st_cv = ce_mod.comptimeEvalEvaluate(&ce, node.child_1);
+    if (st_cv) |cv| {
+        if (cv.kind == ce_mod.KIND_INT) {
+            if (!ce_mod.comptimeIntFitsType(self.registry, cv.v, type_mod.TYPE_USIZE)) {
+                semanticAnalyzerReportForIndexRange(self, node.child_1, node.span_start, node.span_start + @intCast(u32, node.span_len), "comptime for index range bound does not fit 'usize'");
+                return;
+            }
+            st_ci = cv.v;
+            st_known = @intCast(u8, 1);
+        }
+    }
+    if (node.child_2 == @intCast(u32, 0)) return;
+    var en_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    var en_known: u8 = @intCast(u8, 0);
+    var en_cv = ce_mod.comptimeEvalEvaluate(&ce, node.child_2);
+    if (en_cv) |ecv| {
+        if (ecv.kind == ce_mod.KIND_INT) {
+            if (!ce_mod.comptimeIntFitsType(self.registry, ecv.v, type_mod.TYPE_USIZE)) {
+                semanticAnalyzerReportForIndexRange(self, node.child_2, node.span_start, node.span_start + @intCast(u32, node.span_len), "comptime for index range bound does not fit 'usize'");
+                return;
+            }
+            en_ci = ecv.v;
+            en_known = @intCast(u8, 1);
+        }
+    }
+    if (st_known == @intCast(u8, 0) or en_known == @intCast(u8, 0)) return;
+    var span_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (!ce_mod.ciSub(en_ci, st_ci, &span_ci)) return;
+    if (span_ci.neg and !ce_mod.ciIsZero(span_ci)) {
+        semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "for index range end is before start (overflow of 'usize')");
+        return;
+    }
+    if (@intCast(usize, it_t) >= self.registry.types_len) return;
+    var it_ty = self.registry.types_items[@intCast(usize, it_t)];
+    var it_len: u64 = @intCast(u64, 0);
+    var it_have_len: u8 = @intCast(u8, 0);
+    if (it_ty.kind == type_mod.TypeKind.array_type) {
+        it_len = @intCast(u64, self.registry.array_items[@intCast(usize, it_ty.payload_idx)].length);
+        it_have_len = @intCast(u8, 1);
+    } else if (it_ty.kind == type_mod.TypeKind.ptr_type) {
+        // FI (operator ruling A): an explicit index range over a pointer-to-array
+        // must span the pointee array's length (Zig's "non-matching for loop
+        // lengths"); every other pointer iterable keeps the runtime span check.
+        if (@intCast(usize, it_ty.payload_idx) < self.registry.ptr_len) {
+            var fh_pointee = self.registry.ptr_items[@intCast(usize, it_ty.payload_idx)].base;
+            if (@intCast(usize, fh_pointee) < self.registry.types_len) {
+                var fh_pty = self.registry.types_items[@intCast(usize, fh_pointee)];
+                if (fh_pty.kind == type_mod.TypeKind.array_type) {
+                    it_len = @intCast(u64, self.registry.array_items[@intCast(usize, fh_pty.payload_idx)].length);
+                    it_have_len = @intCast(u8, 1);
+                }
+            }
+        }
+    }
+    if (it_have_len == @intCast(u8, 0)) return;
+    if (ce_mod.ciToU64(span_ci) != it_len) {
+        semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "non-matching for loop lengths: the index range and the iterable differ in length");
+    }
+}
+
 fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // Task 7D: locate the item/index capture NAME tokens (the for_stmt node
+    // carries the captures only as payload name IDs). The captures follow the
+    // `)` that closes the iterable, so scan from there; fall back to the whole
+    // for_stmt span when a token cannot be located.
+    var for_item_s: u32 = node.span_start;
+    var for_item_e: u32 = node.span_start + @intCast(u32, node.span_len);
+    var for_idx_s: u32 = for_item_s;
+    var for_idx_e: u32 = for_item_e;
+    if (node.child_1 != @intCast(u32, 0)) {
+        var for_body = ast_mod.astStoreNodeAt(self.store, node.child_1);
+        var for_close = diag_mod.diagnosticCollectorFindLastByte(self.diag, self.source_file_id, node.span_start, for_body.span_start, ')');
+        if (for_close != @intCast(u32, 4294967295)) {
+            var fi_s: u32 = 0; var fi_e: u32 = 0;
+            if (diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, for_close, for_body.span_start, &fi_s, &fi_e)) {
+                for_item_s = fi_s; for_item_e = fi_e;
+            }
+            var ix_s: u32 = 0; var ix_e: u32 = 0;
+            if (diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, for_item_e, for_body.span_start, &ix_s, &ix_e)) {
+                for_idx_s = ix_s; for_idx_e = ix_e;
+            }
+        }
+    }
     _ = semanticAnalyzerResolveExpr(self, node.child_0);
     var fs_c_m: []const u8 = "FS:C"; pal_mod.markerWriteInt(fs_c_m, node.child_0);
     var cnode = ast_mod.astStoreNodeAt(self.store, node.child_0);
+    if (cnode.kind == AstKind.for_index_range and node.child_2 == @intCast(u32, 0)) {
+        semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "explicit index range requires an index capture ('|item, index|')");
+    }
     var fs_ck_m: []const u8 = "FS:CK"; pal_mod.markerWriteInt(fs_ck_m, @intCast(u32, @enumToInt(cnode.kind)));
+    // Task 3 (Phase 2.5): `|*item|` mutable capture. The pointer type is built
+    // from the element type and the pointee constness; the same type id is
+    // published at the for_stmt node for Task 4's lowering channel.
+    var is_mut_item = (node.flags & @intCast(u8, 0x10)) != @intCast(u8, 0);
+    var mut_iter_node: u32 = node.child_0;
+    if (is_mut_item) {
+        if (cnode.kind == AstKind.for_index_range) { mut_iter_node = cnode.child_0; }
+        mut_iter_node = semaUnwrapParens(self, mut_iter_node);
+    }
     var it_tid = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
     if (it_tid) |tid| {
         var fs_tid_m: []const u8 = "FS:T"; pal_mod.markerWriteInt(fs_tid_m, tid);
@@ -1910,12 +6568,80 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         var elem_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
         if (ty.kind == type_mod.TypeKind.slice_type) { elem_box[0] = self.registry.slice_items[@intCast(usize, ty.payload_idx)].elem; }
         else if (ty.kind == type_mod.TypeKind.array_type) { elem_box[0] = self.registry.array_items[@intCast(usize, ty.payload_idx)].elem; }
+        else if (ty.kind == type_mod.TypeKind.ptr_type) {
+            // FI (operator ruling A): a pointer-to-array iterable (`*[N]T`, e.g.
+            // the FH `p[0..1]` result) auto-derefs and iterates the array exactly
+            // like an array value. Every other pointer pointee keeps the pre-FI
+            // unresolved-item behavior (error[20] at the item capture use).
+            if (@intCast(usize, ty.payload_idx) < self.registry.ptr_len) {
+                var fs_pointee = self.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+                if (@intCast(usize, fs_pointee) < self.registry.types_len) {
+                    var fs_pty = self.registry.types_items[@intCast(usize, fs_pointee)];
+                    if (fs_pty.kind == type_mod.TypeKind.array_type) {
+                        elem_box[0] = self.registry.array_items[@intCast(usize, fs_pty.payload_idx)].elem;
+                    }
+                }
+            }
+        }
         else if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) { elem_box[0] = tid; }
-        if (ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
+        var mut_reject: bool = false;
+        var mut_reject_msg: []const u8 = "mutable for-item capture requires an addressable element (a range or a copied array value has none)";
+        if (is_mut_item) {
+            if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) {
+                // A range item is a loop value, not storage: there is no element
+                // to take the address of. (The `for_index_range` form stays legal.)
+                mut_reject = true;
+            } else if (ty.kind == type_mod.TypeKind.array_type) {
+                // An array iterable is addressable only when it aliases storage:
+                // a local/global binding or a module-member field. Everything
+                // else (call result, array literal, deref, struct field, index)
+                // lowers to a copy temp, so `&base[idx]` would mutate the copy.
+                var mut_aliases: bool = false;
+                if (mut_iter_node != @intCast(u32, 0)) {
+                    var mi_node = ast_mod.astStoreNodeAt(self.store, mut_iter_node);
+                    if (mi_node.kind == AstKind.ident_expr) {
+                        mut_aliases = true;
+                    } else if (mi_node.kind == AstKind.field_access) {
+                        if (rtt_mod.resolvedTypeTableGet(self.type_table, mi_node.child_0)) |mi_base_t| {
+                            if (@intCast(usize, mi_base_t) < self.registry.types_len) {
+                                if (self.registry.types_items[@intCast(usize, mi_base_t)].kind == type_mod.TypeKind.module_type) {
+                                    mut_aliases = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!mut_aliases) { mut_reject = true; }
+            } else if (elem_box[0] == type_mod.TYPE_UNDEFINED and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
+                // T4 fix round 2: a named mutable capture over an iterable with
+                // no resolvable element (`*T` whose pointee is not an array)
+                // has no addressable item type. Reject in sema so lowering's
+                // channel invariant (and its guard) is never reached.
+                mut_reject = true;
+                mut_reject_msg = "mutable for-item capture requires an iterable with a resolvable element type";
+            }
+            if (mut_reject) {
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED)), self.source_file_id, for_item_s, for_item_e, mut_reject_msg);
+            }
+        }
+        if (!mut_reject and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
             var fs_p_m: []const u8 = "FS:P"; pal_mod.markerWriteInt(fs_p_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var fs_e_m: []const u8 = "FS:E"; pal_mod.markerWriteInt(fs_e_m, elem_box[0]);
+            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node_idx), for_item_s, for_item_e);
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-            self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx); self.local_decl_types[self.local_decl_count] = elem_box[0]; self.local_decl_count += @intCast(usize, 1);
+            if (is_mut_item) {
+                var elem_is_const: bool = false;
+                if (ty.kind == type_mod.TypeKind.slice_type or ty.kind == type_mod.TypeKind.ptr_type) {
+                    elem_is_const = (ty.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                } else if (ty.kind == type_mod.TypeKind.array_type) {
+                    elem_is_const = semanticAnalyzerIsLValueConst(self, mut_iter_node);
+                }
+                var mut_ptr_tid = type_mod.typeRegistryGetOrCreatePtr(self.registry, elem_box[0], elem_is_const);
+                semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node_idx), mut_ptr_tid, @intCast(u8, 1), for_item_s, for_item_e);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, mut_ptr_tid);
+            } else {
+                semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node_idx), elem_box[0], @intCast(u8, 1), for_item_s, for_item_e);
+            }
             var d4f_n: []const u8 = "D4F:N"; pal_mod.markerWriteInt(d4f_n, ast_mod.astStoreNodePayload(self.store, node_idx));
             var d4f_t: []const u8 = "D4F:T"; pal_mod.markerWriteInt(d4f_t, elem_box[0]);
         }
@@ -1923,8 +6649,9 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         var a5_m: []const u8 = "FS:M\n"; pal_mod.markerWrite(a5_m);
     }
     if (node.child_2 != @intCast(u32, 0)) {
+        semanticAnalyzerCheckLocalShadow(self, node.child_2, for_idx_s, for_idx_e);
         if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-        self.local_decl_names[self.local_decl_count] = node.child_2; self.local_decl_types[self.local_decl_count] = type_mod.TYPE_USIZE; self.local_decl_count += @intCast(usize, 1);
+        semanticAnalyzerRegisterLocalDeclWrite(self, node.child_2, type_mod.TYPE_USIZE, @intCast(u8, 1), for_idx_s, for_idx_e);
         var f2_m: []const u8 = "FIX2:LN"; pal_mod.markerWriteInt(f2_m, node.child_2);
     }
 }
@@ -1941,8 +6668,19 @@ fn semanticAnalyzerResolveWhileHeader(self: *SemanticAnalyzer, node_idx: u32) vo
         var wcap_idx = ast_mod.astStoreNodePayload(self.store, node_idx);
         var wcap_node = ast_mod.astStoreNodeAt(self.store, wcap_idx);
         if (wcap_node.kind == AstKind.while_capture) {
-            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), semanticAnalyzerCaptureType(self, wcond_t));
+            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), wcap_node.span_start, wcap_node.span_start + @intCast(u32, wcap_node.span_len));
+            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), semanticAnalyzerCaptureType(self, wcond_t, wcap_idx), wcap_node.span_start, wcap_node.span_start + @intCast(u32, wcap_node.span_len));
         }
+    }
+    var wcap_present = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);
+    semanticAnalyzerCheckConditionType(self, node_idx, node.child_0, wcond_t, wcap_present);
+    // Plan C Task 1b-F (nested extension): resolve the `while` continue
+    // expression. The stmt walker's `while_stmt` arm pushes only the body, so
+    // child_2 never gets resolved-type entries; lowering a nested field store
+    // there then ICEs. Resolving it here (after the capture is registered) gives
+    // every sub-expression a resolved type, matching the body form.
+    if (node.child_2 != @intCast(u32, 0)) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_2);
     }
 }
 
@@ -1952,17 +6690,25 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
     while (self.stmt_work_len > sp_base) {
         self.stmt_work_len -= @intCast(usize, 1);
         var node_idx = self.stmt_work_items[self.stmt_work_len];
+        // Task 7D: a scope-pop marker closes a block/construct scope (see
+        // semanticAnalyzerPopScopeMarker); it restores the local-decl depth so
+        // the shadow check sees only enclosing + same scope.
+        if (semanticAnalyzerPopScopeMarker(self, node_idx)) { continue; }
         if (node_idx == @intCast(u32, 0)) { continue; }
         var node = ast_mod.astStoreNodeAt(self.store, node_idx);
         var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, self.stmt_work_len));
         var spk_m: []const u8 = "SP:K"; pal_mod.markerWriteInt(spk_m, @intCast(u32, @enumToInt(node.kind)));
         if (node.kind == AstKind.block) {
-            var children = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+            var children_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
             var blk_nm: []const u8 = "BLK:N"; pal_mod.markerWriteInt(blk_nm, node_idx);
-            var blk_cm: []const u8 = "BLK:C"; pal_mod.markerWriteInt(blk_cm, @intCast(u32, children.len));
-            var i: usize = children.len;
+            var blk_cm: []const u8 = "BLK:C"; pal_mod.markerWriteInt(blk_cm, @intCast(u32, children_n));
+            // Task 7D: push the block's scope-pop marker BEFORE the children so
+            // its locals are popped once the body has been walked.
+            var blk_scope_saved: u32 = @intCast(u32, self.local_decl_count);
+            semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | blk_scope_saved);
+            var i: usize = @intCast(usize, children_n);
             while (i > @intCast(usize, 0)) : (i -= @intCast(usize, 1)) {
-                var ci = children[i - @intCast(usize, 1)];
+                var ci = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i) - @intCast(u32, 1));
                 var bc_m: []const u8 = "BCK:B"; pal_mod.markerWriteInt(bc_m, node_idx);
                 var bc_im: []const u8 = "BCK:I"; pal_mod.markerWriteInt(bc_im, @intCast(u32, i - @intCast(usize, 1)));
                 var bc_nm: []const u8 = "BCK:N"; pal_mod.markerWriteInt(bc_nm, ci);
@@ -1983,12 +6729,82 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var vd_m: []const u8 = "VD:N"; pal_mod.markerWriteInt(vd_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var vd2_m: []const u8 = "VD:C"; pal_mod.markerWriteInt(vd2_m, @intCast(u32, self.local_decl_count));
             var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+            var vd_type_binding: u8 = @intCast(u8, 0);
+            // Task 7D: reject a shadowing/redeclaring local `const`/`var` (or
+            // function-local named type) BEFORE type resolution, so an unknown
+            // type never suppresses the shadow diagnostic. The name is a payload
+            // (no name node), so locate the NAME token (2nd ident: keyword then
+            // name); fall back to the declaration span when not locatable.
+            var vd_ns: u32 = node.span_start;
+            var vd_ne: u32 = node.span_start + @intCast(u32, node.span_len);
+            _ = semanticAnalyzerNthIdentSpan(self, node.span_start, vd_ne, @intCast(u32, 2), &vd_ns, &vd_ne);
+            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node_idx), vd_ns, vd_ne);
+            // Task B2: a function-local named type (`const T = struct/enum/union/error{...}`)
+            // is a first-class `type` value, not a runtime local. Register the
+            // container type, bind the name as a type, and skip the value path.
+            // Task B2 final fix wave: any other local `const`/`var` binding whose
+            // initializer names a `type` value also clean-rejects instead of
+            // leaking `TYPE_TYPE` into lowering and emitting uncompilable C: a
+            // `var` binding of a container type (invalid Zig — a `type` value must
+            // be `const`), a compound type expression (`*E`, `E!i32`, `[N]E`,
+            // `?E`, `fn(...)`, `[]E`, `[*]E`), and a bare local-type alias.
+            if (node.child_0 == @intCast(u32, 0) and node.child_1 != @intCast(u32, 0)) {
+                var vd_init_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
+                var vd_is_const = (node.flags & @intCast(u8, 1)) == @intCast(u8, 0);
+                if (type_resolver.isContainerDeclKind(vd_init_node.kind)) {
+                    if (vd_is_const) {
+                        if (vd_init_node.kind == AstKind.struct_decl) {
+                            semanticAnalyzerGatePackedFields(self, node.child_1, self.module_id);
+                        }
+                        if (vd_init_node.kind == AstKind.enum_decl) {
+                            semanticAnalyzerCheckLocalEnum(self, node.child_1);
+                        }
+                        var vd_lt_env = semanticAnalyzerTypeEnvLocals(self, self.module_id);
+                        decl_type = type_resolver.registerContainerType(&vd_lt_env, node.child_1, vd_init_node.kind, @intCast(u32, 0));
+                        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                            // Task B2 §4.9.1: a type registered during sema misses the
+                            // earlier layout pass, so size-dependent uses
+                            // (`@sizeOf`/`@alignOf`, aggregate copies) need it laid out
+                            // on demand. The inline path is untouched (byte-identical).
+                            _ = type_resolver.layoutEnsure(self.registry, decl_type, @intCast(u32, 0));
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, decl_type);
+                            type_resolver.localTypeScopePush(&self.local_types, ast_mod.astStoreNodePayload(self.store, node_idx), decl_type);
+                            if (self.local_decl_count >= self.local_decl_cap) {
+                                semanticAnalyzerGrowLocalDecls(self);
+                            }
+                            semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node_idx), decl_type, @intCast(u8, 1), vd_ns, vd_ne);
+                        }
+                    } else {
+                        var vd_var_msg: []const u8 = "a local type value must be declared with 'const'";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vd_var_msg);
+                    }
+                    vd_type_binding = @intCast(u8, 1);
+                } else if (vd_init_node.kind == AstKind.ident_expr) {
+                    // Task B2 residual: `const F = E;` where E is a function-local
+                    // named type is a local type alias. Official Zig allows it, but
+                    // this compiler does not model function-local `type` values;
+                    // reject cleanly (0 `.c`) rather than emit invalid C.
+                    var vd_alias_name = ast_mod.astStoreIdentifier(self.store, node.child_1);
+                    if (type_resolver.localTypeScopeLookup(&self.local_types, vd_alias_name) != null) {
+                        var vd_alias_msg: []const u8 = "local type aliases are not supported; bind the container declaration directly";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vd_alias_msg);
+                        vd_type_binding = @intCast(u8, 1);
+                    }
+                } else if (type_resolver.isCompoundTypeExprKind(vd_init_node.kind)) {
+                    // Task B2 final fix wave: a compound type expression names a
+                    // `type` value; Z98 does not model function-local `type` values.
+                    var vd_texpr_msg: []const u8 = "local type aliases are not supported; bind the container declaration directly";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vd_texpr_msg);
+                    vd_type_binding = @intCast(u8, 1);
+                }
+            }
             if (node.child_0 != @intCast(u32, 0)) {
                 var ann = ast_mod.astStoreNodeAt(self.store, node.child_0);
                 if (ann.kind == AstKind.ident_expr) {
                     decl_type = semanticAnalyzerResolveExpr(self, node.child_0);
                     if (decl_type == type_mod.TYPE_VOID) {
-                        var cd_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+                        var cd_env = semanticAnalyzerTypeEnvLocals(self, self.module_id);
                         var cd_full = type_resolver.resolveTypeExprFull(&cd_env, node.child_0, @intCast(u32, 0));
                         if (cd_full == type_mod.TYPE_UNDEFINED) {
                             var ut_msg: []const u8 = "unknown type in variable declaration";
@@ -2001,7 +6817,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
                     if (rt) |t| { decl_type = t; }
                     else {
-                        var tre_env_vd = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+                        var tre_env_vd = semanticAnalyzerTypeEnvLocals(self, self.module_id);
                         decl_type = type_resolver.resolveTypeExprFull(&tre_env_vd, node.child_0, @intCast(u32, 0));
                         if (decl_type != type_mod.TYPE_UNDEFINED) {
                             rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, decl_type);
@@ -2009,6 +6825,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     }
                 }
             }
+            if (vd_type_binding == 0) {
             if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
                 var b1m: []const u8 = "VRT:"; pal_mod.markerWrite(b1m);
                 var b1nb: [10]u8 = undefined; var b1nl = itoa_mod.itoa(node.child_0, b1nb[0..]); var b1ns: usize = @intCast(usize, 9) - @intCast(usize, b1nl); pal_mod.markerWrite(b1nb[b1ns..@intCast(usize, 9)]);
@@ -2016,11 +6833,20 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var b1tb: [10]u8 = undefined; var b1tl = itoa_mod.itoa(decl_type, b1tb[0..]); var b1ts: usize = @intCast(usize, 9) - @intCast(usize, b1tl); pal_mod.markerWrite(b1tb[b1ts..@intCast(usize, 9)]);
                 var b1nl2: []const u8 = "\n"; pal_mod.markerWrite(b1nl2);
             }
+            if (node.child_1 == @intCast(u32, 0) and decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                var uisp = node.span_start;
+                var uiep = uisp + @intCast(u32, node.span_len);
+                var ui_msg: []const u8 = "variable must be initialized; use '= undefined' to opt out";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3014_USE_OF_UNDEFINED_VARIABLE)), self.source_file_id, uisp, uiep, ui_msg);
+            }
             if (node.child_1 != @intCast(u32, 0)) {
                 var init_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 var ik_m: []const u8 = "I:K"; pal_mod.markerWriteInt(ik_m, @intCast(u32, @enumToInt(init_node.kind)));
-                var vd_exp = if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) decl_type else @intCast(u32, 0);
-                pushExpectedType(self, vd_exp);
+                if (node.child_0 == @intCast(u32, 0)) {
+                    pushExpectedTypeNone(self);
+                } else {
+                    pushExpectedTypeDeclared(self, decl_type);
+                }
                 var it = semanticAnalyzerResolveExpr(self, node.child_1);
                 popExpectedType(self);
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED) and init_node.kind == AstKind.error_literal) {
@@ -2032,8 +6858,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                             if (ord != @intCast(u32, 0xFFFFFFFF)) {
                                 var es_type_id: u32 = @intCast(u32, ei);
                                 var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.error_code_registry, name_id);
-                                hash_mod.u32ToU32MapPut(self.enum_value_table, node.child_1, reg_code);
-                                rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, es_type_id);
+                                semanticAnalyzerSetEnumValue(self, node.child_1, reg_code, es_type_id);
                                 it = es_type_id;
                                 break;
                             }
@@ -2048,31 +6873,52 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 }
                 if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
                     if (it == type_mod.TYPE_NULL) { var cs4_m: []const u8 = "CS4\n"; pal_mod.markerWrite(cs4_m); }
-                    var ck = coercion_mod.classifyCoercion(self.registry, errLitSrcType(self, node.child_1, decl_type, it), decl_type);
+                    var it_eff = errLitSrcType(self, node.child_1, decl_type, it);
+                    if (semanticAnalyzerQualifierGate(self, node.child_1, it_eff, decl_type) == QUALIFIER_GATE_NONE) {
+                    // FX3 (Volume II D6 extras): value-aware f64/integer ->
+                    // f32 initialization. A literal/exactly-representable
+                    // value records the narrowing (and drops the old
+                    // warning); a runtime or inexact value now rejects level-0
+                    // instead of falling through to the warning/implicit C
+                    // narrow.
+                    var vd_fst = semanticAnalyzerFloatNarrowStatus(self, node.child_1, it_eff, decl_type);
+                    var vd_assign = type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type);
+                    if (vd_fst == FLOAT_NARROW_REJECT or (vd_fst == FLOAT_NARROW_NONE and decl_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, it_eff) and !vd_assign)) {
+                        var vd_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+                        semanticAnalyzerTypeMismatchReport(self, node.child_1, it_eff, decl_type, vd_msg, false);
+                    } else if (vd_fst == FLOAT_NARROW_ACCEPT and !vd_assign) {
+                        semanticAnalyzerFloatNarrowRecord(self, node.child_1, decl_type);
+                    } else {
+                    var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);
                     var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
-                    if (ck != coercion_mod.CoercionKind.none) {
+                    if (ck != coercion_mod.CoercionKind.none and type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type)) {
                         coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
                     } else if (it != type_mod.TYPE_UNDEFINED and !type_mod.typeRegistryIsAssignable(self.registry, it, decl_type)) {
-                        var sp = node.span_start;
-                        var ep = sp + @intCast(u32, node.span_len);
-                        var tmd_msg: []const u8 = "type mismatch in variable declaration — initialization type may not be compatible with declared type";
-                        var sk = self.registry.types_items[@intCast(usize, it)].kind;
-                        var tk = self.registry.types_items[@intCast(usize, decl_type)].kind;
-                        var level: u8 = 1;
-                        if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
-                            var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, it)].payload_idx)];
-                            var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, decl_type)].payload_idx)];
-                            if (eu_src.error_set == eu_tgt.error_set) {
-                                level = 0;
-                            }
-                        }
-                        var di = diag_mod.diagnosticCollectorAdd(self.diag, level, @intCast(u16, 3000),
-                            self.source_file_id, sp, ep, tmd_msg);
-                        _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
-                        _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
+                        var tmd_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+                        semanticAnalyzerReportTypeMismatchDeep(self, node_idx, it, decl_type, tmd_msg);
+                    }
+                    }
                     }
                 }
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
+                // Task 4 (Task 1 §5.2 untyped row / §8 risk 7): an unannotated
+                // binding whose initializer folds to an integer that does NOT
+                // fit the default i32 materialisation takes the value-based
+                // type (U32/I64/U64). Keeping the binding and every reference
+                // consistent is the point: a lowering-only slot override would
+                // leave later uses typed i32 and truncate. Values that fit i32
+                // (and non-integer inits) keep the existing INT_LIT typing, so
+                // emitted C for the common case is unchanged.
+                if (decl_type == type_mod.TYPE_INT_LIT or decl_type == type_mod.TYPE_I32) {
+                    var vd_ce = semaComptimeEvalInit(self);
+                    if (ce_mod.comptimeEvalEvaluate(&vd_ce, node.child_1)) |vdcv| {
+                        if (vdcv.kind == ce_mod.KIND_INT) {
+                            if (ce_mod.comptimeIntUntypedType(vdcv.v)) |vdut| {
+                                if (vdut != type_mod.TYPE_I32) { decl_type = vdut; }
+                            }
+                        }
+                    }
+                }
                 if (decl_type == type_mod.TYPE_VOID) {
                     var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
                     var vfvd_m: []const u8 = "VFLOW:vdag\n"; pal_mod.markerWrite(vfvd_m);
@@ -2086,48 +6932,77 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
                 }
             }
+            // Task 2c-F (variant (e)): record a function-local `const` so a
+            // later array size `[N]` in this function body can fold through it.
+            if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0) and node.child_1 != @intCast(u32, 0)) {
+                type_resolver.localConstScopePush(&self.local_consts, ast_mod.astStoreNodePayload(self.store, node_idx), node_idx);
+            }
             if (self.local_decl_count >= self.local_decl_cap) {
                 semanticAnalyzerGrowLocalDecls(self);
             }
             if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
-            self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx);
-            self.local_decl_types[self.local_decl_count] = decl_type;
-            self.local_decl_count += @intCast(usize, 1);
+            semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node_idx), decl_type, if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) @intCast(u8, 1) else @intCast(u8, 0), vd_ns, vd_ne);
             var ck: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(self.store, node_idx));
             type_mod.nameCachePut(self.registry, ck, decl_type);
             var regcp_m: []const u8 = "REG:cp"; pal_mod.markerWriteInt(regcp_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var regct_m: []const u8 = "REG:ct"; pal_mod.markerWriteInt(regct_m, decl_type);
             }
+            }
         } else if (node.kind == AstKind.if_stmt) {
+             // A7-F: the capture is scoped to the THEN arm only (Zig parity).
+             // Register it in the header, walk the then-arm (child_1), pop it,
+             // then walk the else-arm (child_2) so an else-arm use resolves as
+             // undeclared (`error[20]`). The trailing pop restores the outer
+             // scope after the else-arm.
+             var if_scope_saved: u32 = @intCast(u32, self.local_decl_count);
              semanticAnalyzerResolveIfHeader(self, node_idx);
-             if (node.child_2 != @intCast(u32, 0)) {
-                 semanticAnalyzerStmtWorkPush(self, node.child_2);
-             }
-             if (node.child_1 != @intCast(u32, 0)) {
-                 semanticAnalyzerStmtWorkPush(self, node.child_1);
+             // T3 (spec §3 Zig rule): a comptime-known `if`/`else` condition
+             // eliminates the untaken arm before analysis — only the live arm
+             // is walked (the pop marker restores the arm-local scope exactly
+             // as the two-arm sequence did). C5 Variant B: the gate also
+             // covers ELSE-LESS statements — a comptime-known-FALSE else-less
+             // `if` skips its then arm (Zig: "skip analysis of the branch not
+             // taken"); a comptime-known-TRUE one walks the then arm (it is
+             // the taken branch). Capture conditions never gate.
+             var t3_sgate: ?bool = semanticAnalyzerIfComptimeCondition(self, node_idx);
+             if (t3_sgate) |t3_sv| {
+                 semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
+                 if (t3_sv) {
+                     if (node.child_1 != @intCast(u32, 0)) {
+                         semanticAnalyzerStmtWorkPush(self, node.child_1);
+                     }
+                 } else if (node.child_2 != @intCast(u32, 0)) {
+                     semanticAnalyzerStmtWorkPush(self, node.child_2);
+                 }
+             } else {
+                 semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
+                 if (node.child_2 != @intCast(u32, 0)) {
+                     semanticAnalyzerStmtWorkPush(self, node.child_2);
+                 }
+                 semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
+                 if (node.child_1 != @intCast(u32, 0)) {
+                     semanticAnalyzerStmtWorkPush(self, node.child_1);
+                 }
              }
           } else if (node.kind == AstKind.while_stmt) {
+            // Task 7D: scope the while-capture to the body.
+            var w_scope_saved: u32 = @intCast(u32, self.local_decl_count);
             semanticAnalyzerResolveWhileHeader(self, node_idx);
+            semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | w_scope_saved);
             if (node.child_1 != @intCast(u32, 0)) {
                 semanticAnalyzerStmtWorkPush(self, node.child_1);
             }
         } else if (node.kind == AstKind.for_stmt) {
+             // Task 7D: scope the for item/index captures to the body.
+             var for_scope_saved: u32 = @intCast(u32, self.local_decl_count);
              semanticAnalyzerResolveForHeader(self, node_idx);
+             semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | for_scope_saved);
             if (node.child_1 != @intCast(u32, 0)) {
                 semanticAnalyzerStmtWorkPush(self, node.child_1);
             }
         } else if (node.kind == AstKind.return_stmt) {
             resolveReturnStmt(self, node_idx);
-        } else if (node.kind == AstKind.plain_assign or
-                   node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
-                   node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
-                   node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or
-                   node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
-                   node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign or
-                   node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or
-                   node.kind == AstKind.wrap_mul_assign or node.kind == AstKind.sat_add_assign or
-                   node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or
-                   node.kind == AstKind.sat_shl_assign) {
+        } else if (semaIsAssignmentKind(node.kind)) {
             _ = semanticAnalyzerResolveExpr(self, node_idx);
         } else if (node.kind == AstKind.labeled_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
@@ -2135,7 +7010,24 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             }
         } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
-                semanticAnalyzerStmtWorkPush(self, node.child_0);
+                // Task 10D: reject outward `return`/`try`/`break`/`continue`
+                // before lowering (Zig-matched). The check walk deliberately
+                // does NOT descend into a nested defer/errdefer (see
+                // `semanticAnalyzerCheckDeferBody`); the nested body is
+                // validated by its own invocation when the statement walk
+                // (`semanticAnalyzerResolveStmtIter`) reaches the nested defer
+                // node. The inner-target state is reset here so a nested scope
+                // starts from a clean `cur_defer_node` chain.
+                var dc_saved_loops = self.defer_inner_loops;
+                var dc_saved_len = self.defer_label_len;
+                self.defer_inner_loops = @intCast(u32, 0);
+                self.defer_label_len = @intCast(usize, 0);
+                semanticAnalyzerCheckDeferBody(self, node.child_0);
+                self.defer_inner_loops = dc_saved_loops;
+                self.defer_label_len = dc_saved_len;
+                self.defer_depth += @intCast(u32, 1);
+                semanticAnalyzerResolveStmtIter(self, node.child_0);
+                self.defer_depth -= @intCast(u32, 1);
             }
         } else if (node.kind == AstKind.break_stmt) {
         } else if (node.kind == AstKind.continue_stmt) {
@@ -2143,7 +7035,25 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var els_nm: []const u8 = "ELS:n"; pal_mod.markerWriteInt(els_nm, node_idx);
             var els_km: []const u8 = "ELS:k"; pal_mod.markerWriteInt(els_km, @intCast(u32, @enumToInt(node.kind)));
             if (node.child_0 != @intCast(u32, 0)) { var els_c0m: []const u8 = "ELS:c"; pal_mod.markerWriteInt(els_c0m, node.child_0); }
-            _ = semanticAnalyzerResolveExpr(self, node_idx);
+            // A9-F: a bare expression statement is lowered here without an
+            // `expr_stmt` wrapper (`parserParseExprStmt` -> the expression node
+            // itself), so mark it as statement-position for the orelse reject.
+            // `maybe(-1) orelse {};` stays accepted (parked tolerance).
+            var els_se_saved: u32 = self.stmt_expr_node;
+            if (node.kind == AstKind.expr_stmt) {
+                self.stmt_expr_node = semaUnwrapParens(self, node.child_0);
+            } else {
+                self.stmt_expr_node = semaUnwrapParens(self, node_idx);
+            }
+            var els_r = semanticAnalyzerResolveExpr(self, node_idx);
+            self.stmt_expr_node = els_se_saved;
+            if (els_r != @intCast(u32, 0) and @intCast(usize, els_r) < self.registry.types_len and
+                self.registry.types_items[@intCast(usize, els_r)].kind == type_mod.TypeKind.error_union_type) {
+                var eisp = node.span_start;
+                var eiep = eisp + @intCast(u32, node.span_len);
+                var ei_msg: []const u8 = "error union result is ignored; use 'try', 'catch', or assign the result";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3015_ERROR_IGNORED)), self.source_file_id, eisp, eiep, ei_msg);
+            }
         }
         if (node.child_0 != @intCast(u32, 0)) {
             var nc = ast_mod.astStoreNodeAt(self.store, node.child_0);
@@ -2179,9 +7089,8 @@ fn semaTraceStep(self: *SemanticAnalyzer, cur_name: *u32, done: *u8) u32 {
 fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
      var ixa_m: []const u8 = "IXA:N"; pal_mod.markerWriteInt(ixa_m, node_idx);
      var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-     var saved = self._stub_0;
      _ = semanticAnalyzerResolveExpr(self, node.child_1);
-     self._stub_0 = semanticAnalyzerResolveExpr(self, node.child_0);
+     var base_tid = semanticAnalyzerResolveExpr(self, node.child_0);
      var c0_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
      var c0k_m: []const u8 = "C0K:K"; pal_mod.markerWriteInt(c0k_m, @intCast(u32, @enumToInt(c0_node.kind)));
     if (c0_node.kind == AstKind.ident_expr) {
@@ -2198,105 +7107,597 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
              _ = rtt_mod.resolvedSourceTableSet(self.type_table, node.child_0, src_name);
         }
     }
-    var ix_m: []const u8 = "IX:T"; pal_mod.markerWriteInt(ix_m, self._stub_0);
-    if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = saved; rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
-    var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
-    var ix_elem = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
+    var ix_m: []const u8 = "IX:T"; pal_mod.markerWriteInt(ix_m, base_tid);
+    if (base_tid == @intCast(u32, 0) or base_tid == type_mod.TYPE_VOID) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
+    var bt = self.registry.types_items[@intCast(usize, base_tid)];
+    // FH (Volume II D10): reject indexing a single-item pointer whose pointee is
+    // not a fixed-size array (`p[0]`, `p[1]`, a runtime `p[i]`, `p[0] = v`,
+    // `*Point`, const/volatile/multi-level), and a `type` base (`(*p)[i]`).
+    // `*[N]T` (auto-deref indexing), `[*]T` and `p.*` are unaffected.
+    if (bt.kind == type_mod.TypeKind.type_type) {
+        semanticAnalyzerReportIllegalPtrIndex(self, node_idx, base_tid, true);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        return type_mod.TYPE_VOID;
+    }
+    if (bt.kind == type_mod.TypeKind.ptr_type) {
+        var ix_ptr_bad: u8 = @intCast(u8, 0);
+        if (@intCast(usize, bt.payload_idx) < self.registry.ptr_len) {
+            var ix_pointee = self.registry.ptr_items[@intCast(usize, bt.payload_idx)].base;
+            if (@intCast(usize, ix_pointee) >= self.registry.types_len) {
+                ix_ptr_bad = @intCast(u8, 1);
+            } else if (self.registry.types_items[@intCast(usize, ix_pointee)].kind != type_mod.TypeKind.array_type) {
+                // The one internal `*T` shape that is not a user single-item
+                // pointer: a struct/union ARRAY FIELD access (`s.arr[i]`,
+                // `v.mag[0]`) decays to an element pointer. Its declared array
+                // length (via the Task-11N walk) marks it as an array index.
+                var ix_field_len = semanticAnalyzerStaticArrayLen(self, node.child_0);
+                if (ix_field_len == null) {
+                    ix_ptr_bad = @intCast(u8, 1);
+                }
+            }
+        } else {
+            ix_ptr_bad = @intCast(u8, 1);
+        }
+        if (ix_ptr_bad != @intCast(u8, 0)) {
+            semanticAnalyzerReportIllegalPtrIndex(self, node_idx, base_tid, false);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+    }
+    var ix_elem = type_mod.typeRegistryIndexedElemType(self.registry, base_tid);
     if (ix_elem != type_mod.TYPE_UNDEFINED) {
+        // Task 17 (F): reject a comptime-known out-of-bounds index on a
+        // fixed-size array here, before lowering (rc=2, 0 `.c`).
+        semanticAnalyzerCheckComptimeIndexOob(self, node_idx);
         var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, ix_elem);
-        self._stub_0 = saved;
         return ix_elem;
     } else if (bt.kind == type_mod.TypeKind.tuple_type) {
+        // FB (D4): `t[i]` routes through ONE ordinal mechanism. Fold the index
+        // here (covers local consts, unlike lower's evaluator), bounds-check
+        // it, and record node -> ordinal for lowering, which then emits the
+        // same field access as `.0`/`._0`.
         var tp = self.registry.tup_items[@intCast(usize, bt.payload_idx)];
-        var r4 = self.registry.xt_items[@intCast(usize, tp.elems_start)];
-        var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, r4);
-        self._stub_0 = saved;
-        return r4;
+        var tup_len: u32 = @intCast(u32, tp.elems_count);
+        var tup_ce = semaComptimeEvalInit(self);
+        var tup_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+        if (!semanticAnalyzerComptimeIntValue(self, &tup_ce, node.child_1, &tup_ci)) {
+            semanticAnalyzerReportTupleIndexNotComptime(self, node.child_1);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        if (tup_ci.neg and !ce_mod.ciIsZero(tup_ci)) {
+            // Zig rejects a negative comptime index as a usize coercion
+            // failure; the array path's 3062 helper carries the exact wording.
+            semanticAnalyzerReportUsizeNegative(self, node.child_1, tup_ci);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        var tup_ord: u32 = @intCast(u32, 0);
+        var tup_oob: u8 = @intCast(u8, 0);
+        if (tup_ci.len > @intCast(u8, 2)) {
+            // More than 64 bits: necessarily past every tuple's arity.
+            tup_oob = @intCast(u8, 1);
+        } else {
+            var tup_v = ce_mod.ciToU64(tup_ci);
+            if (tup_v >= @intCast(u64, tup_len)) {
+                tup_oob = @intCast(u8, 1);
+            } else {
+                tup_ord = @intCast(u32, tup_v);
+            }
+        }
+        if (tup_oob != @intCast(u8, 0)) {
+            var tup_oob_text: u32 = @intCast(u32, 0);
+            if (tup_ci.len <= @intCast(u8, 2)) { tup_oob_text = @intCast(u32, ce_mod.ciToU64(tup_ci)); }
+            semanticAnalyzerReportTupleIndexOob(self, node.child_1, tup_oob_text, tup_len);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        var tup_et = self.registry.xt_items[@intCast(usize, tp.elems_start + tup_ord)];
+        var tup_ety = self.registry.types_items[@intCast(usize, tup_et)];
+        if (tup_ety.kind == type_mod.TypeKind.array_type) {
+            var tup_elem_i = self.registry.array_items[@intCast(usize, tup_ety.payload_idx)].elem;
+            tup_et = type_mod.typeRegistryGetOrCreatePtr(self.registry, tup_elem_i, false);
+        }
+        hash_mod.u32ToU32MapPut(self.tuple_index_table, node_idx, tup_ord);
+        var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, tup_et);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, tup_et);
+        return tup_et;
     }
-    var ret = self._stub_0;
-    self._stub_0 = saved;
-    return ret;
+    // Task 2g-F (b): a base that is neither array, slice, pointer, nor tuple is
+    // not indexable — e.g. the scalar element yielded by `pp[0]` on a genuine
+    // `*[N]T`. Real Zig rejects `pp[0][1]` (the element is reached via `pp[1]`
+    // or `pp.*[1]`); emit a hard error[3000] rather than silently emitting
+    // invalid C. Unresolved/non-value kinds keep their prior fallback.
+    var nidx_bad: u8 = @intCast(u8, 0);
+    if (bt.kind == type_mod.TypeKind.bool_type
+        or bt.kind == type_mod.TypeKind.i8_type or bt.kind == type_mod.TypeKind.i16_type
+        or bt.kind == type_mod.TypeKind.i32_type or bt.kind == type_mod.TypeKind.i64_type
+        or bt.kind == type_mod.TypeKind.u8_type or bt.kind == type_mod.TypeKind.u16_type
+        or bt.kind == type_mod.TypeKind.u32_type or bt.kind == type_mod.TypeKind.u64_type
+        or bt.kind == type_mod.TypeKind.isize_type or bt.kind == type_mod.TypeKind.usize_type
+        or bt.kind == type_mod.TypeKind.c_char_type
+        or bt.kind == type_mod.TypeKind.f32_type or bt.kind == type_mod.TypeKind.f64_type
+        or bt.kind == type_mod.TypeKind.enum_type or bt.kind == type_mod.TypeKind.struct_type
+        or bt.kind == type_mod.TypeKind.union_type or bt.kind == type_mod.TypeKind.packed_union_type
+        or bt.kind == type_mod.TypeKind.tagged_union_type
+        or bt.kind == type_mod.TypeKind.optional_type or bt.kind == type_mod.TypeKind.error_union_type
+        or bt.kind == type_mod.TypeKind.error_set_type
+        or bt.kind == type_mod.TypeKind.fn_type or bt.kind == type_mod.TypeKind.null_type
+        or bt.kind == type_mod.TypeKind.undefined_type
+        or bt.kind == type_mod.TypeKind.arb_uint_type or bt.kind == type_mod.TypeKind.arb_int_type) { nidx_bad = @intCast(u8, 1); }
+    if (nidx_bad != @intCast(u8, 0)) {
+        var nidx_msg: []const u8 = "cannot index a value of non-array, non-pointer type";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), nidx_msg);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        return type_mod.TYPE_VOID;
+    }
+    return base_tid;
 }
 
 fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-    var saved = self._stub_0;
-    self._stub_0 = semanticAnalyzerResolveExpr(self, node.child_0);
+    var slice_base = semanticAnalyzerResolveExpr(self, node.child_0);
     if (node.child_1 != @intCast(u32, 0)) { _ = semanticAnalyzerResolveExpr(self, node.child_1); }
     if (node.child_2 != @intCast(u32, 0)) { _ = semanticAnalyzerResolveExpr(self, node.child_2); }
-    if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
-    var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
-    if (!(bt.kind == type_mod.TypeKind.slice_type or bt.kind == type_mod.TypeKind.array_type or bt.kind == type_mod.TypeKind.many_ptr_type or bt.kind == type_mod.TypeKind.ptr_type)) {
+    if (slice_base == @intCast(u32, 0) or slice_base == type_mod.TYPE_VOID) { return type_mod.TYPE_VOID; }
+    var bt = self.registry.types_items[@intCast(usize, slice_base)];
+    if (!semanticAnalyzerIsPointerFamilyKind(bt.kind)) {
         var sl_msg: []const u8 = "cannot slice base type: expected array, slice, or many-pointer";
         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 2000), self.source_file_id, node_idx, node_idx, sl_msg);
-        self._stub_0 = saved;
         return type_mod.TYPE_VOID;
     }
-    self._stub_1 = type_mod.TYPE_VOID;
-    var ix_elem2 = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
-    if (ix_elem2 != type_mod.TYPE_UNDEFINED) {
-        self._stub_1 = ix_elem2;
-    } else {
-        self._stub_1 = self._stub_0;
+    // FH (Volume II D10): a single-item pointer to a non-array pointee may be
+    // sliced only with the comptime-known Zig forms [0..0]/[0..1]/[1..1]; they
+    // yield *[0]T/*[1]T (Zig 0.15.2's result types; FH2-I ruling), carrying the
+    // base's const/volatile qualifiers. Every other form rejects 3067 (the
+    // former `p[0..]` error[3043] ICE included). `*[N]T` slices keep the
+    // ordinary path.
+    var sps_base_tid = slice_base;
+    var sps_len: u32 = @intCast(u32, 0);
+    var sps_state = semanticAnalyzerCheckSinglePtrSlice(self, node_idx, sps_base_tid, &sps_len);
+    if (sps_state == @intCast(u8, 2)) {
+        return type_mod.TYPE_VOID;
     }
-    if (self._stub_1 == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
+    if (sps_state == @intCast(u8, 1)) {
+        var sps_bt = self.registry.types_items[@intCast(usize, sps_base_tid)];
+        var sps_pointee = self.registry.ptr_items[@intCast(usize, sps_bt.payload_idx)].base;
+        var sps_is_const: bool = false;
+        if ((sps_bt.flags & @intCast(u8, 1)) != @intCast(u8, 0)) sps_is_const = true;
+        var sps_is_vol: bool = false;
+        if ((sps_bt.flags & @intCast(u8, 2)) != @intCast(u8, 0)) sps_is_vol = true;
+        var sps_arr = type_mod.typeRegistryGetOrCreateArray(self.registry, sps_pointee, sps_len);
+        var sps_ret = type_mod.typeRegistryGetOrCreatePtrQ(self.registry, sps_arr, sps_is_const, sps_is_vol);
+        return sps_ret;
+    }
+    // FX5 fix round 1 (operator ruling): Zig 0.15.2 ACCEPTS an open-ended
+    // many-item-pointer range (`mp[s..]`, `mp[0..]`) and yields `[*]T` — the
+    // pointer offset by `start`, no length. Z98 now matches, so this form no
+    // longer rejects (the former lowering-path `error[3043]` ICE is gone and
+    // the interim `error[3067]` reject is withdrawn). The ordinary `[]T`
+    // result below still covers CLOSED many-pointer ranges and array/slice
+    // bases; a genuine `[*]T` base is the only shape reaching this arm (`h.arr`
+    // resolves as its declared array type, so field decays keep the slice
+    // path). Const/volatile qualifiers carry like the FH single-pointer gate.
+    if (@intCast(usize, sps_base_tid) < self.registry.types_len and
+        self.registry.types_items[@intCast(usize, sps_base_tid)].kind == type_mod.TypeKind.many_ptr_type and
+        node.child_2 == @intCast(u32, 0)) {
+        var mp_bt = self.registry.types_items[@intCast(usize, sps_base_tid)];
+        var mp_elem = type_mod.typeRegistryIndexedElemType(self.registry, sps_base_tid);
+        if (mp_elem == type_mod.TYPE_UNDEFINED) {
+            return type_mod.TYPE_VOID;
+        }
+        var mp_is_const: bool = false;
+        if ((mp_bt.flags & @intCast(u8, 1)) != @intCast(u8, 0)) mp_is_const = true;
+        var mp_is_vol: bool = false;
+        if ((mp_bt.flags & @intCast(u8, 2)) != @intCast(u8, 0)) mp_is_vol = true;
+        var mp_ret = type_mod.typeRegistryGetOrCreateManyPtrQ(self.registry, mp_elem, mp_is_const, mp_is_vol);
+        return mp_ret;
+    }
+    // Task 17 (F): reject a comptime-known out-of-bounds constant slice-range
+    // on a fixed-size array (the analogue of the index check).
+    semanticAnalyzerCheckComptimeSliceBounds(self, node_idx);
+    var slice_elem: u32 = type_mod.TYPE_VOID;
+    var ix_elem2 = type_mod.typeRegistryIndexedElemType(self.registry, slice_base);
+    if (ix_elem2 != type_mod.TYPE_UNDEFINED) {
+        slice_elem = ix_elem2;
+    } else {
+        slice_elem = slice_base;
+    }
+    if (slice_elem == type_mod.TYPE_VOID) { return type_mod.TYPE_VOID; }
     var se_is_const: bool = false;
-    if (bt.kind == type_mod.TypeKind.slice_type or bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type or bt.kind == type_mod.TypeKind.array_type) {
+    if (semanticAnalyzerIsPointerFamilyKind(bt.kind)) {
         if ((bt.flags & @intCast(u8, 1)) != @intCast(u8, 0)) se_is_const = true;
     }
-    var ret = type_mod.typeRegistryGetOrCreateSlice(self.registry, self._stub_1, se_is_const);
-    self._stub_0 = saved;
+    // FX6 (Volume II const-decay holes): an array VALUE's `const` lives on the
+    // binding, not the type, so `arr[0..]` on a const-bound array must yield a
+    // const slice (Zig: `[]const T`) and then reject at the ordinary site if
+    // the target discards it. Deliberately array-only: a const-bound MUTABLE
+    // slice (`const s: []T`) keeps its element mutability, matching Zig
+    // (`s[0..]` is `[]T`).
+    // FX11 extends the same propagation to a const aggregate's array FIELD:
+    // the field path decides (the field access normally already resolves
+    // `*const T` for a const aggregate, so this is the belt-and-braces for a
+    // decay whose resolved pointer predates the settled const binding). A
+    // mutable aggregate's field and a genuine pointer-typed field keep their
+    // pre-existing mutability.
+    if (bt.kind == type_mod.TypeKind.array_type and !se_is_const and semanticAnalyzerIsLValueConst(self, node.child_0)) {
+        se_is_const = true;
+    } else if ((bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) and !se_is_const and semanticAnalyzerFieldAccessArrayType(self, node.child_0) != @intCast(u32, 0) and semanticAnalyzerIsLValueConst(self, node.child_0)) {
+        se_is_const = true;
+    }
+    var ret = type_mod.typeRegistryGetOrCreateSlice(self.registry, slice_elem, se_is_const);
     return ret;
+}
+
+// FB2 (Volume II): is a tuple-literal element a TYPE VALUE referenced by name
+// (`.{ i32, 5 }`, `.{ S, 5 }`, `.{ mod.T, 5 }`)? A named type used as a value
+// resolves to the named type's own id (indistinguishable from a value of that
+// type by the TypeId alone), so detect it from the element AST/symbol exactly
+// like `printFmtArgIsTypeValue` in lower.zig does for the literal print path.
+// The tuple element type then becomes TYPE_TYPE and the print validator's
+// existing type-kind arm rejects it on both the literal and the
+// tuple-variable path. Inline type expressions already resolve to TYPE_TYPE.
+fn semanticAnalyzerTupleElemIsTypeValue(self: *SemanticAnalyzer, elem_idx: u32) bool {
+    var an = ast_mod.astStoreNodeAt(self.store, elem_idx);
+    if (an.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, elem_idx);
+        if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id)) |s| {
+            if (s.kind == sym_mod.SymbolKind.type_alias) return true;
+        }
+        // Primitive builtin names (`u32`, `bool`, ...) are registered in the
+        // type name cache, not the symbol table; a cache hit whose type name is
+        // the ident itself is a type value.
+        if (type_mod.nameCacheGet(self.registry, @intCast(u64, name_id))) |ctid| {
+            if (@intCast(usize, ctid) < self.registry.types_len) {
+                var cty = self.registry.types_items[@intCast(usize, ctid)];
+                if (cty.name_id != @intCast(u32, 0) and cty.name_id == name_id) return true;
+            }
+        }
+        return false;
+    }
+    if (an.kind == AstKind.field_access) {
+        var field_name = ast_mod.astStoreNodePayload(self.store, elem_idx);
+        var base_node = ast_mod.astStoreNodeAt(self.store, an.child_0);
+        if (base_node.kind == AstKind.ident_expr) {
+            var base_name = ast_mod.astStoreIdentifier(self.store, an.child_0);
+            if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, base_name)) |bs| {
+                if (bs.kind == sym_mod.SymbolKind.module) {
+                    if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, bs.module_id, field_name)) |ms| {
+                        if (ms.kind == sym_mod.SymbolKind.type_alias) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
+// A5-F: is an expression a TYPE VALUE referenced by name? A `type_alias`
+// symbol (or a builtin primitive name, or a `module.T` field) used in a value
+// position resolves to the aliased concrete type id, indistinguishable from a
+// real value of that type by the TypeId alone. This paren-transparent wrapper
+// over `semanticAnalyzerTupleElemIsTypeValue` lets the binding/value sites
+// detect the shape from the AST/symbol and reject it with the existing
+// level-0 `error[3000]`.
+fn semanticAnalyzerExprIsTypeValue(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var idx = node_idx;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (idx == @intCast(u32, 0)) return false;
+        var n = ast_mod.astStoreNodeAt(self.store, idx);
+        if (n.kind == AstKind.paren_expr) { idx = n.child_0; continue; }
+        return semanticAnalyzerTupleElemIsTypeValue(self, idx);
+    }
+    return false;
+}
+
+// FB2 fix round 1 (Volume II): does a VOID-typed tuple element come from an
+// UNRESOLVED reference rather than a genuine void value? Only two shapes can
+// be transient here: a bare ident (paren-transparent), which is an
+// unresolved/undeclared global/alias reference, and a module-member reference
+// (`colors.C`, `@import("x.zig").C`), whose global may not have settled yet.
+// Both keep the pre-FB2 pass-1 I32 fallback so the first-pass tuple identity
+// (and therefore every later type id / emitted C byte) is preserved while the
+// module-var fixpoint settles the true type. A field read on a VALUE base
+// (`s.v`, `p.v`, `helper.g.v`) is NOT transient: Z98 supports void-typed
+// struct fields (`struct { v: void, a: i32 }` compiles and runs), so its VOID
+// result is a real void value and the element must keep `void` for the print
+// validator's `error[3063]` reject.
+fn semanticAnalyzerTupleElemVoidIsUnresolvedRef(self: *SemanticAnalyzer, elem_idx: u32) bool {
+    var idx = elem_idx;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        var n = ast_mod.astStoreNodeAt(self.store, idx);
+        if (n.kind == AstKind.paren_expr) {
+            if (n.child_0 == @intCast(u32, 0)) return false;
+            idx = n.child_0;
+            continue;
+        }
+        if (n.kind == AstKind.ident_expr) return true;
+        if (n.kind == AstKind.field_access) {
+            return semanticAnalyzerTupleElemFieldBaseIsModule(self, n.child_0);
+        }
+        return false;
+    }
+    return false;
+}
+
+// Is the base of a tuple-element field access a module namespace (or a direct
+// `@import(...)`), i.e. a member reference whose global may still be
+// unresolved? Any other base is a value/aggregate read and is not transient.
+fn semanticAnalyzerTupleElemFieldBaseIsModule(self: *SemanticAnalyzer, base_idx: u32) bool {
+    var idx = base_idx;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (idx == @intCast(u32, 0)) return false;
+        var n = ast_mod.astStoreNodeAt(self.store, idx);
+        if (n.kind == AstKind.paren_expr) {
+            if (n.child_0 == @intCast(u32, 0)) return false;
+            idx = n.child_0;
+            continue;
+        }
+        if (n.kind == AstKind.import_expr) return true;
+        if (n.kind == AstKind.ident_expr) {
+            var bname = ast_mod.astStoreIdentifier(self.store, idx);
+            if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, bname)) |bs| {
+                if (bs.kind == sym_mod.SymbolKind.module) return true;
+            }
+            return false;
+        }
+        return false;
+    }
+    return false;
 }
 
 fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-    var saved = self._stub_0;
-    var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-    if (ec.len == @intCast(usize, 0)) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
-    var start: u32 = @intCast(u32, self.registry.xt_len);
-    var i: usize = 0;
-    while (i < ec.len) : (i += @intCast(usize, 1)) {
-        self._stub_0 = semanticAnalyzerResolveExpr(self, ec[i]);
-        if (self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = type_mod.TYPE_I32; }
-        type_mod.xtAppend(self.registry, self._stub_0);
+     var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
+    if (ec_n == @intCast(usize, 0)) { return type_mod.TYPE_VOID; }
+    // Task 4/9 (fix round 3, operator ruling Q7): resolve every element even
+    // when a recorded type exists. A forward-referenced global now resolves to
+    // its true type once the module-var fixpoint has run (the loop re-resolves
+    // every initializer until the symbols stop changing), so:
+    //   * an unchanged element list returns the recorded type — the Task-4
+    //     idempotence that keeps the global symbol, the lowered temp and the
+    //     generated printer on ONE C type;
+    //   * a CHANGED element list rebuilds the tuple from the fresh types. The
+    //     caller records the new type for this node and `front_resolution`
+    //     updates the decl/symbol to match, so a pass-1 `TYPE_VOID`
+    //     (`var g = .{ b, 7 }; const b = Pair{...}`, `b` not yet settled) is
+    //     replaced by the true `{ Pair, i32 }`; the dependency-ordered
+    //     `__module_init` materialises `b` before `g`. No diagnostic is emitted
+    //     here — the only unresolvable shape (a dependency cycle) is rejected
+    //     by the init orderer.
+    var tmp_raw = alloc_mod.sandAlloc(self.registry.types_alloc, @intCast(usize, 4) * ec_n, @intCast(usize, 4)) catch unreachable;
+    var tmp = @ptrCast([*]u32, tmp_raw);
+    var i: usize = @intCast(usize, 0);
+    while (i < ec_n) : (i += @intCast(usize, 1)) {
+        var elem_idx = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
+        var elem_tid = semanticAnalyzerResolveExpr(self, elem_idx);
+        // FB2 (Volume II inferred-tuple-element typing family): type the
+        // element by what it is, not by the FB fallbacks.
+        //
+        // 1. A TYPE VALUE used as an element (`.{ i32, 5 }`, `.{ S, 5 }`,
+        //    `.{ mod.T, 5 }`) types as TYPE_TYPE, so the print validator's
+        //    type-kind arm clean-rejects it on BOTH the literal path and FD2's
+        //    tuple-variable path — the variable path has no element AST node, so
+        //    `printFmtArgIsTypeValue` (lower.zig) cannot fire there. Inline type
+        //    expressions (`struct {...}`, `*T`, `[N]T`, ...) already resolve to
+        //    TYPE_TYPE through the resolveExpr type-expression arms.
+        // 2. A genuine `void` element keeps `void`: no i32 fallback, so the
+        //    print validator rejects it (error[3063]) instead of accepting a
+        //    fabricated i32 element whose C construction is invalid. Exception:
+        //    a bare (possibly parenthesized) ident/field-access reference that
+        //    resolves to VOID is an unresolved forward global, not a void
+        //    value (Z98 rejects void bindings, so no value reference can be
+        //    void); it keeps the pre-FB2 pass-1 I32 fallback so the settled
+        //    tuple's registry identity and every subsequent type id stay
+        //    byte-identical when the reference re-resolves on the next
+        //    fixpoint pass.
+        // 3. An untyped integer-literal element takes its value-chosen carrier
+        //    (i32 when the value fits, else u32/i64/u64) exactly like the
+        //    unannotated-binding rule below, so the tuple's C field types match
+        //    the value (`3000000000` must not become `int`). In-i32 values keep
+        //    TYPE_INT_LIT, so emitted C for existing in-range tuples is
+        //    unchanged.
+        if (semanticAnalyzerTupleElemIsTypeValue(self, elem_idx)) {
+            elem_tid = type_mod.TYPE_TYPE;
+        } else if (elem_tid == type_mod.TYPE_VOID and semanticAnalyzerTupleElemVoidIsUnresolvedRef(self, elem_idx)) {
+            elem_tid = type_mod.TYPE_I32;
+        } else if (elem_tid == type_mod.TYPE_INT_LIT or elem_tid == type_mod.TYPE_I32) {
+            var et_ce = semaComptimeEvalInit(self);
+            if (ce_mod.comptimeEvalEvaluate(&et_ce, elem_idx)) |et_cv| {
+                if (et_cv.kind == ce_mod.KIND_INT) {
+                    if (ce_mod.comptimeIntUntypedType(et_cv.v)) |et_ut| {
+                        if (et_ut != type_mod.TYPE_I32) { elem_tid = et_ut; }
+                    }
+                }
+            }
+        }
+        tmp[i] = elem_tid;
     }
-    self._stub_0 = saved;
-    return type_mod.typeRegistryGetOrCreateTuple(self.registry, start, @intCast(u16, ec.len));
+    // FB (D4): array ELEMENTS are allowed to exist in a tuple literal (the
+    // print-argument path already rejects them with the Task-4 `error[3063]`,
+    // and `emitFieldAssign` byte-copies a same-typed array source), but a
+    // spelled tuple type with an array element is rejected at registration
+    // (`type_resolver.tupleElemArrayUnsupported`) and tuple->tuple assignment
+    // with an array element is not assignable (no field-wise C copy).
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |existing| {
+        if (existing != type_mod.TYPE_UNDEFINED) {
+            if (@intCast(usize, existing) < self.registry.types_len and self.registry.types_items[@intCast(usize, existing)].kind == type_mod.TypeKind.tuple_type) {
+                var etup = self.registry.tup_items[@intCast(usize, self.registry.types_items[@intCast(usize, existing)].payload_idx)];
+                var same: u8 = @intCast(u8, 1);
+                if (@intCast(usize, etup.elems_count) != ec_n) {
+                    same = @intCast(u8, 0);
+                } else {
+                    var ci: usize = @intCast(usize, 0);
+                    while (ci < ec_n) : (ci += @intCast(usize, 1)) {
+                        if (self.registry.xt_items[@intCast(usize, etup.elems_start) + ci] != tmp[ci]) { same = @intCast(u8, 0); }
+                    }
+                }
+                if (same != @intCast(u8, 0)) { return existing; }
+            }
+        }
+    }
+    var start: u32 = @intCast(u32, self.registry.xt_len);
+    i = 0;
+    while (i < ec_n) : (i += @intCast(usize, 1)) {
+        type_mod.xtAppend(self.registry, tmp[i]);
+    }
+    return type_mod.typeRegistryGetOrCreateTuple(self.registry, start, @intCast(u16, ec_n));
 }
+
+
 
 fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-    var saved = self._stub_0;
     var annot_tid: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+    var annot_elem_tid: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
     if (node.child_0 != @intCast(u32, 0)) {
         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
         if (rt) |t| {
             var tt = self.registry.types_items[@intCast(usize, t)];
             if (tt.kind == type_mod.TypeKind.array_type) { annot_tid = t; }
         }
+        // Task 2g-F (d): an explicit array annotation on a nested array literal
+        // is not always pre-resolved into the resolved-type table; resolve it
+        // here so a multi-dim literal is typed by its annotation instead of
+        // inferring u32 from its integer elements (which mis-sizes the rows).
+        if (annot_tid == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var ann_kind_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            if (ann_kind_node.kind == AstKind.array_type and !type_resolver.typeResolverIsInferredLenArray(self.store, self.interner, node.child_0)) {
+                var tre_env0 = semanticAnalyzerTypeEnvLocals(self, self.module_id);
+                var at0 = type_resolver.resolveTypeExprFull(&tre_env0, node.child_0, @intCast(u32, 0));
+                if (at0 != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                    var at0ty = self.registry.types_items[@intCast(usize, at0)];
+                    if (at0ty.kind == type_mod.TypeKind.array_type) {
+                        annot_tid = at0;
+                        rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, at0);
+                    }
+                }
+            }
+        }
+        if (annot_tid == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var annot_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            var inferred_len: bool = false;
+            if (annot_node.kind == AstKind.array_type and annot_node.child_1 != @intCast(u32, 0)) {
+                var sz_node = ast_mod.astStoreNodeAt(self.store, annot_node.child_1);
+                if (sz_node.kind == AstKind.ident_expr) {
+                    var sz_name = ast_mod.astStoreIdentifier(self.store, annot_node.child_1);
+                    var sz_text = interner_mod.stringInternerGet(self.interner, sz_name);
+                    if (sz_text.len == @intCast(usize, 1) and sz_text[0] == @intCast(u8, '_')) { inferred_len = true; }
+                }
+            }
+            if (inferred_len and annot_node.child_0 != @intCast(u32, 0)) {
+                var tre_env = semanticAnalyzerTypeEnvLocals(self, self.module_id);
+                var et = type_resolver.resolveTypeExprFull(&tre_env, annot_node.child_0, @intCast(u32, 0));
+                if (et != @intCast(u32, type_mod.TYPE_UNDEFINED)) { annot_elem_tid = et; }
+            }
+        }
     }
-     var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-     if (ec.len == @intCast(usize, 0)) { self._stub_0 = saved; if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { return annot_tid; } return type_mod.TYPE_VOID; }
+    var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
+     if (ec_n == @intCast(usize, 0)) { if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { return annot_tid; } return type_mod.TYPE_VOID; }
      var arr_elem_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
+     // Task 4b-F: establish the array's element type from the literal's own
+     // annotation (`[_]T` -> annot_elem_tid, `[N]T` -> annot_tid's element) and
+     // push it as the expected type for each element, so anonymous aggregate /
+     // enum literals (which require an expected type) resolve instead of void.
+     var elem_expected: u32 = annot_elem_tid;
+     if (elem_expected == @intCast(u32, type_mod.TYPE_UNDEFINED) and annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+         elem_expected = type_mod.typeRegistryIndexedElemType(self.registry, annot_tid);
+     }
      var aei: usize = @intCast(usize, 0);
-     while (aei < ec.len) : (aei += @intCast(usize, 1)) {
-         var el = ast_mod.astStoreNodeAt(self.store, ec[aei]);
+     while (aei < ec_n) : (aei += @intCast(usize, 1)) {
+         var el_ix = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, aei));
+         var el = ast_mod.astStoreNodeAt(self.store, el_ix);
          var el_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
          if (el.kind == AstKind.char_literal) { el_tid = type_mod.TYPE_U8; }
          else if (el.kind == AstKind.int_literal) { el_tid = type_mod.TYPE_U32; }
-         else { el_tid = semanticAnalyzerResolveExpr(self, ec[aei]); }
-         if (el_tid == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
+         else {
+             if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { pushExpectedTypeMaybe(self, elem_expected); }
+             el_tid = semanticAnalyzerResolveExpr(self, el_ix);
+             if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { popExpectedType(self); }
+         }
+         if (el_tid == type_mod.TYPE_VOID) { return type_mod.TYPE_VOID; }
+         // FX6 (Volume II const-decay holes): the element site — the one
+         // materialisation path outside FC's site set. The array literal's
+         // declared element type is the coercion target for every element, so
+         // a `[]const T` element (or a string literal / const-array element)
+         // must not silently become a mutable element type.
+         if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED) and el_tid != elem_expected) {
+             var el_eff = errLitSrcType(self, el_ix, elem_expected, el_tid);
+             if (semanticAnalyzerMaybeDiagConstDiscard(self, el_ix, el_eff, elem_expected)) {
+                 // element-level const discard rejected
+             } else {
+                 _ = semanticAnalyzerMaybeDiagConstArrayDecay(self, el_ix, el_ix, el_eff, elem_expected);
+             }
+         }
          if (aei == @intCast(usize, 0)) { arr_elem_tid = el_tid; }
      }
-     if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { self._stub_0 = saved; return annot_tid; }
-     var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, arr_elem_tid, @intCast(u32, ec.len));
-     self._stub_0 = saved;
+     if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { return annot_tid; }
+     if (annot_elem_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { return type_mod.typeRegistryGetOrCreateArray(self.registry, annot_elem_tid, @intCast(u32, ec_n)); }
+     var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, arr_elem_tid, @intCast(u32, ec_n));
      return arr_tid;
 }
 
 pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void {
     semanticAnalyzerResolveStmtIter(self, node_idx);
+}
+
+// C1b (Amendment 2): is this module-scope initializer the conditional-`@import`
+// binding shape — an `if_expr`/`swt_ex` whose arms/prong bodies are all
+// `import_expr`s (paren-transparent, capture-free)? Such a binding selects a
+// compile-time module and has NO runtime value (see
+// `semanticAnalyzerResolveModuleVarDecl`'s alias-binding rule).
+fn semanticAnalyzerInitIsImportAlias(self: *SemanticAnalyzer, init_idx: u32) bool {
+    var t4_ia_idx = init_idx;
+    var t4_ia_uw: usize = @intCast(usize, 0);
+    while (t4_ia_uw < @intCast(usize, 8)) : (t4_ia_uw += 1) {
+        if (t4_ia_idx == @intCast(u32, 0)) return false;
+        var t4_ia_n = ast_mod.astStoreNodeAt(self.store, t4_ia_idx);
+        if (t4_ia_n.kind == AstKind.paren_expr) { t4_ia_idx = t4_ia_n.child_0; continue; }
+        break;
+    }
+    if (t4_ia_idx == @intCast(u32, 0)) return false;
+    var t4_ia_n2 = ast_mod.astStoreNodeAt(self.store, t4_ia_idx);
+    if (t4_ia_n2.kind == AstKind.if_expr) {
+        if (ast_mod.astStoreNodePayload(self.store, t4_ia_idx) != @intCast(u32, 0)) return false;
+        if (t4_ia_n2.child_1 == @intCast(u32, 0) or t4_ia_n2.child_2 == @intCast(u32, 0)) return false;
+        // D3: recursive — both arms may themselves be nested conditional
+        // imports; recognize the whole shape so the decl gets the C1b
+        // no-runtime-value treatment (the symbol is typed at use).
+        return semanticAnalyzerImportAliasShape(self, t4_ia_n2.child_1) and
+            semanticAnalyzerImportAliasShape(self, t4_ia_n2.child_2);
+    }
+    if (t4_ia_n2.kind == AstKind.swt_ex) {
+        if (!semanticAnalyzerSwitchIsImportIdiom(self, t4_ia_idx)) return false;
+        return true;
+    }
+    return false;
+}
+
+// D12 (Phase 3.5): apply a declared array type to an untyped tuple literal and,
+// recursively, to nested array-literal elements. The typed array-literal path
+// already resolves each nested literal from its annotation; this gives the
+// untyped `.{}` form the same resolved types so lowering uses the element-wise
+// array path at every level. Non-tuple (e.g. struct literal) elements and
+// non-array expected types are left untouched.
+fn semanticAnalyzerTypeArrayLiteralTree(self: *SemanticAnalyzer, node_idx: u32, ty: u32) void {
+    if (@intCast(usize, ty) >= self.registry.types_len) return;
+    if (self.registry.types_items[@intCast(usize, ty)].kind != type_mod.TypeKind.array_type) return;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind != AstKind.tuple_literal) return;
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, ty);
+    var elem_t = self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, ty)].payload_idx)].elem;
+    if (@intCast(usize, elem_t) >= self.registry.types_len) return;
+    if (self.registry.types_items[@intCast(usize, elem_t)].kind != type_mod.TypeKind.array_type) return;
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, ec_n)) : (i += @intCast(usize, 1)) {
+        var child = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
+        semanticAnalyzerTypeArrayLiteralTree(self, child, elem_t);
+    }
 }
 
 pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u32) u32 {
@@ -2306,14 +7707,117 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
     if (decl.child_0 != @intCast(u32, 0)) {
         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, decl.child_0);
         if (rt) |t| { decl_type = t; }
+        // Mirror the local rule: an annotation the table has not resolved yet
+        // gets one full-resolution attempt (order-independent forward aliases
+        // resolve here); only a still-unresolved annotation is `undetermined`.
+        if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var mvd_env = semanticAnalyzerTypeEnvLocals(self, self.module_id);
+            var mvd_full = type_resolver.resolveTypeExprFull(&mvd_env, decl.child_0, @intCast(u32, 0));
+            if (mvd_full != type_mod.TYPE_UNDEFINED) {
+                decl_type = mvd_full;
+                rtt_mod.resolvedTypeTableSet(self.type_table, decl.child_0, mvd_full);
+            }
+        }
     }
-    pushExpectedType(self, decl_type);
+    if (decl.child_0 == @intCast(u32, 0)) {
+        pushExpectedTypeNone(self);
+    } else {
+        pushExpectedTypeDeclared(self, decl_type);
+    }
+    // FX12 (Volume II ch12): mark real container scope so a module-level
+    // initializer's `try` rejects as "'try' outside function scope".
+    self.container_init_depth += @intCast(u32, 1);
     var it = semanticAnalyzerResolveExpr(self, decl.child_1);
+    self.container_init_depth -= @intCast(u32, 1);
     popExpectedType(self);
+    // C1b (Amendment 2): a conditional-`@import` binding selects a compile-time
+    // module — no runtime value — so the module-var fixpoint must NOT type the
+    // DECL record with the `module_type` (the C emitter has no spelling for it;
+    // the binding's storage slot keeps its pre-T4 `int` spelling — disclosed
+    // C3). The SYMBOL is typed at use sites by
+    // `semanticAnalyzerResolveIdent`'s module-alias fold. Unannotated only: an
+    // annotated mismatch keeps its `error[3000]` reject below.
+    if (decl.child_0 == @intCast(u32, 0) and it != @intCast(u32, 0)) {
+        if (@intCast(usize, it) < self.registry.types_len and
+            self.registry.types_items[@intCast(usize, it)].kind == type_mod.TypeKind.module_type and
+            semanticAnalyzerInitIsImportAlias(self, decl.child_1)) {
+            return type_mod.TYPE_VOID;
+        }
+    }
+    // A5-F: reject a module-scope binding whose initializer is a TYPE VALUE
+    // referenced by name (`var x = A;` / `var x = i32;` / `var x = type;` /
+    // `const T = type;`). The resolved type id erases a `type_alias` to its
+    // underlying concrete type, so detect the initializer shape and reject
+    // with the site's existing level-0 `error[3000]`.
+    if (semanticAnalyzerExprIsTypeValue(self, decl.child_1)) {
+        var mvd_is_const = (decl.flags & @intCast(u8, 1)) == @intCast(u8, 0);
+        var mvd_reject: bool = !mvd_is_const;          // var x = A; / var x = i32; / var x = type;
+        if (mvd_is_const) {
+            var mvd_init_node = ast_mod.astStoreNodeAt(self.store, decl.child_1);
+            if (mvd_init_node.kind == AstKind.ident_expr and it == type_mod.TYPE_TYPE) mvd_reject = true; // const T = type;
+        }
+        if (mvd_reject) {
+            var mvd_dst: u32 = decl_type;
+            if (mvd_dst == type_mod.TYPE_UNDEFINED) mvd_dst = type_mod.TYPE_TYPE;
+            var mvd_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+            semanticAnalyzerTypeMismatchReport(self, decl.child_1, type_mod.TYPE_TYPE, mvd_dst, mvd_msg, true);
+            return it;
+        }
+    }
+    // Task 4 fix (review Important 3): an UNANNOTATED module binding whose
+    // initializer folds to an integer that does not fit the default i32
+    // materialisation takes the value-based type, mirroring the function-local
+    // rule above. The caller (`front_resolution`) stores the returned type on
+    // the decl node AND the symbol, so the global's C slot and every later
+    // reference agree (`const X = 2000000000 + 1000000000;` is a u32 global;
+    // before this fix it emitted `int zG_X;` and ran truncated).
+    if (decl.child_0 == @intCast(u32, 0) and (it == type_mod.TYPE_INT_LIT or it == type_mod.TYPE_I32)) {
+        var vd_ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+        vd_ce.module_id = self.module_id;
+        if (ce_mod.comptimeEvalEvaluate(&vd_ce, decl.child_1)) |vdcv| {
+            if (vdcv.kind == ce_mod.KIND_INT) {
+                if (ce_mod.comptimeIntUntypedType(vdcv.v)) |vdut| {
+                    if (vdut != type_mod.TYPE_I32) { it = vdut; }
+                }
+            }
+        }
+    }
+
     if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
-        var ck = coercion_mod.classifyCoercion(self.registry, errLitSrcType(self, decl.child_1, decl_type, it), decl_type);
+        var it_eff = errLitSrcType(self, decl.child_1, decl_type, it);
+        if (semanticAnalyzerQualifierGate(self, decl.child_1, it_eff, decl_type) != QUALIFIER_GATE_NONE) {
+            return it;
+        }
+        // FX3 (Volume II D6 extras): module-level value-aware f64/integer ->
+        // f32 initialization, mirroring the function-local rule above.
+        var mv_fst = semanticAnalyzerFloatNarrowStatus(self, decl.child_1, it_eff, decl_type);
+        var mv_assign = type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type);
+        if (mv_fst == FLOAT_NARROW_REJECT or (mv_fst == FLOAT_NARROW_NONE and decl_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, it_eff) and !mv_assign)) {
+            var mv_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+            semanticAnalyzerTypeMismatchReport(self, decl.child_1, it_eff, decl_type, mv_msg, false);
+        } else if (mv_fst == FLOAT_NARROW_ACCEPT and !mv_assign) {
+            semanticAnalyzerFloatNarrowRecord(self, decl.child_1, decl_type);
+        } else if (!mv_assign and semanticAnalyzerFnPtrSigMismatch(self, it_eff, decl_type)) {
+            var mv2_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+            semanticAnalyzerTypeMismatchReport(self, decl.child_1, it_eff, decl_type, mv2_msg, false);
+        } else {
+        var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);
         if (ck != coercion_mod.CoercionKind.none) {
             coercion_mod.coercionTableAdd(self.coercion_table, decl.child_1, ck, decl_type);
+        }
+        }
+    }
+    // D12 (Phase 3.5): mirror the function-local var-decl rule at
+    // `:6681-6685`. A module-scope untyped array literal (`.{ ... }`) is
+    // resolved as a tuple because the expected-type stack does not rewrite it;
+    // without this rule lowering materialises a tuple temp and the global
+    // store emits an illegal whole-array C assignment. When no coercion was
+    // recorded, type the initializer as the declared array.
+    if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and
+        @intCast(usize, decl_type) < self.registry.types_len and
+        self.registry.types_items[@intCast(usize, decl_type)].kind == type_mod.TypeKind.array_type) {
+        if (coercion_mod.coercionTableGet(self.coercion_table, decl.child_1) == null) {
+            semanticAnalyzerTypeArrayLiteralTree(self, decl.child_1, decl_type);
         }
     }
     return it;

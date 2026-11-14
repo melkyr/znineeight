@@ -157,13 +157,13 @@ fn testSwitchExprBasic() void {
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.swt_ex)));
 
     if (ast_mod.astStoreNodePayload(&store, node_idx) > @intCast(u32, 0)) {
-        var prongs = ast_mod.astStoreNodeExtraChildren(&store, node_idx);
-        if (prongs.len > @intCast(usize, 0)) {
-            var prong0 = ast_mod.astStoreNodeAt(&store, prongs[0]);
+        var prongs_n = ast_mod.astStoreNodeExtraChildCount(&store, node_idx);
+        if (prongs_n > @intCast(usize, 0)) {
+            var prong0 = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodeExtraChildAt(&store, node_idx, @intCast(u32, 0)));
             assertEqU32(@intCast(u32, @enumToInt(prong0.kind)), @intCast(u32, @enumToInt(AstKind.swt_prong)));
         }
-        if (prongs.len > @intCast(usize, 1)) {
-            var prong1 = ast_mod.astStoreNodeAt(&store, prongs[1]);
+        if (prongs_n > @intCast(usize, 1)) {
+            var prong1 = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodeExtraChildAt(&store, node_idx, @intCast(u32, 1)));
             assertEqU32(@intCast(u32, @enumToInt(prong1.kind)), @intCast(u32, @enumToInt(AstKind.swt_prong)));
         }
     }
@@ -563,9 +563,9 @@ fn testParseStructInitVarDecl() void {
     var node_idx = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = ast_mod.astStoreNodeAt(&store, node_idx);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
-    var children = ast_mod.astStoreNodeExtraChildren(&store, node_idx);
-    assertEqU32(@intCast(u32, children.len), @intCast(u32, 1));
-    var decl = ast_mod.astStoreNodeAt(&store, children[0]);
+    var children_n = ast_mod.astStoreNodeExtraChildCount(&store, node_idx);
+    assertEqU32(children_n, @intCast(u32, 1));
+    var decl = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodeExtraChildAt(&store, node_idx, @intCast(u32, 0)));
     assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.var_decl)));
     var init_node = ast_mod.astStoreNodeAt(&store, decl.child_1);
     assertEqU32(@intCast(u32, @enumToInt(init_node.kind)), @intCast(u32, @enumToInt(AstKind.struct_init)));
@@ -817,11 +817,11 @@ pub fn runErrRecoveryTests() void {
 
 fn countModuleErrs(store: *AstStore, root: u32) u32 {
     var node = ast_mod.astStoreNodeAt(store, root);
-    var ec = ast_mod.astStoreNodeExtraChildren(store, root);
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(store, root);
     var count: u32 = 0;
     var i: usize = 0;
-    while (i < ec.len) {
-        var child = ast_mod.astStoreNodeAt(store, ec[i]);
+    while (i < @intCast(usize, ec_n)) {
+        var child = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, root, @intCast(u32, i)));
         if (@enumToInt(child.kind) == @enumToInt(AstKind.err)) count += 1;
         i += 1;
     }
@@ -1085,10 +1085,10 @@ fn testParseExprPrecDepth() void {
     if (node.child_1 != 0) { var r = countSwitchDepthIn(store, node.child_1, @intCast(u32, 0)); if (r > best) best = r; }
     if (node.child_2 != 0) { var r = countSwitchDepthIn(store, node.child_2, @intCast(u32, 0)); if (r > best) best = r; }
     if (ast_mod.astStoreNodePayload(store, parsed) != 0) {
-        var ec = ast_mod.astStoreNodeExtraChildren(store, parsed);
+        var ec_n = ast_mod.astStoreNodeExtraChildCount(store, parsed);
         var j: usize = 0;
-        while (j < ec.len and j < @intCast(usize, 20)) {
-            var r = countSwitchDepthIn(store, ec[j], @intCast(u32, 0));
+        while (j < @intCast(usize, ec_n) and j < @intCast(usize, 20)) {
+            var r = countSwitchDepthIn(store, ast_mod.astStoreNodeExtraChildAt(store, parsed, @intCast(u32, j)), @intCast(u32, 0));
             if (r > best) best = r;
             j += 1;
         }
@@ -1101,10 +1101,10 @@ fn testParseExprPrecDepth() void {
     if (node.child_1 != 0) { var r = countSwitchDepthIn(store, node.child_1, d2); if (r > best) best = r; }
     if (node.child_2 != 0) { var r = countSwitchDepthIn(store, node.child_2, d2); if (r > best) best = r; }
     if (ast_mod.astStoreNodePayload(store, parsed) != 0) {
-        var ec = ast_mod.astStoreNodeExtraChildren(store, parsed);
+        var ec_n = ast_mod.astStoreNodeExtraChildCount(store, parsed);
         var j: usize = 0;
-        while (j < ec.len and j < @intCast(usize, 20)) {
-            var r = countSwitchDepthIn(store, ec[j], d2);
+        while (j < @intCast(usize, ec_n) and j < @intCast(usize, 20)) {
+            var r = countSwitchDepthIn(store, ast_mod.astStoreNodeExtraChildAt(store, parsed, @intCast(u32, j)), d2);
             if (r > best) best = r;
             j += 1;
         }
@@ -1235,8 +1235,8 @@ fn testModAssignParse() void {
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = ast_mod.astStoreNodeAt(&store, root);
     assertEqU32(@intCast(u32, @enumToInt(node.kind)), @intCast(u32, @enumToInt(AstKind.module_root)));
-    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
-    var stmt = ast_mod.astStoreNodeAt(&store, ec[0]);
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(&store, root);
+    var stmt = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodeExtraChildAt(&store, root, @intCast(u32, 0)));
     assertEqU32(@intCast(u32, @enumToInt(stmt.kind)), @intCast(u32, @enumToInt(AstKind.mod_assign)));
     assertEqU32(@intCast(u32, @enumToInt(AstKind.mod_assign)), @intCast(u32, 74));
 }
@@ -1261,10 +1261,11 @@ fn testWhileCaptureNode() void {
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = ast_mod.astStoreNodeAt(&store, root);
-    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
-    var decl = ast_mod.astStoreNodeAt(&store, ec[0]);
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(&store, root);
+    var ec0 = ast_mod.astStoreNodeExtraChildAt(&store, root, @intCast(u32, 0));
+    var decl = ast_mod.astStoreNodeAt(&store, ec0);
     assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.while_stmt)));
-    var cap_node = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodePayload(&store, ec[0]));
+    var cap_node = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodePayload(&store, ec0));
     assertEqU32(@intCast(u32, @enumToInt(cap_node.kind)), @intCast(u32, @enumToInt(AstKind.while_capture)));
 }
 fn testForStmtName() void {
@@ -1288,7 +1289,7 @@ fn testForStmtName() void {
     var p = parser_mod.parserInit(tokens[0..i], src, &store, &in_, &d, &a);
     var root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
     var node = ast_mod.astStoreNodeAt(&store, root);
-    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
-    var decl = ast_mod.astStoreNodeAt(&store, ec[0]);
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(&store, root);
+    var decl = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodeExtraChildAt(&store, root, @intCast(u32, 0)));
     assertEqU32(@intCast(u32, @enumToInt(decl.kind)), @intCast(u32, @enumToInt(AstKind.for_stmt)));
 }

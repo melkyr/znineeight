@@ -1,30 +1,31 @@
-# 08 — C89 Emission [updated: 2026-09-04 — the 11 `@socket*` networking builtins were REMOVED (netbind S3, `838009b0`): the F6 inline-port emission (see §6.9) is deleted; networking is now the std_net extern surface (target-selected wsock32/libc via `@cInclude`d `net_prelude.h`, WSAStartup init in `std_net.init()`, `createTcpClient`); a direct `@socket*` caller now fails `error[3000]: unsupported builtin function` (rc=2, 0 `.c`; `repro/mi_matrix/net_builtin_test` = GREEN negative probe). §6.9 remains as the pre-removal F6 record; prior 2026-08-13 — Defect E FIXED (F6): bare `union_type` now emits a real C `union` (max-member layout matching `@sizeOf`'s union-max) instead of a stacked `struct` — the `aggregateKeyword(kind)` helper (`c89_emit.zig:542`) is the single keyword source of truth at all 3 named-aggregate sites (`emitUnionType` def :1535, `emitSharedHeader` fwd-decl :1130-era, `emitSpecialTypes` fwd-decl :1260-era), closing the struct/union tag-namespace split-brain (a one-keyword swap failed gcc: 'defined as wrong kind of tag'); `union_emission_layout_xmod` prints 7+8 (@sizeOf(Data)=8 = runtime union), `sizeof_struct_union_xmod` still 24; lisp_interpreter + json_parser_workaround no longer SEGFAULT (arena sized by @sizeOf no longer overflows the 3x-stacked struct); tagged_union/struct sites stay `struct`, anonymous wrappers unaffected; prior 2026-08-13 — F6 networking builtins: 11 socket builtins (socketCreate/BindListen/Accept/Connect/Send/Recv/Select/FdZero/FdSet/FdIsset/Close) PORT net_runtime.c's 12 plat_* bodies inline (`#ifdef _WIN32/#else` per-builtin), `emitBuiltinIncludes` net-gated socket include block, std_net.zig + mud_server/rogue_mud migrated off net_runtime.c link (see §6.9); prior 2026-08-08 — F4 std-lib cleanup: the F2 console builtins' emitted `__bootstrap_write(...)` calls repointed to `std_print_len(...)` (the example-facing wrapper was removed from zig_runtime.c; `console_builtin_test` re-verified gcc-clean) — preamble + `emitConsoleClear`/`emitConsoleGotoxy`/`emitConsoleSetColor` (c89_emit.zig:3249, :3302, :3346; **[F3 line-ref pass 2026-08-13: console emit refs corrected]**); prior 2026-08-08 — 3 console builtins emit the `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` ANSI-escape/Win32 guard chains via `emitConsoleClear`/`emitConsoleGotoxy`/`emitConsoleSetColor` + Win98-forcing console include block in `emitBuiltinIncludes` (single- AND multi-module) — `console_builtin_test` gcc-clean; `@isWindows()` emits NO C (comptime-folded, see 05/07) (F2); prior 2026-08-08 — 6 core I/O builtins emit `putchar(c)`/`fwrite(ptr,1,len,stdout)`/`fwrite(ptr,1,len,stderr)`/`zT = getchar()`/`exit(code)`/`#ifdef _WIN32 Sleep(ms) #else usleep(ms*1000) #endif`; gated `#include` via `emitBuiltinIncludes` (`<stdio.h>`/`<stdlib.h>`/`_WIN32`→`<windows.h>`/else→`<unistd.h>`) in BOTH the single-stream `emitModuleHeader` and the multi-module `emitModuleFile` paths — `io_builtin_test` gcc-clean single- AND multi-module (F1); prior — cross-module tagged-union member-access SEGV FIXED (F6): generic field-access dispatch (lower.zig:2174-2206) gained a `tagged_union_type` case mirroring the same-module member path (`tu_items` lookup + `emitTaggedUnionInit` tag value) — `tagged_union_cmp_xmod` dumps rc=0 (was SEGV), isolated `var x = lib_mod.Shape.Circle;` gcc-clean + runs; the repro's `==` form now emits valid C — tagged-union `==`/`!=` emission FIXED (Task F, Option A, operator ruling m0471 SUPERSEDES the zig0 oracle which rejects union `==`): the `.binary` handler (c89_emit.zig:3724-3739) type-resolves each BIN_EQ/BIN_NE operand in `hoisted_temps` and appends `.tag` for `tagged_union_type` operands (mirrors the int_const `.tag =` path c89_emit.zig:3762-3789) — valid Zig semantics (union `==` compares the active tags); `s == lib_mod.Shape.Circle` emits `s.tag == zT_rhs.tag` (gcc-valid); `tagged_union_cmp_xmod` compiles+links+runs printing `1`; same-module union `==` also emits `.tag` (verified); 4 MD5 gates byte-identical, corpus CRASH=0, test_analyzer_bin PASS; **[F3 line-ref pass 2026-08-13: `.binary` handler ref :3724-3739 → :4369; int_const `.tag` path :3762-3789 → :4443.]** earlier — cross-module plain-enum member access FIXED (F3): `mod.Type.Member` now resolves via an `enum_type` case added to the generic base-type dispatch in sema (semantic_analyzer.zig:459) + lower.zig:2193 — emits `.enum_const`, so `zT_missing_fwd_xmod` + `json_parser_workaround` are gcc-clean; earlier — cross-module tagged-union `==`/member-literal SEGV documented (§1.17, I6): `s == lib.Shape.Circle` + `var x = lib.Shape.Circle` + TU VALUE payload access `s.Circle` all SEGV zig1 in `typeRegistryGetStructFields` (lower.zig:2180) — tagged_union_type misrouted to the struct-fields getter (indexes `st_items` with a `tu_items` payload_idx) → garbage slice → SEGV; same-module union `==` emits gcc-invalid C (`binary ==` on structs); zig0 REJECTS `union ==` cleanly (type mismatch) — fix target = graceful rejection (green-guard) + lower.zig:2180 dispatch fix; earlier same day — cross-module enum-literal comparison gap documented (§1.17, I3): `'zT_XX' undeclared` in importing module's `.c` — sema/lowering gap (qualified enum literal → VOID), NOT a header forward-decl gap; prior same day — multi-module emission loop verified (NO silent module drop; §1.17); orphan-module handling + arena_alloc_default runtime-symbol gap documented (§1.17); prior 2026-08-07 — null_src null construction skips the dead `null_const` temp (Option B); prior null-payload temp typed `"int"` (null_type fallback); prior 2026-08-06 — va_* emission + `stdarg.h` gating + extern variadic prototypes + `@intCast` range-check helper; stale c89_emit.zig line ref corrected (emitTaggedUnionType :1348); F7 line-ref re-verification (2026-08-08): all `c89_emit.zig`/`main.zig` refs corrected against source — emitInst :3138, emitModule :2277, emitModuleHeaderFile :2154, emitModuleFile :2399, emitMainWrapper :2313, emitFunctionSignature :1854, emitFunctionForwardDecl :1920, emitStdargInclude :2008, moduleHasVaInsts :1964, moduleQualifiedName :2111, ctypeGuardWrite :997, mangleLocalName :1838, mangleTempName :2349, c_incs list :1996-2013, dep-.h include :2121-2128, extern-name call site :4048, extern-no-fwd :1927, extern-no-body :2333, .loop_header :3071-3073, preamble :744 / main.zig:827-830, length guard :769, cincludeUnionAll call :832, LIR fn-list :543-615, C marker :710, FINAL_FLUSH :834, module name :731, sema comparison :540, lower enum_const :2207; F3 line-ref pass (2026-08-13): re-verified against current source post-F1/F6 — emitInst :3670, emitModule :2146, emitModuleHeaderFile :2233, emitModuleFile :2478, emitMainWrapper :2392, emitFunctionSignature :1875, emitFunctionForwardDecl :1941, emitStdargInclude :2006, moduleHasVaInsts :1985, moduleQualifiedName :2190, ctypeGuardWrite :1016, mangleLocalName :1859, mangleTempName :2505, `.loop_header` arm :3679, `.call_direct` :4718, extern-name call site :4733, extern-no-fwd :2177/:2324, extern-no-body :2370]
+# 08 — C89 Emission [updated: 2026-10-28 — Phase 2.5 Tasks 7 + 9 (Win9x conformance + warning-clean at the origin): (1) **D11** — `decl_local` C declarations are hoisted into the function declaration section, before every statement including the `zig_poison_fill` preamble (strict C89; OWC `E1058` class closed). (2) `.bat`/`.lnk`/`.rsp` writers emit CRLF via a buffered-writer mode; `build_target.sh` stays LF; the four generated native scripts drop `/Za`/`/WX`/`/za`/`/we`; new `build_mingw_crt.bat`/`build_mingw_nocrt.bat` emitters are the gcc fallback pair (all delivered in the seed `win/`). (3) emission hygiene at the origin: explicit string-literal/`u8*`↔`char*` pointer casts, emitter-supplied extern prototypes for header-less modules, overlength literal split, every emitted function ends in a `return`; `zig_runtime`/`zig_pal` helpers externalized (see doc 10). (4) runtime/support text has ONE hand-edited source, `sf/src/emit_support.zig`; `sf/src/include/*` is a generated snapshot (`scripts/gen_emit_support.sh`), guarded by `scripts/check_emit_support.sh`. New gates: `scripts/compiler/gate_crlf.sh` (Windows-facing CRLF only) and `scripts/compiler/gate_warn_clean.sh` (gcc `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`, sole suppression).] [updated: 2026-10-18 — M6 T5.3 (Win9x no-CRT + portable 64-bit C): (1) emitted 64-bit types/literals now spell through `zig_compat.h`'s `z64`/`zu64`/`Z98_I64_C`/`Z98_U64_C`/`Z98_I64_MIN/MAX`/`Z98_U64_MAX` (carrier typedefs, int-literal writers incl. the saturation bounds and `emitFloatHexHelper`, enum value tables, checked-cast/wrap/flag casts); the GCC branch keeps `long long`, MSVC uses `__int64` + `i64`/`ui64`, and OpenWatcom keeps the bootstrap `long long` + `LL`/`ULL` path (fix round 1, Amendment 6). (2) `emitSupportFiles` writes the new `zig_nocrt.c`; `emitCExitCSupport` carries the no-CRT `atexit`/`exit` registry; `emitZigPalCSupport` carries the Win95/XP `pal_file_*`, `pal_getenv`, `pal_wallclock_unix`, `GetCommandLineA` argv parser and `__main`; `emitZigRuntimeCSupport` carries the no-CRT `strlen`/`memcpy`/`strncmp`. (3) `emitBuildTargetSh` is profile-aware (9x `-DZIG_NO_CRT -nostdlib -e,_mainCRTStartup -lgcc -lkernel32 -lwinmm`; nt `-DZIG_WIN_NT` + CRT) and the four `.bat` emitters (`build_target_nocrt/crt`, `build_owc_nocrt/crt`) + two profile-correct aliases are emitted with command.com-safe response files. See doc 13.] [updated: 2026-10-15 — P14 (lookup-index hygiene, Amendment 7; lookup-only — zero LIR/emitter-spelling change, pins 0/8): Class B — per-fn first-match `t2pos`/`t2pos_conc` hoisted maps (built once at `emitHoistedDecls`, beside the `d4_*` tables; `t2pos` = first matching `TempDecl` index, `t2pos_conc` = first with a non-`TYPE_UNDEFINED` type) replace the `hoisted_temps` linear scans in `getTempTypeByIndex` (raw first-match, miss `0xFFFFFFFF`)/`hoistedTypeOf`/`hoistedTypeOfInFn` (skip-undefined, miss `0`)/`hoistedTypeId` (raw first-match, miss `0`)/`getTempEffType` (FAILFAST on the first match's `0xFFFFFFFF`/`TYPE_VOID`) — each helper keeps its OWN filter semantics and first-match multi-decl which-wins; the map replaces only the search. Class C — `C89SpellPlan.fn_key_index` (fn_key -> fn index, first-wins, filled at `spellPlanPlanFn`) replaces the `fn_keys` scans in `spellPlanUac`/`spellPlanCarrier` (miss semantics unchanged: uac miss = no cast, carrier miss = the historical fallback); the plan-time `hoistedEffType` and the carrier-fill first-match lookup read the same plan-time `t2pos`. Call sites' behavior unchanged.] [updated: 2026-10-12 — P9 (structural frame-save rule; the emitter SPELLS): the async frame-save/restore SET is decided at the async-construction authorities and carried on the frame layout (D3/D4 root cause closed — a `load_global` alias is never frame-saved; see doc 12 §8). The emitter's save/restore spelling (the LIR `store`/`load`/`assign` insts built from the carried layout) is unchanged and computes no set; F3's `temp_global_map` pre-walk (`emitFunctionBody`) + `resolveTempName` alias spelling STAY (all non-save alias references). `dceMarkLoadGlobalAliases`/the decl-loop `d4_nodecl` cascade keep marking aliases undeclared — that class now never appears in the save set (P9 note at the helper). `nest_inl` suppression-path ruling: the guards (decl loop `nest_inl` skip / `emitValueExpr` / body def walk) are C-shape spelling over carried inputs — the optimizer's recorded candidate/depth/def/cons-locator tables (`lir_opt_pass.zig`, published per function before emission) plus the recorded LIR shapes (`nestConsumerWired`/`nestShapeOk` answer only "can this def spell as ONE inline C rvalue"); a saved temp can never be suppressed (a nest candidate needs `rc == 1`, a saved temp has the save's read plus its real read(s)) and the save set is carried — no emit-time set decision remains on the suppression path. Pins 0/8 expected (pre-edit dump census: no pin program round-trips a live-across alias).] [updated: 2026-10-12 — P11 (emitter sanitization: promotion spelling from carried result types — the UAC cast direction is planned, the emitter spells): `coercionUsualArithPromote` is DELETED (the P5 verbatim relocation into `coercion.zig` is undone — the C usual-arithmetic cast-direction rule is a C-spelling decision, re-owned verbatim by `sf/src/c89_plan.zig` private `uacPromoteSide`). The direction is computed ONCE at the `phase_EmissionClassification` boundary by `spellPlanPlanFn` from the operands' carried types (plan-time `hoistedEffType` mirrors the emitter's `getTempEffType` resolution; `lirOptRun`'s type-preserving retargets keep plan-time and emit-time types equal) and stored in `C89SpellPlan.uac_maps` (per-fn `U32ToU32Map`, `spellInstOrd` keys, value = planned side 0/1; absent = no cast) for every comparison `binary` (ops 10-15). `emitBinRvalueText`'s promote block reads the plan via `planUacSideAt` (mirrors `planConstCarrierAt`); the `getTempEffType`/`getCTypeName` cast-name glue stays spelling (the P5 contract's "emitter glue"). `emitBinRvalueText`/`nestEmitBinExpr` gain the def inst's `def_bb`/`def_ii` for the ord lookup (both call sites already had them in scope). Doc 05's `coercionUsualArithPromote` contract row is RE-OWNED (tombstone -> this stamp + §1.15). Expected behavior delta ZERO (battery proves: pins 0/8, corpus class file byte-identical, markers unchanged).] [updated: 2026-10-12 — P6 fix round 1 (review Important 1): `emitVariantFieldPayload` loses its emit-time variant pick — the `hoisted_temps` scan for `src_temp`'s type + the `fe_items` type-equality variant search are DELETED; the matched VARIANT MEMBER's name is the lowering-recorded `field_name_id` (recorded at the `lowerRecordFacts` funnel — first variant field whose declared type equals the payload temp's type, exactly the old search) and the `._<sub>` index stays the lowering-recorded `temp_variant_sub_field` map read. The helper SPELLS only (`.payload.<variant>._<sub>` / bare `.payload`); no deciding helper remains over the field family. The round-0 P6 stamp's "fe_items lookups deleted" claim is TRUE as of this round (it was premature for the payload variant pick).] [updated: 2026-10-12 — P6 (emitter sanitization: lowerer carries decisions, Decision-vs-spelling; the emitter SPELLS only): the named emit-time semantic re-derivations are removed. (1) `resolveFieldAccess` no longer re-resolves `fe_items` by ordinal — the field identity is the lowering-recorded `field_name_id`/`field_type_id` on `load_field`/`store_field`/`assign_field`/`addr_of_field` (filled at the `lower.zig` construction funnel by `lowerFieldRecord`), consumed by the designator spelling (the `name_out`/`fld_tid_out` outputs are gone; `emitFieldAssign`/`dceFieldIsArray` read the recorded field type; the base-kind/mode-bit spelling policy is unchanged). (2) `findCalleeFnTypeId` is DELETED — the callee fn type id is recorded on `CallDirectData`/`TailCallData.fn_type_id` by `lower.zig` `lowerCalleeFnTypeId` (the same name/module/convention resolution, at the owning phase). (3) `getTemp*`/`hoisted*` re-derivation is gone: `getTempEffType` loses its `d4_wtype` written-type write-scan fallback and `getTempTypeInfo` (the cross-temp result→lhs→rhs chain + ICE) is deleted; the temp result types are the recorded `TempDecl.type_id` facts, read purely by `getTempTypeByIndex`/`hoistedTypeOf*`. (4) Saturation/wrap semantics are carried on the `binary` inst (`result_type`/`width`/`is_signed`, Amendment 5 ruling 2, A15 pattern — recorded at lowering via P5 predicates by `lowerRecordFacts`/`lowerBinSemType`); the `.binary` `op >= 16` arm and the nest mirrors (`nestEmitBinExpr`/`emitUnaryRvalue`) consume the carried/recorded types and `emitSatBinary` spells ONLY from them (its `typeRegistryIntWidthBits` derivation is deleted). `async_state_machine.zig` `remapInst` copies every new record field (Amendment 5 ruling 1a, copier-only, `int_const`-facts precedent).] [updated: 2026-10-12 — combined fix (P6-pre-f3+P12-f1) H2 (every `sorted` walker bounded on the sort SNAPSHOT; the P2/P12 deferred follow-up "bound on snapshot length" is TAKEN — this SUPERSEDES the P12 entry's "Walk bounds untouched" note): `C89SpellPlan` gains `typedef_order_len: usize` (set to `reg.types_len` at plan time in `spellPlanPlanTypeOrder` — exactly the count `tstTopologicalSort` covers at snapshot; init 0 in `spellPlanInit`). The 4 `sorted[tsi]` walkers — `emitTypePasses`'s 3 loops (Pass 1 forward typedefs / Sub-pass 2a pointer-only / Sub-pass 2b value-embedding) and `emitModuleHeaderFile`'s module header walk — now bound on `emitter.plan.typedef_order_len` instead of live `types_len`; the old live-`types_len` over-read into the sort's own `queue` buffer is structurally impossible. Not in scope (NOT `sorted` walkers, unchanged): `emitNeededTupleTypes`'s `needed_tuple_set` membership walk and the `ts_ref_set` walk. Expected behavior delta ZERO (battery proves: corpus class file byte-identical, pins 0/8, goldens 5/5 — the multi-module dumps exercise the header walk incl. post-snapshot synthetic types).] [updated: 2026-10-12 — P12 (emitter sanitization: typedef ordering planning): the typedef emission order is planned ONCE at the pre-emit `phase_EmissionClassification` boundary — `tstTopologicalSort` (with the P2 popped/append cycle-residue derivation) moves verbatim from this file to `c89_plan.zig`, filled into `C89SpellPlan.typedef_order` by `spellPlanPlanTypeOrder`; both former emit-time sort call sites (`emitModule`, the multi-file `phase_C89Emission` region) read the carried order — zero sort calls remain in the emitter or mid-emission. Walk bounds untouched (`tsi < types_len`); post-snapshot appended-type handling byte-identical (P2 deferred minor unchanged). Pins 0/8.] [updated: 2026-10-12 — P6-pre fix round 1 (fact-carrier route; the carrier is read from the plan where the temp type used to be read): Class B temps become `TYPE_INT_LIT`, so two const-spelling sites now read the planned carrier where they previously read the carrier-typed temp. `C89Emitter` gains `d4_fcar` (fact-carrier table, beside `d4_wtype`/`d4_wflag`/`d4_t2p`; init 0xFFFFFFFF), filled in the written-type walk's `.int_const` arm ONLY for fact-carryed materializations (`ic.width_bits != 0` + `TYPE_INT_LIT` hoisted — Class A (0,0) and typed consts leave the sentinel). `factCarrierOfTemp` (bounds-checked `d4_t2p`/`d4_fcar` read) is consumed by `nestScalarEffTid` (after the kind-whitelist attempt: a fact-carryed materialization is a scalar of its planned carrier — `nestEffCType`/`emitNestCompute` byte-identical `printI64((zT_i64)((zT_i64)-3000000000LL))` shapes; Class A keeps the historical 0xFFFFFFFF non-inlinable `zT_8 = 5000000000ULL;` statement shape) and by the `.print_val` scalar route (`route_tid` = the planned carrier for fact-carryed materializations; Class A keeps `printFnSourceName`'s 32/signed fallback; typed args unchanged). The three side-table reads (`planConstCarrierAt` written-type walk / `nestEmitDefRvalue` / `emitInst`) and `writeIntConstRvalue`/`intLitSuffix*` are unchanged. Table-completeness note (O3, keep for P12): `lirOptRun` running inside `emitFunctionSet` (post-boundary) is what makes the boundary see pre-opt LIR; the I.2 population proof (in-place rewrites, fold gate `intKindWidth != 0`, retarget `dt == st`) is what makes the side table complete without moving the opt. If a future opt rewrite ever inserts/inst-moves instructions or relaxes those gates, the table must be re-evaluated (P12's move of related machinery should keep this invariant in mind). Pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P6-pre (emitter sanitization: C89 spelling planner, carrier derivation): the emit-time carrier deciding helper `intConstTypeForValue` is DELETED — the i32/u32/i64/u64 carrier derivation is owned by `sf/src/c89_plan.zig` (`deriveConstCarrier`, same rule) and recorded as `C89SpellPlan` side-table state (const-id → carrier) at the pre-emit `phase_EmissionClassification` boundary. `C89Emitter` gains `plan: *c89_plan.C89SpellPlan` + `plan_fn_key` (the current fn's LIR spill slot offset, set at fn entry in `emitFunctionSet`); the three former consumption sites (written-type inference, `nestEmitDefRvalue`, `emitInst` `.int_const`) read the plan via `planConstCarrierAt` (spell-time READ — Decision-vs-spelling: the emitter spells the carried carrier, never derives; `writeIntConstRvalue`/`intLitSuffix*` stay spelling). Pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P4 fix round 2 (placement correction, Decision-vs-spelling): the emitter is now PURE spelling for classification — `C89Emitter` holds `classif: *type_resolver.EmissionClassification` (the four group maps owned by `CompilerContext`, filled at the pre-emit `phase_EmissionClassification` boundary) and READS only. The `emitTypePasses`-invoked `classifyTypeEmissionFinalize` call is DELETED (`emitTypePasses` retains ZERO classification calls); `collectNeededTuples` moved out of this file into `type_resolver.zig`; the four map fields and the `c89EmitterInit` map parameters are replaced by the single `classif` pointer (all reads rewired `emitter.classif.*`). Zero decision-logic change: dump pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P4 (emitter sanitization: single classification pass, operator amendment option (a) — extend + re-time): the emitter's type classification is DELETED — `computeSharedSet` and `shouldSkipTypeEmission` (and the per-pass `skip_arb` local) are gone; the emitter CONSUMES the resolver's single classification (doc 03): `c89EmitterInit` now takes the three group maps (`pointer_only_map`/`needs_def_map`/`shared_set`) fully populated from `classifyTypeEmissionGroups`'s `ClassificationResult` (the former `ptr_only_ids`/`pointer_only_len` args and both id→map fill loops are deleted), `emitTypePasses` consults `needs_def_map` where it called `shouldSkipTypeEmission` (same filter positions; the E10 `skip_arb` arm was unreachable-equivalent), and `emitTypePasses` opens with the resolver's emission-time finalize `type_resolver.classifyTypeEmissionFinalize(reg, shared_set, pointer_only_map, needs_def_map, needed_tuple_set)` — step 2 of the SAME mechanism (doc 03), covering the E4 needed-tuple shared seed and types registered after the classification snapshot (the old functions evaluated their rules LIVE at emission; the po-map fallthrough — absent = value-embedding — is preserved). Spec §4 "Type classification" row AMENDED (operator, 2026-10-12; recorded doc 03 + P4 report; closeout will note it). Emission byte-identical: dump pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P3 (emitter sanitization: canonical `typeCName`, D2 residue CLOSED): the C-type-name derivation moves OUT of the emitter — `type_registry.typeCName` (doc 03) is THE one derivation (verbatim relocation of the old `getCTypeName` body incl. the synthetic `Arr_`/`Tup_`/`Slice_`/`Opt_`/`EU_`/`FS_`/`FP_`/`FN_`/`ES_` compositions and F2's `sliceElementName` rule), synthetic names minted ONCE through the P1 `name_mangler.zig` authority, and the `c_name_map` memo is owned by the derivation (the `emitErrorUnionType` write-back is REMOVED; the emitter is a pure reader). `getCTypeName` is a thin consumer wrapper; every declaration site (`emitStructType`/`emitUnionType`/`emitTaggedUnionType`/`emitEnumType`/the FX14 carriers) and the former duplicated mints (`emitArrayType`'s local `Arr_` mint, `emitOptionalType`'s local `Opt_` mint) consume it, so decl and use cannot drift. All spellings byte-identical (dump pins 0/8; hop1==hop2). See §1.5.] [updated: 2026-10-12 — P2 (emitter sanitization: type-reference relation + ordering, D8 root cause CLOSED): the typedef-ordering edge set now derives from the SINGLE relation `type_registry.typeRefs`/`typeNeedsFullDef`/`typeRefsContains` (doc 03) — `tstTopologicalSort` takes its indegree from `typeRefs` and its decrements from `typeRefsContains`, and `computeSharedSet`'s closure probes `typeRefsContains`. DELETED: `c89NeedsEmitEdge`, `tstEdgesWalk`, `tstSeenInRange`, `tstEdgesCount`, `tstEdgesFill`, `tstIsDep` (the divergent hand-rolled edge machinery). The relation covers ALL kinds incl. `fn_type` return/param refs (D8: a fn-ptr typedef now follows its return typedef — the D8 reproducer's `zig_special_types.h` inverts the old fnptr-before-EU order), `packed_union`, and pointer chain-leaf name refs (a `*fn` struct field's C type IS the fn typedef name). See §1.1.] [updated: 2026-10-12 — P1 (emitter sanitization: identifier authority): `sf/src/name_mangler.zig` is REVIVED as the single C-identifier minting authority (keyword escape + collision resolution + stable per-kind names). The emitter-internal `NameMangler` struct and all ad-hoc mint helpers (`writeHex`, `isTempOrBuiltin`, `isC89Keyword`, `mangleC89Keyword`, `cUnionMemberName`, `nameManglerPopulateKeywords`, `nameManglerInit`, `nameManglerMangle`, `nameManglerMangleGlobal`, `syntheticTypeName`, `mangleLocalName`, `mangleTempName`, `typeIdName`, `aggPackedScratchName`, and `moduleQualifiedName`'s stem rule) MOVE to `name_mangler.zig`; `c89_emit.zig` keeps only 4 thin `pub` forwarders (`NameMangler`, `nameManglerInit`, `nameManglerMangle`, `nameManglerMangleGlobal`) as its external compatibility surface (main.zig emission phase + `tests/test_name_mangle_bin.zig`) and calls `nm_mod.*` at every mint site. New per-kind mints: `nameManglerMintLocal`/`MintField`/`MintMember` (raw-name rule: source name byte-identical, C keyword -> `z_<name>`, per-scope collision -> `_N`), `nameManglerMintTemp` (`zT_<id>`), `nameManglerMintSyntheticType` (3-part synthetic rule), `nameManglerMintIndexName` (prefix+decimal; printer/table/scratch), `nameManglerMintModuleStem` (`<stem>_<fnv1a-hex>`), `nameManglerFnScope` (per-function scope key for local collision maps). D1 root cause closed incl. **struct fields** (decl + all access arms + printer `v.<f>` access; display labels keep the raw source name so `.{ .int = 7 }` prints unchanged); union members keep the F1 `z_` escape and gain collision resolution. Self-emission names byte-identical (pins 0/8; `hop1==hop2` holds). See §1.3/§3.] [updated: 2026-10-12 — P5 (emitter sanitization: predicates + promotion centralized): the emitter's private int-kind/signedness/width/scalar/pointer truth tables (`intKindIsSignedBase`, `intKindIsUnsignedBase`, `intKindWidthBytes`, `classifyIntSignedness`, `intTypeNeedsWidthWrap`, `intTypeByteWidth`, `typeIsIntKind`, `retTypeIsScalarC`, `typeIsPtrKind`) are DELETED — canonical predicates now live in `type_registry.zig` (doc 03) with every emitter call site rewired (per-caller membership extras verbatim), and `emitBinRvalueText` delegates mixed-sign C usual-arithmetic promotion to `coercion.zig` `coercionUsualArithPromote` (doc 05), keeping only `getTempEffType`/`getCTypeName` glue. See §1.15 note.] [updated: 2026-10-10 — D5/F6 (`-fsafe` root-index bounds check RESTORED, task F6): the D5 address-taking path (`lowerAssignLValue` `sf/src/lower.zig:2507`, `lowerLValueAddr` `:2202`) bypassed the by-value element read that carried the `-fsafe` bounds check, so the chain ROOT index `i` of `s[i].field[j] = x` / `a[i].field[j] = x` was not trapped when out-of-range. `lowerLValueAddr` gained a `safe_check: u8` parameter; its `index_access` arm emits `emitSafeCheckIndex(lv_ix_base, lv_node.child_0, idx_temp)` (`:2235`) when set, and only the D5 call site passes `1` (`:2507`); every other address-of caller passes `0`, so their C is byte-identical and `-ffast` is unchanged (helper early-returns when `!safe_checks`). Repro `repro/mi_matrix/slice_index_field_store_oob_xmod/` traps rc 133 under `-fsafe` (pre-fix rc 0); in-bounds D5 repro still `9\n11\n22\nslice_index_field_store ok\n`; corpus `1121 = 947/58/116/0/0` (FAIL unchanged; +1 OK = new repro); stdlib 283/0; example matrix 25/25; runtime goldens gol/lisp/json/mud+client byte-identical; all 8 dump-MD5 pins unchanged. See §1.13.] [updated: 2026-10-09 — D5-F5 (lost store through a slice-index aggregate lvalue FIXED, task F5): `lowerAssignLValue`'s `index_access` arm (`sf/src/lower.zig:2484`) now takes an ARRAY-typed aggregate l-value chain by ADDRESS before the value path — when the base is a `field_access`/`index_access`/`deref`/`paren_expr` whose chain roots at an `index_access` (new helpers `d5BaseChainHasIndex`/`d5IndexAssignArrayType`, `sf/src/lower.zig:2564`/`:2612`), `lowerLValueAddr` forms `&elem->field` once and `assign_index` emits `(*zT)[j] = src;`, so `s[i].field[j] = x` / `a[i].field[j] = x` write into the element instead of a by-value copy. An array field's resolved type decays to a bare element pointer, so the declared array type is recovered from the container's field table (mirroring `fieldStaticLenForBase`). Slice/pointer bases and local-aggregate field bases keep the value path byte-identically. Repro `repro/mi_matrix/slice_index_field_store_xmod/` prints `9\n11\n22\nslice_index_field_store ok\n`; corpus `1120 = 946/58/116`; stdlib 283/0; 8 dump-MD5 pins unchanged; z9torr tiers PASS and the sent handshake carries the real `-Z9T01-…` peer_id. See §1.13.] [updated: 2026-10-09 — D2-F2 (slice-of-synthetic element typedef FIXED, task F2): new helper `sliceElementName` (`sf/src/c89_emit.zig:931`) computes a slice element's C name — recursion `getCTypeName(elem)` when the element is synthetic (`name_id == 0`: slice/array/pointer/optional/tuple/error-union), else the exact `nameManglerMangle(elem.name_id, 2, 0)` — so `[][]const u8`, `[][20]u8`, `[][*]u8`, `[]?T`, `[]tuple` each get a distinct `Slice_…` typedef. Both `getCTypeName`'s slice branch and `emitSliceType` use the helper (`emitSliceType` now takes its typedef name from `getCTypeName(tid)`, so decl and use cannot drift). Primitive/named element slices (`[]u8`→`Slice_zT_0B42B2F8_u`, `[]i32`, `[]Struct`) are byte-identical. Repros `repro/mi_matrix/slice_of_slice_xmod/` + `repro/mi_matrix/slice_of_array_xmod/` are warning-free (no `-Wincompatible-pointer-types`) and green (both print `11`). The 8 dump-MD5 pins move because the gate dumps include the std modules, which define synthetic-element slices (e.g. `[][]const u8` in `sf/src/std_str.zig` `split`/`splitLines`/`join` and `sf/src/std_sort.zig` `StrBox`/`sortStr`, pulled in by every `@import("std")`); runtime goldens gol/lisp/json/mud are byte-identical. Re-baseline of the dump pins requires operator authorization (spec §6.1). See §1.5.] [updated: 2026-10-09 — D1-F1 (union-member C-keyword tag FIXED, task F1): new shared helper `cUnionMemberName` (`sf/src/c89_emit.zig:594`) returns the interned C union-member name — the existing `z_` C-keyword escape (`mangleC89Keyword`) for C-keyword names, every non-keyword name byte-identical — applied at the tagged-union declaration (`emitTaggedUnionType`) and payload access (`emitVariantFieldPayload`) plus the bare-union declaration (`emitUnionType`), its union access arms in `resolveFieldAccess` (struct fields untouched), and the generated aggregate printer (`emitAggPrinterDef` tagged-union arm — mangled payload designator, raw tag kept as the print label). `union(enum){ int: i64 }` now emits `.payload.z_int._0` consistently; repro `repro/mi_matrix/union_keyword_tag_xmod/` (now also printing the keyword-tagged union) compile+link+run green; corpus FAIL 118→117; all 8 dump-MD5 pins unchanged (D1-neutral). See §1.7.] [updated: 2026-10-09 — D5-I5 (lost store through a slice-index aggregate lvalue, task I5): `lowerAssignLValue`'s `index_access` arm (`sf/src/lower.zig:2484-2531`) lowers its base by **value** (`:2487` `lowerExpr(indexBaseAfterArrayDeref(...))`); only the tuple sub-case (`:2493-2508`) takes an address, so `s[i].field[j] = x` materialises the element struct into a temp and the emitter stores into the copy (`emitBaseIdxAccess` `sf/src/c89_emit.zig:204-267`, `assign_index` `:7226-7271`; emitted `zT = s.ptr[i]; p = zT.field; p[j] = x;`). In Zig the chain is an lvalue and must write through `&s[i].field[j]`, so the write is silently lost at runtime. Compile-only classify is OK, so the gate is the runtime repro `repro/mi_matrix/slice_index_field_store_xmod/` (pre-fix prints the pre-store value; expected `9\n11\n22\nslice_index_field_store ok\n`, pre-fix `9\n0\n0\nslice_index_field_store FAIL\n`). Correct sibling `lowerFieldStore` (`:2878-2928`) takes nested bases by address. Fix (task F5, planned): route non-tuple index-assign bases through `lowerLValueAddr` exactly as `lowerFieldStore`. See §1.13.] [updated: 2026-10-09 — D2-I2 (slice-of-synthetic-element typedef collapse, task I2): `getCTypeName`'s slice branch (`sf/src/c89_emit.zig:1028-1036`) derives the slice typedef's element name from the element type's `name_id` (`:1031` `nameManglerMangle(mangler, elem_ty2.name_id, 2, 0)`); every *synthetic* element (slice/array/pointer/optional/tuple) has `name_id == 0`, so `[][]const u8` and `[][20]u8` both mangle to the empty-name string `zT_811C9DC5_` and collapse to one `typedef struct { …* ptr; unsigned int len; } zT_9DFA8D74_Slice_zT_811C9DC5_;` (whichever synthetic element is registered first wins). gcc compiles it with `-Wincompatible-pointer-types`; the value is correct only by luck of the hoisted temp. The array branch (`:959-967`; `emitArrayType` `:2116-2137`) already recurses `getCTypeName(reg, mangler, ap.elem)` and the tuple branch (`:972-979`) already uses the dense type id (`Tup_<tid>`); optional/error-set use their payload idx. Fix (task F2, planned): recurse for synthetic (`name_id == 0`) slice elements (or reuse `syntheticTypeName` `:882` with the dense type id), keeping primitive/named element slices byte-identical. Repros `repro/mi_matrix/slice_of_slice_xmod/` + `repro/mi_matrix/slice_of_array_xmod/`. See §1.5.] [updated: 2026-10-09 — D1-I1 (union-member C-keyword tag, task I1): `emitTaggedUnionType` (`:1921`) writes each `union(enum)` variant's `fe.name_id` verbatim as the C union member (`:2013` read → `:2020` write) and `emitVariantFieldPayload` (`:419`; via `resolveFieldAccess` `:499`) writes it verbatim into the payload designator `.payload.<name>._<sub>` (`:435` read → `:436` write). A legal Zig tag that is a C keyword (`int`, `long`, `switch`, …) therefore emits invalid C89 — `struct { long long _0; } int;` / `v.payload.int._0` → gcc `expected identifier before 'int'`; `@"int"` is rejected by Z98 (`error[4]`). Tag constants (`zTU_<base>_<member>`) and switch dispatch are already safe. Fix (task F1, planned): C-keyword-mangle the member name consistently at both write sites (or emit stable non-keyword member names). Repro `repro/mi_matrix/union_keyword_tag_xmod/`. See §1.7.] [updated: 2026-10-04 — A2-F (Volume IV Amendment A2): `emitStructType` emits `\tunsigned char _[1];\n` as the body of an empty non-packed struct (`fields_count == 0`), so the emitted C `sizeof`/offsets match the registry's min-1 size 1 / align 1 (previously `struct {}` either aliased a foreign payload or produced an empty C struct). See §1.7.] [updated: 2026-09-29 — FX16-F (Volume II ch7 amendment, adjacent pointer `.tag` store): the `store_field` pointer-base arm gains a `tagged_union_type` pointee case — `p.tag = v` on a `*union(enum)` base now renders `p->tag = v;` (mirroring the ptr→struct/union/tuple arms) instead of falling to the `error[3043] internal: store_field unresolved field` ICE. Only `TU_FIELD_TAG` is handled; `p.payload = …` stays the pre-existing ICE (payload-member stores reject in lowering, doc 07). No existing program has the shape (it ICEd), so the 4-MD5 pins are unchanged.] [updated: 2026-09-29 — FX14-F (Volume II layout-model pin, operator ruling A): the frozen 32-bit layout model (i64/u64/f64 size 8 align 8) is now pinned in the emitted C. `emitInt64Type`/`emitUint64Type` append ` Z98_ALIGN8` to their carrier typedefs, a new `emitF64Type` emits the f64 carrier `typedef double <cname> Z98_ALIGN8;` (previously `getCTypeName` returned bare `"double"`), and `getCTypeName`/the f64 pointee fast path, `ctypeGuardWrite` (`ZIG_F64_`), `computeSharedSet`, `emitPointeeDep` and `emitTypeDefinition` gained the f64 arm. `Z98_ALIGN8` lives in `zig_compat.h` (single source `sf/src/emit_support.zig`; `sf/src/include/zig_compat.h` is its generated snapshot): `__attribute__((aligned(8)))` on gcc/clang/mingw, empty on MSVC/Watcom (whose 32-bit defaults `/Zp8`/`-zp8` already align 64-bit scalars to 8); the shared `z64`/`zu64`/`f64` typedefs carry it too. Every declaration funnels through `getCTypeName`, so structs, unions, tagged unions, optionals, error unions, tuples, arrays and standalone vars all inherit the model alignment; a `-zp4`/`/Zp4` packing override breaks the pin and is documented as unsupported. The stale unused `c89_emit.emitZigCompatH` duplicate was deleted. Fixtures `repro/mi_matrix/stdlib_layout_align8_xmod` + `repro/layout_align8.z98`. See §1.5/§1.7.] [updated: 2026-09-25 — Task 9 fix round 3 (z98-print-formatting Amendment 1, B5; operator ruling Q7): `emitModuleInitCalls` now iterates `C89Emitter.module_init_order`/`module_init_order_len` — the stable dependency-ordered module list computed by `computeModuleInitOrder` (doc 09) — instead of the raw module-registry order, so a module whose global initializers read another module's globals has its `__module_init` called after that module's. The reachable-prune and `moduleHasRuntimeInit` filters are unchanged, and a program without cross-module global dependencies keeps its exact previous call sequence.] [updated: 2026-09-25 — Task 8 (z98-print-formatting Amendment 1, B2 + B3): one pointer-chain depth cap of 16 — `emitPointeeDep`'s dependency walk bail moves from `depth > 8` to `depth > 16`, matching `zigPrintNameAppend` and the validator (`lower.zig printFmtPointeeNameOk`/`printFmtAggFieldsOk`), so a validator-accepted chain (up to 14 wrappers in a field's pointee alias / 15 in a print argument) emits every wrapper typedef before use instead of gcc `unknown type name` at rc=0. `emitPtrValuePrint`'s name-append failure is now a `@panic` backstop (was a silent no-op that dropped the value); the validator mirrors the 512-byte name budget exactly, so an over-budget name is a clean `error[3063]`. See §1.20 and doc 07.] [updated: 2026-09-25 — final whole-branch review fix wave (Finding 1): an untyped integer `print` argument is materialised by lowering into its value-chosen carrier (i32/u32/i64/u64; `lowerPrintArgExact`), so `printFnSourceName`'s `integer_literal` arm is only the non-folded fallback (e.g. builtin results) and big untyped literals no longer print truncated/re-interpreted values. Finding 2 / operator ruling R11 recorded: a recursive or mutually recursive aggregate rejects `error[3063]`; `emitAggPrinterRec`'s `emitted`/`visiting` guard terminates cycles, but its printers are emitted post-order with no forward declarations, so a mutual `A -> B -> A` cycle would reference a not-yet-defined printer (gcc error) and relaxing the validator first needs forward declarations.] [updated: 2026-09-25 — Task 6 (z98-print-formatting): pointer/fn-pointer `{}` prints Zig 0.15.2's `T@<lowercase-hex>` (NO `0x`; operator ruling R3) or delegates to the pointee printer (`*struct`/`*union`/`*tagged`/`*packed`/`*tuple` → the Task-4 generated printer, `*enum` → the Task-5 name printer, everything else the address form). The address form is emitted inline — `std_print("<@typeName(child)>@")` + the EXISTING std.fmt `printHexU64` — and the child name is rendered by the new `zigPrintNameAppend` for the exact Z98-expressible space (ints/floats/bool/void/`c_char`/arb/pointers/many/slices/arrays/optionals/error-unions/error-sets/fn); named struct/enum/union components reject `error[3063]` (Zig container-qualifies them — bounded residual). Float `{x}` prints a hand-rolled C89 hex-float (`0x1.8p0`, `Writer.zig:1572-1720`) through compiler-generated static helpers `z98_printFloatHex32/64` (emitted on demand — adding a std_fmt function would move the 4-MD5 pins). The Task-4 closure is extended for pointer/fn-pointer fields (Zig's `{any}` field pointer route); type-dependency emission (`emitTypeDefOnce`/`emitTypeDeps`/`emitPointeeDep`/`emitDepMember`) fixes the pre-existing "typedef used before emitted" ordering for a pointer member's pointee typedef (fn-pointer/enum/error-set/optional/slice/array/packed), and `c89NeedsEmitEdge` now treats `fn_type` as a value-embedding dependency edge. See §1.20.] [updated: 2026-09-25 — Task 5 (z98-print-formatting): `.print_val` on an enum (bare `{}`) calls the compiler-generated `z98_printEnum_<tid>` and on an error set uses `z98_printErrorSet_<tid>`; each carries a static name table (`z98_etab_` name blob + `z98_eoff_`/`z98_elen_` byte offset/length arrays + `z98_eval_` member values / `z98_escode_` global codes) and writes the name through the EXISTING std.fmt `printStr` (std_fmt.zig stays untouched so the 4-MD5 dumps keep their pinned bytes). See §1.19.] [updated: 2026-09-25 — Task 4 (z98-print-formatting): `.print_val` on struct/union/tagged-union/packed-union/tuple calls a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) that emits Zig 0.15.2's `. { .a = 1 }` / `.{ 1, 2, 3 }` form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model (`typedef struct { _0, _1, ... }`), emitted only for `needed_tuple_set` (runtime hoisted temps/globals) so registry-only print-args tuples keep the 4-MD5 dumps byte-identical. See §1.18.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix] [updated: 2026-09-26 — FB (Volume II defect fix, D4): `load_field`, `store_field` and `addr_of_field` gain tuple arms — a tuple VALUE base renders `._<field_id>` and a pointer-to-tuple base `->_<field_id>` (the positional C model `emitTupleType` already writes for `assign_field`/printers), so `.0`/`._0`/`t[0]` reads, writes and `&t.0` all reach the emitted fields. `emitNeededTupleAt` emits a needed tuple typedef at its topological position in the sorted type loops (value and pointer-only buckets; a struct that embeds a tuple by value previously emitted before the tuple typedef -> gcc `unknown type name`), sharing the `seen` dedupe map with the trailing `emitNeededTupleTypes` fallback (signature now takes `seen`).] [updated: 2026-10-15 — P14 (lookup-index hygiene, Amendment 7; lookup-only — zero LIR/emitter-spelling change, pins 0/8): Class B — per-fn first-match `t2pos`/`t2pos_conc` hoisted maps (built once at `emitHoistedDecls`, beside the `d4_*` tables; `t2pos` = first matching `TempDecl` index, `t2pos_conc` = first with a non-`TYPE_UNDEFINED` type) replace the `hoisted_temps` linear scans in `getTempTypeByIndex` (raw first-match, miss `0xFFFFFFFF`)/`hoistedTypeOf`/`hoistedTypeOfInFn` (skip-undefined, miss `0`)/`hoistedTypeId` (raw first-match, miss `0`)/`getTempEffType` (FAILFAST on the first match's `0xFFFFFFFF`/`TYPE_VOID`) — each helper keeps its OWN filter semantics and first-match multi-decl which-wins; the map replaces only the search. Class C — `C89SpellPlan.fn_key_index` (fn_key -> fn index, first-wins, filled at `spellPlanPlanFn`) replaces the `fn_keys` scans in `spellPlanUac`/`spellPlanCarrier` (miss semantics unchanged: uac miss = no cast, carrier miss = the historical fallback); the plan-time `hoistedEffType` and the carrier-fill first-match lookup read the same plan-time `t2pos`. Call sites' behavior unchanged.] [updated: 2026-10-12 — P9 (structural frame-save rule; the emitter SPELLS): the async frame-save/restore SET is decided at the async-construction authorities and carried on the frame layout (D3/D4 root cause closed — a `load_global` alias is never frame-saved; see doc 12 §8). The emitter's save/restore spelling (the LIR `store`/`load`/`assign` insts built from the carried layout) is unchanged and computes no set; F3's `temp_global_map` pre-walk (`emitFunctionBody`) + `resolveTempName` alias spelling STAY (all non-save alias references). `dceMarkLoadGlobalAliases`/the decl-loop `d4_nodecl` cascade keep marking aliases undeclared — that class now never appears in the save set (P9 note at the helper). `nest_inl` suppression-path ruling: the guards (decl loop `nest_inl` skip / `emitValueExpr` / body def walk) are C-shape spelling over carried inputs — the optimizer's recorded candidate/depth/def/cons-locator tables (`lir_opt_pass.zig`, published per function before emission) plus the recorded LIR shapes (`nestConsumerWired`/`nestShapeOk` answer only "can this def spell as ONE inline C rvalue"); a saved temp can never be suppressed (a nest candidate needs `rc == 1`, a saved temp has the save's read plus its real read(s)) and the save set is carried — no emit-time set decision remains on the suppression path. Pins 0/8 expected (pre-edit dump census: no pin program round-trips a live-across alias).] [updated: 2026-10-12 — P11 (emitter sanitization: promotion spelling from carried result types — the UAC cast direction is planned, the emitter spells): `coercionUsualArithPromote` is DELETED (the P5 verbatim relocation into `coercion.zig` is undone — the C usual-arithmetic cast-direction rule is a C-spelling decision, re-owned verbatim by `sf/src/c89_plan.zig` private `uacPromoteSide`). The direction is computed ONCE at the `phase_EmissionClassification` boundary by `spellPlanPlanFn` from the operands' carried types (plan-time `hoistedEffType` mirrors the emitter's `getTempEffType` resolution; `lirOptRun`'s type-preserving retargets keep plan-time and emit-time types equal) and stored in `C89SpellPlan.uac_maps` (per-fn `U32ToU32Map`, `spellInstOrd` keys, value = planned side 0/1; absent = no cast) for every comparison `binary` (ops 10-15). `emitBinRvalueText`'s promote block reads the plan via `planUacSideAt` (mirrors `planConstCarrierAt`); the `getTempEffType`/`getCTypeName` cast-name glue stays spelling (the P5 contract's "emitter glue"). `emitBinRvalueText`/`nestEmitBinExpr` gain the def inst's `def_bb`/`def_ii` for the ord lookup (both call sites already had them in scope). Doc 05's `coercionUsualArithPromote` contract row is RE-OWNED (tombstone -> this stamp + §1.15). Expected behavior delta ZERO (battery proves: pins 0/8, corpus class file byte-identical, markers unchanged).] [updated: 2026-10-12 — P6 fix round 1 (review Important 1): `emitVariantFieldPayload` loses its emit-time variant pick — the `hoisted_temps` scan for `src_temp`'s type + the `fe_items` type-equality variant search are DELETED; the matched VARIANT MEMBER's name is the lowering-recorded `field_name_id` (recorded at the `lowerRecordFacts` funnel — first variant field whose declared type equals the payload temp's type, exactly the old search) and the `._<sub>` index stays the lowering-recorded `temp_variant_sub_field` map read. The helper SPELLS only (`.payload.<variant>._<sub>` / bare `.payload`); no deciding helper remains over the field family. The round-0 P6 stamp's "fe_items lookups deleted" claim is TRUE as of this round (it was premature for the payload variant pick).] [updated: 2026-10-12 — P6 (emitter sanitization: lowerer carries decisions, Decision-vs-spelling; the emitter SPELLS only): the named emit-time semantic re-derivations are removed. (1) `resolveFieldAccess` no longer re-resolves `fe_items` by ordinal — the field identity is the lowering-recorded `field_name_id`/`field_type_id` on `load_field`/`store_field`/`assign_field`/`addr_of_field` (filled at the `lower.zig` construction funnel by `lowerFieldRecord`), consumed by the designator spelling (the `name_out`/`fld_tid_out` outputs are gone; `emitFieldAssign`/`dceFieldIsArray` read the recorded field type; the base-kind/mode-bit spelling policy is unchanged). (2) `findCalleeFnTypeId` is DELETED — the callee fn type id is recorded on `CallDirectData`/`TailCallData.fn_type_id` by `lower.zig` `lowerCalleeFnTypeId` (the same name/module/convention resolution, at the owning phase). (3) `getTemp*`/`hoisted*` re-derivation is gone: `getTempEffType` loses its `d4_wtype` written-type write-scan fallback and `getTempTypeInfo` (the cross-temp result→lhs→rhs chain + ICE) is deleted; the temp result types are the recorded `TempDecl.type_id` facts, read purely by `getTempTypeByIndex`/`hoistedTypeOf*`. (4) Saturation/wrap semantics are carried on the `binary` inst (`result_type`/`width`/`is_signed`, Amendment 5 ruling 2, A15 pattern — recorded at lowering via P5 predicates by `lowerRecordFacts`/`lowerBinSemType`); the `.binary` `op >= 16` arm and the nest mirrors (`nestEmitBinExpr`/`emitUnaryRvalue`) consume the carried/recorded types and `emitSatBinary` spells ONLY from them (its `typeRegistryIntWidthBits` derivation is deleted). `async_state_machine.zig` `remapInst` copies every new record field (Amendment 5 ruling 1a, copier-only, `int_const`-facts precedent).] [updated: 2026-10-12 — combined fix (P6-pre-f3+P12-f1) H2 (every `sorted` walker bounded on the sort SNAPSHOT; the P2/P12 deferred follow-up "bound on snapshot length" is TAKEN — this SUPERSEDES the P12 entry's "Walk bounds untouched" note): `C89SpellPlan` gains `typedef_order_len: usize` (set to `reg.types_len` at plan time in `spellPlanPlanTypeOrder` — exactly the count `tstTopologicalSort` covers at snapshot; init 0 in `spellPlanInit`). The 4 `sorted[tsi]` walkers — `emitTypePasses`'s 3 loops (Pass 1 forward typedefs / Sub-pass 2a pointer-only / Sub-pass 2b value-embedding) and `emitModuleHeaderFile`'s module header walk — now bound on `emitter.plan.typedef_order_len` instead of live `types_len`; the old live-`types_len` over-read into the sort's own `queue` buffer is structurally impossible. Not in scope (NOT `sorted` walkers, unchanged): `emitNeededTupleTypes`'s `needed_tuple_set` membership walk and the `ts_ref_set` walk. Expected behavior delta ZERO (battery proves: corpus class file byte-identical, pins 0/8, goldens 5/5 — the multi-module dumps exercise the header walk incl. post-snapshot synthetic types).] [updated: 2026-10-12 — P12 (emitter sanitization: typedef ordering planning): the typedef emission order is planned ONCE at the pre-emit `phase_EmissionClassification` boundary — `tstTopologicalSort` (with the P2 popped/append cycle-residue derivation) moves verbatim from this file to `c89_plan.zig`, filled into `C89SpellPlan.typedef_order` by `spellPlanPlanTypeOrder`; both former emit-time sort call sites (`emitModule`, the multi-file `phase_C89Emission` region) read the carried order — zero sort calls remain in the emitter or mid-emission. Walk bounds untouched (`tsi < types_len`); post-snapshot appended-type handling byte-identical (P2 deferred minor unchanged). Pins 0/8.] [updated: 2026-10-12 — P6-pre fix round 1 (fact-carrier route; the carrier is read from the plan where the temp type used to be read): Class B temps become `TYPE_INT_LIT`, so two const-spelling sites now read the planned carrier where they previously read the carrier-typed temp. `C89Emitter` gains `d4_fcar` (fact-carrier table, beside `d4_wtype`/`d4_wflag`/`d4_t2p`; init 0xFFFFFFFF), filled in the written-type walk's `.int_const` arm ONLY for fact-carryed materializations (`ic.width_bits != 0` + `TYPE_INT_LIT` hoisted — Class A (0,0) and typed consts leave the sentinel). `factCarrierOfTemp` (bounds-checked `d4_t2p`/`d4_fcar` read) is consumed by `nestScalarEffTid` (after the kind-whitelist attempt: a fact-carryed materialization is a scalar of its planned carrier — `nestEffCType`/`emitNestCompute` byte-identical `printI64((zT_i64)((zT_i64)-3000000000LL))` shapes; Class A keeps the historical 0xFFFFFFFF non-inlinable `zT_8 = 5000000000ULL;` statement shape) and by the `.print_val` scalar route (`route_tid` = the planned carrier for fact-carryed materializations; Class A keeps `printFnSourceName`'s 32/signed fallback; typed args unchanged). The three side-table reads (`planConstCarrierAt` written-type walk / `nestEmitDefRvalue` / `emitInst`) and `writeIntConstRvalue`/`intLitSuffix*` are unchanged. Table-completeness note (O3, keep for P12): `lirOptRun` running inside `emitFunctionSet` (post-boundary) is what makes the boundary see pre-opt LIR; the I.2 population proof (in-place rewrites, fold gate `intKindWidth != 0`, retarget `dt == st`) is what makes the side table complete without moving the opt. If a future opt rewrite ever inserts/inst-moves instructions or relaxes those gates, the table must be re-evaluated (P12's move of related machinery should keep this invariant in mind). Pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P6-pre (emitter sanitization: C89 spelling planner, carrier derivation): the emit-time carrier deciding helper `intConstTypeForValue` is DELETED — the i32/u32/i64/u64 carrier derivation is owned by `sf/src/c89_plan.zig` (`deriveConstCarrier`, same rule) and recorded as `C89SpellPlan` side-table state (const-id → carrier) at the pre-emit `phase_EmissionClassification` boundary. `C89Emitter` gains `plan: *c89_plan.C89SpellPlan` + `plan_fn_key` (the current fn's LIR spill slot offset, set at fn entry in `emitFunctionSet`); the three former consumption sites (written-type inference, `nestEmitDefRvalue`, `emitInst` `.int_const`) read the plan via `planConstCarrierAt` (spell-time READ — Decision-vs-spelling: the emitter spells the carried carrier, never derives; `writeIntConstRvalue`/`intLitSuffix*` stay spelling). Pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P4 fix round 2 (placement correction, Decision-vs-spelling): the emitter is now PURE spelling for classification — `C89Emitter` holds `classif: *type_resolver.EmissionClassification` (the four group maps owned by `CompilerContext`, filled at the pre-emit `phase_EmissionClassification` boundary) and READS only. The `emitTypePasses`-invoked `classifyTypeEmissionFinalize` call is DELETED (`emitTypePasses` retains ZERO classification calls); `collectNeededTuples` moved out of this file into `type_resolver.zig`; the four map fields and the `c89EmitterInit` map parameters are replaced by the single `classif` pointer (all reads rewired `emitter.classif.*`). Zero decision-logic change: dump pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P4 (emitter sanitization: single classification pass, operator amendment option (a) — extend + re-time): the emitter's type classification is DELETED — `computeSharedSet` and `shouldSkipTypeEmission` (and the per-pass `skip_arb` local) are gone; the emitter CONSUMES the resolver's single classification (doc 03): `c89EmitterInit` now takes the three group maps (`pointer_only_map`/`needs_def_map`/`shared_set`) fully populated from `classifyTypeEmissionGroups`'s `ClassificationResult` (the former `ptr_only_ids`/`pointer_only_len` args and both id→map fill loops are deleted), `emitTypePasses` consults `needs_def_map` where it called `shouldSkipTypeEmission` (same filter positions; the E10 `skip_arb` arm was unreachable-equivalent), and `emitTypePasses` opens with the resolver's emission-time finalize `type_resolver.classifyTypeEmissionFinalize(reg, shared_set, pointer_only_map, needs_def_map, needed_tuple_set)` — step 2 of the SAME mechanism (doc 03), covering the E4 needed-tuple shared seed and types registered after the classification snapshot (the old functions evaluated their rules LIVE at emission; the po-map fallthrough — absent = value-embedding — is preserved). Spec §4 "Type classification" row AMENDED (operator, 2026-10-12; recorded doc 03 + P4 report; closeout will note it). Emission byte-identical: dump pins 0/8, hop1==hop2.] [updated: 2026-10-12 — P3 (emitter sanitization: canonical `typeCName`, D2 residue CLOSED): the C-type-name derivation moves OUT of the emitter — `type_registry.typeCName` (doc 03) is THE one derivation (verbatim relocation of the old `getCTypeName` body incl. the synthetic `Arr_`/`Tup_`/`Slice_`/`Opt_`/`EU_`/`FS_`/`FP_`/`FN_`/`ES_` compositions and F2's `sliceElementName` rule), synthetic names minted ONCE through the P1 `name_mangler.zig` authority, and the `c_name_map` memo is owned by the derivation (the `emitErrorUnionType` write-back is REMOVED; the emitter is a pure reader). `getCTypeName` is a thin consumer wrapper; every declaration site (`emitStructType`/`emitUnionType`/`emitTaggedUnionType`/`emitEnumType`/the FX14 carriers) and the former duplicated mints (`emitArrayType`'s local `Arr_` mint, `emitOptionalType`'s local `Opt_` mint) consume it, so decl and use cannot drift. All spellings byte-identical (dump pins 0/8; hop1==hop2). See §1.5.] [updated: 2026-10-12 — P2 (emitter sanitization: type-reference relation + ordering, D8 root cause CLOSED): the typedef-ordering edge set now derives from the SINGLE relation `type_registry.typeRefs`/`typeNeedsFullDef`/`typeRefsContains` (doc 03) — `tstTopologicalSort` takes its indegree from `typeRefs` and its decrements from `typeRefsContains`, and `computeSharedSet`'s closure probes `typeRefsContains`. DELETED: `c89NeedsEmitEdge`, `tstEdgesWalk`, `tstSeenInRange`, `tstEdgesCount`, `tstEdgesFill`, `tstIsDep` (the divergent hand-rolled edge machinery). The relation covers ALL kinds incl. `fn_type` return/param refs (D8: a fn-ptr typedef now follows its return typedef — the D8 reproducer's `zig_special_types.h` inverts the old fnptr-before-EU order), `packed_union`, and pointer chain-leaf name refs (a `*fn` struct field's C type IS the fn typedef name). See §1.1.] [updated: 2026-10-12 — P1 (emitter sanitization: identifier authority): `sf/src/name_mangler.zig` is REVIVED as the single C-identifier minting authority (keyword escape + collision resolution + stable per-kind names). The emitter-internal `NameMangler` struct and all ad-hoc mint helpers (`writeHex`, `isTempOrBuiltin`, `isC89Keyword`, `mangleC89Keyword`, `cUnionMemberName`, `nameManglerPopulateKeywords`, `nameManglerInit`, `nameManglerMangle`, `nameManglerMangleGlobal`, `syntheticTypeName`, `mangleLocalName`, `mangleTempName`, `typeIdName`, `aggPackedScratchName`, and `moduleQualifiedName`'s stem rule) MOVE to `name_mangler.zig`; `c89_emit.zig` keeps only 4 thin `pub` forwarders (`NameMangler`, `nameManglerInit`, `nameManglerMangle`, `nameManglerMangleGlobal`) as its external compatibility surface (main.zig emission phase + `tests/test_name_mangle_bin.zig`) and calls `nm_mod.*` at every mint site. New per-kind mints: `nameManglerMintLocal`/`MintField`/`MintMember` (raw-name rule: source name byte-identical, C keyword -> `z_<name>`, per-scope collision -> `_N`), `nameManglerMintTemp` (`zT_<id>`), `nameManglerMintSyntheticType` (3-part synthetic rule), `nameManglerMintIndexName` (prefix+decimal; printer/table/scratch), `nameManglerMintModuleStem` (`<stem>_<fnv1a-hex>`), `nameManglerFnScope` (per-function scope key for local collision maps). D1 root cause closed incl. **struct fields** (decl + all access arms + printer `v.<f>` access; display labels keep the raw source name so `.{ .int = 7 }` prints unchanged); union members keep the F1 `z_` escape and gain collision resolution. Self-emission names byte-identical (pins 0/8; `hop1==hop2` holds). See §1.3/§3.] [updated: 2026-10-12 — P5 (emitter sanitization: predicates + promotion centralized): the emitter's private int-kind/signedness/width/scalar/pointer truth tables (`intKindIsSignedBase`, `intKindIsUnsignedBase`, `intKindWidthBytes`, `classifyIntSignedness`, `intTypeNeedsWidthWrap`, `intTypeByteWidth`, `typeIsIntKind`, `retTypeIsScalarC`, `typeIsPtrKind`) are DELETED — canonical predicates now live in `type_registry.zig` (doc 03) with every emitter call site rewired (per-caller membership extras verbatim), and `emitBinRvalueText` delegates mixed-sign C usual-arithmetic promotion to `coercion.zig` `coercionUsualArithPromote` (doc 05), keeping only `getTempEffType`/`getCTypeName` glue. See §1.15 note.] [updated: 2026-10-10 — D5/F6 (`-fsafe` root-index bounds check RESTORED, task F6): the D5 address-taking path (`lowerAssignLValue` `sf/src/lower.zig:2507`, `lowerLValueAddr` `:2202`) bypassed the by-value element read that carried the `-fsafe` bounds check, so the chain ROOT index `i` of `s[i].field[j] = x` / `a[i].field[j] = x` was not trapped when out-of-range. `lowerLValueAddr` gained a `safe_check: u8` parameter; its `index_access` arm emits `emitSafeCheckIndex(lv_ix_base, lv_node.child_0, idx_temp)` (`:2235`) when set, and only the D5 call site passes `1` (`:2507`); every other address-of caller passes `0`, so their C is byte-identical and `-ffast` is unchanged (helper early-returns when `!safe_checks`). Repro `repro/mi_matrix/slice_index_field_store_oob_xmod/` traps rc 133 under `-fsafe` (pre-fix rc 0); in-bounds D5 repro still `9\n11\n22\nslice_index_field_store ok\n`; corpus `1121 = 947/58/116/0/0` (FAIL unchanged; +1 OK = new repro); stdlib 283/0; example matrix 25/25; runtime goldens gol/lisp/json/mud+client byte-identical; all 8 dump-MD5 pins unchanged. See §1.13.] [updated: 2026-10-09 — D5-F5 (lost store through a slice-index aggregate lvalue FIXED, task F5): `lowerAssignLValue`'s `index_access` arm (`sf/src/lower.zig:2484`) now takes an ARRAY-typed aggregate l-value chain by ADDRESS before the value path — when the base is a `field_access`/`index_access`/`deref`/`paren_expr` whose chain roots at an `index_access` (new helpers `d5BaseChainHasIndex`/`d5IndexAssignArrayType`, `sf/src/lower.zig:2564`/`:2612`), `lowerLValueAddr` forms `&elem->field` once and `assign_index` emits `(*zT)[j] = src;`, so `s[i].field[j] = x` / `a[i].field[j] = x` write into the element instead of a by-value copy. An array field's resolved type decays to a bare element pointer, so the declared array type is recovered from the container's field table (mirroring `fieldStaticLenForBase`). Slice/pointer bases and local-aggregate field bases keep the value path byte-identically. Repro `repro/mi_matrix/slice_index_field_store_xmod/` prints `9\n11\n22\nslice_index_field_store ok\n`; corpus `1120 = 946/58/116`; stdlib 283/0; 8 dump-MD5 pins unchanged; z9torr tiers PASS and the sent handshake carries the real `-Z9T01-…` peer_id. See §1.13.] [updated: 2026-10-09 — D2-F2 (slice-of-synthetic element typedef FIXED, task F2): new helper `sliceElementName` (`sf/src/c89_emit.zig:931`) computes a slice element's C name — recursion `getCTypeName(elem)` when the element is synthetic (`name_id == 0`: slice/array/pointer/optional/tuple/error-union), else the exact `nameManglerMangle(elem.name_id, 2, 0)` — so `[][]const u8`, `[][20]u8`, `[][*]u8`, `[]?T`, `[]tuple` each get a distinct `Slice_…` typedef. Both `getCTypeName`'s slice branch and `emitSliceType` use the helper (`emitSliceType` now takes its typedef name from `getCTypeName(tid)`, so decl and use cannot drift). Primitive/named element slices (`[]u8`→`Slice_zT_0B42B2F8_u`, `[]i32`, `[]Struct`) are byte-identical. Repros `repro/mi_matrix/slice_of_slice_xmod/` + `repro/mi_matrix/slice_of_array_xmod/` are warning-free (no `-Wincompatible-pointer-types`) and green (both print `11`). The 8 dump-MD5 pins move because the gate dumps include the std modules, which define synthetic-element slices (e.g. `[][]const u8` in `sf/src/std_str.zig` `split`/`splitLines`/`join` and `sf/src/std_sort.zig` `StrBox`/`sortStr`, pulled in by every `@import("std")`); runtime goldens gol/lisp/json/mud are byte-identical. Re-baseline of the dump pins requires operator authorization (spec §6.1). See §1.5.] [updated: 2026-10-09 — D1-F1 (union-member C-keyword tag FIXED, task F1): new shared helper `cUnionMemberName` (`sf/src/c89_emit.zig:594`) returns the interned C union-member name — the existing `z_` C-keyword escape (`mangleC89Keyword`) for C-keyword names, every non-keyword name byte-identical — applied at the tagged-union declaration (`emitTaggedUnionType`) and payload access (`emitVariantFieldPayload`) plus the bare-union declaration (`emitUnionType`), its union access arms in `resolveFieldAccess` (struct fields untouched), and the generated aggregate printer (`emitAggPrinterDef` tagged-union arm — mangled payload designator, raw tag kept as the print label). `union(enum){ int: i64 }` now emits `.payload.z_int._0` consistently; repro `repro/mi_matrix/union_keyword_tag_xmod/` (now also printing the keyword-tagged union) compile+link+run green; corpus FAIL 118→117; all 8 dump-MD5 pins unchanged (D1-neutral). See §1.7.] [updated: 2026-10-09 — D5-I5 (lost store through a slice-index aggregate lvalue, task I5): `lowerAssignLValue`'s `index_access` arm (`sf/src/lower.zig:2484-2531`) lowers its base by **value** (`:2487` `lowerExpr(indexBaseAfterArrayDeref(...))`); only the tuple sub-case (`:2493-2508`) takes an address, so `s[i].field[j] = x` materialises the element struct into a temp and the emitter stores into the copy (`emitBaseIdxAccess` `sf/src/c89_emit.zig:204-267`, `assign_index` `:7226-7271`; emitted `zT = s.ptr[i]; p = zT.field; p[j] = x;`). In Zig the chain is an lvalue and must write through `&s[i].field[j]`, so the write is silently lost at runtime. Compile-only classify is OK, so the gate is the runtime repro `repro/mi_matrix/slice_index_field_store_xmod/` (pre-fix prints the pre-store value; expected `9\n11\n22\nslice_index_field_store ok\n`, pre-fix `9\n0\n0\nslice_index_field_store FAIL\n`). Correct sibling `lowerFieldStore` (`:2878-2928`) takes nested bases by address. Fix (task F5, planned): route non-tuple index-assign bases through `lowerLValueAddr` exactly as `lowerFieldStore`. See §1.13.] [updated: 2026-10-09 — D2-I2 (slice-of-synthetic-element typedef collapse, task I2): `getCTypeName`'s slice branch (`sf/src/c89_emit.zig:1028-1036`) derives the slice typedef's element name from the element type's `name_id` (`:1031` `nameManglerMangle(mangler, elem_ty2.name_id, 2, 0)`); every *synthetic* element (slice/array/pointer/optional/tuple) has `name_id == 0`, so `[][]const u8` and `[][20]u8` both mangle to the empty-name string `zT_811C9DC5_` and collapse to one `typedef struct { …* ptr; unsigned int len; } zT_9DFA8D74_Slice_zT_811C9DC5_;` (whichever synthetic element is registered first wins). gcc compiles it with `-Wincompatible-pointer-types`; the value is correct only by luck of the hoisted temp. The array branch (`:959-967`; `emitArrayType` `:2116-2137`) already recurses `getCTypeName(reg, mangler, ap.elem)` and the tuple branch (`:972-979`) already uses the dense type id (`Tup_<tid>`); optional/error-set use their payload idx. Fix (task F2, planned): recurse for synthetic (`name_id == 0`) slice elements (or reuse `syntheticTypeName` `:882` with the dense type id), keeping primitive/named element slices byte-identical. Repros `repro/mi_matrix/slice_of_slice_xmod/` + `repro/mi_matrix/slice_of_array_xmod/`. See §1.5.] [updated: 2026-10-09 — D1-I1 (union-member C-keyword tag, task I1): `emitTaggedUnionType` (`:1921`) writes each `union(enum)` variant's `fe.name_id` verbatim as the C union member (`:2013` read → `:2020` write) and `emitVariantFieldPayload` (`:419`; via `resolveFieldAccess` `:499`) writes it verbatim into the payload designator `.payload.<name>._<sub>` (`:435` read → `:436` write). A legal Zig tag that is a C keyword (`int`, `long`, `switch`, …) therefore emits invalid C89 — `struct { long long _0; } int;` / `v.payload.int._0` → gcc `expected identifier before 'int'`; `@"int"` is rejected by Z98 (`error[4]`). Tag constants (`zTU_<base>_<member>`) and switch dispatch are already safe. Fix (task F1, planned): C-keyword-mangle the member name consistently at both write sites (or emit stable non-keyword member names). Repro `repro/mi_matrix/union_keyword_tag_xmod/`. See §1.7.] [updated: 2026-10-04 — A2-F (Volume IV Amendment A2): `emitStructType` emits `\tunsigned char _[1];\n` as the body of an empty non-packed struct (`fields_count == 0`), so the emitted C `sizeof`/offsets match the registry's min-1 size 1 / align 1 (previously `struct {}` either aliased a foreign payload or produced an empty C struct). See §1.7.] [updated: 2026-09-29 — FX16-F (Volume II ch7 amendment, adjacent pointer `.tag` store): the `store_field` pointer-base arm gains a `tagged_union_type` pointee case — `p.tag = v` on a `*union(enum)` base now renders `p->tag = v;` (mirroring the ptr→struct/union/tuple arms) instead of falling to the `error[3043] internal: store_field unresolved field` ICE. Only `TU_FIELD_TAG` is handled; `p.payload = …` stays the pre-existing ICE (payload-member stores reject in lowering, doc 07). No existing program has the shape (it ICEd), so the 4-MD5 pins are unchanged.] [updated: 2026-09-29 — FX14-F (Volume II layout-model pin, operator ruling A): the frozen 32-bit layout model (i64/u64/f64 size 8 align 8) is now pinned in the emitted C. `emitInt64Type`/`emitUint64Type` append ` Z98_ALIGN8` to their carrier typedefs, a new `emitF64Type` emits the f64 carrier `typedef double <cname> Z98_ALIGN8;` (previously `getCTypeName` returned bare `"double"`), and `getCTypeName`/the f64 pointee fast path, `ctypeGuardWrite` (`ZIG_F64_`), `computeSharedSet`, `emitPointeeDep` and `emitTypeDefinition` gained the f64 arm. `Z98_ALIGN8` lives in `zig_compat.h` (canonical `sf/src/include/zig_compat.h` + hand-written bytes in `emit_support.zig`): `__attribute__((aligned(8)))` on gcc/clang/mingw, empty on MSVC/Watcom (whose 32-bit defaults `/Zp8`/`-zp8` already align 64-bit scalars to 8); the shared `z64`/`zu64`/`f64` typedefs carry it too. Every declaration funnels through `getCTypeName`, so structs, unions, tagged unions, optionals, error unions, tuples, arrays and standalone vars all inherit the model alignment; a `-zp4`/`/Zp4` packing override breaks the pin and is documented as unsupported. The stale unused `c89_emit.emitZigCompatH` duplicate was deleted. Fixtures `repro/mi_matrix/stdlib_layout_align8_xmod` + `repro/layout_align8.z98`. See §1.5/§1.7.] [updated: 2026-09-25 — Task 9 fix round 3 (z98-print-formatting Amendment 1, B5; operator ruling Q7): `emitModuleInitCalls` now iterates `C89Emitter.module_init_order`/`module_init_order_len` — the stable dependency-ordered module list computed by `computeModuleInitOrder` (doc 09) — instead of the raw module-registry order, so a module whose global initializers read another module's globals has its `__module_init` called after that module's. The reachable-prune and `moduleHasRuntimeInit` filters are unchanged, and a program without cross-module global dependencies keeps its exact previous call sequence.] [updated: 2026-09-25 — Task 8 (z98-print-formatting Amendment 1, B2 + B3): one pointer-chain depth cap of 16 — `emitPointeeDep`'s dependency walk bail moves from `depth > 8` to `depth > 16`, matching `zigPrintNameAppend` and the validator (`lower.zig printFmtPointeeNameOk`/`printFmtAggFieldsOk`), so a validator-accepted chain (up to 14 wrappers in a field's pointee alias / 15 in a print argument) emits every wrapper typedef before use instead of gcc `unknown type name` at rc=0. `emitPtrValuePrint`'s name-append failure is now a `@panic` backstop (was a silent no-op that dropped the value); the validator mirrors the 512-byte name budget exactly, so an over-budget name is a clean `error[3063]`. See §1.20 and doc 07.] [updated: 2026-09-25 — final whole-branch review fix wave (Finding 1): an untyped integer `print` argument is materialised by lowering into its value-chosen carrier (i32/u32/i64/u64; `lowerPrintArgExact`), so `printFnSourceName`'s `integer_literal` arm is only the non-folded fallback (e.g. builtin results) and big untyped literals no longer print truncated/re-interpreted values. Finding 2 / operator ruling R11 recorded: a recursive or mutually recursive aggregate rejects `error[3063]`; `emitAggPrinterRec`'s `emitted`/`visiting` guard terminates cycles, but its printers are emitted post-order with no forward declarations, so a mutual `A -> B -> A` cycle would reference a not-yet-defined printer (gcc error) and relaxing the validator first needs forward declarations.] [updated: 2026-09-25 — Task 6 (z98-print-formatting): pointer/fn-pointer `{}` prints Zig 0.15.2's `T@<lowercase-hex>` (NO `0x`; operator ruling R3) or delegates to the pointee printer (`*struct`/`*union`/`*tagged`/`*packed`/`*tuple` → the Task-4 generated printer, `*enum` → the Task-5 name printer, everything else the address form). The address form is emitted inline — `std_print("<@typeName(child)>@")` + the EXISTING std.fmt `printHexU64` — and the child name is rendered by the new `zigPrintNameAppend` for the exact Z98-expressible space (ints/floats/bool/void/`c_char`/arb/pointers/many/slices/arrays/optionals/error-unions/error-sets/fn); named struct/enum/union components reject `error[3063]` (Zig container-qualifies them — bounded residual). Float `{x}` prints a hand-rolled C89 hex-float (`0x1.8p0`, `Writer.zig:1572-1720`) through compiler-generated static helpers `z98_printFloatHex32/64` (emitted on demand — adding a std_fmt function would move the 4-MD5 pins). The Task-4 closure is extended for pointer/fn-pointer fields (Zig's `{any}` field pointer route); type-dependency emission (`emitTypeDefOnce`/`emitTypeDeps`/`emitPointeeDep`/`emitDepMember`) fixes the pre-existing "typedef used before emitted" ordering for a pointer member's pointee typedef (fn-pointer/enum/error-set/optional/slice/array/packed), and `c89NeedsEmitEdge` now treats `fn_type` as a value-embedding dependency edge. See §1.20.] [updated: 2026-09-25 — Task 5 (z98-print-formatting): `.print_val` on an enum (bare `{}`) calls the compiler-generated `z98_printEnum_<tid>` and on an error set uses `z98_printErrorSet_<tid>`; each carries a static name table (`z98_etab_` name blob + `z98_eoff_`/`z98_elen_` byte offset/length arrays + `z98_eval_` member values / `z98_escode_` global codes) and writes the name through the EXISTING std.fmt `printStr` (std_fmt.zig stays untouched so the 4-MD5 dumps keep their pinned bytes). See §1.19.] [updated: 2026-09-25 — Task 4 (z98-print-formatting): `.print_val` on struct/union/tagged-union/packed-union/tuple calls a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) that emits Zig 0.15.2's `. { .a = 1 }` / `.{ 1, 2, 3 }` form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model (`typedef struct { _0, _1, ... }`), emitted only for `needed_tuple_set` (runtime hoisted temps/globals) so registry-only print-args tuples keep the 4-MD5 dumps byte-identical. See §1.18.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix] [updated: 2026-09-26 — FB (Volume II defect fix, D4): `load_field`, `store_field` and `addr_of_field` gain tuple arms — a tuple VALUE base renders `._<field_id>` and a pointer-to-tuple base `->_<field_id>` (the positional C model `emitTupleType` already writes for `assign_field`/printers), so `.0`/`._0`/`t[0]` reads, writes and `&t.0` all reach the emitted fields. `emitNeededTupleAt` emits a needed tuple typedef at its topological position in the sorted type loops (value and pointer-only buckets; a struct that embeds a tuple by value previously emitted before the tuple typedef -> gcc `unknown type name`), sharing the `seen` dedupe map with the trailing `emitNeededTupleTypes` fallback (signature now takes `seen`).]
 
-> Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`
+> Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
 
 ## Summary
 
 | Key | Value |
 |-----|-------|
-| Input | `LirFunction` list (lowered IR functions per module), `TypeRegistry` |
-| Output | C89 `.c` file via stdout |
+| Input | spill-backed function-slot list (`LirFunction`s per module), `TypeRegistry`, `ModuleRegistry` |
+| Output | C89 `.c` via stdout (`--dump-c89`), or a self-contained multi-module tree + companion build scripts (`-o DIR` / `--output-dir`) |
 | Phase marker | `C` (entry), `FINAL_FLUSH` (complete) |
 | Key structs | `C89Emitter`, `BufferedWriter`, `NameMangler` |
-| Key functions | `emitModule`, `emitSpecialTypes`, `emitFunctionBody`, `emitInst`, `nameManglerMangle`, `cincludeUnionAll` |
+| Key functions | `emitModule`, `emitSpecialTypes`, `emitFunctionBody`, `emitInst`, `nameManglerMangle`, `cincludeUnionAll`, `emitSupportFiles`, `emitBuildScripts` |
 
 ---
 
-## 1. `c89_emit.zig` — C89 Emitter (4032 lines)
+## 1. `c89_emit.zig` — C89 Emitter (9231 lines)
+
 
 ### 1.1 2-Phase Output Architecture
 
-Emission follows a strict 2-phase ordering per module, enforced in `emitModule` (`c89_emit.zig:2201`):
+Emission follows a strict 2-phase ordering per module, enforced in `emitModule`:
 
 ```
 Phase 1: Type Headers (emitSpecialTypes)
   ├─ Sub-pass 1: Forward declarations for struct/union/tagged_union types
-  │   (typedef struct Foo Foo;)
+  │   (typedef struct Foo Foo; — packed structs/unions skipped)
   ├─ Sub-pass 2a: Pointer-only types (fields all through ptr/slice/wrapper)
   │   (emitTypeDefinition — only if in pointer_only_map)
   └─ Sub-pass 2b: Value-embedding types (structs with inline fields)
@@ -36,79 +37,109 @@ Phase 2: Function Bodies (emitModuleHeader → emitFunctionSignature → emitFun
   └─ main() wrapper for non-void return types
 ```
 
-Phase 1 runs once via `emitSpecialTypes` BEFORE any function body. Phase 2 iterates the function list.
+Phase 1 runs once via `emitSpecialTypes` BEFORE any function body. Phase 2 iterates the
+spill-backed function-slot list.
 
 #### Type Topological Sort
 
-Types are emitted in dependency order using Kahn's algorithm (`tstTopologicalSort`, `c89_emit.zig:959`):
+**[updated: 2026-10-12 — P12 (typedef ordering planning)]** the order is computed ONCE at the
+backend-neutral `phase_EmissionClassification` boundary (`c89_plan.spellPlanPlanTypeOrder` →
+`c89_plan.tstTopologicalSort`, the verbatim move of the former emitter-resident sort incl. the
+P2 popped/append derivation) and carried as `C89SpellPlan.typedef_order`. Both former emit-time
+call sites (`emitModule` and the multi-file `phase_C89Emission` region) now READ the carried
+order; zero sort calls remain in the emitter or mid-emission (Decision-vs-spelling: ordering is
+on the "emitter never decides" list). The four `sorted` walkers — `c89_emit.emitTypePasses`'
+3 loops (Pass 1 forward typedefs / Sub-pass 2a pointer-only / Sub-pass 2b value-embedding) and
+`c89_emit.emitModuleHeaderFile`'s module-header walk — are bounded on
+`emitter.plan.typedef_order_len` (the sort-time snapshot length; combined fix H2,
+`c89_plan.zig`), NOT on live `types_len`: the P2 deferred minor "bound on snapshot length" is
+TAKEN, superseding the former P12 body note to the contrary. Post-snapshot registry appends
+(the `emitHoistedDecls` ptr-type appends) are no longer walked, so the old live-`types_len`
+over-read into the sort's own `queue` buffer is structurally impossible. Pins 0/8.
+**[updated: 2026-10-16 — combined-fix H2 truth-up: the four `sorted` walkers are bounded on
+`C89SpellPlan.typedef_order_len` (sort-time snapshot), superseding the stale P12 body claim
+that they still use `tsi < types_len`.]** **[updated: 2026-10-12 — P2 fix round 1]**
+`tstTopologicalSort` now APPENDS any Kahn cycle
+residue (nodes whose indegree never reaches 0) in stable ascending-tid order, so `sorted`
+ALWAYS covers all `types_len` entries and the emission passes' `sorted[0..typedef_order_len]` walk can never
+read uninitialized arena memory (the append is a no-op for acyclic programs). A post-resolve
+cyclic type still emits — possibly invalid C — instead of clean-rejecting (the pre-P2 behavior
+class; the diagnose/reject variant is ruled out — no new error codes).
+**[updated: 2026-10-12 — P2, D8]** Types are emitted in dependency order using Kahn's
+algorithm (`tstTopologicalSort`), with the edge set derived from the SINGLE type-reference
+relation in `type_registry.zig` (`typeRefs` / `typeRefsContains` / `typeNeedsFullDef` — doc 03).
+The former hand-rolled edge machinery (`c89NeedsEmitEdge`, `tstEdgesWalk`, `tstSeenInRange`,
+`tstEdgesCount`, `tstEdgesFill`, `tstIsDep`) is deleted; no divergent kind membership remains.
 
 ```
 Input: TypeRegistry (all types 0..types_len-1)
-1. Compute indegree for each type — count of C89-relevant field/child types
-   (struct/tagged_union/array/error_union that reference another type)
+1. indegree[ti] = typeRefs(reg, ti, buf) — the distinct typedef-ordering edge targets
 2. Enqueue all types with indegree 0
-3. Dequeue → add to result → decrement indegree of dependents → enqueue new 0s
-4. Result order: types with no deps first, then their dependents
+3. Dequeue → add to result → for every tj with typeRefsContains(tj, cur): decrement → enqueue 0s
+4. Result order: every referenced typedef before its referrer
+5. Append cycle residue (unpopped nodes) in ascending-tid order → sorted covers types_len (P2 fix round 1)
 ```
 
-`c89NeedsEmitEdge` (`c89_emit.zig:781`) determines which `TypeKind` forms an edge: slice, struct, union, tagged_union, array, optional, error_union, **enum, error_set**, tuple, unresolved_name.
-[updated: 2026-08-01] `enum_type`/`error_set_type` were added in F-S8 — both are embeddable by value
-(inline integer typedef aliases), so a target enum/error_set **must** have an emit edge or the fixpoint
-(`computeSharedSet` §1.17) never promotes it into `zig_special_types.h`, leaving shared struct bodies
-referencing an unknown `typedef`. `tstIsDep` (`c89_emit.zig:922`), `tstEdgesCount` (`c89_emit.zig:807`),
-and `tstEdgesFill` (`c89_emit.zig:857`) all gate their source-kind branches on this helper, so the
-enum/error_set target support flows through every source branch automatically; no enum/error_set
-*source* branch is needed (backing_type/tags are plain integers).
-
-[updated: 2026-08-07] `tstEdgesCount`/`tstEdgesFill` now count each distinct dependent type ONCE
-per source (dedupe same-typed field edges) via the new `tstSeenInRange` helper
-(`c89_emit.zig:799`): the struct/tagged_union/union field loops and the tagged_union `tag_type`
-all skip a target type already seen in the fields scanned so far. This makes the indegree
-(`tstEdgesCount`, `c89_emit.zig:807`) exactly equal to the number of `tstIsDep`-true decrements in
-the Kahn dequeue (`c89_emit.zig:985-987`, inside `tstTopologicalSort` :959), so count and dequeue
-can never drift: a struct with two
-fields of the same edge-forming type (e.g. two `Point` fields) previously got indegree 2 but only
-1 dequeue decrement, was never dequeued, and was silently dropped from `sorted` (no fwd-decl/body →
-gcc `unknown type name`). F1 (commit a5ac4598) fixes `dup_optptr_field_emit`/`dup_val_field_emit`.
-`tstEdgesFill` is dead code (0 callers) — the dedupe there is mirrored for consistency, zero
-runtime effect.
+The relation (`type_registry.zig`, kind-by-kind table in the P2 SDD report): by-value positions
+(aggregate fields incl. `packed_union`, tagged-union tag, array elem, tuple elems, optional /
+error-union payload) contribute every `typeNeedsFullDef(R)` ref (membership = the historical
+`c89NeedsEmitEdge` set PLUS `packed_union`); name-spelling positions (fn return, fn params,
+slice elem) require additionally NOT `typeHasForwardDecl(R)` (Pass-1 forward typedefs declare
+named non-packed struct/tagged_union/union names); pointer references contribute a
+name-visibility edge to their chain-leaf (a `*fn` field's C type IS the fn typedef name — the
+D8 shape). Dedup is by edge target, so indegree equals the number of Kahn decrements exactly
+(the old `tstSeenInRange` source-range dedupe is subsumed; `tstEdgesFill` had no callers and is
+gone with the walk).
 
 #### Pointer-only vs Value-embedding Split
 
-`emitModule` receives a `ptr_only_ids` array from the caller (calculated in `phase_C89Emission` in `main.zig`). Types in this set have all their field dependencies reachable through pointers — only a forward declaration is needed for C89 correctness. The split prevents redundant full type definitions:
+The classification's `pointer_only` group (`classif.pointer_only_map`; computed in
+`phase_TypeResolution` by `classifyTypeEmissionGroups`, completed at the pre-emit
+`phase_EmissionClassification` boundary — `emitModule` receives no id arrays
+(**P4 fix round 2**; the `ptr_only_ids` parameter is long deleted)). Types in this set have all
+their field dependencies reachable through pointers — only
+a forward declaration is needed for C89 correctness. The split prevents redundant full type
+definitions:
 
-- **Sub-pass 2a** (`c89_emit.zig:1256`): Iterates types in topo order, skips if NOT in `pointer_only_map`. Emits full definition.
-- **Sub-pass 2b** (`c89_emit.zig:1297`): Iterates types in topo order, skips if IS in `pointer_only_map`. Emits full definition.
+- **Sub-pass 2a:** Iterates types in topo order, skips if NOT in `pointer_only_map`, (shared path) NOT in `shared_set`, or NOT in `needs_def_map` (**P4** — the deleted `shouldSkipTypeEmission`). Emits full definition.
+- **Sub-pass 2b:** Iterates types in topo order, skips if IS in `pointer_only_map` or NOT in `needs_def_map` (**P4**). Emits full definition.
 
-Both sub-passes dedup via `emitter.emitted_type_set` (hash of C type name string) — same type only emitted once.
+Both sub-passes dedup via `emitter.emitted_type_set` (hash of C type name string) — same type only
+emitted once.
+
+**[updated: 2026-10-17 — D1 root fix (T2, composite typedef ordering; fix commit `1c5247b9`)]:** the topo order + the 2a/2b split can still emit a referrer before the composite whose NAME it spells (the D1 repro B: a fn-pointer typedef naming a `?Aggregate` typedef — `zig_special_types.h: expected declaration specifiers or '...' before '*' token`). `emitTypeDefOnce` therefore runs a spelling-dependency walk before writing a typedef — `emitDefDeps`/`emitDepRef` (the earlier `emitPointeeDep` site-patch extended to fn-pointer return/param names and slice elem names, plus the by-value completeness closure of any pulled `?T`/`E!T`/`[N]T`/tuple) — so every composite typedef emits before every spelling reference; the `seen` dedup makes the pull a no-op wherever the topological order already held. The P2 relation (`type_registry.typeRefs`, §Type Topological Sort) already carries these edges; the emit-site closure compensates for the classification split. Residuals (masked at emit sites, not fixed): **C1** — P4's `pointer_only` walk ignores `fn_type`/`slice_type` name-spelling refs (and the backward propagation covers only optional/EU field kinds), so 2a/2b remains unsound in general; a future cleanup should redefine `pointer_only` over the full name-ref relation (or merge 2a/2b and trust `typedef_order`) — output-reordering blast radius. **C2** — `typeNeedsFullDef` omits `i64`/`u64`/`f64` carriers, so the sort carries no edge for carrier-name spellings (`?i64`, fn-returning-carrier, enum backing) — tid-luck ordering today, covered at emit sites. `emitDefDeps` terminates via seen-mark-before-recursion + depth cap 16 (a layout-impossible name cycle emits invalid C rather than hanging). Fixtures `fnptr_opt_aggregate_{coerce,emit}_xmod` green.]
 
 ### 1.2 BufferedWriter — 4KB Buffered Output
 
-Defined in `c89_emit.zig:27-79`. Fixed-size 4096-byte buffer with auto-flush.
-[updated: 2026-08-01] BufferedWriter now carries a **file-descriptor sink** (`fd: usize`) so the
-multi-module path can flush each `.h`/`.c`/`zig_special_types.h` to its own open file. Stdout
-remains the default (`fd=1`), so the bare `--dump-c89` byte-identical gate is preserved.
+Fixed-size 4096-byte buffer with auto-flush. `BufferedWriter` carries a **file-descriptor sink**
+(`fd: usize`) so the multi-module path can flush each `.h`/`.c`/`zig_special_types.h` to its own
+open file. Stdout remains the default (`fd=1`), so the bare `--dump-c89` byte-identical gate is
+preserved.
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `buf` | `[4096]u8` | Circular-ish output buffer — written to sequentially, flushed to sink when full |
+| `buf` | `[4096]u8` | Output buffer — written sequentially, flushed to sink when full |
 | `pos` | `usize` | Current write cursor (0 = empty, 4096 = full, triggers flush) |
-| `fd` | `usize` | Output sink fd. `1` (stdout) by default; set per-file via `bufferedWriterInitFd`. `usize` since F-S9 (was `i32`) — an all-ones `INVALID_FD` sentinel (`pal.zig:70`) replaces the `-1` open-fail test |
+| `fd` | `usize` | Output sink fd. `1` (stdout) by default; set per-file via `bufferedWriterInitFd`. `usize` — an all-ones `INVALID_FD` sentinel (`pal.zig`) replaces the `-1` open-fail test |
 
-| Function | Line | Purpose |
-|----------|------|---------|
-| `bufferedWriterInit` | 34 | Returns new BufferedWriter with `pos=0`, `buf=undefined`, `fd=1` (stdout) |
-| `bufferedWriterInitFd` | 38 | Returns new BufferedWriter writing to the given fd (multi-module per-file sink) |
-| `bufferedWriterFlush` | 42 | Writes `buf[0..pos]` to `self.fd` via `pal.fileWrite`, resets pos to 0 |
-| `bufferedWriterWrite` | 50 | Writes byte slice to buffer. Loops: copies min(remaining, 4096-pos) bytes into buf, increments pos, flushes if full |
-| `bufferedWriterWriteByte` | 65 | Single byte write, flush-if-full, store at pos, increment |
-| `bufferedWriterWriteIndent` | 71 | Writes `level * 4` spaces (flush-safe, byte-by-byte) |
+| Function | Purpose |
+|----------|---------|
+| `bufferedWriterInit` | Returns new BufferedWriter with `pos=0`, `buf=undefined`, `fd=1` (stdout) |
+| `bufferedWriterInitFd` | Returns new BufferedWriter writing to the given fd (multi-module per-file sink) |
+| `bufferedWriterFlush` | Writes `buf[0..pos]` to `self.fd` via `pal.fileWrite`, resets pos to 0 |
+| `bufferedWriterWrite` | Writes byte slice to buffer. Loops: copies min(remaining, 4096-pos) bytes into buf, increments pos, flushes if full |
+| `bufferedWriterWriteByte` | Single byte write, flush-if-full, store at pos, increment |
+| `bufferedWriterWriteIndent` | Writes `level * 4` spaces (flush-safe, byte-by-byte) |
 
 Markers `FL:p` (flush start, prints current pos) and `FE:p` (flush end, prints 0) bracket each flush.
 
-### 1.3 NameMangler — Deterministic Name Mangling
+### 1.3 NameMangler — Deterministic Name Mangling [updated: 2026-10-12 — P1]
 
-Defined inline in `c89_emit.zig:83-90`. Separate from the minimal `name_mangler.zig` (which only has a counter — that file is a different/unused impl).
+Lives in `name_mangler.zig` (the single C-identifier minting authority; P1). The emitter imports
+it as `nm_mod` and keeps only thin `pub` forwarders for external callers. Every emitted C
+identifier in the 10 kinds (fn/global/type/local/temp/union-member/struct-field/synthetic-type/
+module/printer) is minted by `name_mangler.zig`; extern C symbols (PAL/runtime/`extern fn`) keep
+their exact C names via the emitter's `is_extern` override (hard boundary).
 
 | Field | Type | Purpose |
 |-------|------|---------|
@@ -118,10 +149,13 @@ Defined inline in `c89_emit.zig:83-90`. Separate from the minimal `name_mangler.
 | `collision_mod` | `U32ToU32Map` | Mangled name_id → module_id (detects collisions) |
 | `collision_name` | `U32ToU32Map` | Mangled name_id → original name_id (maps collision back) |
 | `interner` | `*StringInterner` | For interning mangled name strings |
+| `exported` | `?*U64ToU32Map` | Optional set of `(module_id, kind, name_id)` keys whose symbol is `export`ed and must keep its **source name** (bypasses mangling) |
+| `raw_cache_local`/`raw_cache_field`/`raw_cache_member` | `U64ToU32Map` | P1: `(scope << 32) \| name_id` → minted name_id (per-kind raw-name memo) |
+| `raw_taken_local`/`raw_taken_field`/`raw_taken_member` | `U64ToU32Map` | P1: `(scope << 32) \| cand_id` → 1 (per-kind, per-scope occupancy for collision resolution) |
 
 #### Mangling Scheme
 
-`nameManglerMangle(name_id, kind, module_id)` (`c89_emit.zig:379`):
+`nameManglerMangle(name_id, kind, module_id)`:
 
 ```
 Format: z<K>_<8-hex-digits>_<original-name>
@@ -130,13 +164,15 @@ Format: z<K>_<8-hex-digits>_<original-name>
         prefix       (FNV-1a of original name)
 ```
 
-1. **Temp/builtin bypass** (`isTempOrBuiltin`, line 113): Names starting with `__tmp`, `__ret`, `__bootstrap` return unmangled.
+1. **Temp/builtin bypass** (`isTempOrBuiltin`): Names starting with `__tmp`, `__ret`, `__bootstrap` return unmangled.
 
-2. **C89 keyword escape** (`isC89Keyword` → `mangleC89Keyword`, line 125/288): If the name matches a C89 keyword, prefix with `z_` and return. e.g., `int` → `z_int`.
+2. **C89 keyword escape** (`isC89Keyword` → `mangleC89Keyword`): If the name matches a C89 keyword, prefix with `z_` and return. e.g., `int` → `z_int`.
 
-3. **Cache lookup** (line 384): Key = `(module_id << 35) | (kind << 32) | name_id`. If previously mangled, return cached.
+3. **Export bypass:** if `exported` contains the key, return the original `name_id` (source name).
 
-4. **Mangle construction** (line 392-406):
+4. **Cache lookup:** Key = `(module_id << 35) | (kind << 32) | name_id`. If previously mangled, return cached.
+
+5. **Mangle construction:**
    - `buf[0]` = `'z'` (prefix — avoids leading digit/underscore collision)
    - `buf[1]` = kind char: `F`=function(0), `G`=global(1), `T`=type(2), `L`=local(default)
    - `buf[2]` = `'_'`
@@ -144,55 +180,79 @@ Format: z<K>_<8-hex-digits>_<original-name>
    - `buf[11]` = `'_'`
    - Followed by original name chars, truncated to fit 31 total
 
-5. **31-char limit** (line 401-405): Total mangled name capped at 31 bytes (C89 standard minimum). Original name truncated if needed.
+6. **31-char limit:** Total mangled name capped at 31 bytes (C89 standard minimum). Original name truncated if needed.
 
-6. **Collision resolution** (line 410-450): If mangled name already used by a different `(module_id, name_id)`, append `_N` suffix with counter. Original name portion truncated further to stay within 31 chars. Digits counted dynamically before truncation.
+7. **Collision resolution:** If mangled name already used by a different `(module_id, name_id)`, append `_N` suffix with counter. Original name portion truncated further to stay within 31 chars. Digits counted dynamically before truncation.
 
-7. **Cache population** (line 451-454): Store in `collision_mod`, `collision_name`, and `cache`.
+8. **Cache population:** Store in `collision_mod`, `collision_name`, and `cache`.
+
+`nameManglerMangleGlobal(registry, name_id, module_id, type_id)` is the module-global variant:
+when the name is a type-storage global (the type's `name_id` equals the global's), identity is
+the **stored type** (name + owning module), so every module aliasing the type agrees on one C
+symbol; otherwise it falls back to per-module `nameManglerMangle`.
+
+#### Per-kind mint API (P1) [updated: 2026-10-12]
+
+| mint fn | rule | replaces |
+|---------|------|----------|
+| `nameManglerMangle(name_id, kind, module_id)` | hash-mangled `z<K>_<hex8>_<name>` (kinds F/G/T, collision `_N`) — fn/global/type + derived composites | (moved verbatim) |
+| `nameManglerMangleGlobal` | type-storage-global identity variant | (moved verbatim) |
+| `nameManglerMintLocal(name_id, scope)` | raw name; keyword -> `z_<name>`; per-scope collision -> `<cand>_N` | `mangleLocalName` |
+| `nameManglerMintField(name_id, scope)` | same raw rule, per-struct scope (the D1 struct-field fix) | raw `stringInternerGet` at decl/access/printer |
+| `nameManglerMintMember(name_id, scope)` | same raw rule, per-union scope | `cUnionMemberName` (+ collision check) |
+| `nameManglerMintTemp(temp_id)` | `zT_<temp_id>` | `mangleTempName` |
+| `nameManglerMintSyntheticType(prefix, elem, len, cap)` | `prefix+transformed(elem)+[_len]` -> kind-2 mangle | `syntheticTypeName` |
+| `nameManglerMintIndexName(prefix, n)` | `prefix<decimal n>` (printer/table/scratch names) | `typeIdName`, `aggPackedScratchName` |
+| `nameManglerMintModuleStem(path)` | `<file-stem>_<fnv1a(path) hex8>` | `moduleQualifiedName` core |
+| `nameManglerFnScope(fn_name_id, fn_module_id)` | interned `"<module>_<name>"` scope key (map-partition token only) | (new) |
+
+Determinism: hash-mangled collision state is order-stable (unchanged call order); raw-name
+occupancy is per-scope with mint order a pure function of the program (params then `decl_local`s
+per fn; fields in declaration order — types emit before bodies), so the same input mints the same
+names in every compilation (`hop1==hop2` depends on this).
 
 #### Temp Name Mangling
 
-`mangleTempName` (`c89_emit.zig:2349`): Format `zT_<temp_id>`. Used for hoisted temporaries in function bodies. No collision check needed — temp_ids are unique per function.
+`nameManglerMintTemp`: Format `zT_<temp_id>`. Used for hoisted temporaries in function bodies. No
+collision check needed — temp_ids are unique per function.
 
-#### Local Name Mangling
+#### Local / Field / Member Name Mangling [updated: 2026-10-12 — P1]
 
-`mangleLocalName` (`c89_emit.zig:1838`): If the name_id is a C89 keyword, prefix with `z_`. Otherwise return original name. Used for function parameters and local variables.
+`nameManglerMintLocal`/`MintField`/`MintMember` (shared raw rule): a non-keyword source name is
+returned **byte-identical**; a C89 keyword becomes `z_<name>`; a candidate already claimed in the
+same scope by a different name gets a `_N` suffix (the F1 `int`/`z_int` collision case). Scope =
+the C function (`nameManglerFnScope`) for locals/params, the owning aggregate type id for struct
+fields and union members. Used for function parameters, locals, struct fields (declaration,
+every `resolveFieldAccess`/`emitFieldAssign` access arm, and the aggregate printer's `v.<f>`
+access), union members (declaration + every access arm). Printer **display labels** keep the raw
+source name (`.{ .int = 7 }` prints unchanged).
 
-#### D2 gap — typedef `_N` suffix not mirrored on fn-signature type refs — FIXED (F1) [updated: 2026-08-14]
+#### D2 gap — typedef `_N` suffix not mirrored on fn-signature type refs — FIXED (F1)
 
-The `_N` collision suffix (step 6 above) is applied **per mangled name**, keyed by
+The `_N` collision suffix (step 7 above) is applied **per mangled name**, keyed by
 `(module_id, kind, name_id)`. When the same-named type is defined in two module instances, the
 second instance's typedef legitimately mangles to `zT_<hash>_<Name>_1`, and the struct definition
-is emitted from that type's own `module_id` (`emitStructType`, c89_emit.zig:1505 →
-`nameManglerMangle(ty.name_id, 2, ty.module_id)`; `emitModuleHeaderFile` filters
-`ty.module_id == module_id`, c89_emit.zig:2293).
+is emitted from that type's own `module_id`.
 
-The fn-signature/return-type references, however, come from `lir_fn.return_type` / `param.type_id`
-via `getCTypeName` (`emitFunctionSignature` c89_emit.zig:1893, `emitFunctionForwardDecl`
-c89_emit.zig:1942). Because type resolution resolves a bare return type `Arena` to **module 0**'s
-TypeId (see 03 §D2 defect), the fn reference mangles to the *unsuffixed* `zT_<hash>_<Name>` while
-the typedef in the same header is `zT_<hash>_<Name>_1`. gcc rejects the emitted C as
-`return type is an incomplete type` / `invalid use of incomplete typedef` (repro
-`repro/mi_matrix/arena_multi_inst_xmod/`). The emitter is internally consistent — it faithfully
-mangles each TypeId by its stored `module_id`; the inconsistency is upstream in type resolution.
-Fix belongs in `type_resolver.zig` (F1), not here. This doc records the emitter-side symptom.
-
-**FIXED (F1, 2026-08-14).** The root cause was fixed upstream in `type_resolver.zig`: bare
-`ident_expr` type resolution is now module-scoped (see 03 §D2 defect), so `lir_fn.return_type` /
-`param.type_id` for a bare `Arena` in module-instance N now point at N's own TypeId. The fn
-reference mangles to the same `_N`-suffixed name as the typedef in the same header, and
-`arena_multi_inst_xmod` compiles + runs clean. No emitter change was needed; the `_N` collision
-mechanism (`nameManglerMangle`) is correct and left as-is.
+The fn-signature/return-type references come from `lir_fn.return_type` / `param.type_id` via
+`getCTypeName`. Before F1, a bare return type `Arena` resolved to **module 0**'s TypeId, so the fn
+reference mangled to the unsuffixed `zT_<hash>_<Name>` while the typedef in the same header was
+`zT_<hash>_<Name>_1` — gcc rejected the emitted C (`return type is an incomplete type`).
+**FIXED (F1):** the root cause was fixed upstream in `type_resolver.zig` (bare `ident_expr` type
+resolution is now module-scoped), so the fn reference mangles to the same `_N`-suffixed name as
+the typedef and `arena_multi_inst_xmod` compiles + runs clean. No emitter change was needed; the
+`_N` collision mechanism is correct.
 
 ### 1.4 C89Emitter — Central Emitter State
 
-Defined `c89_emit.zig:457-480`. Holds all emission context:
+`C89Emitter` (initialized by `c89EmitterInit`) holds all emission context:
 
 | Field | Type | Purpose |
 |-------|------|---------|
 | `writer` | `BufferedWriter` | 4KB output buffer |
 | `indent` | `u32` | Current indentation level (incremented in fn bodies) |
-| `alloc` | `*Sand` | Scratch arena allocator |
+| `alloc` | `*Sand` | Per-function scratch arena |
+| `persist_alloc` | `*Sand` | Persistent arena (maps, growable tables) |
 | `registry` | `*TypeRegistry` | Type system reference |
 | `interner` | `*StringInterner` | String lookups |
 | `mangler` | `*NameMangler` | Name mangling |
@@ -200,103 +260,183 @@ Defined `c89_emit.zig:457-480`. Holds all emission context:
 | `switch_cases` | `*SwitchCaseArrayList` | Current function's switch cases |
 | `call_args` | `*U32ArrayList` | Temporary call argument buffer |
 | `current_fn` | `*LirFunction` | Function currently being emitted |
+| `spill` / `fn_slots` / `fn_slots_start` / `fn_slots_len` / `spill_arena` | `*LirStream` / `[*]LirSlot` / `usize` | Spill-backed function-slot window for the current module (`faultIn`) |
 | `d4_wtype` | `[*]u32` | Type propagation tracking (hoisted temps) |
-| `d4_wflag` | `[*]u8` | Written flag: 0=unwritten, 1=resolved, 2=call-result |
+| `d4_wflag` | `[*]u8` | Written flag: 0=unwritten, 1=resolved, 2=call-result, 3=suppressed |
 | `d4_t2p` | `[*]u32` | Temp ID → hoisted_temps index mapping |
+| `t2pos` / `t2pos_conc` / `t2pos_max` | `[*]u32` / `[*]u32` / `u32` | **P14:** per-fn first-match hoisted lookup maps (`t2pos` = first matching `TempDecl` index for a temp id; `t2pos_conc` = first with a non-`TYPE_UNDEFINED` type; `0xFFFFFFFF` = miss), built ONCE at `emitHoistedDecls` — the `hoisted_temps` linear-scan lookups are set reads |
+| `d4_dead` / `d4_local` / `d4_nodecl` / `d4_lread` | `[*]u8` | DCE / local-mapped / no-decl / load-read suppression flags |
+| `d4_max_temp` | `u32` | Max temp id + 1 for the current function |
+| `bb_used` / `bb_used_count` | `[*]u8` / `u32` | Referenced-block labels (unused labels pruned) |
 | `dl_hoisted` | `u8` | Whether decl_local hoisting has run (guard against double-emit) |
+| `nest_ok` / `nest_max` / `nest_inl` | `u8` / `u32` / `[*]u8` | Expression-nesting state: temps inlined into their consumer (def/decl suppressed) |
 | `emitted_type_set` | `U32ToU32Map` | Dedup: type name hash → emitted marker |
 | `fwd_decl_set` | `U32ToU32Map` | Dedup: forward decl name hash → emitted marker |
-| `pointer_only_map` | `U32ToU32Map` | Type ids that need only forward decl |
-| `shared_set` | `U32ToU32Map` | [updated: 2026-08-01] Type ids emitted into the shared `zig_special_types.h` — synthetics ∪ CLS:v ∪ i64/u64 ∪ named fn_type, plus CLS:p closure (see `computeSharedSet`). Closure criterion (F-S8): a type joins when it is referenced **by value OR in a way that requires the C type name in scope** — typedef'd kinds (enum/error_set) need the name in scope even through a pointer/slice (a `struct` tag can be implicitly forward-declared, a typedef cannot) |
-| `dedup_names` | `[128]u32` | Local variable dedup during hoisting |
-| `dedup_count` | `u32` | Count of dedup_names |
-| `fl_name_ids` / `fl_temps` | `[128]u32` | Flat lookup: local name_id → temp_id |
-| `fl_count` | `u32` | Count of flat lookup entries |
+| `classif` | `*type_resolver.EmissionClassification` | **P4 fix round 2:** the completed classification state (doc 03) — owned by `CompilerContext`, filled at the pre-emit `phase_EmissionClassification` boundary; the emitter READS only. `pointer_only_map` = CLS:p snapshot (absent = value-embedding); `needs_def_map` = needs-definition group (typedef emitted; the deleted `shouldSkipTypeEmission`); `shared_set` = shared-header group (synthetics ∪ CLS:v ∪ i64/u64/f64 ∪ named fn_type, plus the CLS:p closure — a type joins when referenced **by value OR in a way that requires the C type name in scope**); `needed_tuple_set` = the E4 tuple seed |
+| `plan` | `*c89_plan.C89SpellPlan` | **P6-pre:** the C89 spelling planner state (per-const carrier side tables) — filled at the same boundary; the emitter READS carriers at spell time (`planConstCarrierAt`) and never derives them (the deleted `intConstTypeForValue`). **P12:** the same state carries `typedef_order` (the typedef emission order, planned ONCE at the boundary by `spellPlanPlanTypeOrder`); the emitter walks the carried order and never sorts. **P11:** the same state carries `uac_maps` (the planned usual-arithmetic cast direction per comparison `binary`, `spellPlanUac`/`planUacSideAt`) — the emitter spells the planned side and never derives the promotion. **P14:** the same state carries `fn_key_index` (fn_key → fn index, first-wins — the spell-time `fn_keys` scan is retired) |
+| `plan_fn_key` | `u32` | **P6-pre:** the current fn's plan key (its LIR spill slot offset — unique per fn, stable across the `lir_slots` regrouping), set at fn entry in `emitFunctionSet` |
+| `module_reg` | `*ModuleRegistry` | Module registry (qualified names, pruning) |
+| `reachable` | `U32ToU32Map` | Value-reference reachability set (module pruning) |
+| `prune_active` | `u8` | Whether module pruning is active (multi-module path) |
+| `error_code_registry` | `*U32ToU32Map` | Error-tag name_id → dense error code |
+| `dedup_names` / `dedup_cap` / `dedup_count` | `[*]u32` / `u32` | Local variable dedup during hoisting (grown on demand) |
+| `fl_name_ids` / `fl_temps` / `fl_count` | `[*]u32` / `u32` | Flat lookup: local name_id ↔ temp_id |
+| `temp_global_map` | `U32ToU32Map` | Temp → global alias mapping |
+| `ts_ref_set` | `U32ToU32Map` | Type-storage global reference set |
+| `global_decls` / `global_decls_len` | `[*]ModuleGlobalDecl` / `u32` | Module global declarations |
+| `needed_tuple_set` (via `classif`) | `U32ToU32Map` | Task 4: tuple type ids that hold a runtime value (hoisted temp / global); only these get a C typedef (registry-only print-args tuples are skipped so the 4-MD5 dumps stay byte-identical). **P4 fix round 2:** filled at the `phase_EmissionClassification` boundary (`type_resolver.collectNeededTuples`) |
+| `safe_checks` | `bool` | `-fsafe` (true, default) / `-ffast` (false) |
 
 ### 1.5 Type Name Generation
 
-`getCTypeName` (`c89_emit.zig:509`) maps `TypeId` → C89 type name string:
+**P3 (2026-10-12): `type_registry.typeCName` is the ONE canonical derivation** (doc 03);
+`getCTypeName` is a pure consumer wrapper. It maps `TypeId` → C89 type name string:
 
 | TypeKind | C89 Name | Notes |
 |----------|----------|-------|
 | `void_type` | `"void"` | Direct |
-| `bool_type` | `"int"` | C89 has no bool |
+| `bool_type` | `"unsigned char"` | 1 byte; C89 has no bool |
 | `i8_type` | `"signed char"` | |
 | `i16_type` | `"short"` | |
 | `i32_type` | `"int"` | |
-| `i64_type` | mangled type | `typedef long long zT_<hash>_<name>` |
+| `i64_type` | mangled type | `typedef long long zT_<hash>_<name> Z98_ALIGN8;` (FX14 carrier) |
 | `u8_type` | `"unsigned char"` | |
 | `u16_type` | `"unsigned short"` | |
 | `u32_type` | `"unsigned int"` | |
-| `u64_type` | mangled type | `typedef unsigned long long ...` |
+| `u64_type` | mangled type | `typedef unsigned long long ... Z98_ALIGN8;` (FX14 carrier) |
+| `arb_uint_type` | `"unsigned char"`/`"unsigned short"`/`"unsigned int"`/u64 | Carrier chosen by `size` (1/2/4/8) |
+| `arb_int_type` | `"signed char"`/`"short"`/`"int"`/i64 | Carrier chosen by `size` (1/2/4/8) |
 | `f32_type` | `"float"` | |
-| `f64_type` | `"double"` | |
+| `f64_type` | mangled type | `typedef double zT_<hash>_<name> Z98_ALIGN8;` (FX14 carrier; was bare `"double"`) |
 | `usize_type` | `"unsigned int"` | |
+| `isize_type` | `"int"` | |
 | `c_char_type` | `"char"` | |
+| `va_list_type` | `"va_list"` | |
 | `enum_type` | mangled type | `typedef <backing> <mangled>;` |
 | `array_type` | `Arr_<elem-cname>_<len>` | Typedef'd — `typedef <elem> Arr_<elem>_<len>[<len>];` |
-| `ptr_type` / `many_ptr_type` | `<base>*` | Direct pointer syntax; fn ptr → use fn name |
+| `tuple_type` | `Tup_<tid>` (mangled, module 0) | Task 4 — synthetic (name_id 0), so the name is derived from the global dense type id; typedef'd `typedef struct { <e0> _0; ... } <cname>;` |
+| `ptr_type` / `many_ptr_type` | `<base>*` | Direct pointer syntax; fn ptr → use fn name. A `volatile` flag emits the pointee-qualified `volatile T *` (or `T * volatile` for pointer-to-pointer) |
 | `slice_type` | `Slice_<elem>` | Typedef'd struct: `typedef struct { <elem>* ptr; unsigned int len; } ...;` |
-| `optional_type` | `Opt_<payload>` | Typedef'd struct with `{ <type> value; int has_value; }`. **Payload-temp note [updated: 2026-08-07]:** null construction (`catch return null` / `return null` on a `?T` fn) no longer emits a scalar payload temp — the null_literal lowerer branch emits `set_optional_null` directly on an `Opt_`-typed temp (`zT_M.has_value = 0;`), so the old `int zT_N; zT_N = NULL;` dead store (gcc `-Wint-conversion`) is gone. |
+| `optional_type` | `Opt_<payload>` | Typedef'd struct with `{ <type> value; int has_value; }` (void payload: `{ int has_value; }`). Null construction emits `set_optional_null` directly on an `Opt_`-typed temp (`zT_M.has_value = 0;`), so no scalar null payload temp is produced. |
 | `error_union_type` | `EU_<payload>` | Typedef'd struct with `{ union { <type> payload; int err; } data; int is_error; }` |
-| `fn_type` | `F_<N|P>_<ret>_<p1>_<p2>...` | `F_N_` for non-ptr, `F_P_` for ptr (FN_PTR flag) |
+| `fn_type` | `F_<N\|P\|S>_<ret>_<p1>_<p2>...` | `F_N_` default, `F_P_` fn-ptr flag, `F_S_` stdcall |
 | `error_set_type` | mangled type | `typedef int <mangled>;` + `#define` for each error tag |
 | `undefined_type` | `"int"` | Fallback |
-| `null_type` | `"int"` | Fallback. **FIXED [updated: 2026-08-07, Option B]:** the dead `null_const` temp (`int zT_N; zT_N = NULL;` at c89_emit.zig:3908-3911, previously emitted when a null literal was coerced to an optional) is no longer produced — the lowerer emits `set_optional_null` directly on an `Opt_`-typed temp for null_src coercions. A `null_type`→`"int"` temp now only appears in the remaining `null_const` cases (uncoerced null / non-optional pointer/fn targets), which are pointer-compatible and gcc-clean. |
+| `null_type` | `"int"` | Fallback (uncoerced null / non-optional pointer/fn targets — pointer-compatible). A null literal coerced to an optional emits `set_optional_null` directly, so no `null_const` temp is produced. |
 | `integer_literal_type` | `"int"` | Fallback |
 
-When `ty.c_name_id != 0` (line 619), returns the cached C name directly (set by `emitErrorUnionType` for error union types).
+**`bool` representation (Task 11L, 2026-09-21).** `bool` is 1 byte / align 1 and maps to C89 `"unsigned char"` (C89 has no `_Bool`), matching Zig. The registry (`type_registry.zig`) and the emitter MUST agree — the folded `@sizeOf`/`@offsetOf` come from the registry, the actual layout from the emitted type. `typeRegistryIntByteWidth(bool) = 1` and `typeRegistryIntSignednessClass(bool) = 0` (unsigned) agree with the emitted type (P5, 2026-10-12: the emitter-local `intTypeByteWidth`/`classifyIntSignedness` names are gone — these predicates live in `type_registry.zig`). **Accepted residuals (Task 11V / AMENDMENT 16 — operator-ruled no action; NOT full Zig parity):** `?bool` is 8 bytes / align 4 (the optional arm keeps a `max(payload.alignment, 4)` floor) and `E!bool` keeps a 4-byte floor (`max(payload.size, 4)`); `typeWidthBitsForKind(bool)` stays 0 (`@bitSizeOf`/packed layout special-case bool to 1).
+
+**Frozen 32-bit layout model pinned in the emitted C (FX14, 2026-09-29).** The registry registers exactly `i64`/`u64`/`f64` at size 8 / align 8 (`type_registry.zig` `typeRegistryRegisterPrimitives`), and `layoutCompute` folds composites from that model. Previously the emitted C used plain `long long`/`double`, which i386 System V (`gcc -m32`) aligns to 4 — so a `{a: u8, b: i64, c: u8}` measured `16/4/4/12` in the built binary while Z98 printed `24/8/8/16`. FX14 pins the model on every supported host compiler through the carrier typedefs (all three now carry ` Z98_ALIGN8`) plus the shared compat typedefs; because every declaration site (struct/union/tagged-union/tuple/array/optional/error-union/global/local/param) goes through `getCTypeName`, one typedef attribute covers them all. Packed aggregates are exempt (byte-array carriers; 64-bit packed fields reject `error[3000]`). Verified on `gcc -m32` and mingw; MSVC (`/Zp8`) and wcc386 (`-zp8`, 32-bit default) rely on their natural 8 and get an empty macro.
+
+**Pointer-to-array and string-literal decay** [added: 2026-10-29 — Phase 2.5 T5 docs, T4 feature]. An `array_type` is emitted as the
+`Arr_<elem>_<len>` typedef (`typedef <elem> Arr_<elem>_<len>[<len>];`), so a genuine
+pointer-to-array (`*[N]T`) prints as an `Arr_*` pointer. The one exception is the A1
+string-literal type `*const [N]u8` (Track4 S25): `typeCName` decays that type to plain
+`unsigned char*` so a C string literal (and a const global bound to one) is a valid element
+pointer and never a pointer-to-array. A `|*row|` mutable row capture therefore uses a
+**non-const** pointer-to-array (`*[N]T`, built by lowering with
+`typeRegistryGetOrCreatePtr(elem, false)`): keeping `*const [N]u8` would trigger the
+string-literal decay, collapse the row to `unsigned char*`, and lose the row type/`.len`.
+Genuine non-const `*[N]T` values are unaffected by the decay.
+
+**P3 (2026-10-12): the derivation lives in `type_registry.typeCName`.** `getCTypeName` is now a
+pure consumer wrapper (`return type_mod.typeCName(reg, mangler, tid);`) — the per-kind model
+below is `typeCName`'s (doc 03), synthetic names are minted once through the P1 `name_mangler.zig`
+authority, and the `c_name_map` memo is owned by the derivation (every post-memo-check kind stores
+its mangled name id on first derivation). The former emitter write-back
+(`emitErrorUnionType` → `typeRegistryCNameIdSet`) is removed; the emitter only READS the memo
+(`emitStructType`'s `ES:n` telemetry). Declaration sites (`emitStructType`/`emitUnionType`/
+`emitTaggedUnionType`/`emitEnumType`/`emitInt64Type`/`emitUint64Type`/`emitF64Type`) and the
+former duplicated mints (`emitArrayType`'s local `Arr_` mint, `emitOptionalType`'s local `Opt_`
+mint) all consume `getCTypeName(tid)` — decl and use cannot drift. All spellings byte-identical
+to the pre-P3 emitter (dump pins 0/8); `sliceElementName` moved to `type_registry.typeSliceElementName`
+(its F2 rule — synthetic element recurses, named element keeps the module-0 `name_id` mangle —
+unchanged).
+
+**D2 defect — slice-of-synthetic element typedef collapse (FIXED; task F2, 2026-10-09).**
+In Zig `[][]const u8` and `[][20]u8` are distinct types, but the C slice typedef
+for each was derived from its element's `name_id`
+(`getCTypeName` slice branch), and every synthetic element
+(slice/array/pointer/optional/tuple/error-union) has `name_id == 0`, so all
+mangled to the same empty-name string `zT_811C9DC5_`:
+`typedef struct { <elem>* ptr; unsigned int len; } zT_9DFA8D74_Slice_zT_811C9DC5_;`
+whichever synthetic element was registered first won. A
+`struct { announce_list: [][]const u8; piece_hashes: [][20]u8; }` therefore
+declared **both** fields with the *same* typedef; gcc compiled it with a
+`-Wincompatible-pointer-types` warning (the value was correct only by luck of the
+hoisted temp).
+**Fix (task F2, applied):** new helper `sliceElementName` (`c89_emit.zig:931`; **P3: now
+`type_registry.typeSliceElementName`** — moved with the canonical derivation)
+returns `getCTypeName(reg, mangler, elem)` when `elem.name_id == 0`, else the
+exact `nameManglerMangle(elem.name_id, 2, 0)` used before. `getCTypeName`'s slice
+branch feeds that name to `syntheticTypeName`, and `emitSliceType` derives its
+typedef name from `getCTypeName(tid)` (single source of truth, decl/use cannot
+drift). Distinct synthetic elements therefore get distinct `Slice_…` typedefs;
+primitive/named element slices (`[]u8`→`Slice_zT_0B42B2F8_u`, `[]i32`,
+`[]Struct`) stay byte-identical because they take the unchanged `name_id` path.
+Repros: `repro/mi_matrix/slice_of_slice_xmod/` and
+`repro/mi_matrix/slice_of_array_xmod/` — both now compile **warning-free** (no
+`-Wincompatible-pointer-types`) and run green (print `11`).
 
 ### 1.6 Type Emission — emitSpecialTypes
 
-`emitSpecialTypes` (`c89_emit.zig:1252`) drives type header output for the stdout single-file
-path. For the multi-module path (`--output-dir`), the shared-header writer
-`emitSharedHeader` (`c89_emit.zig:1105`) performs the equivalent partition into
-`zig_special_types.h` (see §1.17):
+`emitSpecialTypes(emitter, reg, sorted)` drives type header output for the stdout single-file
+path. For the multi-module path (`--output-dir`), the shared-header writer `emitSharedHeader`
+performs the equivalent partition into `zig_special_types.h` (see §1.17):
 
 ```
-emitSpecialTypes(emitter, reg):
-  1. sorted = tstTopologicalSort(reg)           ← Kahn order
-  2. fwd_decl pass: for each struct/tagged_union/union with name_id:
+emitSpecialTypes(emitter, reg, sorted):
+  1. fwd_decl pass: for each struct/tagged_union/union with name_id:
+       skip packed struct and packed_union (carrier typedef is complete)
        emit "typedef <struct|union> <cname> <cname>;\n"
-       keyword from aggregateKeyword(kind) — "union " for union_type else "struct "
-       (F6: bare unions emit `typedef union` so the tag-namespace agrees with the def)
+       keyword from aggregateKeyword(kind) — "union " for union/packed_union else "struct "
+       (bare unions emit `typedef union` so the tag-namespace agrees with the def)
        dedup via fwd_decl_set (hash of cname string)
-  3. pointer-only pass: for each type in sorted:
+  2. pointer-only pass: for each type in sorted:
        if NOT in pointer_only_map → skip
-       skip void/bool/noreturn/null/undefined/int-lit/type/module type
-       if name_id==0 and not composite type → skip
+       if NOT in needs_def_map → skip   (P4: the classification's needs-definition group —
+       the deleted shouldSkipTypeEmission's void/bool/noreturn/null/undefined/int-lit/type/
+       module + unnamed-non-composite skip rules; the old skip_arb arm was unreachable-equivalent)
        dedup via emitted_type_set (hash of cname string)
        emitTypeDefinition()
-  4. value-embedding pass: for each type in sorted:
+  3. value-embedding pass: for each type in sorted:
        if IS in pointer_only_map → skip
-       same skip/filter logic as sub-pass 2a
+       if NOT in needs_def_map → skip   (P4)
        dedup via emitted_type_set
        emitTypeDefinition()
 ```
 
+`emitModule` calls `emitErrorCodePrologue` before `emitSpecialTypes`; the
+classification is completed at the pre-emit `phase_EmissionClassification`
+boundary (doc 03) — `emitTypePasses` retains ZERO classification calls
+(**P4 fix round 2**; see §1.17).
+
 ### 1.7 Type Definition Emission
 
-`emitTypeDefinition` (`c89_emit.zig:1594`) dispatches by `TypeKind`:
+`emitTypeDefinition` dispatches by `TypeKind`:
 
 | TypeKind | Emitter Function | Output |
 |----------|-----------------|--------|
-| `slice_type` | `emitSliceType` (1736) | `typedef struct { <elem>* ptr; unsigned int len; } Slice_<elem>;` |
-| `optional_type` | `emitOptionalType` (1768) | `typedef struct { <type> value; int has_value; } Opt_<payload>;` (void payload: omit value). Null-payload temps for this type are emitted as `Opt_` (set_optional_null writes `has_value = 0;`) — see §1.4 [updated: 2026-08-07] |
-| `error_union_type` | `emitErrorUnionType` (1812) | `typedef struct { union { <type> payload; int err; } data; int is_error; } EU_<payload>;` |
-| `error_set_type` | `emitErrorSetType` (1633) | `typedef int <cname>;` + `#define <cname>_<tag> <N>` per tag |
-| `tagged_union_type` | `emitTaggedUnionType` (1348) | Complex struct + union + tag constants |
-| `enum_type` | `emitEnumType` (1688) | `typedef <backing> <cname>;` + `#define <cname>_<member> <val>` per member |
-| `struct_type` | `emitStructType` (1502) | `struct <cname> { <type> <field>; ... };` |
-| `union_type` | `emitUnionType` (1535) | `union <cname> { <type> <field>; ... };` — **real C union** (all members at offset 0, size = max member) matching `@sizeOf`'s union-max. **FIXED 2026-08-13 (Defect E, F6):** was emitted as a stacked `struct` via `emitStructType` (24B for 3×8B members vs `@sizeOf`=8 → arena allocators sized by `@sizeOf` overflowed → lisp_interpreter/json_parser_workaround SEGFAULT). Keyword at `:1543` comes from `aggregateKeyword(ty.kind)` (`c89_emit.zig:542`) — the same helper as the two fwd-decl sites (`emitSharedHeader` :1136, `emitSpecialTypes` :1267) so the C89 tag-namespace (struct/union tags share one namespace) always agrees (a one-keyword swap alone fails gcc `'zT_..._Data' defined as wrong kind of tag`). Field loop (`type name;`) is valid for unions unchanged. Guard tag is `ZIG_UNION_` (see §1.17). |
-| `array_type` | `emitArrayType` (1541) | `typedef <elem> Arr_<elem>_<len>[<len>];` |
-| `i64_type` | `emitInt64Type` (1718) | `typedef long long <cname>;` |
-| `u64_type` | `emitUint64Type` (1727) | `typedef unsigned long long <cname>;` |
-| `fn_type` | `emitFnPtrType` (1602) | `typedef <ret> (*<cname>)(<params>);` |
+| `slice_type` | `emitSliceType` | `typedef struct { <elem>* ptr; unsigned int len; } Slice_<elem>;` |
+| `optional_type` | `emitOptionalType` | `typedef struct { <type> value; int has_value; } Opt_<payload>;` (void payload: omit value). Null-payload temps for this type are emitted as `Opt_` (`set_optional_null` writes `has_value = 0;`) |
+| `error_union_type` | `emitErrorUnionType` | `typedef struct { union { <type> payload; int err; } data; int is_error; } EU_<payload>;` (void payload: `{ int err; int is_error; }`) |
+| `error_set_type` | `emitErrorSetType` | `typedef int <cname>;` + `#define <cname>_<tag> <N>` per tag |
+| `tagged_union_type` | `emitTaggedUnionType` | Complex struct + union + tag constants |
+| `enum_type` | `emitEnumType` | `typedef <backing> <cname>;` + `#define <cname>_<member> <val>` per member (64-bit member values via `itoa64`; a signed backing keeps its signed C type — `int` / the signed 64-bit carrier — and a negative discriminant is emitted as the signed literal, e.g. `#define <cname>_A -1`) |
+| `struct_type` | `emitStructType` | `struct <cname> { <type> <field>; ... };` — or, when `typeRegistryIsPacked`, a carrier `typedef struct { unsigned char _[N]; } <cname>;`; an empty non-packed `struct {}` (`fields_count == 0`) emits `struct <cname> { unsigned char _[1]; };` so the C layout matches the registry's min-1 size 1 / align 1 (**A2-F**) |
+| `union_type` | `emitUnionType` | `union <cname> { <type> <field>; ... };` — real C union (all members at offset 0, size = max member) matching `@sizeOf`'s union-max. Keyword from `aggregateKeyword(ty.kind)` — the same helper as the two fwd-decl sites, so the C89 tag-namespace (struct/union tags share one namespace) always agrees. Guard tag is `ZIG_UNION_` (see §1.17). |
+| `packed_union_type` | `emitUnionType` | carrier `typedef struct { unsigned char _[N]; } <cname>;` (untagged, members at bit 0 via bitfield access) |
+| `array_type` | `emitArrayType` | `typedef <elem> Arr_<elem>_<len>[<len>];` |
+| `tuple_type` | `emitTupleType` | `typedef struct { <e0> _0; <e1> _1; ... } <cname>;` (positional C model; only for tuples in `needed_tuple_set`, see §1.18) |
+| `i64_type` | `emitInt64Type` | `typedef long long <cname> Z98_ALIGN8;` (FX14) |
+| `u64_type` | `emitUint64Type` | `typedef unsigned long long <cname> Z98_ALIGN8;` (FX14) |
+| `f64_type` | `emitF64Type` | `typedef double <cname> Z98_ALIGN8;` (FX14) |
+| `fn_type` | `emitFnPtrType` | `typedef <ret> (<Z98_STDCALL >*<cname>)(<params>);` — emitted only when the fn-ptr-used flag is set |
 
 #### Tagged Union Emission
 
-`emitTaggedUnionType` (`c89_emit.zig:1348`) handles two cases:
+`emitTaggedUnionType` handles two cases:
 
 **Enum-tagged** (tag type is enum):
 ```
@@ -326,71 +466,107 @@ struct <name> {
 
 Field constants are `#define`d for integer matching. Tagged union payload access uses `.payload.<field-name>._<sub-field-idx>`.
 
+**D1 defect — C-keyword tag emitted invalid C89 (FIXED; task F1, 2026-10-09).**
+`emitTaggedUnionType` (`:1921`) reads each variant's `fe.name_id` at **`:2013`** and
+writes it verbatim as the C union member at **`:2020`**; `emitVariantFieldPayload`
+(`:419`, called from `resolveFieldAccess` `:499`, shared by `.assign_field` /
+`.load_field` / `.store_field`) reads `evp_vfe.name_id` at **`:435`** and writes it
+verbatim into the payload designator `.payload.<name>._<sub>` at **`:436`**. In Zig
+any identifier is a valid `union(enum)` tag (`int`, `long`, `switch`, … are not Zig
+keywords), so `union(enum) { int: i64 }` is legal Z98; the emitted C is
+`struct { zT_C69B2266_i64 _0; } int;` (declaration) and `v.payload.int._0` (access),
+which gcc rejects (`expected identifier before 'int'`). `@"int"` is rejected by Z98
+(`error[4]`), so the tag cannot be spelled around. The tag-constant `#define`s
+(`:1973-1982`, prefix `zTU_<base>_`) and switch dispatch compare prefixed
+names/numeric cases, so only the payload declaration and access sites leak the raw
+name. Bare-union member emission (`emitUnionType` `:2104`/`:2109`) has the same
+class of leak. **Fix (task F1):** the shared helper `cUnionMemberName`
+(`c89_emit.zig:594`) returns the interned C member name, applying the existing `z_`
+C-keyword escape (`mangleC89Keyword`) only for C-keyword names and returning every
+non-keyword name **byte-identical**; it is used at the tagged-union declaration
+(`emitTaggedUnionType`) and payload access (`emitVariantFieldPayload`) and, for the
+same class of leak, at the bare-union declaration (`emitUnionType`) and the union
+arms of `resolveFieldAccess` (value/ptr/addr-of; struct fields untouched), and at
+the generated aggregate printer's tagged-union arm (`emitAggPrinterDef` — the
+payload designator is mangled while the human-readable print label stays the raw
+tag, e.g. `int = `). A `union(enum){ int: i64 }` now emits `z_int` consistently at
+every site. Repro: `repro/mi_matrix/union_keyword_tag_xmod/` (pre-fix FAIL,
+post-fix compile+link+run; the repro also prints a keyword-tagged union through the
+generated aggregate printer).
+
 ### 1.8 Function Emission
 
-#### emitFunctionSignature (`c89_emit.zig:1854`)
+#### emitFunctionSignature
 
 ```
 /* <original-name> */
-<return-type> <mangled-name>(<param-type> <param-name>, ...) {
+<call-conv> <return-type> <mangled-name>(<param-type> <param-name>, ...) {
 ```
 
 - Mangled name via `nameManglerMangle(name_id, F, module_id)`
 - `extern` functions: use original name, not mangled
 - Comment with original name above signature for readability
-- Empty params → `(void)`, variadic → `(...)`
+- `stdcall` functions: `Z98_STDCALL ` before the name (`emitCallConv`)
+- Empty params → `(void)`, variadic → `(...)` (with a `, ` separator when params exist)
+- Param names go through `nm_mod.nameManglerMintLocal` (keyword-safe)
 - Opens `{` and increments indent
-- **Variadic externs get forward declarations (Option B, F5 2026-08-06):** the
-  extern-prototype guards (`emitModuleHeader` at `c89_emit.zig:1992` and the
-  `:2143`-era twin) are `is_extern==0 OR is_variadic!=0`, so a variadic `extern
-  fn printf(fmt, ...)` emits its C prototype (`int printf(unsigned char*, ...);`,
-  name-passthrough) while non-variadic externs still rely on `@cInclude`'d
-  headers.
+- **Variadic externs get forward declarations:** the extern-prototype guards in
+  `emitModuleHeader` / `emitModuleHeaderFile` are `is_extern==0 OR is_variadic!=0`, so a variadic
+  `extern fn printf(fmt, ...)` emits its C prototype (`int printf(unsigned char*, ...);`,
+  name-passthrough) while non-variadic externs rely on `@cInclude`'d headers.
 
-#### emitHoistedDecls (`c89_emit.zig:2366`)
+#### emitHoistedDecls
 
-Emitted immediately after function signature, before body. Two passes:
+Emitted immediately after the function signature, before the body. Two passes:
 
-**Pass 1: Type propagation** (line 1776-2080): Scans all instructions, tracks written types for temporaries via `d4_wtype`/`d4_wflag` arrays. Resolves `TYPE_UNDEFINED` temps to actual types. Keys:
+**Pass 1: Type propagation.** Scans all instructions, tracking written types for temporaries via
+`d4_wtype`/`d4_wflag` arrays and resolving `TYPE_UNDEFINED` temps. Keys:
 - `.assign`: propagates src type to dst
-- `.call_direct`/`.call`: marks as type 2 (call result — type resolved at runtime analysis)
-- `.int_const`, `float_const`, `bool_const`, `string_const`, `enum_const` → set types
+- `.call_direct`/`.call`/`.tail_call`: marks as type 2 (call result)
+- `.int_const`, `float_const`, `bool_const`, `string_const`, `enum_const`, `.poison_init` → set types
 - `.binary`/`.unary`: propagates operand types to result
-- `.int_cast`, `float_cast`, `ptr_cast`, `int_to_float`, `int_to_ptr`, `ptr_to_int`: use target type
-- `.load`, `addr_of`, `load_index`, `load_field`, `make_slice`, `load_local`: set type from hoisted_temp or operand
+- `.int_cast`, `.int_cast_checked`, `.width_wrap`, `.float_cast`, `.ptr_cast`, `.int_to_float`,
+  `.int_to_ptr`, `.ptr_to_int`: use target type
+- `.load`, `.addr_of`, `.addr_of_field`, `.load_index`, `.load_field`, `.load_bitfield`,
+  `.make_slice`, `.load_local`: set type from hoisted_temp or operand
+- `.add_with_overflow`/`.sub_with_overflow`/`.mul_with_overflow`/`.shl_with_overflow`/
+  `.neg_with_overflow`/`.overflow_flag`: set result type
 
-**Pass 2: Declaration emission** (line 2132-2186): For each hoisted temp (skipping params), emits C declaration:
-```
-<type> zT_<temp_id>;
-```
-Skips `TYPE_VOID` temps (type_id == 1). Debug markers `D4:`, `D7:`, `D9:` track type resolution.
+**Pass 2: Declaration emission.** For each hoisted temp (skipping params), emits a C declaration
+`<type> zT_<temp_id>;` (scalar → `= 0;`, aggregate → `= {0};`, `-fsafe` uninitialized → a
+`zig_poison_fill` after the decl block). `TYPE_VOID` temps are skipped. Debug markers `D4:`,
+`D7:`, `D9:`, `HTT:`, `HT:` track type resolution. Declaration is suppressed for temps that are
+dead (`d4_dead`), local-mapped (`d4_local`), no-decl (`d4_nodecl`), or inlined by expression
+nesting (`nest_inl`) — see §6.3.
 
-#### emitFunctionBody (`c89_emit.zig:4423`)
+#### emitFunctionBody
 
 ```
 emitFunctionBody:
   1. Emit local variable declarations (decl_local hoisting):
      - Scans all blocks for decl_local instructions
-     - Dedups by name_id (emitter.dedup_names[128])
+     - Dedups by name_id (emitter.dedup_names, grown on demand to dedup_cap)
+     - Skips dead names (isDeadLocalName) and TYPE_VOID locals
      - Emits "type name;\n" for each unique local
      - Sets dl_hoisted guard
-  2. Emit basic blocks:
+  2. Emit "(void)name;" for each unused parameter
+  3. Emit basic blocks:
      - Block 0: label "z_bb_0:" (emitted by the .loop_header inst — see §1.9)
-     - Blocks > 0: label "z_bb_<id>:"
-  3. Emit each instruction via emitInst()
-  4. Close "}\n"
+     - Blocks > 0: label "z_bb_<id>:" only when referenced (bb_used)
+  4. Emit each instruction via emitInst() (dead/nested defs skipped)
+  5. Close "}\n"
 ```
 
-Blocks are labeled with `z_bb_<id>:` — C89-style goto labels. Since the TCO feature (F-S2 injects
-`loop_header(0)` as the first entry-block inst, lower.zig:4350; F-S3 activates the `.loop_header`
-arm, c89_emit.zig:3071-3073), **every function** also gets a `z_bb_0:` label for its entry block,
-emitted after the hoisted temp decls and local decls and before the first entry-block statement:
+Blocks are labeled with `z_bb_<id>:` — C89-style goto labels. Since the TCO feature
+(`loop_header(0)` is injected as the first entry-block inst; the `.loop_header` arm emits
+`z_bb_0:`), **every function** whose entry block is referenced gets a `z_bb_0:` label, emitted
+after the hoisted temp decls and local decls and before the first entry-block statement:
 
 ```
 ret_zF_fn(params) {
     <hoisted temp decls zT_N;>      (emitHoistedDecls)
     <local decls name;>             (emitFunctionBody decl_local hoist)
-    z_bb_0:                         ← .loop_header arm (c89_emit.zig:3071-3073)
+    z_bb_0:                         ← .loop_header arm
     <bb0 entry-block insts>
 z_bb_1:
     <bb1 insts>
@@ -399,190 +575,269 @@ z_bb_1:
 ```
 
 This is the TCO self-recursion jump target: self-tail calls emit rebind assigns + `goto z_bb_0;`
-(back-edge to the entry block) instead of a recursive C call — O(1) stack for self-recursion. The
-unused-`z_bb_0:` label in functions with no tail call produces a `-Wunused-label` gcc warning
-(tolerated; gate is 0 errors). `[updated: 2026-08-03]`
+(back-edge to the entry block) instead of a recursive C call — O(1) stack for self-recursion.
+Unused block labels are pruned (`bb_used`), so a function with no tail call and no jump to its
+entry block does not emit a `z_bb_0:` label at all.
 
 ### 1.9 LirInst → C89 Emission Table
 
-Every `LirInst` variant handled in `emitInst` (`c89_emit.zig:3670`):
+Every `LirInst` variant handled in `emitInst`:
 
-| LirInst | C89 Output | Line |
-|---------|-----------|------|
-| `.nop` | (nothing) | 3673 |
-| `.ret_void` | `return;` | 3674 |
-| `.loop_header` | `z_bb_0:` (entry-block label — TCO self-recursion jump target; since F-S3 emits `z_bb_0:\n`, NOT `tco_restart:`) | 3679 |
-| `.label` | (nothing — waits for block label) | 3684 |
-| `.decl_local` | Emitted by hoisting pass in emitFunctionBody | 5513 |
-| `.assign` | `dst = src;` (array: `{ unsigned int _i=0; while(_i<N) { dst[_i]=src[_i]; _i++; } }`) | 3687 |
-| `.assign_field` | `base.field = src;` (struct/union/ptr/slice/tagged_union) | 3763 |
-| `.assign_index` | `base[idx] = src;` or `(*base)[idx] = src;` | 3775 |
-| `.jump` | `goto z_bb_<id>;` | 3789 |
-| `.branch` | `if (cond) goto z_bb_<then>; else goto z_bb_<else>;` | 3803 |
-| `.ret` | `return val;` | 3828 |
-| `.load_local` | `result = name;` (array: `{ ... for-loop copy ... }`) | 3837 |
-| `.store_local` | `name = val;` (`_` → `(void)val;`) | 3886 |
-| `.load_global` | `result = name;` | 3916 |
-| `.store_global` | `name = val;` | 3962 |
-| `.load_field` | `result = base.field;` (slice → `.ptr`/`.len`; tagged_union → `.tag`/`.payload`; ptr → `->field`; struct → `.field`) | 4007 |
-| `.store_field` | `base.field = val;` (same field resolution as load_field; ptr-base struct/union pointee → `ptr->field`, :4199-4218) | 4150 |
-| `.load_index` | `result = base[idx];` or `result = (*base)[idx];` | 4276 |
-| `.load` | `result = *ptr;` | 4280 |
-| `.store` | `*ptr = val;` | 4292 |
-| `.addr_of` | `result = &operand;` | 4305 |
-| `.binary` | `result = lhs op rhs;` (op: `+` `-` `*` `/` `%` `&` `\|` `^` `<<` `>>` `==` `!=` `<` `<=` `>` `>=`; **BIN_EQ/BIN_NE with `tagged_union_type` operands append `.tag` to each operand name** → `s.tag == t.tag`, valid C, active-tag comparison — Task F, 2026-08-08, ruling m0471) | 4369 |
-| `.unary` | `result = op operand;` (op: `-` `!` `~`) | 4430 |
-| `.int_const` | `result = <value>;` (signed: cast + neg magnitude to avoid warnings; tagged_union: `.tag = <value>;`) | 4443 |
-| `.enum_const` | `result = <type>_<member>;` | 4517 |
-| `.float_const` | `result = <d.ddd>;` (via `formatF64`) | 4534 |
-| `.string_const` | `result = "<escaped>";` (escape: `\n`, `\t`, `\r`, `\\`, `\"`) | 4551 |
-| `.null_const` | `result = NULL;` (optional type → `result.has_value = 0;`) | 4585 — note: null_src null construction (return/catch null → optional) no longer emits `.null_const`; the lowerer emits `.set_optional_null` directly (Option B, 2026-08-07) |
-| `.set_optional_null` | `result.has_value = 0;` | 4599 |
-| `.bool_const` | `result = 1;` or `result = 0;` | 4606 |
-| `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) | 4618 |
-| `.call` | `result = callee(args...);` (indirect call through function pointer) | 4692 |
-| `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) | 4718 |
-| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump (cross-function TCO is semantic only until an asm backend); void return → `fn_name(args...); return;`; extern override (AMENDMENT 6) → original name; indirect callee via `resolveTempName` | 4853 |
-| `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` | 4899 |
-| `.wrap_optional` | `result.has_value = 1;\n result.value = src;` | 4941 |
-| `.int_cast` | `result = (type)src;` (checked: `result = __bootstrap_<DST>_from_<SRC>(src);`) | 4967 |
-| `.int_to_float` | `result = (type)src;` | 5040 |
-| `.float_cast` | `result = (type)src;` | 5055 |
-| `.make_slice` | `result.ptr = ptr;\n result.len = len;` | 5070 |
-| `.print_str` | `std_print("literal");` | 5089 |
-| `.print_val` | `std_print_<type>(val);` (slice → `std_print_str(val.ptr, val.len)`) | 5098 |
-| `.ptr_cast` | `result = (type)src;` | 5215 |
-| `.check_error` | `result = src.is_error;` | 5230 |
-| `.unwrap_error_payload` | `result = src.data.payload;` | 5241 |
-| `.unwrap_error_code` | `result = src.data.err;` (void-payload → `src.err;`) | 5267 |
-| `.wrap_error_ok` | `result.data.payload = src;\n result.is_error = 0;` (void-payload → `result.err = 0;\n result.is_error = 0;`) | 5296 |
+| LirInst | C89 Output |
+|---------|-----------|
+| `.nop` | (nothing) |
+| `.trap` | `pal_trap();` (unconditional divergence — `unreachable`/`@panic`) |
+| `.check_trap` | `if (!(cond)) { pal_trap(); }` (`-fsafe` guard) |
+| `.add_with_overflow` / `.sub_with_overflow` / `.mul_with_overflow` / `.shl_with_overflow` | `result = zig_wrap_<op>_<s\|u>((T)lhs, (T)rhs, <w>u);` (`emitWrapOp`) |
+| `.neg_with_overflow` | `result = zig_wrap_neg_<s\|u>(value, <w>u);` (`emitWrapNeg`) |
+| `.overflow_flag` | `result = zig_overflow_flag_<op>_<s\|u>((T)lhs, (T)rhs, <w>u);` (`emitFlagOp`) |
+| `.ret_void` | `return;` (non-void scalar → `return 0;`; aggregate → `{ <type> zT_ret_void = {0}; return zT_ret_void; }`) |
+| `.loop_header` | `z_bb_0:` (entry-block label — TCO self-recursion jump target; emitted only when bb0 is referenced) |
+| `.label` | (nothing — waits for block label) |
+| `.decl_local` | Emitted by hoisting pass in emitFunctionBody |
+| `.assign` | `dst = src;` (array: `{ unsigned int _i=0; while(_i<N) { dst[_i]=src[_i]; _i++; } }`; dead name → `(void)src;`) |
+| `.assign_field` | `base.field = src;` (struct/union/packed_union/ptr/slice/tagged_union) |
+| `.assign_index` | `base[idx] = src;` or `(*base)[idx] = src;` |
+| `.jump` | `goto z_bb_<id>;` |
+| `.branch` | `if (cond) goto z_bb_<then>; else goto z_bb_<else>;` |
+| `.ret` | `return val;` |
+| `.load_local` | `result = name;` (array: `{ ... for-loop copy ... }`) |
+| `.store_local` | `name = val;` (`_` → `(void)val;`) |
+| `.load_global` | `result = name;` |
+| `.store_global` | `name = val;` |
+| `.load_field` | `result = base.field;` (slice → `.ptr`/`.len`; tagged_union → `.tag`/`.payload`; ptr → `->field`; struct → `.field`) |
+| `.store_field` | `base.field = val;` (same field resolution as load_field; ptr-base struct/union pointee → `ptr->field`) |
+| `.load_index` | `result = base[idx];` or `result = (*base)[idx];` |
+| `.load` | `result = *ptr;` |
+| `.store` | `*ptr = val;` |
+| `.addr_of` | `result = &operand;` |
+| `.addr_of_field` | `result = &base.field;` / `&base->field;` (struct/union field address) |
+| `.binary` | `result = lhs op rhs;` (op: `+` `-` `*` `/` `%` `&` `\|` `^` `<<` `>>` `==` `!=` `<` `<=` `>` `>=`; BIN_EQ/BIN_NE with `tagged_union_type` operands append `.tag` to each operand → `s.tag == t.tag`, active-tag comparison) |
+| `.unary` | `result = op operand;` (op: `-` `!` `~`) |
+| `.int_const` | `result = <value>;` (signed: cast + neg magnitude to avoid warnings; tagged_union: `.tag = <value>;`) |
+| `.enum_const` | `result = <type>_<member>;` |
+| `.float_const` | `result = <d.ddd>;` (via `formatF64`) |
+| `.string_const` | `result = "<escaped>";` (escape: `\n`, `\t`, `\r`, `\\`, `\"`) |
+| `.null_const` | `result = NULL;` (optional type → `result.has_value = 0;`) |
+| `.set_optional_null` | `result.has_value = 0;` |
+| `.bool_const` | `result = 1;` or `result = 0;` |
+| `.undefined_const` | `result = 0;` (arrays: `{ ... for-loop zero ... }`; tagged union arrays: `[_i].tag = 0;`; nested struct arrays: recursive loop) |
+| `.poison_init` | `zig_poison_fill((void*)&result, (unsigned int)sizeof result);` (`-fsafe` `undefined` poison) |
+| `.call` | `result = callee(args...);` (indirect call through function pointer) |
+| `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) |
+| `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump; void return → `fn_name(args...); return;`; extern → original name; indirect callee via `resolveTempName` |
+| `.switch_br` | 32-bit: `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }`; signed conditions (including an enum whose backing is signed) print negative labels (`case -1:`), unsigned conditions keep unsigned decimal. 64-bit conditions lower to a portable `if (cond == <literal>) goto z_bb_<target>; else if (...) ...; else goto z_bb_<else>;` chain (signed negative labels `(-Z98_I64_C(<n>))` / `Z98_I64_MIN`; unsigned labels `Z98_U64_C(<n>)`). |
+| `.wrap_optional` | `result.has_value = 1;\n result.value = src;` |
+| `.int_cast` | `result = (type)src;` (unchecked plain cast; the checked `-fsafe` path is the separate `.int_cast_checked`) |
+| `.int_cast_checked` | `result = (type)zig_cast_checked_s/u((unsigned long long)src, <sw>u, <ss>u, <dw>u);` (`-fsafe` width/sign-aware) |
+| `.width_wrap` | `result = (type)(src & <mask>);` (signed: `((... ^ <signbit>) - <signbit>)`) |
+| `.int_to_float` | `result = (type)src;` |
+| `.float_cast` | `result = (type)src;` |
+| `.make_slice` | `result.ptr = ptr;\n result.len = len;` |
+| `.print_str` | `std_print("literal");` (unchanged: the raw-bytes helper for a format-string literal segment) |
+| `.print_val` | mangled `std.fmt.<printer>(val);` cross-module call into the auto-imported `sf/src/std_fmt.zig` (slice → `printStr(val.ptr, val.len)`); the old `std_print_<type>` C-ABI calls are retired. Task 4: an aggregate/tuple type calls its generated per-type printer `<name>(val, 3)` instead (see §1.18). Task 5: a bare `{}` on an enum calls `z98_printEnum_<tid>(val)`, on an error set `z98_printErrorSet_<tid>(val)` (the `print_val.implicit` bit distinguishes a bare `{}` from an explicit enum `{d}`/`{x}`, which keeps the numeric route; see §1.19). Task 6: a pointer/fn-pointer type emits the inline `T@hex` / pointee-delegation form, and a `fmt == 'x'` float calls `z98_printFloatHex32/64(val)` (see §1.20) |
+| `.ptr_cast` | `result = (type)src;` |
+| `.check_error` | `result = src.is_error;` |
+| `.unwrap_error_payload` | `result = src.data.payload;` |
+| `.unwrap_error_code` | `result = src.data.err;` (void-payload → `src.err;`) |
+| `.wrap_error_ok` | `result.data.payload = src;\n result.is_error = 0;` (void-payload → `result.err = 0;\n result.is_error = 0;`) |
+| `.wrap_error_err` | `result.data.err = src;\n result.is_error = 1;` (void-payload → same pattern, `.err`) |
+| `.check_optional` | `result = src.has_value;` |
+| `.unwrap_optional` | `result = src.value;` (void-payload → nothing) |
+| `.unwrap_optional_checked` | `if (!(src.has_value)) { pal_trap(); }\n result = src.value;` (`-fsafe`) |
+| `.unwrap_optional_abi` | `result = src.has_value ? src.value : NULL;` |
+| `.int_to_ptr` | `result = (type)(unsigned int)src;` |
+| `.ptr_to_int` | `result = (usize)src;` |
+| `.func_ref` | `result = fn_name;` (function pointer; stdcall casts to the `FS_...` typedef) |
+| `.va_start` | `va_start(vl, last_param);` |
+| `.va_arg` | `res = va_arg(vl, TYPE);` (TYPE = `getCTypeName(type_id)`) |
+| `.va_end` | `va_end(vl);` |
+| `.load_bitfield` | packed bitfield extract (`emitPackedLoadBitfield`, sign-aware) |
+| `.store_bitfield` | packed bitfield insert (`emitPackedStoreBitfield`) |
+| `.builtin_put_char` | `putchar(value);` |
+| `.builtin_stdout_write` | `fwrite(ptr, 1, len, stdout);` |
+| `.builtin_stderr_write` | `fwrite(ptr, 1, len, stderr);` |
+| `.builtin_get_char` | `result = getchar();` (result typed `unsigned char`) |
+| `.builtin_exit` | `exit(value);` |
+| `.builtin_sleep_ms` | `#ifdef _WIN32` `Sleep(value);` `#else` `usleep(value * 1000);` `#endif` |
+| `.builtin_console_clear` | `#ifdef _WIN32` `FillConsoleOutputCharacter/Attribute`+home `#elif __WATCOMC__`/`#else` ANSI `std_print_len("\x1b[2J\x1b[H", 7)` `#endif` |
+| `.builtin_console_gotoxy` | `#ifdef _WIN32` `SetConsoleCursorPosition(COORD)` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%d;%dH", y+1, x+1)` + `std_print_len` `#endif` |
+| `.builtin_console_set_color` | `#ifdef _WIN32` `SetConsoleTextAttribute` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%s;%sm", fg_ansi[fg&0x0F], bg_ansi[bg&0x0F])` + `std_print_len` `#endif` |
 
-**[updated: 2026-08-14 — F3 review follow-up: all rows in this table grep-verified against
-current source (the 2026-08-13 pass left the 19 trailing rows + `.tail_call` stale; F1/F4/F6
-additions shifted the arms +~1200 lines); `emitInst` header :3062 → :3670.]**
-| `.wrap_error_err` | `result.data.err = src;\n result.is_error = 1;` (void-payload → same pattern, `.err`) | 5325 |
-| `.check_optional` | `result = src.has_value;` | 5357 |
-| `.unwrap_optional` | `result = src.value;` (void-payload → nothing) | 5370 |
-| `.unwrap_optional_abi` | `result = src.has_value ? src.value : NULL;` | 5396 |
-| `.int_to_ptr` | `result = (type)(unsigned int)src;` | 5410 |
-| `.ptr_to_int` | `result = (usize)src;` | 5425 |
-| `.func_ref` | `result = fn_name;` (function pointer) | 5440 |
-| `.va_start` | `va_start(vl, last_param);` | 5452 |
-| `.va_arg` | `res = va_arg(vl, TYPE);` (TYPE = `getCTypeName(type_id)`) | 5465 |
-| `.va_end` | `va_end(vl);` | 5480 |
-| `.builtin_put_char` | `putchar(value);` | 5118 |
-| `.builtin_stdout_write` | `fwrite(ptr, 1, len, stdout);` (via `emitFwriteCall` :3139) | 5127 |
-| `.builtin_stderr_write` | `fwrite(ptr, 1, len, stderr);` | 5130 |
-| `.builtin_get_char` | `result = getchar();` (result typed `unsigned char`) | 5133 |
-| `.builtin_exit` | `exit(value);` | 5140 |
-| `.builtin_sleep_ms` | `#ifdef _WIN32` `Sleep(value);` `#else` `usleep(value * 1000);` `#endif` | 5149 |
-| `.builtin_console_clear` | `#ifdef _WIN32` `FillConsoleOutputCharacter/Attribute`+home `#elif __WATCOMC__`/`#else` `__bootstrap_write("\x1b[2J\x1b[H", 7)` `#endif` | 5173 |
-| `.builtin_console_gotoxy` | `#ifdef _WIN32` `SetConsoleCursorPosition(COORD)` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%d;%dH", y+1, x+1)` + `__bootstrap_write` `#endif` | 5176 |
-| `.builtin_console_set_color` | `#ifdef _WIN32` `SetConsoleTextAttribute` `#elif __WATCOMC__`/`#else` `sprintf(buf, "\x1b[%s;%sm", fg_ansi[fg&0x0F], bg_ansi[bg&0x0F])` + `__bootstrap_write` `#endif` | 5179 |
+Any unhandled variant falls through the `else => {}` (no-op). Emission is preceded by the LIR
+optimization pass (`lirOptRun`) and the dead-temp DCE / expression-nesting suppression (§6.3),
+so a declared instruction may be omitted entirely from the emitted C.
 
-Any unhandled variant falls through the `else => {}` at line 5489 (no-op).
+**`@intCast` / arbitrary-width emission:** `.int_cast` is the unchecked plain cast — the arm
+emits `result = (type)src;` only, with all bound/sign decisions made in lowering. The checked path
+is the separate `.int_cast_checked` op, emitted only under `-fsafe` (narrowing or same-width sign
+change), which maps to the width/sign-aware `zig_cast_checked_s/u` helpers in `zig_runtime.h`. The
+older `__bootstrap_<DST>_from_<SRC>` helpers still exist as retained runtime support (emitted by
+`emit_support.zig` as `static` in `zig_runtime.h` + `extern` in `zig_runtime.c`, message
+`"integer cast overflow in @intCast"`), but the emitter no longer selects them.
 
-**`@intCast` range-check emission (F1, 2026-08-06):** the `.int_cast` checked arm
-(`c89_emit.zig:4214-4260`) builds `__bootstrap_<DST>_from_<SRC>` from the target's
-`getCastTypeSuffix` and the source temp's `getTempTypeByIndex`, falling back to a
-raw `(type)` cast when the source type is unknown. The 19 helpers are `static` in
-`sf/src/include/zig_runtime.h` (per-TU, oracle pattern) + `extern` in
-`sf/src/include/zig_runtime.c`; the message is `"integer cast overflow in
-@intCast"` and the unchecked `(type)` path is unchanged. **`stdarg.h` gating
-(F5, 2026-08-06):** `emitStdargInclude` (`c89_emit.zig:1985`) emits `#include
-<stdarg.h>` only when `moduleHasVaInsts` (`:1964`) finds a `va_start`/`va_arg`/
-`va_end` LirInst in the TU — gated on actual `va_*` usage (not `is_variadic`), so
-mud/gol's anytype-print (`is_variadic=1`, no `va_*`) stays byte-identical. The
-include is emitted at all 3 sites (`emitModuleHeader` `:1972`,
-`emitModuleHeaderFile`, `emitModuleFile`).
+**`stdarg.h` gating:** `emitStdargInclude` emits `#include <stdarg.h>` only when
+`moduleHasVaInsts` finds a `va_start`/`va_arg`/`va_end` LirInst in the TU — gated on actual
+`va_*` usage (not `is_variadic`). The include is emitted in `emitModuleHeader`,
+`emitModuleHeaderFile`, and `emitModuleFile`.
 
-**[updated: 2026-08-08] Builtin include gating (F1):** `emitBuiltinIncludes`
-(`c89_emit.zig:2052`) emits `#include <stdio.h>` when any of
-`builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char`
-appear in the TU, `#include <stdlib.h>` for `builtin_exit`, and a guarded
-`#ifdef _WIN32` `#include <windows.h>` `#else` `#include <unistd.h>` `#endif` for
-`builtin_sleep_ms` — each gated on actual usage (`moduleHasStdioBuiltin` :1996 /
-`moduleHasExitBuiltin` :2014 / `moduleHasSleepBuiltin` :2032), so the 4 MD5-gate
-examples (which use none of the 6 builtins) stay byte-identical. The includes are
-emitted in BOTH the single-stream `emitModuleHeader` and the multi-module
-`emitModuleFile` (`:2405`) paths — the multi-module `--output-dir` path does NOT go
-through `emitModuleHeader`, so omitting the second site made `io_builtin_test`
-gcc-fail on `stdout`/`stderr` undeclared (fixed). `usleep` verified to compile under
-`gcc -m32 -std=c89` on the host glibc (declared via default feature macros; the
-`_XOPEN_SOURCE 500` note in zig0's runtime is only needed on pre-2.19 glibc).
+**Builtin include gating:** `emitBuiltinIncludes` emits `#include <stdio.h>` when any of
+`builtin_put_char`/`builtin_stdout_write`/`builtin_stderr_write`/`builtin_get_char` appear,
+`#include <stdlib.h>` for `builtin_exit`, the `_WIN32`/`unistd.h` guard for `builtin_sleep_ms`,
+and the Win98-forcing console preamble (`windows.h` / `<stdio.h>`) plus
+`extern void std_print_len(const char* s, unsigned int len);` for `builtin_console_*` — each
+gated on actual usage (`moduleHasStdioBuiltin` / `moduleHasExitBuiltin` / `moduleHasSleepBuiltin`
+/ `moduleHasConsoleBuiltin`). The includes are emitted in both the single-stream
+`emitModuleHeader` and the multi-module `emitModuleFile` paths.
 
-**[updated: 2026-08-08] Builtin console include gating + emission (F2):**
-`emitBuiltinIncludes` (`c89_emit.zig:2073`) emits, when `moduleHasConsoleBuiltin`
-(`:2052`) finds any `builtin_console_*` inst, the Win98-forcing preamble + `windows.h`
-on `_WIN32` / `<stdio.h>` on `#else` (for `sprintf`), plus an unconditional
-`extern void __bootstrap_write(const char* s, unsigned int len);` (the POSIX arms use
-the `__bootstrap_write` alias — declared in `zig_runtime.h` for the single-stream path
-and self-declared here for the multi-module path which does not include `zig_runtime.h`).
-The 3 emission arms (`c89_emit.zig:4789-4797`, helpers `emitConsoleClear` :3186 /
-`emitConsoleGotoxy` :3239 / `emitConsoleSetColor` :3283) each emit the
-`#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guard chain — Win32 arms mirror the
-zig0-oracle runtime bodies (zig_runtime.c:301-356); the `__WATCOMC__` and `#else` arms
-share the ANSI-escape body (`__bootstrap_write`). Deviation from zig0: the Win32
-`@consoleClear` body is restructured (no `return` — it is emitted inline in the user
-function, so the zig0 `return`s would exit the caller; `if (hOut != INVALID_HANDLE_VALUE
-&& GetConsoleScreenBufferInfo(...)) { … }` instead). `@isWindows()` emits NO C (folded
-in sema/comptime to an `int_const` 0/1). `console_builtin_test` is gcc-clean single-
-AND multi-module.
+**Builtin console emission:** the 3 console arms emit the
+`#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guard chain; the `__WATCOMC__` and `#else`
+arms share the ANSI-escape body. `@isWindows()` emits NO C (folded in sema/comptime to an
+`int_const` 0/1). The Win32 console arms emit inline (no `return` — they run in the user
+function, so a `return` would exit the caller).
 
-**C89 cross-function TCO limitation — [updated: 2026-08-03]:** `.tail_call` (c89_emit.zig:4853) is
-emitted as a **call followed by a `return`** (`zT = fn(args); return zT;`), i.e. it preserves a C
-stack frame — it is semantically a tail call but not a jump. Only **self-recursion** TCO achieves
-O(1) stack (rebind assigns + `goto z_bb_0;` back-edge to the entry label). Real frame-reusing
-cross-function tail calls (jump to the callee without a new frame) require a backend that can emit a
-proper tail-jump; until such an asm backend exists, cross-function TCO is call+ret. The `.tail_call`
-written-type-scan case (`c89_emit.zig:2584`) marks the result temp as a call-result (written_flag=2)
-so it is not flagged UNWRITTEN by the decl pass.
+**C89 cross-function TCO limitation:** `.tail_call` is emitted as a **call followed by a
+`return`** (`zT = fn(args); return zT;`), preserving a C stack frame — semantically a tail call
+but not a jump. Only **self-recursion** TCO achieves O(1) stack (rebind assigns + `goto z_bb_0;`
+back-edge to the entry label). Real frame-reusing cross-function tail calls require a backend
+that can emit a proper tail-jump; until then cross-function TCO is call+ret. The `.tail_call`
+written-type scan marks the result temp as a call-result (written_flag=2) so the decl pass does
+not flag it UNWRITTEN.
+
+### 1.9.1 Switch / negative / enum case emission [updated: 2026-11-04 — syntax-emission defects]
+
+`.switch_br` (`c89_emit.zig`, the `emitInst` arm) selects the lowering from the
+**condition temp's resolved C type** (`tempIs64BitInt` via
+`getTempTypeByIndex`), not from the source-level type name. This is the **C
+carrier width**, not the declared Z98 width: a 33..63-bit arbitrary integer
+(or an enum backed by one) declares fewer than 64 bits but carries in an
+8-byte `i64`/`u64` typedef, so it takes the 64-bit if/else path too.
+
+- **32-bit conditions keep the existing C `switch` byte-identically.** The label
+  spelling still comes from `switchCondIsSigned`/`switchCondWidthBits`: an
+  unsigned (or bool) condition prints unsigned decimal; a signed condition
+  (including an enum whose backing is signed) prints negative labels
+  (`case -1:`), with the `i32` minimum spelled `(-2147483647 - 1)` because
+  `-2147483648` is not a portable C89 int constant. Signed non-negative values
+  keep the old decimal output.
+- **64-bit conditions never emit a C `switch`.** OpenWatcom rejects a
+  `switch` on a 64-bit controlling expression (`E1078`), and C89 has no such
+  form, so `.switch_br` lowers to an `if (cond == ...) goto z_bb_N;` /
+  `else if (...) ...` / `else goto z_bb_else;` chain with the same target
+  labels. The condition temp is materialized and evaluated once (the
+  expression-nesting pass does not inline it — `nestConsumerWired`), so the
+  chain cannot re-evaluate a side-effecting expression. Case literals are exact
+  via `writeSwitchCaseLabel`: non-negative values keep the decimal unsigned
+  form (`Z98_U64_C(<n>)` above `2^32`, including `0xFFFFFFFFFFFFFFFF`),
+  negative signed values use `(-Z98_I64_C(<n>))`, and the minimum uses
+  `Z98_I64_MIN`.
+- **Negative integer case items.** Negative literals, module-level named
+  `const` items, and negative range endpoints resolve on signed integer
+  conditions (they are stored as the two's-complement bit pattern in
+  `SwitchCase.value`; the condition's signedness selects the label form). On a
+  concrete unsigned condition a negative item is a clean level-0 rejection:
+  `error[3062] type '<T>' cannot represent integer value '<v>'` (rc 2, zero
+  `.c`), emitted by `semanticAnalyzerCheckUnsignedCaseItem` /
+  `semanticAnalyzerReportUnsignedNegativeCaseItem`
+  (`semantic_analyzer.zig`). **Function-local `const` case items remain an
+  unsupported, documented limitation** (operator ruling D2).
+- **Signed enum backings.** `enum(iN)` with negative discriminants is accepted;
+  an unsigned backing with a negative discriminant rejects with the same
+  `error[3062]` family. `emitEnumType` keeps the signed C backing type and
+  prints a negative discriminant as a signed literal in the per-member
+  `#define` (`#define <cname>_A -1`, with `Z98_I64_MIN` /
+  `(-2147483647 - 1)` at the minima). Enum switch labels follow the backing's
+  signedness through `switchCondIsSigned`. Wide member macro bodies are
+  carrier-legal C89 via the untyped literal renderer: a negative magnitude
+  above `2147483647` is `(-Z98_I64_C(<n>))`, a positive value above
+  `4294967295` is `Z98_U64_C(<n>)`, a positive value from `2147483648` to
+  `4294967295` carries the `u` suffix, and the i64/i32 minima keep their
+  existing special forms. **`enum(u64)` limitation:** member values live in an
+  i64 slot, so a discriminant above `9223372036854775807` rejects with a clear
+  level-0 `error[3000]` (`enum member value exceeds the supported enum value
+  range (values above 9223372036854775807 require u64 enum storage, not
+  supported yet)`); the full u64 range needs u64 enum storage (open defect D13).
+- **Bool case items.** A `bool` condition accepts `true`/`false` and the
+  non-negative integers `0`/`1`; a negative integer item (bare or
+  parenthesized) is a clean level-0 `error[3062]` (`type 'bool' cannot
+  represent integer value '-1'`, rc 2, zero `.c`) emitted by the same
+  unsigned-negative case-item gate. It never reaches lowering, so the invalid
+  `case 18446744073709551615:` label is not emitted.
+- **`@bitCast`, not a checked cast.** `lowerSwitchCaseItemMemberValue`
+  (`lower.zig`) returns `@bitCast(u64, member.value)`. A negative enum
+  discriminant is a bit pattern, not an `@intCast(u64, …)` value, so the
+  `-fsafe` build cannot trap on the enum case path.
+
+**Safe-mode temporary `zig_poison_fill`.** Task TC removed every source
+`= undefined` (471 sites across `examples/z98/z9play` and `z9torr`), so no
+source-undefined poison remains. The `zig_poison_fill` calls still present in
+the emitted example C (measured 603 in z9play / 789 in z9torr) are
+**compiler-generated initialization of call-result temporaries under `-fsafe`**
+— safe-mode temporary initialization, a known item, not a defect and not
+something to grep-fix in the examples.
+
+**Stale-artifact lesson (defect B).** Defect B (the VM `pal_trap` stub) was a
+stale/mixed build artifact, not an emitter defect: all three emitters
+(Linux/MinGW/OWC) produce correct C for the same source. Always rebuild the
+target after re-emitting; an existing `.o`/`.exe` can disagree with the `.c`
+currently on disk (or with an object linked from an earlier emission). Verify
+the `.c` that was actually compiled, not just the one the compiler would write
+today.
 
 ### 1.10 emitModule — Top-Level Orchestration
 
-`emitModule` (`c89_emit.zig:2201`) drives one module's output for the **stdout single-file
-path only** (bare `--dump-c89`). [updated: 2026-08-01] When `--dump-c89 --output-dir DIR` is
-set, `phase_C89Emission` instead emits `zig_special_types.h` once via `emitSharedHeader` and
-loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
-(see §1.17); `emitModule` is unchanged for the stdout path. Note that `phase_C89Emission`
-(`main.zig:709`) runs BEFORE it: it creates a separate `BufferedWriter` (`cwriter`), emits the
-fixed `emitIncludes` preamble (`#include "zig_compat.h"` + `#include "zig_runtime.h"`,
-`c89_emit.zig:744`), flushes it (`main.zig:829-830`), then calls `emitModule` with the
-hardcoded module name `"output"` (`main.zig:627`) — hence `/* Module: output */` in every dump.
+`emitModule(emitter, name, c_includes)` (P4 fix round 2: the `ptr_only_ids`/`ptr_only_len`
+parameters are deleted — the classification maps arrive on `emitter.classif`) drives one module's output
+for the **stdout single-file path** (bare `--dump-c89`). With `--dump-c89 --output-dir DIR` (or
+`-o DIR`), `phase_C89Emission` instead writes `zig_special_types.h` once via `emitSharedHeader`,
+then loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
+(§1.17), and finally the support files/scripts (§6). `phase_C89Emission` runs the single-file
+path as: create a separate `BufferedWriter` (`cwriter`), emit the fixed `emitIncludes` preamble
+(`#include "zig_compat.h"` + `#include "zig_runtime.h"`), flush it, then call `emitModule` with
+the hardcoded module name `"output"` — hence `/* Module: output */` in every single-file dump.
 
 ```
-emitModule(emitter, name, fns, c_includes, ptr_only_ids):
-  1. Populate pointer_only_map from ptr_only_ids
-  2. emitSpecialTypes(emitter, registry)      ← Phase 1: type headers
-  3. emitModuleHeader(name, fns, c_includes)  ← Phase 2a: includes + fwd decls
-  4. For each function (if not extern):
+emitModule(emitter, name, c_includes):   (P4: the classification maps arrive pre-loaded)
+  1. sorted = emitter.plan.typedef_order   (P12: the carried typedef order — planned
+     ONCE at the phase_EmissionClassification boundary; the emitter never sorts)
+  2. emitErrorCodePrologue
+  3. emitSpecialTypes(emitter, registry, sorted)  ← Phase 1: type headers
+  4. emitModuleHeader(name, c_includes)           ← Phase 2a: includes + fwd decls
+  5. emitGlobalDecls(module 0, all=1)             ← storage globals
+  6. For each function slot (skip extern):
      a. emitter.switch_cases = &func.switch_cases
-     b. emitFunctionSignature(emitter, &func)
-     c. emitHoistedDecls(emitter, &func)      ← temp declarations
-     d. emitFunctionBody(emitter, &func)       ← basic block insts
-     e. If func.is_pub and name=="main":
-        - Emit int main(void) wrapper
-        - Handles void/error_union/normal return types
-  5. emitModuleFooter()                       ← "/* EOF */\n"
+     b. lirOptRun(...)                            ← LIR optimization pass
+     c. emitFunctionSignature(emitter, &func)
+     d. emitHoistedDecls(emitter, &func)          ← temp declarations + DCE/nest/poison
+     e. emitFunctionBody(emitter, &func)          ← local hoist + basic blocks
+     f. If func.is_pub and name=="main": emitMainWrapper
+  7. emitModuleFooter()                           ← "/* EOF */\n"
 ```
+
+The fn list is `emitter.fn_slots` (spill-backed `LirSlot`s), not a direct parameter.
 
 #### main() Wrapper
 
-When a public function named `main` is found, an additional `int main(void)` wrapper is emitted:
+When a public function named `main` is found, an additional `int main(void)` wrapper is emitted.
+If `main` takes parameters, the wrapper signature becomes `int main(int argc, char** argv)` and
+the call forwards `(argc, <argv-cast>)`. The wrapper first emits `__module_init()` calls for every
+reachable module with runtime-initialized globals (`emitModuleInitCalls`), then:
 
 | Return Type | Wrapper |
 |------------|---------|
-| `void` | `int main(void) { zF_<hash>_main(); return 0; }` |
-| `error_union` (void payload) | `int main(void) { ... return result.is_error ? result.err : 0; }` |
-| `error_union` (non-void payload) | `int main(void) { ... return result.is_error ? result.data.err : (int)result.data.payload; }` |
-| normal | `int main(void) { return (int)zF_<hash>_main(); }` |
+| `void` | `int main(void) { ... zF_<hash>_main(); return 0; }` |
+| `error_union` (void payload) | `int main(void) { ... zT_main_result = zF_<hash>_main(); return zT_main_result.is_error ? zT_main_result.err : 0; }` |
+| `error_union` (non-void payload) | `int main(void) { ... return zT_main_result.is_error ? zT_main_result.data.err : (int)zT_main_result.data.payload; }` |
+| normal | `int main(void) { ... return (int)zF_<hash>_main(); }` |
 
-#### emitModuleHeader (`c89_emit.zig:1992`)
+#### emitModuleHeader
 
 ```
 /* Module: <name> */
 #include "zig_compat.h"
 #include "zig_special_types.h"
+<stdarg include, iff va_* used>
+<builtin includes, gated on use>
 <c-includes...>
 
 /* Forward declarations */
@@ -590,27 +845,82 @@ When a public function named `main` is found, an additional `int main(void)` wra
 ```
 
 C-includes: if starts with `<`, emit raw (`#include <foo.h>`). Otherwise wrap in quotes (`#include "foo.h"`).
+`emitStdargInclude` adds `<stdarg.h>` only when the TU uses `va_start`/`va_arg`/`va_end`;
+`emitBuiltinIncludes` adds `<stdio.h>`/`<stdlib.h>`/`<windows.h>`/`<unistd.h>` and the console
+preamble gated on actual builtin use.
 
-### 1.11 emitModuleFooter (`c89_emit.zig:2030`)
+### 1.11 emitModuleFooter
 
 ```
 /* EOF */
 ```
 
-### 1.12 emitFunctionForwardDecl (`c89_emit.zig:1920`)
+### 1.12 emitFunctionForwardDecl
 
-Emits `return-type fn-name(param-types...);` — same mangling as signature but without param names.
+Emits `return-type fn-name(param-types...);` — same mangling and calling convention as the
+signature but without param names.
 
-### 1.13 emitBaseIdxAccess (`c89_emit.zig:144`)
+### 1.13 emitBaseIdxAccess
 
 Handles indexed load/store with ptr-to-array detection:
 
 - Ptr-to-array: `result = (*base)[idx];` or `(*base)[idx] = src;`
 - Normal: `result = base[idx];` or `base[idx] = src;`
+- Decay forms: `&(*base)[idx]`, `&base[idx]`, or a byte-copy for a by-value array element
+  (`decay` 1/2/3).
 
-`isBasePtrToArray` (`c89_emit.zig:130`) checks if a temp's type is ptr-to-array.
+`isBasePtrToArray` checks if a temp's type is ptr-to-array.
 
-### 1.14 emitFieldAssign (`c89_emit.zig:188`)
+**D5 defect — lost store through a slice-index aggregate lvalue (FIXED; task F5, 2026-10-09).**
+`s[i].field[j] = x` (and the fixed-array `a[i].field[j] = x`) compiles and links cleanly but
+the store is **silently lost**. In Zig the whole index/field chain is an **lvalue**: the store
+must write through `&s[i].field[j]`. Today `lowerAssignLValue`'s `index_access` arm
+(`sf/src/lower.zig:2484-2531`) lowers its base by **value**
+(`lowerExpr(indexBaseAfterArrayDeref(...))` `:2487`) and only the tuple sub-case takes an
+address (`:2493-2508`), so the base (`s[i].field`) is materialised as a by-value struct temp
+and `assign_index`/`emitBaseIdxAccess` (`c89_emit.zig:204-267`, `:7226-7271`) stores into the
+array field **of that copy**. Emitted C (D5 repro; `backing` a `[N]Peer` global with an
+`[4]u8` `peer_id` field):
+
+```c
+zT_12 = zG_..._backing[zT_11];   /* Peer copied BY VALUE into a local temp */
+zT_13 = zT_12.peer_id;           /* pointer into the LOCAL copy */
+zT_13[zT_14] = zT_9;             /* the store lands in the temp, not backing[i] */
+```
+
+The correct sibling path `lowerFieldStore` already addresses nested bases
+(`sf/src/lower.zig:2878-2928`: an index base via `maybeExtractSlicePtr` + ptr+idx at
+`:2878-2909`, a field/deref/paren base via `lowerLValueAddr` at `:2910-2928`), which is why a
+direct `s[i].field = x` is correct while `s[i].field[j] = x` is not. **Fix (task F5,
+applied):** the `index_access` arm of `lowerAssignLValue` now takes an **array-typed**
+aggregate l-value chain by ADDRESS before the value path: when the base is a
+`field_access`/`index_access`/`deref`/`paren_expr` whose chain roots at an `index_access`
+(new helpers `d5BaseChainHasIndex`/`d5IndexAssignArrayType`, `sf/src/lower.zig:2564`/`:2612`),
+`lowerLValueAddr` forms `&elem->field` once and `assign_index` emits `(*zT)[j] = src;`. An
+array field's resolved type decays to a bare element pointer, so the declared array type is
+recovered from the container's field table (mirroring `fieldStaticLenForBase`). Slice/pointer
+bases and local-aggregate field bases (no index in the chain) keep the value path
+**byte-identically**. This is a **runtime** defect — the compile-only corpus classify is OK
+both before and after the fix — so the gate is the runtime assertion in
+`repro/mi_matrix/slice_index_field_store_xmod/`: post-fix stdout is
+`9\n11\n22\nslice_index_field_store ok\n`; the emitted C drops the by-value copy and writes
+`zT_12 = backing + zT_11; zT_13 = &zT_12->peer_id; (*zT_13)[zT_14] = zT_9;`. All 8 dump-MD5
+pins are unchanged (slice/pointer/local bases byte-identical).
+
+**D5 `-fsafe` root-index check (RESTORED; task F6, 2026-10-10).** The address path above
+bypassed the by-value element read that used to carry the `-fsafe` bounds check, so the chain
+ROOT index `i` in `s[i].field[j] = x` / `a[i].field[j] = x` was no longer trapped when
+out-of-range. `lowerLValueAddr` gained a `safe_check: u8` parameter (`sf/src/lower.zig:2202`);
+its `index_access` arm emits `emitSafeCheckIndex(lv_ix_base, lv_node.child_0, idx_temp)`
+(:2235) when set, and only the D5 call site opts in (`:2507`); every other address-of caller
+passes `0`, so their emitted C is byte-identical. `-ffast` is unaffected (the helper returns
+early when `!safe_checks`). Emitted `-fsafe` now has `zT = peers.len; if(!(i < zT)){ pal_trap(); }`
+before the address add. Repro `repro/mi_matrix/slice_index_field_store_oob_xmod/` traps
+(rc 133) under `-fsafe`; the in-bounds D5 repro still prints `9\n11\n22\nslice_index_field_store ok\n`;
+all 8 dump-MD5 pins unchanged; corpus `1121 = 947/58/116/0/0` (the extra OK is the new repro);
+stdlib 283/0; example matrix 25/25; runtime goldens byte-identical.
+
+### 1.14 emitFieldAssign
 
 Resolves field access for `.assign_field`:
 
@@ -620,26 +930,53 @@ Resolves field access for `.assign_field`:
 | `tagged_union_type` | `.tag` (field 0), `.payload.<variant-name>._<sub>` or `.payload` (field 1) |
 | `ptr_type`/`many_ptr_type` → `struct_type` | `->field` |
 | `struct_type` | `.field` (with array copy: `{ ... while(_j < len) { base.field[_j] = src[_j]; _j++; } }`) |
-| `union_type` | `.field` (FIXED 2026-08-13, F1): the base-type dispatch (c89_emit.zig:188-307) gained a `union_type` branch (c89_emit.zig:260-274) mirroring the `struct_type` branch but scanning `un_items[payload_idx].fields_start` + `fe_items` for `field_id` (with the same array-copy handling). Previously a union-typed base fell through to the numeric `.f_<field_id>` fallback; now it emits `.member_name` like `store_field`'s ptr-base `->` emitter (c89_emit.zig:4199-4218, struct pointee :4202-4209, union pointee :4210-4218). Emits `zT_3.Int = v;` for a bare-union struct-literal member (repro `union_literal_nested_xmod` prints `42`; was gcc `'zT_3' undeclared`). **[F3 line-ref pass 2026-08-13: ptr-base store_field ref corrected — :4180-4188 → :4199-4218.]** |
+| `union_type` / `packed_union_type` | `.field` — the base-type dispatch gained a `union_type` branch mirroring the `struct_type` branch but scanning `un_items[payload_idx].fields_start` + `fe_items` for `field_id` (same array-copy handling). A union-typed base now emits `.member_name` like `store_field`'s ptr-base `->` emitter instead of falling through to the numeric fallback. Regression guard: `union_literal_nested_xmod`. |
 | unknown | `.f_<field_id>` (numeric fallback) |
 
 ### 1.15 Helper Functions
 
-| Function | Line | Purpose |
-|----------|------|---------|
-| `getBinOpStr` | 3079 | Maps binary op u8 → C operator string (+, -, *, /, %, &, \|, ^, <<, >>, ==, !=, <, <=, >, >=) |
-| `getUnOpStr` | 3099 | Maps unary op u8 → C operator string (-, !, ~) |
-| `getCheckedCastFnName` | 2215 | Maps TypeId → checked cast function name (std_checked_cast_i8/u8/i16/u16/i32/u32/i64/u64) |
-| `getPrintFnName` | 2229 | Maps TypeId → print function name (std_print_u32/u64/i64/f64/bool/char/str) |
-| `emitCStringLiteral` | 2241 | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
-| `resolveTempName` | 2259 | Resolve temp_id → C name. Checks local flat lookup first (fl_temps), falls back to mangleTempName |
-| `getTempTypeByIndex` | 696 | Find type_id for a temp_id by scanning hoisted_temps |
-| `mangleTempName` | 1667 | Format `zT_<temp_id>` for temp variables |
-| `mangleLocalName` | 1436 | Format local: keyword-safe (z_ prefix) or original |
-| `writeHex` | 92 | Write 8 hex digits of u32 to buffer |
-| `isTempOrBuiltin` | 113 | Check if name starts with `__tmp`, `__ret`, `__bootstrap` |
-| `isC89Keyword` | 125 | Check if name_id is in keyword_set |
-| `dbgPrintU32` | 75 | Debug: write u32 to stderr |
+**P5 predicates + promotion centralized (2026-10-12).** The emitter's private int-kind/signedness/width/scalar truth tables are DELETED (no dead copies left behind): `intKindIsSignedBase`, `intKindIsUnsignedBase`, `intKindWidthBytes` (the Task 2b3 D1-2 base trio), `classifyIntSignedness`, `intTypeNeedsWidthWrap`, `intTypeByteWidth`, `typeIsIntKind`, `retTypeIsScalarC`, `typeIsPtrKind`. Their canonical homes are `type_registry.zig` — `typeKindIsSignedIntBase` / `typeKindIsUnsignedIntBase` / `typeKindIntWidthBytes` / `typeRegistryIntSignednessClass` / `typeRegistryIntNeedsWidthWrap` / `typeRegistryIntByteWidth` / `typeRegistryIsIntKind` / `typeRegistryIsScalarC` (doc 03) — plus the pre-existing `typeRegistryIsPointer`, which replaces `typeIsPtrKind` (membership-identical for reachable tids; the tid 0/1/18 guards were redundant). Every emitter call site (`nestScalarEffTid`, `writeIntConstRvalue`, `getUnsignedCTypeName`, `getTempEffType`, `getTempTypeInfoResolve`, `printKindIsIntegerLike`, `nestShapeOk`, `emitHoistedDecls`, `emitFieldAssign`, `emitFlagOp`, …) now calls the canonical predicate; each caller's own membership extras are preserved verbatim. `emitBinRvalueText`'s mixed-sign C usual-arithmetic promotion block is relocated verbatim to `coercion.zig` `coercionUsualArithPromote` (doc 05): `emitBinRvalueText` now delegates the promotion decision to `coercion` and keeps only emitter glue — `getTempEffType` temp→type resolution plus `getCTypeName` cast-name minting (at most once per op, same branch as before; `D6:` markers unchanged).
+
+**P11 promotion spelling from carried result types (2026-10-12) — SUPERSEDES the P5 promotion sentence above.** The mixed-sign usual-arithmetic PROMOTION DIRECTION (the last C-spelling decision left in `emitBinRvalueText`) moves to the planner: `coercion.zig` `coercionUsualArithPromote` is DELETED (the P5 verbatim relocation is undone; doc 05 tombstone), the rule body is re-owned verbatim as `c89_plan.zig` private `uacPromoteSide` (the P5 predicates stay in `type_registry.zig`), and the direction is computed ONCE per comparison `binary` (ops 10–15) at the `phase_EmissionClassification` boundary by `spellPlanPlanFn` from the operands' carried `hoisted_temps` types (`hoistedEffType` mirrors `getTempEffType`'s resolution) into `C89SpellPlan.uac_maps` (`spellPlanUac`; value 0/1 = cast LHS/RHS to the other operand's C type; absent = no cast = the old `return 2`). The emitter's promote block reads the plan via `planUacSideAt` (mirrors `planConstCarrierAt`) and keeps only the P5-named glue (`getTempEffType` + `getCTypeName` cast-name minting — spelling, unchanged); `emitBinRvalueText`/`nestEmitBinExpr` take the def inst's `def_bb`/`def_ii` for the ordinal lookup (both call sites already carried them). Expected behavior delta ZERO: pins 0/8, corpus class file byte-identical, markers unchanged.
+
+| Function | Purpose |
+|----------|---------|
+| `getBinOpStr` | Maps binary op u8 → C operator string (+, -, *, /, %, &, \|, ^, <<, >>, ==, !=, <, <=, >, >=) |
+| `getUnOpStr` | Maps unary op u8 → C operator string (-, !, ~) |
+| `getCheckedCastFnName` | Maps TypeId → checked cast function name (std_checked_cast_i8/u8/i16/u16/i32/u32/i64/u64) |
+| `getPrintFnName` | Maps TypeId → **mangled C name** of the fmt printer: infers `printFnSourceName` then mangles it (`nameManglerMangle` kind 0) against `emitter.std_fmt_module_id`; when that id is absent (`0xFFFFFFFF`) it falls back to the unmangled source name. |
+| `printKindIsIntegerLike` | Task 2: true for fixed ints, arbitrary-width ints, `c_char`, `enum`, `integer_literal` — the kinds the width/signedness dispatch routes (everything else keeps an explicit arm or the defensive `printI32` fallback). |
+| `printFnSourceName` | Maps TypeId × specifier → the `std.fmt` SOURCE name. Task 2 width/signedness dispatch: integer-like kinds (`printKindIsIntegerLike`) route via `typeRegistryIntWidthBits`/`typeRegistryIntIsSigned` → `printU32`/`printI32` at ≤32 bits, `printU64`/`printI64` at 33..64, and the matching `printHex*` for `{x}` (Z98 `usize` is 32-bit unsigned). Final-review fix wave: an untyped `integer_literal` argument is materialised by lowering into its value-chosen carrier (`lowerPrintArgExact`), so the `integer_literal` 32-bit signed arm below is only the non-folded fallback (mostly builtin results). Non-integer arms unchanged: `printF64` (`f32_type` too — the `float`→`double` widening is implicit via the `void printF64(double)` prototype), `printBool`, `printChar` (u8 `{c}`), `printStr` (slice), default `printI32` (defensive; Task 3 rejects those arguments). |
+| `printAggKind` / `aggPrinterName` | Task 4: true for struct/union/tagged_union/tuple/packed_union; the generated static C printer name (`z98_printStruct_<tid>` etc.; see §1.18). |
+| `emitGeneratedPrinters` / `collectPrintRoots` / `emitAggPrinterRec` / `emitAggPrinterDef` / `emitAggValue` | Task 4: per-module scan for `.print_val` aggregate roots, dependency-first deduped emission, and the printer body (fields/tag-switch/packed extraction/depth-1 recursion). |
+| `emitTupleType` / `emitNeededTupleTypes` | Task 4: the tuple `typedef struct { _0, _1, ... }` C model and the needed-tuple emission pass (end of both type-emission paths). (`collectNeededTuples` — the hoisted-temp/global collector — moved to `type_resolver.zig`, P4 fix round 2.) |
+| `aggAccessAppend` / `aggAccessAppendIndex` / `aggIndentStmt` | Task 4 helpers: `v.field` / `v._N` access-string builders, printer-statement indentation (packed-field scratch names now `nm_mod.nameManglerMintIndexName(mangler, "zT_pkf", idx)` — P1). |
+| `zigPrintNameAppend` / `zigNamePut` / `zigNamePutU32` / `zigNamePutQuals` | Task 6: Zig 0.15.2 `@typeName` renderer for a pointer child (exact Z98-expressible space; named enum/struct/union components return false, i.e. the `error[3063]` named-composite residual). `kZigPrintNameCap = 512` (Task 8 B2: the validator mirrors this budget byte-for-byte incl. the trailing `@`). Kept in lockstep with `lower.zig` `printFmtPointeeNameOk`. |
+| `emitPtrValuePrint` / `emitPtrValueExpr` | Task 6: one pointer value's print dispatch — pointee aggregate/tuple/packed → the generated aggregate printer with `*(value)` (depth unchanged at top level, `d - 1` as a field); pointee enum → the Task-5 name printer; else inline `std_print("<name>@")` + `printHexU64((unsigned long long)(unsigned int)(value))`. `emitAggValue` routes pointer/many-pointer FIELDS here, `.print_val` routes top-level ones (`is_top`). Task 8 (B2): a `zigPrintNameAppend`/`zigNamePut` failure is a `@panic` (was a silent no-op). |
+| `emitFloatHexHelper` | Task 6: emits the on-demand `static void z98_printFloatHex32(float)` / `z98_printFloatHex64(double)` C89 hex-float (bit-for-bit Zig's `printFloatHex`, no precision option; the decimal exponent goes through the existing mangled `std.fmt.printI32`). Rooted by `collectPrintRoots` flags `need_fhex32`/`need_fhex64`. |
+| `emitTypeDefOnce` / `emitTypeDeps` / `emitPointeeDep` / `emitDepMember` | Task 6: shared gated/bare type-definition writer (refactored out of the four special-types sub-passes) plus the pointer-pointee dependency emission that fixes "typedef used before emitted" for a pointer member's pointee C type (fn-pointer/enum/error-set/optional/slice/array/packed/ptr-chain); dedup via the pass's `seen` map. Task 8 (B3): `emitPointeeDep`'s depth cap is 16, one cap shared with `zigPrintNameAppend` and the validator. |
+| `c89NeedsEmitEdge` → `typeNeedsFullDef`/`typeRefs` (P2) | Task 6 added `fn_type` as a value-embedding dependency edge; P2 replaced the whole predicate with the single relation in `type_registry.zig` (which also covers `fn_type` return/param refs — the D8 defect — `packed_union`, and pointer chain-leaf name refs). |
+| `emitCStringLiteral` | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
+| `resolveTempName` | Resolve temp_id → C name. Checks local flat lookup first (fl_temps), falls back to `nm_mod.nameManglerMintTemp` |
+| `getTempTypeByIndex` | Read the recorded `TempDecl.type_id` for a temp_id (P6: pure record read — the `getTemp*`/`hoisted*` re-derivation fallbacks, incl. `getTempEffType`'s written-type write-scan and `getTempTypeInfo`'s cross-temp chain, are deleted. P14: the search is the per-fn `t2pos` map read — raw first-match, multi-decl first-match which-wins; `hoistedTypeOf`/`hoistedTypeOfInFn` read `t2pos_conc` (skip-undefined), `hoistedTypeId`/`getTempEffType` read `t2pos` with their own filters) |
+| (`name_mangler.zig`, P1) `nameManglerMintTemp` / `nameManglerMintLocal` / `nameManglerMintField` / `nameManglerMintMember` | `zT_<temp_id>` / raw-keyword-escape-per-scope mints (moved out of the emitter — see §1.3) |
+| (`name_mangler.zig`, P1) `writeHex` / `isTempOrBuiltin` / `isC89Keyword` | Moved mangler internals (hex hash writer; `__tmp`/`__ret`/`__bootstrap` bypass; keyword test) |
+| `dbgPrintU32` | Debug: write u32 to stderr |
+| `aggregateKeyword` | Single source of the `struct `/`union ` keyword for named aggregates (struct/tagged_union → `struct `, union/packed_union → `union `) |
+| `ctypeGuardWrite` | Writes the `ZIG_<TAG>_` include-guard prefix for a type kind |
+| `emitCallConv` | Writes `Z98_STDCALL ` for a `stdcall` function |
+| `emitCalleeExpr` | Writes a callee expression, casting a stdcall callee to its `FS_...` fn-pointer typedef |
+| `findCalleeFnTypeId` (P6: DELETED) / `tempFnTypeId` | The callee fn-type id is now a lowering-recorded fact on `CallDirectData`/`TailCallData` (`fn_type_id`); `tempFnTypeId` still unwraps a fn-pointer temp for `func_ref` |
+| `moduleQualifiedName` | Computes the `DIR/<basename>_<FNV1a8>` output stem for a module |
+| `emitSupportFiles` / `emitBuildScripts` | Write the self-contained support files and companion build scripts (§6) |
+| `openSupportOutputFile` | Opens `DIR/<name>` for writing; aborts on path overflow / open failure |
+| `emitPackedStoreBitfield` / `emitPackedLoadBitfield` | Shift/mask read/write of a packed bitfield through a byte carrier |
+| `emitSatBinary` | Saturating add/sub/mul/shift for arbitrary-width ints — P6: SPELLS ONLY from the lowering-carried `result_type`/`width`/`is_signed` (the emit-time width/signedness derivation is gone) |
+| `emitWrapOp` / `emitWrapNeg` / `emitFlagOp` | `-fsafe` wrapping (`zig_wrap_*`) and overflow-flag (`zig_overflow_flag_*`) emission |
+| `emitValueExpr` / `nestEmitDefRvalue` / `nestEmitBinExpr` / `nestEmitUnaryExpr` | Recursive expression-nesting renderer (emission-core compaction) |
+| `dceResultPos` / `dceMarkAllReads` / `dceMarkAllWritten` / `dceReleaseOperands` | Dead-temp DCE marking |
+| `isDeadLocalName` | True when a local name is never read (skip its declaration) |
+| `emitBuildTargetSh` / `emitBuildTargetBat` / `emitBuildOwcBat` | Companion build-script bodies (`emitBuildScripts`) |
 
 ### 1.16 Marker Reference
 
@@ -652,9 +989,9 @@ Resolves field access for `.assign_field`:
 | `E2A:t` | emitSpecialTypes sub-pass 2a | Processing type in pointer-only pass |
 | `E2B:t` | emitSpecialTypes sub-pass 2b | Processing type in value-embedding pass |
 | `D2:t` | emitSpecialTypes 2b | Debug: tagged union type in sub-pass 2b |
-| `D6:t` | getCTypeName | C-name lookup debug — fires for every `tid>=20` type (very noisy) |
+| `D6:t` | `type_registry.typeCName` (P3) | C-name lookup debug — fires for every `tid>=20` derivation query (very noisy; `g_markers_debug`-gated, absent from `--markers` captures) |
 | `ET:t` | emitTypeDefinition | Emitting type definition (tid + kind) |
-| `ES:n` | emitStructType | Struct type emitted (mangled name id) |
+| `ES:n` | emitStructType | Struct type emitted (mangled name id, read from the `c_name_map` memo — pure reader since P3) |
 | `FE:` | emitStructType | Field entry detail (name_id:type_id) |
 | `FWD:n=` | emitFunctionSignature | Forward decl detail (name_id, module_id) |
 | `HTT:` | emitHoistedDecls | Hoisted temp type tracking (temp_id, type_id) |
@@ -691,307 +1028,340 @@ Resolves field access for `.assign_field`:
 | `T4U:` | emitFunctionBody | Type 4 (?) temp declaration in body |
 | `INSTB:` | emitFunctionBody | Instance temp body |
 | `DxA:` | emitFunctionBody | Duplicate local skipped |
+| `DLD:s` | emitFunctionBody | Dead local name skipped |
+| `BFN:p` / `BFX:p` | emitFunctionBody | Function-body buffer position (start / end) |
+| `HT:` | emitHoistedDecls | Hoisted-temp declaration detail (temp, type, eff-type, written) |
+| `ESTA:` / `ESTB:` | emitSpecialTypes | Synthetic type with `name_id==0` skipped (2a / 2b) |
+| `NUL:TYnul` | `type_registry.typeCName` (P3) | `null_type` → `"int"` fallback |
+| `UCT:r` | emitInst (.poison_init) | `-fsafe` poison-fill result temp |
+| `DBGFNPTR:t` | emitHoistedDecls | Fn-pointer effective-type resolution detail |
 
-### 1.17 Multi-Module Emission (`--output-dir`) — [updated: 2026-08-01]
+### 1.17 Multi-Module Emission (`--output-dir`)
 
-With `--dump-c89 --output-dir DIR`, `phase_C89Emission` (`main.zig:709`) switches from the single
+With `--dump-c89 --output-dir DIR` (or `-o DIR`), `phase_C89Emission` switches from the single
 stdout stream to **per-module file emission**. Output set: `DIR/<qualified>.c` (one per module) +
-`DIR/<qualified>.h` (one per module) + `DIR/zig_special_types.h`. Bare `--dump-c89` (no
-`--output-dir`) keeps the stdout single-file path (§1.10) byte-identical — the two paths are
-branched on the CLI, never mixed.
+`DIR/<qualified>.h` (one per module) + `DIR/zig_special_types.h` + the self-contained support
+files/scripts (§6). The stdout single-file path (§1.10) is kept for bare `--dump-c89`; the two
+paths are branched on the CLI, never mixed.
 
-- **Qualified filename scheme (F-S7)** — output stems come from `moduleQualifiedName`
-  (`c89_emit.zig:2035`): `DIR/<basename clamped 64>_<FNV1a8>.c/.h`, where `<basename>` is the
-  module path's last `/` component with `.zig`/`.z98` stripped (clamped to 64 chars) and
-  `<FNV1a8>` is the 8-uppercase-hex FNV-1a hash of the **full module path**
-  (`hash_mod.fnv1a` + `writeHex`, the same pair the mangler uses). **NO module_id** in the
-  filename. This eliminates the F-S7 basename-collision bug (two same-named files in different
-  dirs silently overwrote each other in `DIR/`); every filename is unique per path, so a module
-  importing two same-basename deps now gets two distinct `.h` files and two distinct `#include`
-  lines (previously the same `#include "util.h"` was emitted twice).
-- **Length guard (F-S7)** — `main.zig:769` checks `od.len + 1 + base.len + 3 > 511` before
-  constructing each path; if exceeded, `error: output filename too long` + `pal.exit(1)`. This
-  replaces the old silent truncation at `main.zig:685`/`:712` (bytes were dropped past 510/511
-  with no diagnostic, and the truncated filename mismatched the include chain).
-- **Shared header** — `emitSharedHeader` (`c89_emit.zig:1105`): calls `computeSharedSet`
-  (`c89_emit.zig:1025`), then emits `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`,
-  preamble `#include "zig_compat.h"` + `#include "zig_runtime.h"`, an unfiltered fwd-decl pass
-  (`typedef <struct|union> X X;` for every named struct/tagged_union/union — keyword from
-  `aggregateKeyword(kind)` :542, so bare unions forward-decl `typedef union X X;` matching their
-  definition; F6), sub-pass 2a restricted to
-  `shared_set` (guarded), and all of sub-pass 2b. `computeSharedSet` seeds synthetics
-  (`name_id==0` in slice/optional/error_union/tagged_union/union/array/fn_type) ∪ value-embedding
-  named types (CLS:v, `pointer_only_map` miss) ∪ i64/u64 ∪ named fn_type, then closes over
+- **Qualified filename scheme (F-S7)** — output stems come from `moduleQualifiedName`:
+  `DIR/<basename clamped 64>_<FNV1a8>.c/.h`, where `<basename>` is the module path's last `/`
+  component with `.zig`/`.z98` stripped (clamped to 64 chars) and `<FNV1a8>` is the
+  8-uppercase-hex FNV-1a hash of the full module path (`hash_mod.fnv1a` + `writeHex`). No
+  module_id in the filename, so two same-basename deps get distinct `.h`/`#include` lines.
+- **Length guard** — before constructing each path, the emitter checks
+  `od.len + 1 + base.len + 3 > 511`; if exceeded, `error: output filename too long` +
+  `pal.exit(1)`.
+- **Shared header** — `emitSharedHeader` emits
+  `zig_special_types.h` with file guard `ZIG_SPECIAL_TYPES_H`, preamble
+  `#include "zig_compat.h"` + `#include "zig_runtime.h"`, the error-code prologue, a
+  fwd-decl pass (`typedef <struct|union> X X;` for every named struct/tagged_union/union, keyword
+  from `aggregateKeyword(kind)`, so bare unions forward-decl `typedef union X X;` matching their
+  definition), sub-pass 2a restricted to `shared_set` (guarded), and all of sub-pass 2b.
+  **P4:** the shared group is the resolver classification's `shared` map (doc 03) — seeds
+  synthetics (`name_id==0` in slice/optional/error_union/error_set/
+  tagged_union/union/array/fn_type) ∪ value-embedding named types (CLS:v, `pointer_only_map`
+  miss) ∪ i64/u64/f64 ∪ named fn_type ∪ (emission-time) unnamed needed tuples, then closes over
   pointer-only named types referenced by shared members (fixpoint over `reg.types_len`, via
-  `tstIsDep` `c89_emit.zig:922`).
-- **Closure-edge model (F-S8)** — the closure criterion is: a type joins `shared_set` when it is
-  referenced **by value OR in a way that requires the C type name in scope** (typedef'd kinds —
-  enum/error_set — need the name in scope even behind a pointer/slice, since a typedef cannot be
-  implicitly forward-declared like a `struct` tag can). `c89NeedsEmitEdge` admits enum/error_set
-  targets; `tstIsDep`/`tstEdgesCount`/`tstEdgesFill` gained **optional_type / slice_type / union_type
-  source branches**. Per operator ruling (2026-08-01, F-S8 amendment 4), the optional/slice edges are
-  **RESTRICTED** — they only fire when the element target is `enum_type`/`error_set_type`. This
-  prevents the recursive-slice 2-cycle hazard (`[]T` inside `T` where `T` is a CLS:p struct would
-  otherwise create a shared-set cycle); unrestricted slice/optional edges would also bloat the shared
-  header by promoting any CLS:p struct used only as a slice element. `union_type` is unrestricted
-  (by-value fields).
-- **Slice-elem type-name-in-scope note** — a `Slice_<elem>` holds a *pointer* to `elem`
-  (`<elem>* ptr;`), so it is not by-value; but the **elem's C name must still be in scope** when
-  the typedef is emitted. For a `struct` elem a fwd-decl suffices; for an **enum/error_set** elem
-  (a typedef) the full typedef must precede the slice — this is exactly the F-S8 fix's slice-elem
-  target support.
+  `typeRefsContains`). The former emitter `computeSharedSet` is deleted; the completion
+  (`type_resolver.classifyTypeEmissionFinalize` — needed-tuple seed + full-registry walk +
+  closure) runs at the pre-emit `phase_EmissionClassification` boundary (**P4 fix round 2**;
+  `emitTypePasses` retains ZERO classification calls). Packed structs and
+  `packed_union` skip the fwd-decl pass (their carrier typedef is complete).
+- **Closure-edge model (F-S8)** — a type joins `shared_set` when it is referenced **by value OR
+  in a way that requires the C type name in scope** (typedef'd kinds — enum/error_set — need the
+  name in scope even behind a pointer/slice, since a typedef cannot be implicitly
+  forward-declared like a `struct` tag). `c89NeedsEmitEdge` admits enum/error_set targets;
+  `tstIsDep`/`tstEdgesCount`/`tstEdgesFill` have optional_type/slice_type/union_type source
+  branches. The optional/slice edges are **restricted** to enum/error_set element targets
+  (prevents the recursive-slice 2-cycle hazard); `union_type` is unrestricted (by-value fields).
 - **Guard scheme** — every type definition is wrapped
   `#ifndef ZIG_<TAG>_<cname> / #define ZIG_<TAG>_<cname> / <def> / #endif`. Tag from
-  `ctypeGuardWrite` (`c89_emit.zig:997`): `ZIG_STRUCT_`, `ZIG_UNION_`, `ZIG_ENUM_`,
-  `ZIG_ERROR_SET_`, `ZIG_SLICE_`, `ZIG_OPTIONAL_`, `ZIG_ERRORUNION_`, `ZIG_ARRAY_`,
-  `ZIG_FNPTR_`, `ZIG_I64_`, `ZIG_U64_`, fallback `ZIG_TYPE_`.
-- **Per-module `.h`** — `emitModuleHeaderFile` (`c89_emit.zig:2078`): module guard
-  `ZIG_MODULE_<UPPER(qualified)>_H` (the **qualified** stem uppercased, non-alnum → `_`; since
-  F-S7 the stem already embeds the unique path hash, so guards auto-unique even for two
-  same-basename modules — e.g. `ZIG_MODULE_UTIL_7F9D0FD1_H`); includes `zig_compat.h`
-  + `zig_special_types.h`; the module's own `@cInclude` directives (`entry.c_includes`,
-  per-module — NOT the global `cincludeUnionAll` union); each direct-import dep's `.h` by its
-  **qualified** name (`#include "<moduleQualifiedName(emitter,d)>.h"`, skipping self —
-  `c89_emit.zig:2121-2128`); owned CLS:p
-  type full-definitions (name_id≠0, `module_id==M.id`, struct/TU/union/enum/error_set,
-  `pointer_only_map`, not in `shared_set` — each guarded); fn fwd-decls (non-extern).
-- **Per-module `.c`** — `emitModuleFile` (`c89_emit.zig:2323`): `#include "<qualified>.h"`, then the
-  module's own fn bodies (externs skipped; `switch_cases`/`dl_hoisted` reset per fn). The
-  `int main(void)` wrapper is emitted only for `module_id==0`'s public `main`
-  (`emitMainWrapper`, `c89_emit.zig:2237`).
-- **Embedded build-script templates are DEAD CODE** — `emitBuildTargetSh` (`c89_emit.zig:4482`) /
-  `emitBuildTargetBat` (`c89_emit.zig:4495`) / `emitBuildTargetOwcBat` are never called by any
-  pipeline path (explicit `// Reference-only:` comment at `c89_emit.zig:4478`). They exist as
-  frozen templates only; the real multi-module build flow is the glob-based gcc recipe in
-  QUICK_REF/NOTES.md.
+  `ctypeGuardWrite`: `ZIG_STRUCT_`, `ZIG_UNION_` (union + packed_union), `ZIG_ENUM_`,
+  `ZIG_ERROR_SET_`, `ZIG_SLICE_`, `ZIG_OPTIONAL_`, `ZIG_ERRORUNION_`, `ZIG_ARRAY_`, `ZIG_FNPTR_`,
+  `ZIG_I64_`, `ZIG_U64_`, fallback `ZIG_TYPE_`.
+- **Per-module `.h`** — `emitModuleHeaderFile`: module guard
+  `ZIG_MODULE_<UPPER(qualified)>_H` (qualified stem uppercased, non-alnum → `_`; the path hash
+  makes guards auto-unique); includes `zig_compat.h` + `zig_special_types.h`, the module's own
+  `@cInclude` directives (per-module, NOT the global `cincludeUnionAll` union), stdarg/builtin
+  includes gated on use, each dependency's `.h` by its **qualified** name (value-ref deps ∪
+  import edges, skipping self), owned CLS:p type full-definitions, fn fwd-decls (non-extern),
+  storage global `extern` decls, and type-storage global `extern` decls.
+- **Per-module `.c`** — `emitModuleFile`: `#include "<qualified>.h"`, stdarg/builtin includes,
+  global definitions, then the module's own fn bodies (externs skipped; `switch_cases`/
+  `dl_hoisted` reset per fn, `lirOptRun` per fn). The `int main(void)` wrapper is emitted only
+  for `module_id==0`'s public `main` (`emitMainWrapper`).
+- **Companion build scripts are live** — `emitBuildScripts` (called from `phase_C89Emission`)
+  writes `build_target.sh` always, plus `build_target.bat` (MSVC `cl`) and `build_owc.bat`
+  (OpenWatcom `wcc386`/`wlink`) when the target is Windows; see §6.1. The old claim that the
+  `emitBuildTarget*` templates are dead code no longer holds.
+- **Module pruning — needed-only std.** Only modules in the value-reference reachability set are
+  emitted and listed by the scripts; see §6.2. This is what makes a stdio-only `@import("std")`
+  program emit no `std_net` and link without `-lwsock32`.
+- **Module→file emission loop — no silent drop.** The multi-module branch loops
+  `moduleRegistryGetModules` and, for each registered reachable module, emits one `.h` and one
+  `.c`; every reachable module is emitted. (`mod_silent_drop_xmod` is kept as a regression guard
+  for the false "silent module drop" theory.)
+- **Orphan-module handling** — a `.zig` file with no incoming `@import` edge is never added to the
+  module registry (`moduleRegistryResolveImports` enqueues only via import edges), so un-imported
+  files are never emitted. Correct behavior, not a defect.
+- **Known Issues (fixed):**
+  - **Cross-module enum-literal comparison (I3) — FIXED.** A cross-module qualified enum literal
+    (`json.JsonValueTag.Null`) resolved to `TYPE_VOID`, emitting an undeclared temp
+    (`'zT_XX' undeclared`). Fixed by adding an `enum_type` member-literal case to the generic
+    base-type field-access dispatch in both `semanticAnalyzerResolveFieldAccess` and `lower.zig`
+    (Option A). Regression guards: `zT_missing_fwd_xmod`, `json_parser_workaround`.
+  - **Cross-module tagged-union `==` / member-literal SEGV (I6) — FIXED.** A tagged-union member
+    literal reached `typeRegistryGetStructFields` on a TU `payload_idx`, a garbage read → SEGV.
+    Fixed by a `tagged_union_type` case in the generic field-access dispatch
+    (`emitTaggedUnionInit`). Separately, BIN_EQ/BIN_NE on `tagged_union_type` operands now append
+    `.tag` to each operand, so union `==` emits `s.tag == t.tag` (valid C; per operator ruling
+    m0471, zig1 supersedes the zig0 oracle's rejection). Regression guard:
+    `tagged_union_cmp_xmod`.
+  - **Runtime-symbol gap (json_parser) — FIXED (std.arena migration).** `arena_alloc_default`
+    was missing from `sf/src/include/zig_runtime.c`; resolved by the Zig-side `sf/src/std_arena.zig`
+    module (`Arena{data,capacity,used}` over a static buffer) imported by the examples, removing
+    the extern. Regression guard: `extern_runtime_symbol_xmod`.
 
-- **Module→file emission loop — NO silent module drop (verified 2026-08-08).** The multi-module
-  branch of `phase_C89Emission` loops `mods = moduleRegistryGetModules(ctx.module_reg)`
-  (`main.zig:760`) and, for each registered module, emits one `.h`
-  (`emitModuleHeaderFile`, `main.zig:796` / `c89_emit.zig:2078`) and one `.c`
-  (`emitModuleFile`, `main.zig:819` / `c89_emit.zig:2323`). The loop is over the module registry,
-  so **every registered module is emitted — there is no drop path**. Verified on
-  `sf/build/out_release/zig1` (2026-08-08): 8 module-graph shapes probed (linear chain, diamond,
-  import-only chain, type-only, import cycle, const re-export, 4-deep chain, and json_parser's
-  star) — ALL registered modules emit `.c`, gcc compile+link+run rc=0. The
-  `mod_silent_drop_xmod` repro (3-module transitive chain) emits `main`/`lib_b`/`lib_a` and links
-  clean; it is kept as a **regression guard** for the (false) D2 "silent module drop" theory.
-  **The original D2 premise is FALSE**: no registered module is ever silently dropped.
-- **Orphan-module handling — un-imported files are never emitted (correct, matches oracle).** A
-  `.zig` file with NO incoming `@import` edge is never added to the module registry:
-  `phase_ImportResolution` (`main.zig:262-270`) registers only the CLI entry module
-  (`moduleRegistryAddModule`, `main.zig:266`), then `moduleRegistryResolveImports`
-  (`import_resolver.zig:83-144`) enqueues modules **only** via import edges
-  (`import_resolver.zig:134-140`). Orphan files are silently skipped by the emission loop.
-  Example: `examples/z98/json_parser/arena.zig` is never `@import`ed (grep confirms) → no
-  `arena_*.c` is emitted. The zig0 oracle behaves identically (emits `main.c`/`json.c`/`file.c`,
-  NOT `arena.c`). This is correct behavior, not a compiler defect.
-- **Cross-module enum-literal comparison gap — I3 (2026-08-08): FIXED (F3). `'zT_XX' undeclared`
-  in the importing module's `.c` was the symptom.** Repro `repro/mi_matrix/zT_missing_fwd_xmod/`
-  (types.zig declares
-  `pub const Tag = enum { Null, Boolean, Number }`; main.zig does `tag == t.Tag.Null`) and
-  `examples/z98/json_parser_workaround` (6 sites: `val.tag == json.JsonValueTag.Null` etc.)
-  fail gcc with `'zT_2' undeclared` / `'zT_10'/'zT_16'/'zT_28'/'zT_34'/'zT_46'/'zT_91'
-  undeclared`. **NOT a header forward-decl gap**: the importing `.h` already `#include`s the
-  defining module's `.h` and the enum typedef (`zT_F8835433_Tag` etc.) IS in scope. The defect
-  is a **sema/lowering gap** that makes the enum-literal RHS resolve to `TYPE_VOID`, so the
-  emitted body references a VOID-typed temp that is never declared (c89_emit skips VOID temps,
-  `c89_emit.zig:2897`) and never assigned.
-  - **Semantic root** (`semantic_analyzer.zig:232`, `semanticAnalyzerResolveFieldAccess`): the
-    `enum_type` member lookup (lines 260-271) fires ONLY when `base_node.kind == ident_expr`
-    (same-module `Tag.Null`). A cross-module qualified literal `json.JsonValueTag.Null` is a
-    *nested* `field_access` (base = `field_access(json, JsonValueTag)`), so the ident branch is
-    skipped and the generic dispatch (lines 374-463) handles struct/union/tagged_union/module/
-    slice/error_set — **no `enum_type` case** → falls to the `else` at line 459 → returns
-    `TYPE_VOID`. Comparison (`semanticAnalyzerResolveComparison`, line 540) therefore sees
-    `lhs=Tag, rhs=VOID` (marker `CPVl23r1`).
-  - **Lowering root** (`lower.zig:1953` field_access): the enum-member path (lines 1960-2015,
-    which emits `.enum_const`) also fires only for an `ident_expr` base. For `json.JsonValueTag`,
-    the module branch (lines 2016-2061) returns `gtemp = nextTemp(res_type_id)` — an enum-typed
-    temp with **no init inst** (this is the phantom declared-but-never-assigned `zT_1`). The
-    outer `.Null` then hits the generic base-type path (lines 2064-2196, pre-fix refs), which has no
-    enum_type/tagged_union member-literal case → `tid = nextTemp(TYPE_VOID)` (line 2143, from
-    `fa_box[0]`==VOID) → VOID temp returned, never written. Emission of `tag == zT_void` then
-    references an undeclared temp.
-  - **Type category of the gap:** **plain `enum` (`enum_type`) literals accessed through a
-    qualified cross-module path in a VALUE/comparison position.** Struct-by-value params work
-    (the typedef is forwarded via the fn-signature fwd-decl path — verified `dist(p: t.Point)`
-    emits `zT_EAA8EF31_Point` cleanly); `union(enum)` tagged-union literals in `switch` cases
-    work (they go through the switch enum-literal path, e.g. lisp_curr + working json_parser).
-    A cross-module tagged-union literal in a `==` (`.Null` on `t.Val`) additionally SEGVs the
-    compiler (separate crash: `typeRegistryGetStructFields` via `lower.zig:2174`-ish path) — a
-    related but distinct defect.
-  - **Blast radius:** only modules that compare a plain cross-module enum member against a value
-    (`== t.Tag.X`) break. lisp_curr (10 modules), mud_server, game_of_life, working
-    `json_parser` all compile with 0 gcc errors — they never form this pattern (lisp/json use
-    `switch` over `union(enum)`; mud/gol have no cross-module plain-enum compares).
-    `json_parser_workaround` is the only gated example affected; the `zT_missing_fwd_xmod`
-    repro is the minimal guard. **Fix (F3, 2026-08-08 — Option A implemented):** an `enum_type`
-    member-literal case was added to the generic base-type dispatch in `semanticAnalyzerResolveFieldAccess`
-    (semantic_analyzer.zig:459 — before the `else`; resolves `mod.Type.Member` to the member value
-    via `en_items`/`em_items`, mirroring the same-module ident_expr path at :260-271) and to
-    `lower.zig`'s field-access generic base-type path (lower.zig:2207 — after the struct/union/TU
-    branch; emits `.enum_const` with the member ordinal, mirroring :1981-1999). The defining
-    module's enum is already in the shared type registry, so the member lookup works cross-module.
-    Post-fix: `zT_missing_fwd_xmod/` dump rc=0, gcc compile rc=0, run rc=0 (`zT_3 =
-    zT_F8835433_Tag_Null;` is now emitted); `json_parser_workaround/` gcc compile rc=0 (all 6
-    `zT_10/16/28/34/46/91` resolved); mud/gol/lisp/json 4 MD5 gates byte-identical;
-    test_analyzer_bin PASS. Option B (whitelist fwd-decl of enum typedefs in importing headers)
-    was rejected — it does NOT fix the real defect (the typedef is already in scope).
-- **Cross-module tagged-union `==` / member-literal SEGV — I6 (2026-08-08): FIXED (F6).** Repro
-  `repro/mi_matrix/tagged_union_cmp_xmod/` (`lib.zig`: `pub const Shape = union(enum){ Circle: i32,
-  Square: i32, Triangle: i32 }`; `main.zig`: `if (s == lib_mod.Shape.Circle)` in a fn param of type
-  `lib_mod.Shape`) **SEGVs zig1 in `phase_LIRLowering`** (ASan DEADLYSIGNAL rc=1, 0 `.c` emitted)
-  pre-fix. **Fix (F6, 2026-08-08 — Option (a), the lower.zig dispatch fix ONLY):** the generic
-  base-type field-access branch (`lower.zig:2174-2206`) gained a dedicated `tagged_union_type`
-  case that mirrors the same-module member path (`lower.zig:1966-1979`): the member is looked up
-  in `tu_items[ty.payload_idx]` and, on match, the union's tag value is emitted via
-  `emitTaggedUnionInit(self, fa_box[0], variant_idx)` (a TU-typed `int_const` → C `.tag = <ordinal>;`)
-  instead of calling `typeRegistryGetStructFields` on the TU type. The sema reject-`==`
-  diagnostic (Option (b)) was NOT implemented — out of scope per the operator ruling m0406.
-  Post-fix: `tagged_union_cmp_xmod` dumps rc=0 (SEGV gone); the isolated member-literal form
-  `var x = lib_mod.Shape.Circle;` is gcc-clean and RUNS (tag value emitted). The repro's `==`
-  form now emits `zT_3.tag = 0; zT_4 = s.tag == zT_3.tag;` — **gcc-valid** (the separate latent
-  union-`==` emission issue — BIN_EQ emitted `lhs == rhs` in C, no union-equality path — is now
-  FIXED by Task F, Option A, 2026-08-08: the `.binary` handler appends `.tag` to
-  `tagged_union_type` operands for BIN_EQ/BIN_NE, per operator ruling m0471 which supersedes the
-  zig0 oracle's rejection of union `==`). The repro compiles, links, and RUNS printing `1`. 4 MD5
-  gates byte-identical; corpus CRASH=0 (was 1); test_analyzer_bin PASS.
-  `[gdb]`/`[asan]` backtrace: `#0 typeRegistryGetStructFields` ← `#1 lowerExprImpl` ← `lowerExpr`
-  ← `lowerStmt` ← `lowerFn` ← `phase_LIRLowering`.
-  - **Crash locus:** `lower.zig:2180` — the generic base-type field-access branch (lines 2174-2180)
-    routes `tagged_union_type` into the struct/union/TU bucket but calls
-    `typeRegistryGetStructFields` (`type_registry.zig:782-787`) for anything that is NOT plain
-    `union_type`. `typeRegistryGetStructFields` does `self.st_items[ty.payload_idx]` — a tagged
-    union's `payload_idx` indexes `tu_items`, NOT `st_items`, so this reads a garbage
-    StructPayload → garbage `fields_start`/`fields_count` → `fe_items[fstart..fstart+fcount]` is an
-    out-of-range slice → SEGV (zero-page read).
-  - **Mechanism (cross-module member literal):** `lib_mod.Shape.Circle` parses as *nested*
-    `field_access(field_access(lib_mod, Shape), Circle)`. The outer `.Circle` has base = a
-    `field_access` (NOT `ident_expr`), so the same-module member path is skipped in BOTH sema and
-    lower (sema `semantic_analyzer.zig:240` ident branch; lower `lower.zig:1956`). The generic
-    base-type dispatch (`lower.zig:2064-2196`) then sees a base whose resolved type is the
-    tagged_union type and enters the struct/union/TU branch at line 2174 → line 2180 →
-    `typeRegistryGetStructFields(TU_tid)` → SEGV. The same-module `Shape.Circle` control works
-    ONLY because its base is an `ident_expr` resolving to a `type_alias` (`lower.zig:1960-1979`
-    tagged_union branch → `emitTaggedUnionInit`), never reaching line 2180.
-  - **Variant matrix (all measured on `sf/build/out_release/zig1`):**
-    | variant | program | zig1 | zig0 oracle |
-    |---|---|---|---|
-    | same-module `s == Shape.Circle` | union declared in-file | **Task F: rc=0, emits `zT_2 = s.tag == zT_1.tag;` — gcc-valid, runs printing `1`** (was gcc-invalid `zT_2 = s == zT_1;`) | **REJECTS** cleanly (`error: type mismatch`, rc=1) — superseded by ruling m0471 (Option A emits valid C) |
-    | cross-module `var x = lib_mod.Shape.Circle;` | member literal, no `==` | **pre-fix SEGV rc=1 → F6: rc=0, gcc-clean, runs** (emits `zT_3.tag = 0; x = zT_3;`) | accepts (emits tag-enum value `enum Shape_Tag x = Shape_Tag_Circle;`, gcc-clean) |
-    | cross-module `s == lib_mod.Shape.Circle` | the repro | **pre-fix SEGV rc=1 → F6: rc=0 → Task F: rc=0, gcc-clean, runs printing `1`** (emits `zT_3.tag = 0; zT_4 = s.tag == zT_3.tag;`) | **REJECTS** cleanly (rc=1) — superseded by ruling m0471 (Option A emits valid C) |
-    | same-module TU VALUE payload access `s.Circle` | `var v = s.Circle;` | **pre-fix SEGV rc=1 → F6: no longer SEGVs** (member lookup in `tu_items`; still returns the tag value, not the payload — payload-read emission is a follow-up) | accepts (emits `v = s.data.Circle;`, gcc-clean) |
-  - **Findings:** (1) the crash is NOT `==`-specific and NOT even cross-module-specific — ANY
-    field access whose resolved base type is a tagged_union and which is NOT the same-module
-    `ident_expr`→`type_alias` member path hits lower.zig:2180 and SEGVs (includes same-module TU
-    VALUE payload access `s.Circle`). (2) The `==` form is a SEPARATE defect: even same-module,
-    union `==` emits gcc-invalid C (the emitter had NO union-equality path — `BIN_EQ` just emitted
-    `lhs == rhs` in C; `c89_emit.zig:3708`) — **now FIXED by Task F (Option A, `.tag` suffix
-    emission, ruling m0471)**. (3) sema silently resolves `union == union` to
-    `TYPE_VOID` with NO diagnostic (`semanticAnalyzerResolveComparison`, `semantic_analyzer.zig:563-568`
-    returns VOID for same-type non-bool/non-pointer) — so the compiler neither rejects nor emits
-    valid C; it just falls through to lowering and crashes.
-  - **Oracle reference (fix-target adjudication):** zig0 REJECTS `union == member` with a clean
-    type mismatch (`invalid operands for comparison operator '==': 'union Shape' and
-    'comptime_int'`) — same-module AND cross-module (verified). It does NOT support union `==` at
-    all. The I6 investigation recommended (b) reject-in-sema + the dispatch fix, but the **operator
-    ruling m0406 = implement Option (a) ONLY** — the lower.zig dispatch fix. The sema reject-`==`
-    diagnostic (Option (b)) is OUT OF SCOPE and NOT implemented. The lower.zig:2180 SEGV fix (a
-    `tagged_union_type` case in the generic field-access dispatch so member literals lower to the
-    tag value) landed F6: valid programs (`var x = lib.Shape.Circle;`, TU member access) no longer
-    crash. The repro's `==` form then emitted gcc-invalid C (`zT_4 = s == zT_3;` — binary `==` on
-    the struct union, no union-equality emission path) — a SEPARATE latent issue. **Task F
-    (2026-08-08) FIXES that latent issue (Option A, emitter):** per operator ruling m0471, zig1
-    SUPERSEDES the zig0 oracle for union `==` — the `.binary` handler (c89_emit.zig:3724-3739)
-    now resolves each BIN_EQ/BIN_NE operand's temp type in `hoisted_temps` and appends `.tag`
-    to `tagged_union_type` operands (mirroring the int_const `.tag =` path), emitting valid C
-    `s.tag == t.tag` with valid Zig semantics (union `==` compares the active tags). This applies
-    to BOTH cross-module and same-module union `==`/`!=`. The sema reject-`==` diagnostic (Option
-    (b)) remains OUT OF SCOPE.
-  - **Blast radius:** gates mud/gol/lisp/json use tagged-union `switch` (works, lower's
-    switch-case path), never `==` on union values (`builtins.zig:124` `res = a == b` compares
-    `*Value` POINTERS, not union payloads — unaffected). No gated example flips with the crash
-    fix or the `==` emission fix. Corpus: `tagged_union_cmp_xmod` is now fully OK (dump rc=0,
-    gcc rc=0, link rc=0, runs printing `1`); the same-module `s == Shape.Circle` variant is also
-    gcc-valid and runs. No other repro uses cross-module TU member `==`.
-- **Runtime-symbol gap (json_parser case) — defect class (b), NOT an emission defect — FIXED
-  (F3, std.arena migration, 2026-08-08).** `json.zig` / `file.zig` / `arena.zig` previously
-  called `extern fn arena_alloc_default(size: usize) *void` (`json.zig:253`, `file.zig:25`;
-  `examples/zig0/json_parser` identical). Externs are link-time-provided — the compiler never
-  emits their definitions. The symbol IS declared in `sf/src/include/zig_runtime.h:21` (and
-  `extern void* zig_default_arena` at `:22`), IS defined in the legacy
-  `src/runtime/zig_runtime.c` (`zig_default_arena` at `:31`; `arena_alloc_default` at `:154-156`;
-  documented runtime API — `docs/reference/runtime_api.md:38-48`), but was **MISSING from
-  `sf/src/include/zig_runtime.c`** (0 arena matches in 210 lines vs 365 legacy), so the standard
-  QUICK_REF-recipe link failed `undefined reference to arena_alloc_default` (5 refs: `json.c` ×4 +
-  `file.c` ×1) and the workaround was a legacy-runtime object link. **F3 resolves the gap with a
-  Zig-side module instead of a runtime C symbol**: new `sf/src/std_arena.zig` (pure Z98 bump
-  allocator — `Arena{data,capacity,used}`, `create/alloc/reset` over a static 1 MB buffer),
-  copied into the example dirs so `@import("std_arena.zig")` resolves locally; the examples now
-  call `std.create/alloc` (no extern, no runtime change). Verified: multi-module dump rc=0
-  (main/json/file/std_arena emit), per-file gcc `-c` rc=0, **standard-recipe link rc=0 (no legacy
-  object)**, run rc=0 (parses test.json) for both `json_parser` and `json_parser_workaround`;
-  runtime output byte-identical to the pre-fix legacy-linked binary (`diff` empty, F-5 AMENDMENT B
-  precedent). The `extern_runtime_symbol_xmod` repro was migrated identically and is now a green
-  cross-module std.arena regression guard. `repro/mi_matrix/EXPECTED_FAIL.md` F3 section + both
-  example NOTES.md record the fix. [updated: 2026-08-08]
+### 1.18 Generated aggregate printers (Task 4, z98-print-formatting)
+
+`{}` on `struct`/`union`/`tagged_union`/`packed_union`/`tuple` has no `std.fmt`
+primitive (Z98 has no generics), so the emitter generates one `static` C printer
+per printed aggregate type and `.print_val` calls it. Output matches Zig
+0.15.2's `Io.Writer.printValue` aggregate arms byte-for-byte, including its
+recursion cap (`std.fmt.default_max_depth = 3`, `kPrintAggMaxDepth`): a nested
+aggregate at `d == 0` prints `.{ ... }`, and an untagged auto union always
+prints `.{ ... }` (Zig never reads an untagged field).
+
+- `aggPrinterName` → `z98_printStruct_<tid>` / `z98_printUnion_` /
+  `z98_printTaggedUnion_` / `z98_printPackedUnion_` / `z98_printTuple_` (the
+  `z98_` prefix avoids collision with `extern` source names).
+- `collectPrintRoots` scans the module's fn slots for `.print_val` aggregate
+  types; `emitGeneratedPrinters` (called from `emitModule`/`emitModuleFile`
+  before the fn bodies) emits each root and its nested aggregate fields
+  dependency-first, deduped. No forward declarations are needed; `static` makes
+  cross-module duplicates safe.
+- `emitAggPrinterDef` emits `static void <name>(<CType> v, int d)`: named fields
+  as `v.<field>`, tuple elements as `v._<i>`, tagged unions as
+  `switch (v.tag) { case <field-index>: ... v.payload.<field>._0; ... }` (Z98
+  tagged unions always carry integer tags), packed struct/union fields via
+  `emitPackedLoadBitfield` into declared scratch locals. Scalars route through
+  `getPrintFnName(..., 'd')`; nested aggregates call their printer with `d - 1`.
+  The emitted literals are Zig's exact separators (`".{"`, `" .a = "`,
+  `", .b = "`, `" }"`; tuple `" "`/`", "`; packed-union `".{ "`/`", "`; tagged
+  `".{ ."`/`<name>`/`" = "`).
+- **Tuple C model**: `getCTypeName` gives tuple types a stable `Tup_<tid>` name
+  (the generic `name_id==0` fallback would collapse every tuple onto the
+  empty-name mangle); `emitTupleType` emits
+  `typedef struct { <e0> _0; ... } <cname>;`; `ctypeGuardWrite` uses
+  `ZIG_TUPLE_`; `tstEdgesCount`/`tstEdgesFill`/`tstIsDep` gained tuple element
+  arms. Tuple typedefs are emitted ONLY for `C89Emitter.needed_tuple_set`
+  (runtime hoisted temps / globals, collected at the pre-emit
+  `phase_EmissionClassification` boundary by
+  `type_resolver.collectNeededTuples` — P4 fix round 2 (was mid-`phase_C89Emission`);
+  `emitNeededTupleTypes` runs at the end of
+  `emitSpecialTypes` / `emitSharedHeader`): registry-only print-args tuples must
+  not add C, or the 4-MD5 single-file dumps move. Needed tuples also join
+  the shared group (**P4**: via `classifyTypeEmissionFinalize`) so the closure
+  promotes pointer-only named element types into the
+  shared header (definition-before-use).
+
+### 1.19 Generated enum / error-set name printers (Task 5, z98-print-formatting)
+
+`{}` on an enum prints `.member` and on an error set `error.Name` (explicit
+enum `{d}`/`{x}` keep the numeric route; explicit error-set specs reject
+`error[3013]`). There is no std.fmt primitive for this and `std_fmt.zig` must
+not change (the dump carries the reachable std_fmt module C in full, so a new
+function moves the four pinned 4-MD5 dumps), so the emitter generates one
+`static` name-table printer per printed type:
+
+- `namePrinterName` → `z98_printEnum_<tid>` / `z98_printErrorSet_<tid>` (shared
+  `nm_mod.nameManglerMintIndexName` prefix+id builder; `printNameRouteKind` is the kind predicate).
+- Static tables: `z98_etab_<tid>` = the concatenated member/tag name bytes,
+  `z98_eoff_`/`z98_elen_` = per-entry byte offset/length, `z98_eval_` = the
+  member values as `unsigned long long` (enums) or `z98_escode_` = the global
+  `error_code_registry` codes as `int` (error sets). `emitNameBlob` /
+  `emitNameOffLen` write them; `emitU64Dec`/`emitI64Dec` are the digit writers
+  (`itoa64` writes digits before the trailing NUL, so the slice excludes it).
+- `emitNamePrinterDef` emits `static void <name>(<CType> v)`: a linear scan of
+  the value/code array, then `.` / `error.` + `stdFmtSourceSymbol("printStr")`
+  on the matching table entry. Fallbacks: `@enumFromInt(<decimal>)` (Zig's
+  non-exhaustive form; exhaustive-invalid is Zig UB) and `error.UnknownError`.
+- `emitNamePrinterRec` is the deduped per-type emitter; `emitFieldPrinterRec`
+  roots an aggregate's enum/error-set fields (non-packed), and
+  `collectPrintRoots` roots top-level `.print_val`s only when `implicit != 0`.
+  `emitGeneratedPrinters` dispatches each root to `emitAggPrinterRec` or
+  `emitNamePrinterRec`.
+- `stdFmtSourceSymbol` factors `getPrintFnName`'s mangling for an arbitrary
+  source name (`printStr`), so the generated C calls the existing std.fmt
+  function.
+
+**Bounded residuals:** a packed enum/error-set aggregate field rejects
+`error[3063]`; an enum member literal above u32 max truncates at the literal
+(pre-existing sema `enum_value_table` `U32ToU32Map`; the runtime lookup is
+exact).
+
+### 1.20 Pointer / fn-pointer printers and float `{x}` hex-float (Task 6, z98-print-formatting)
+
+`{}` on a pointer / fn-pointer, and float `{x}`, are the Task-6 surface.
+
+- **Pointer `{}`** follows Zig 0.15.2's `Writer.zig:1337-1352` exactly (operator
+  ruling R3: `T@<lowercase-hex>`, **no `0x`**):
+  - `*struct` / `*union` / `*tagged_union` / `*tuple` / `*packed_*` delegates to
+    the pointee's Task-4 generated printer with `*(value)` — depth is UNCHANGED
+    by the pointer arm (top-level `kPrintAggMaxDepth`; aggregate field `d - 1`);
+  - `*enum` delegates to the Task-5 `z98_printEnum_<tid>` name printer;
+  - everything else (scalar/`void`/error-set/pointer/many/slice/array/optional/
+    error-union/fn child) emits `std_print(<@typeName(child)> ++ "@")` followed
+    by the EXISTING `std.fmt` `printHexU64` (cast `(unsigned long long)(unsigned
+    int)`) — no new std_fmt function, so the 4-MD5 pins hold.
+  - `zigPrintNameAppend` reproduces `@typeName` for the exact Z98 space
+    (i8..i64/u8..u64/isize/usize/c_char/bool/f32/f64/void/noreturn, `uN`/`iN`,
+    `error{A,B}` (comma, no space — `@typeName`'s error-set join), `?T`,
+    `E!T`, `[]`/`[]const`, `[N]`, `*`/`[*]` + const/volatile quals, and
+    `fn (p, ...) [callconv(.c)] ret`; `i64`/`u64`/`f64` keep their carrier names).
+    **Task 8 (B2):** the renderer's fixed `kZigPrintNameCap = 512` buffer is
+    mirrored byte-for-byte by the validator (`printFmtPointeeNameLen` incl. the
+    trailing `@`), so an over-budget name (e.g. a >511-byte `error{...}`, or a
+    many-param `fn (...)` name) rejects `error[3063]` at validation; a residual
+    append failure is a `@panic` in `emitPtrValuePrint` — the value can never be
+    silently dropped nor emit broken C.
+  - **Named-composite residual:** a child name containing a NAMED
+    struct/enum/union (`*?S`, `**S`, `*?E`) rejects `error[3063]` — Zig's
+    `@typeName` container-qualifies those (`main.S`), which Z98 cannot
+    reproduce. One-pointer-to-array `{}` stays 3013 (slice-delegate reject),
+    `[*]T {}` 3013, byte-view `*const [N]u8 {s}`/`{x}` 3063 (Q3) — all Task-3
+    validator decisions.
+- **Aggregate fields:** Zig's aggregate arms print fields with `{any}` pointer
+  semantics, so `printFmtAggFieldKindOk` and `emitAggValue` now route pointer /
+  many-pointer / fn-pointer fields: `struct { p: *S }` → `.{ .p = .{ ... } }`,
+  `struct { f: fn() void }` → `.{ .f = fn () void@addr }`, `[*]i32` field →
+  `i32@addr` (`Writer.zig:1346-1352` + `printAddress`). A one-pointer-to-array
+  field would print as a slice (`{ 1, 2, 3 }`) — the array/slice residual
+  rejects the aggregate `error[3063]`. **Fix round 1 (review Critical 1):**
+  delegation is a ONE-pointer rule; a many-pointer field is `printAddress`-only
+  (`is_many` gate in `emitPtrValuePrint` + `printFmtPtrRouteOk`), so
+  `[*]S`/`[*]E`/`[*]TU`/`[*]U`/`[*]PS` fields reject `error[3063]` (Zig prints
+  the container-qualified `main.S@addr`) while `[*]i32` keeps `i32@addr`.
+- **Type-dependency fix (pre-existing ordering defect):** a pointer member's C
+  type IS its pointee's typedef (`*enum` → `E*`, `*fn` → the fn-pointer
+  typedef), but the topological sort had no edge, so a value-shared type could
+  be emitted before its pointee typedef (gcc `unknown type name`). `emitTypeDefOnce`
+  (the four sub-pass bodies factored into one gated/bare writer) plus
+  `emitTypeDeps`/`emitPointeeDep` now emit the referenced typedefs at the type's
+  own emission site (recursing through ptr chains, optional/slice/array/eu
+  payloads and fn; dedup via the pass's `seen` map, so a program whose order
+  already worked is untouched). `c89NeedsEmitEdge` additionally treats
+  `fn_type` as a value-embedding edge. **Task 8 (B3):** the walk's bail is the
+  single 16 pointer-chain cap (`depth > 8` before), aligned with the validator
+  and `zigPrintNameAppend`; pre-fix, a validator-accepted 10..14-wrapper chain
+  emitted rc=0 C that referenced an unemitted wrapper typedef (gcc
+  `unknown type name`). **Final-review Minor 3 correction:** beyond the print cap
+  the ARGUMENT rejects `error[3063]` (e.g. a 16-wrapper `*A16`); a chain beyond
+  the type resolver's own representation (a 17-wrapper declaration, pre-existing
+  cap) fails earlier — the declaration does not resolve and the identifier
+  reports `error[20] identifier '<name>' is not declared`, so no emission walk is
+  reached.
+- **Float `{x}`:** `Writer.zig:1572-1720` bit-for-bit (no precision option —
+  Z98 has none): sign bit then `nan`/`inf`, zero `0x0.0p0`, denormals (exponent
+  adjusted, no implicit bit), implicit-bit normalization, `mantissa_digits =
+  (fractional_bits + 3) / 4` (13 for f64, 6 for f32 with the extra `<< 1`
+  alignment), trailing-zero trim, `p` + decimal exponent. Emitted as static
+  helpers `z98_printFloatHex32/64` on demand (`collectPrintRoots` sets
+  `need_fhex32`/`need_fhex64`; `emitGeneratedPrinters` emits them before the
+  printers/function bodies). The exponent prints through the existing mangled
+  `std.fmt.printI32`. Verified against Zig 0.15.2 for `0x1.8p0`, `0x0.0p0`,
+  `-0x0.0p0`, `0x1p1`, `-0x1p1`, `1/3` (`0x1.5555555555555p-2`, f32
+  `0x1.99999ap-4`), `1e20`, a runtime-built denormal
+  (`0x0.00000000316a2p-1022`), f32 `1e20`/max, and `inf`/`nan`.
+  **Pre-existing literal residuals** (not the printer): Z98's float-literal
+  parser underflows `5e-324` to `0.0` and is 1-2 ULP off on `1e-310`; `@bitCast`
+  rejects an f64↔u64 pair — so the denormal fixture row is computed at runtime.
+
+**Bounded residuals (Task 6, Zig-accepted / pre-existing):** composite pointee
+names with a named aggregate (`*?S`, `**S`, `*?E`) reject `error[3063]`; a
+MANY-pointer field to a named aggregate/enum/tuple/packed (`[*]S`, `[*]E`, ...)
+rejects `error[3063]` (container-qualified `@typeName`; fix round 1 — only
+`[*] <exactly-nameable child>` prints `T@addr`); a one-pointer-to-array field
+rejects (slice residual); float-literal subnormals/ULP drift above;
+`*const fn(...)` (the double-pointer spelling) remains the pre-existing
+assignment anomaly.
+
+**Task 7 closeout (2026-09-25):** the z98-print-formatting program is complete
+(Tasks 1-6 landed, whole-set review done); the binding per-type route table and
+the consolidated bounded-residual list live in
+`docs/reference/Language_Spec_Z98.md` §4 "Formatted `print`". The dead
+`emitZigRuntimeC`/`emitZigPalC` string mirrors were removed from `c89_emit.zig`
+in the closeout cleanup commit (`emit_support.zig` is the only support-byte
+source; `check_emit_support.sh` stays 7/7).
 
 ---
 
-## 2. `cinclude.zig` — @cInclude Dedup (26 lines)
+## 2. `cinclude.zig` — @cInclude Dedup (32 lines)
 
 ### Function
 
-`cincludeUnionAll` (`cinclude.zig:7`):
+`cincludeUnionAll(module_reg, alloc)`:
 
 ```
 cincludeUnionAll(module_reg, alloc) → []u32:
-  1. temp = u32ArrayListInit(alloc)   ← result accumulator
-  2. seen = u32ToU32MapInit(alloc)    ← dedup tracker
-  3. For each module in module_reg:
+  1. temp = u32ArrayListInit(alloc)          ← result accumulator
+  2. hint = Σ module.c_includes.len          ← capacity hint
+  3. seen = u32ToU32MapInitCap(alloc, hint)  ← dedup tracker
+  4. For each module in moduleRegistryGetModules(module_reg):
      a. For each c_include name_id in module.c_includes:
         i. If seen[ name_id ] exists → skip duplicate
         ii. Else: seen[name_id] = 1, append name_id to temp
-  4. Return temp slice
+  5. Return temp slice
 ```
 
-This produces a flat deduplicated list of all `@cInclude` directives across all modules. Used by `emitModuleHeader` to emit `#include` lines per module — this applies to the stdout single-file path.
-[updated: 2026-08-01] In the multi-module path (§1.17), `emitModuleHeaderFile` does NOT use the
-global union — each module `.h` emits its own `entry.c_includes` directives directly (per-module
-`@cInclude`), so a directive only appears in the header of the module that declared it.
+This produces a flat deduplicated list of all `@cInclude` directives across all modules. Used by
+`emitModuleHeader` to emit `#include` lines for the stdout single-file path. In the multi-module
+path (§1.17), `emitModuleHeaderFile` does NOT use the global union — each module `.h` emits its
+own `c_includes` directives directly (per-module `@cInclude`), so a directive only appears in the
+header of the module that declared it.
 
 ### Struct — ModuleEntry Fields Touched
 
-From `module_registry.zig`: `ModuleEntry` contains `c_includes: U32ArrayList` — a list of interned name_ids for `@cInclude` strings.
+From `module_registry.zig`: `ModuleEntry` contains `c_includes: U32ArrayList` — a list of interned
+name_ids for `@cInclude` strings.
 
 ---
 
-## 3. `name_mangler.zig` — Minimal Counter (7 lines)
+## 3. `name_mangler.zig` — The minting authority [updated: 2026-10-12 — P1]
 
-The standalone `name_mangler.zig` file contains only:
-
-```
-pub const NameMangler = struct { counter: u32 };
-pub fn nameManglerInit() NameMangler { return .{ .counter = 0 }; }
-```
-
-**This file is NOT the primary mangler used by `c89_emit.zig`.** The actual `NameMangler` with hash/cache/keyword handling is defined inline in `c89_emit.zig:83-90`. The standalone file appears to be a separate or deprecated implementation. See §1.3 above for the actual mangler.
+Revived (P1) as the **single C-identifier minter**. Contains the `NameMangler` struct and every
+mint helper (moved verbatim from `c89_emit.zig` where they previously lived): `nameManglerInit`,
+`nameManglerMangle`, `nameManglerMangleGlobal`, `writeHex`, `isTempOrBuiltin`, `isC89Keyword`,
+`mangleC89Keyword`, `nameManglerPopulateKeywords`, plus the per-kind mint API of §1.3
+(`nameManglerMintLocal`/`MintField`/`MintMember`/`MintTemp`/`MintSyntheticType`/`MintIndexName`/
+`MintModuleStem`, `nameManglerFnScope`). The emitter's `c89_emit.zig` keeps 4 thin `pub`
+forwarders (`NameMangler`, `nameManglerInit`, `nameManglerMangle`, `nameManglerMangleGlobal`) as
+its external compatibility surface and calls `nm_mod.*` at every mint site; no minting logic
+remains in the emitter (Fix round 1 truth-up: the `.undefined_const` array-of-struct zeroing path
+`emitFlagOp` had 4 raw `stringInternerGet(sfe.name_id)` struct-field reads — routed through
+`nameManglerMintField(mangler, sfe.name_id, uap.elem)`; post-fix the only raw name reads left in
+the emitter are printer DISPLAY labels (`std_print` string literals, source names by design),
+prefixed macro composites (`zTU_*`, enum/error tag macros — keyword-safe by construction), and the
+`is_extern` source-name overrides (hard boundary) — none of which mint a listed-category C
+identifier). Consumable from outside the emitter (P6 lowerer). The dead 7-line counter
+stub this file used to be is gone. See §1.3.
 
 ---
 
 ## 4. Data Flow
 
 ```
-LirFunction list (per module)
+Function-slot list (per module, spill-backed)
     │
     ▼
-emitModule(c89_emit.zig:2201)
+emitModule(...)
     │
-    ├─ pointer_only_map populated from caller-provided ids
+    ├─ classification maps (pointer_only_map/needs_def_map/shared_set) loaded at c89EmitterInit (P4)
+    ├─ tstTopologicalSort (Kahn) ← TypeRegistry (edges from type_registry.typeRefs, P2)
+    ├─ emitErrorCodePrologue
     │
     ├─ emitSpecialTypes (type headers, topological order)
-    │   ├─ tstTopologicalSort (Kahn) ← TypeRegistry
     │   ├─ Forward decls (typedef struct X X;)
     │   ├─ Pointer-only type definitions
     │   └─ Value-embedding type definitions
@@ -999,11 +1369,14 @@ emitModule(c89_emit.zig:2201)
     ├─ emitModuleHeader (includes + fn forward decls)
     │   └─ cincludeUnionAll → deduped #include lines
     │
+    ├─ emitGlobalDecls (storage globals)
+    │
     ├─ For each function:
+    │   ├─ lirOptRun (LIR optimization pass)
     │   ├─ emitFunctionSignature → "return-type name(params) {"
-    │   ├─ emitHoistedDecls → local temp variables
+    │   ├─ emitHoistedDecls → local temp variables (+DCE/nest/poison)
     │   └─ emitFunctionBody:
-    │       ├─ decl_local hoisting (dedup)
+    │       ├─ decl_local hoisting (dedup, dead-name skip)
     │       └─ Basic blocks w/ emitInst
     │
     └─ emitModuleFooter → "/* EOF */\n"
@@ -1016,7 +1389,12 @@ emitModule(c89_emit.zig:2201)
 
 | Arena | Usage |
 |-------|-------|
-| Scratch (reset per phase) | `C89Emitter` struct, `NameMangler` hash maps (cache, keyword_set, collision maps), template arrays (dedup_names[128], fl_name_ids[128], fl_temps[128]), type propagation arrays (d4_wtype, d4_wflag, d4_t2p) |
+| Scratch (`alloc`, reset per function) | Type-propagation arrays (`d4_wtype`, `d4_wflag`, `d4_t2p`, `t2pos`, `t2pos_conc`, `d4_dead`, `d4_local`, `d4_nodecl`, `d4_lread`), block-label flags (`bb_used`), nesting array (`nest_inl`), per-function DCE maps |
+| Persistent (`persist_alloc`) | `C89Emitter` maps (`emitted_type_set`, `fwd_decl_set`, `reachable`, `temp_global_map`, `ts_ref_set`), `NameMangler` maps (cache, keyword_set, collision maps), `dedup_names`, `fl_name_ids`, `fl_temps` |
+| Permanent (`permanent`) | **P4:** the classification maps (`pointer_only_map`, `needs_def_map`, `shared_set`) — allocated by `classifyTypeEmissionGroups`, loaded into the emitter at `c89EmitterInit` |
+
+The multi-module path additionally writes into `DIR` via a per-file `BufferedWriter` plus the
+`emit_support.zig` support files and companion build scripts (§6).
 
 ---
 
@@ -1067,281 +1445,186 @@ Markers `P0:`-`P3:`, `D4:`, `D7:`, `D9:`, `HTT:` show the type resolution for ea
 
 ---
 
-## 6. Empirical Deep-Dive: 4 Working Examples (P8)
+## 6. `emit_support.zig` — Self-Contained Output Support
 
-> Evidence methods: `[c89]` = direct inspection of the emitted C (`/tmp/dd/*.c`),
-> `[markers]` = P0 `--markers` traces (`/tmp/dd/*.mrk`), `[source]` = `c89_emit.zig` /
-> `main.zig` / `cinclude.zig`, `[fnv]` = independent FNV-1a recomputation.
-> Examples: `examples/z98/{mud_server,game_of_life,json_parser,lisp_interpreter_curr}/main.zig`.
-> All 4 emitted files gcc-compile to executables (P0 gate), so the observed orders are
-> compilation-valid.
+`emit_support.zig` is the hand-written support-file emitter for the C89 backend. It holds
+the canonical bytes of the compiler's runtime/platform support files as Z98 string
+constants and writes them into the user's output directory, so the emitted tree is
+self-contained (`-I .` + compiling every emitted `.c`). The canonical single sources of
+truth on disk are `sf/src/include/zig_compat.h`, `zig_runtime.h`, `net_prelude.h`,
+`std_os_prelude.h`, `std_time_prelude.h`, `zig_runtime.c`, `zig_pal.c`, and
+`sf/src/c_exit.c`; `scripts/check_emit_support.sh` asserts emitted == canonical
+byte-for-byte.
 
-### 6.1 Type Header Emission Order (Q1)
+| Function | Writes |
+|----------|--------|
+| `emitZigCompatHSupport` | `zig_compat.h` (C89 compat typedefs incl. FX14 `Z98_ALIGN8` on `z64`/`zu64`/`f64`, `bool`, `NULL`, `Z98_STDCALL`) |
+| `emitNetPreludeHSupport` | `net_prelude.h` (target-neutral Winsock/libc net include prelude + `_os` aliases) |
+| `emitStdOsPreludeHSupport` | `std_os_prelude.h` (target-neutral OS include prelude) |
+| `emitStdTimePreludeHSupport` | `std_time_prelude.h` (target-neutral time include prelude + monotonic probe) |
+| `emitCExitCSupport` | `c_exit.c` (`void c_exit(int)`) |
+| `emitZigRuntimeHSupport(writer, safe_checks)` | `zig_runtime.h` (PAL/print/checked-cast declarations; `-fsafe` adds poison + overflow/checked-cast helpers) |
+| `emitZigRuntimeCSupport(writer, safe_checks)` | `zig_runtime.c` (runtime bodies; `-fsafe` adds `zig_poison_fill`) |
+| `emitZigPalCSupport` | `zig_pal.c` (PAL: file I/O, printing, `pal_trap`, `pal_i64_to_str`/`pal_u64_to_str`/`pal_f64_to_str`, `pal_get_default_lib_path`) |
 
-The emitted typedef sequence IS the Kahn sort order: both sub-passes iterate the same
-`sorted = tstTopologicalSort(reg)` array (`[source]` `c89_emit.zig:959`, called at `:2206`;
-pass 2a `:1256`, pass 2b `:1297`), deduped via `emitted_type_set`. Forward declarations for every named
-struct/tagged_union/union are emitted first (`[source]` `c89_emit.zig:1233-1255`; `[c89]`
-mud_server.c:3-6, game_of_life.c:3-4, json_parser.c:3-5, lisp_interpreter_curr.c:3-8).
+`emitSupportFiles` (`c89_emit.zig`) drives the writes through `openSupportOutputFile`
+(fixed 512-byte path buffer; `error: output filename too long` + exit on overflow,
+`error: cannot open output file` on open failure). It always writes `zig_compat.h`,
+`zig_runtime.h`, `zig_runtime.c`, `zig_pal.c`, and `c_exit.c`. The three preludes are
+**conditionally emitted**: `net_prelude.h` only when some reachable module's
+`c_includes` names `<net_prelude.h>` (`scriptNetEmitted`), and likewise
+`std_os_prelude.h` / `std_time_prelude.h` via `scriptStdOsEmitted` / `scriptStdTimeEmitted`.
+Self-contained output means present iff referenced, so a stdio-only program carries no
+net/OS/time prelude and needs no winsock link.
 
-Observed definition order per example (first→last) `[c89]` + `[markers]` (E2A/E2B type-id
-sequence, exactly the `sorted` order):
+The `emitZigRuntimeC`/`emitZigPalC` dead stale mirrors were **removed** from
+`c89_emit.zig` at the print-formatting plan closeout (Task 7, 2026-09-25); the live
+bytes come from `emit_support.zig` only.
 
-| Example | Type definition order (as emitted) |
-|---------|-----------------------------------|
-| mud_server | i64, u64, Command (tagged_union), Arr_u32[128], Arr_u8[256], Slice_u8, Opt_41, EU_1, Room, plat_fd_set, Player, Arr_Player[10], Arr_Room[2] |
-| game_of_life | i64, u64, Cell (tagged_union), Point, Slice_Cell, Slice_Point, EU_1, Arr_Cell[800], Arr_Point[3], Arr_Point[4], Arr_Point[6], Arr_Point[9] |
-| json_parser | i64, u64, FileError, ParseError, Slice_u8, Opt_29, Slice_JsonValue, Slice_JsonItem, Opt_33, Opt_34, EU_1, EU_92, Parser, JsonItem, JsonValue, EU_45, Slice_c_char, Arr_u8[64], EU_52 |
-| lisp_interpreter_curr | i64, u64, Sand, LispError, Slice_u8, anon_3546 (Cons), Opt_41, Arr_u64[131072], EU_63, EU_93, EU_7, EU_14, Slice_*Value, FP fn-ptr, Token, Tokenizer, EnvNode, EU_24, Arr_char[2], Arr_u8[4096], Arr_u8[1], Value, EU_23 |
+### 6.1 Companion build scripts
 
-**Is it topological? YES.** Every type embedding another by value is emitted after the
-embedded type `[c89]`:
-- mud: Room→Slice_u8, plat_fd_set→Arr_u32[128], Player→Arr_u8[256], Arr_Player[10]→Player, Arr_Room[2]→Room.
-- json: Parser→Slice_u8; JsonItem→Slice_JsonItem; JsonValue→Slice_JsonValue/Slice_JsonItem; EU_52 (payload by value)→JsonValue.
-- lisp: Value→anon_3546 (Cons embedded by value, lisp_interpreter_curr.c:92 vs :41); EU_23 (Token by value)→Token.
-- Pointers to not-yet-defined structs are fine (incomplete type in C): e.g. json Opt_29 uses
-  `zT_E9CE9840_JsonValue*` with only the fwd decl visible (json_parser.c:24 vs :46).
+`emitBuildScripts` writes companion build scripts into the output dir, enumerating the
+compiler-known emitted `.c` set (reachable module stems first, runtime sources
+`zig_runtime.c`/`zig_pal.c`/`c_exit.c` last — deterministic link order) and passing
+`-I .`. `build_target.sh` is emitted always; `build_target.bat` (MSVC `cl`) and
+`build_owc.bat` (OpenWatcom `wcc386`/`wlink`) only when the target is Windows. Each adds
+the winsock library (`-lwsock32` / `wsock32.lib` / `library wsock32`) **iff** a
+`net_prelude.h` c-include was emitted. The scripts carry a warning policy comment (no
+warnings-as-errors in `build_target.sh`; `/WX` and `/we` documented as removable in the
+MSVC/OW scripts). The `emitBuildTarget*` functions are now live (previously dead
+templates); `emitBuildScripts` is invoked from `phase_C89Emission`.
 
-Sub-pass markers fire even for types that emit nothing `[markers]` (dedup or no-op branch):
-mud `E2B:t61` (array, no visible typedef — no `ET:`), mud `E2B:t63` (ptr → no `ET:`),
-gol `E2B:t46..t52` (slices/tuples/ptrs → no visible typedef; the arrays t41-45 in the same
-pass DO emit). The C-visible typedef set is a strict subset of the sorted iteration.
+**Windows target profile ([updated: 2026-10-18 — M6 T5.2]):** `emitBuildScripts` takes a
+`WinProfile` (`.win9x` default or `.nt`) from `cli.target_win_profile` and forwards it to all
+three `emitBuildTarget*` writers. `.win9x` emits **no** profile define, so the build scripts are
+byte-identical to pre-T5.2 output. `.nt` adds `-DZIG_WIN_NT` to the gcc/mingw `CFLAGS` in
+`build_target.sh`, `/DZIG_WIN_NT` to the MSVC `cl` `CFLAGS` in `build_target.bat`, and
+`/dZIG_WIN_NT` to every OpenWatcom `wcc386` command in `build_owc.bat`. T5.2 adds no
+`ZIG_NO_CRT`, `-nostdlib`, or new library selection; T5.3 owns those no-CRT/link changes.
 
-The sorted tail resolves aggregates LAST (mud `…, 26 Command, 25 Room, 23 plat_fd_set,
-24 Player, 62 Arr_Player, 47 Arr_Room, 61 dup`), consistent with P3's documented Kahn
-dynamics (degenerate from=0 edge set). This tail is NOT contiguous in the marker stream:
-`[markers]` `E2A: … t26 … t60, t25` (pointer-only pass) then `E2B:t63, t23, t24, t62, t47, t61`
-(value-embedding pass). `E2A:t25k25` / `E2B:t23k25n43` confirm the
-sub-pass split matches the `pointer_only` classification from P3.
+### 6.2 Module pruning in emission
 
-### 6.2 Mangled Function Names & 31-char Limit (Q2)
+`phase_C89Emission` computes a **value-reference reachability set** (`emitter.reachable`,
+`emitter.prune_active`) from the root module: module-level LIR value references
+(`call`/`call_direct`/`tail_call`/`func_ref`/`load_global`/`store_global` owning modules),
+runtime-init roots, and by-value global type owners — not mere `@import`/re-export edges.
+Only reachable modules are emitted (`.c`/`.h`) and listed by the build scripts; a module
+header includes the headers of every module it value-references (the cross-module mangled
+prototype lives only in the callee's header) unioned with surviving import edges.
+`emitModuleInitCalls` also skips unreachable modules. This is what lets a stdio-only
+`@import("std")` program emit no `std_net` and link without `-lwsock32`.
 
-`zF_<8-hex>_<name>` for all non-extern functions `[c89]` (fwd-decl section of each `.c`).
-5 key functions per example:
+**[updated: 2026-10-17 — D2 root fix (T3; the module-reachability closure in `sf/src/main.zig`)]:** the runtime-init root edge is no longer force-seeded for every module with a runtime-initialized global — that seed pinned comptime-dead modules alive (their platform-only `@cInclude` then broke the other toolchain: the D2 defect). The root edge is added only for ALREADY-reachable modules (exactly the set whose `__module_init` the synthesized wrapper emits — the `prune_active` gate), so live modules keep their root-header includes byte-for-byte and a module nothing calls or references is dropped whole. The all-fn LIR scan (`call_direct`/`tail_call`/`func_ref`/`load_global`/`store_global`) and the type-owner edges (`pruneTypeMarkByValue` — a by-value-named type pins its OWNER module; a cross-module `E!T` name is the measured D2 pin channel) are unchanged and load-bearing: modules are emitted atomically with all their lowered functions, so never-called fns' call/type edges must still be honored for link/compile correctness. Together with T3's sema fold (doc 05) and T4's dead-arm lazy `@import` (docs 00/01), a comptime-dead arm can neither load nor pin a wrong-target module. Fix commit `58c4cb1c`; fixtures `iswindows_deadarm_*` green (wrong-platform module absent on both `-osw` and `-osl`).]
 
-| Example | Mangled names |
-|---------|---------------|
-| mud_server | `zF_00BC8D75_initRooms`, `zF_59D9CF45_parseCommand`, `zF_EA90E208_main`, `zF_E7D5C1AB_processCommand`, `zF_649527FD_eql` |
-| game_of_life | `zF_071EEE2B_setPattern`, `zF_EA90E208_main`, `zF_540CA757_get`, `zF_C6270703_set`, `zF_3313BBE7_countNeighbors` |
-| json_parser | `zF_209CECBA_printSlice`, `zF_67463B19_printValue`, `zF_5B859C63_readFile`, `zF_C0DEFC8E_parseJson`, `zF_12860F5B_parseObject` |
-| lisp_interpreter_curr | `zF_EA90E208_main`, `zF_08D22E0F_eval`, `zF_24BC4A3B_apply`, `zF_9C1A101A_parse_expr`, `zF_0A23CE02_next_token` |
+### 6.3 Emission-core compaction
 
-- **FNV-1a confirmed `[fnv]`**: independent recomputation (offset `0x811C9DC5`, prime
-  `0x01000193`) of all 48 unique function names across the 4 examples matches every emitted
-  hash exactly (e.g. `main`→`EA90E208` in all 4, `eval`→`08D22E0F`, `apply`→`24BC4A3B`,
-  `parserSkipWhitespace`→`2C9F470C`). `[source]` `c89_emit.zig:387`.
-- **31-char limit — exactly ONE hit across all 4 examples** `[c89]`:
-  `zF_2C9F470C_parserSkipWhitespac` (json_parser) = 31 chars (name "parserSkipWhitespace"
-  truncated 20→19; json_parser.c:76 fwd, :1040 def, call sites :1249/:1347). Truncation loop
-  `[source]` `c89_emit.zig:401-405` (copy while `p < 31`). Longest other name: 26 chars.
-- **Collision resolution unexercised**: no `_N`-suffixed mangled names in any output
-  (`[c89]` grep for `zF_<hash>_name_N`; the `EU_<n>`/`Opt_<n>`/`Arr_<n>` suffixes are the
-  type-scheme, not collision suffixes). `[source]` collision loop `c89_emit.zig:410-450`.
-- **Caveat**: error-set members emit as `#define zT_<hash>_<Set>_<Member> <N>` macros whose
-  names exceed 31 chars — `zT_91ED3DBA_ParseError_ExpectedCommaOrEnd` (41, json_parser.c:20),
-  `zT_45176AD9_LispError_UnexpectedRParen` (38, lisp:18). Macros compile fine under
-  `gcc -std=c89` (no `-pedantic`); the 31-char mangler limit applies to identifiers, not these
-  `#define` names.
+Per function, `emitModule`/`emitModuleFile` run `lirOptRun` (the LIR optimization pass: copy
+propagation, local const-fold, expression-nesting metadata) before emission. The duplicate
+named-local store collapse and copy coalescing from the emission-core-compaction plan land at
+their lowering source sites (the emitter stays a dumb printer); the emitter-side compaction is:
 
-### 6.3 @cInclude Lists & Dedup (Q3)
+- **Dead-temp DCE** — `dceResultPos`/`dceMarkAllReads`/`dceMarkAllWritten` mark unread
+  results; `emitter.d4_dead` suppresses their declarations and defs.
+- **Expression nesting/coalescing** — `emitValueExpr`/`nestEmitDefRvalue` inline a
+  single-use producer's rvalue into its consumer and suppress the temp decl/def
+  (`nest_ok`/`nest_inl`, capped at `kEmitNestDepthCap = 32`).
+- **Unused block-label pruning** — only blocks targeted by `jump`/`branch`/`switch_br`
+  get a `z_bb_<id>:` label (`bb_used`/`bb_used_count`).
+- **Dead local/name skip** — `isDeadLocalName` drops locals never read; a store to a dead
+  name emits `(void)src;`.
+- **Unused-parameter `(void)name;`** suppression for locals not otherwise used.
 
-`cincludeUnionAll` (`cinclude.zig:7-26`, called at `main.zig:832`) dedups by interned name_id
-across ALL modules; `emitModuleHeader` emits `zig_compat.h` + `zig_special_types.h` then the
-deduped list (`[source]` `c89_emit.zig:1996-2013`). `<...>` form emitted raw, `"..."` quoted
-(`:2006-2013`).
+### 6.4 Packed, int-width, `volatile`, and calling-convention emission
 
-| Example | @cInclude directives (by module) | Emitted module-header includes | Dedup |
-|---------|----------------------------------|-------------------------------|-------|
-| mud_server | main.zig:4 zig_runtime.h, :5 net_runtime.h; std_debug.zig:1 zig_runtime.h (dup) | `zig_runtime.h` + `net_runtime.h` (mud_server.c:47-48) | **exercised** — 3 directives → 2 lines |
-| game_of_life | main.zig:3 zig_runtime.h, :4 `<stdlib.h>`; std_debug.zig:1 zig_runtime.h (dup) | `zig_runtime.h` + `<stdlib.h>` (gol.c:30-31) | **exercised** |
-| json_parser | main.zig:4-6 zig_runtime.h, `<stdio.h>`, `<stdlib.h>`; file.zig:1-2 `<stdio.h>`, `<stdlib.h>` (dups) | `zig_runtime.h` + `<stdio.h>` + `<stdlib.h>` (json.c:64-66) | **exercised** — 5 directives → 3 lines |
-| lisp_interpreter_curr | main.zig:11-12 zig_runtime.h, `<stdio.h>` | `zig_runtime.h` + `<stdio.h>` (lisp:100-101) | no dups |
+- **Packed struct/union** — `typeRegistryIsPacked` types emit as a byte carrier
+  `typedef struct { unsigned char _[N]; } <cname>;` (native C struct-by-value for
+  param/return/assign/array/global); field access emits shift/mask via
+  `emitPackedLoadBitfield`/`emitPackedStoreBitfield` (`bfByteRefWrite`). `packed_union`
+  is a distinct `TypeKind` sharing the carrier shape (untagged, members at bit 0).
+- **Arbitrary-width ints/enums** — `arb_uint_type`/`arb_int_type` map to a fixed C carrier
+  by `size` (`unsigned char`/`short`/`int`/`unsigned long long`), and `enum(uN)` emits its
+  backing carrier plus `#define` members. `width_wrap` masks/sign-extends to the declared
+  width; `int_cast_checked` emits `zig_cast_checked_s/u`.
+- **`volatile`** — carried on the pointer `Type.flags` bit; `getCTypeName` emits the
+  pointee-qualified form (`volatile T *`), and `T * volatile` for pointer-to-pointer.
+- **Calling convention** — `emitCallConv` writes `Z98_STDCALL ` before a `stdcall` extern
+  signature and forward declaration; `emitFnPtrType` emits the `Z98_STDCALL` fn-pointer
+  typedef (`FS_...`); `emitCalleeExpr` casts a stdcall callee at the use site to that
+  typedef (the OS header stays the sole declaration source). `Z98_STDCALL` is defined in
+  `zig_compat.h`. Unknown conventions are `error[3045]`; variadic `stdcall` is
+  `error[3012]`; both are frontend rejects (0 `.c`).
 
-**Observation**: `zig_compat.h` and `zig_runtime.h` appear TWICE in every output — once in the
-fixed `emitIncludes` preamble (`c89_emit.zig:744`, flushed from `main.zig:829-830`) and
-once in the module header (`[c89]` mud_server.c:1-2 vs :45-48). Dedup applies only WITHIN the
-collected `@cInclude` list, not against the preamble — benign (include guards), undocumented
-elsewhere.
+### 6.5 C89-ahead guard emission (`-fsafe` / `-ffast`)
 
-### 6.4 Function Body Emission Order (Q4)
+`C89Emitter.safe_checks` is set from the CLI. Under `-fsafe` (default), `zig_runtime.h`
+and `zig_runtime.c` gain the poison/overflow/checked-cast helpers, and the emitter maps
+the safety LIR ops to them:
 
-Emission iterates `fns` in list order, skipping externs (`[source]` `c89_emit.zig:1607-1611`).
-The list is built in module-registration order × source decl order (`[source]` `main.zig:543-615`:
-per module, per top-level `fn_decl`, `lowerFn` appended to `ctx.lir_fns`). Therefore
-**emission order == LIR function order == source declaration order**.
+- `poison_init` / `lir_fn.poison_uninit` → `zig_poison_fill((void*)&zT_N, sizeof zT_N);`
+  (byte-exact `0xAA` fill for `undefined`); `-ffast` keeps deterministic zeroing.
+- `add_with_overflow`/`sub_with_overflow`/`mul_with_overflow`/`shl_with_overflow` →
+  `zig_wrap_<op>_<s|u>(...)`; `neg_with_overflow` → `zig_wrap_neg_<s|u>`.
+- `overflow_flag` → `zig_overflow_flag_<op>_<s|u>(...)`.
+- `int_cast_checked` → `zig_cast_checked_s`/`zig_cast_checked_u` (width/sign aware).
 
-| Example | Emitted fn order (first→last) `[c89]` |
-|---------|--------------------------------------|
-| mud_server | initRooms, parseCommand, main, processCommand, eql (util.zig), copy (util.zig), print (std_debug.zig) |
-| game_of_life | setPattern, main, get, set, countNeighbors, print, printInt (std_debug.zig) |
-| json_parser | printSlice, printIndent, printValue, main, readFile (file.zig), parserPeek, parserAdvance, parserSkipWhitespace, parserExpect, parseJson, parseValue, parseNull, parseBoolean, parseString, parseNumber, isDigit, parseFloat, parseArray, parseObject (json.zig) |
-| lisp_interpreter_curr | print_str, print_value, print_list, read_line, main (main.zig), sand_init, sand_alloc, sand_reset (sand.zig), alloc_value … alloc_builtin (value.zig), is_whitespace, is_digit, skip_whitespace, next_token, peek_token, parse_int_simple (token.zig), parse_expr, parse_list (parser.zig), env_find_node, env_lookup, env_extend (env.zig), eval, env_to_value, apply, value_to_env_real (eval.zig), builtin_cons … builtin_gt (builtins.zig), mem_eql, parse_int, points_to_arena (util.zig), deep_copy (deep_copy.zig) |
+All helpers are header-`static` so every emitted TU is self-sufficient; `-ffast` output
+is byte-unchanged (the helpers are omitted). The remaining `-fsafe` guards (division by
+zero, shift count, null-unwrap, index bounds) are lowered to `pal_trap()` checks; `-ffast`
+emits the unchecked form.
 
-Module order == import/registration order: mud main→util→std_debug; gol main→std→std_debug;
-json main→file→json (arena.zig is never imported → its `alloc_bytes` is absent from the
-output; json uses extern `arena_alloc_default`, json.zig:253); lisp main→sand→value→token→
-parser→env→eval→builtins→util→deep_copy (matches main.zig:1-9 import order). Each fn def is
-preceded by a `/* original-name */` comment (`[source]` `c89_emit.zig:1464-1468`), which makes
-the order directly readable from the `.c`.
+### 6.6 Self-contained f64 formatting
 
-Count check: emitted bodies 7/7/19/45; P7 LIR totals 20/11/48/32 include the externs
-(mud 13 extern + 7; gol 4 + 7; json 13 + 19; lisp 3 + 45). These counts exclude the
-`int main(void)` wrapper (mud:1198, gol:1188, json:697, lisp:2109), emitted last in each
-file immediately after the mangled `main` body (8/8/20/46 incl. wrapper).
+Floating-point formatting avoids the host `printf`: float literals emit via
+`formatF64` (`util/format.zig`, a Z98 implementation), and runtime
+`std.fmt.printF64` (`sf/src/std_fmt.zig`, Task 1) uses `pal_f64_to_str`
+(integer part via `pal_i64_to_str`, up to 6 fractional digits, trailing zeros
+trimmed) in `zig_pal.c`. Both are part of the emitted self-contained set. Before
+Task 1 the printer body lived in the C runtime as `std_print_f64`.
 
-### 6.5 2-Phase Output Confirmation (Q5)
+Task 2 added the integral-value omission to `pal_f64_to_str` (both lockstep
+copies): when `(f64)(i64)value == value`, the `'.'` + fraction is not emitted
+(`7.0` → `7`, `100.0` → `100`, `0.0` → `0`), matching Zig. **Operator-ruled
+bounded residuals (Q2, unchanged):** the non-integral path is still the 6-digit
+truncating loop (`1.0/3.0` → `0.333333`, Zig `0.3333333333333333`); `1e20` hits
+the `(i64)` cast UB and prints `-9223372036854775808…` (Zig
+`100000000000000000000`); `-0.0` prints `0` (Zig `-0`). Full shortest-form
+decimal is not implemented.
 
-**Type definitions precede ANY function body** — guaranteed structurally (`emitSpecialTypes`
-before the fn loop, `[source]` `c89_emit.zig:1605-1611`) and observed in all 4 outputs `[c89]`:
+---
 
-| Example | typedefs end | first fn def |
-|----------|--------------|--------------|
-| mud_server | :43 | :59 |
-| game_of_life | :26 | :42 |
-| json_parser | :60 | :89 |
-| lisp_interpreter_curr | :96 | :150 |
+## 7. Removed: `@socket*` builtin emission (netbind S3)
 
-Marker sequence `[markers]`: `C` (main.zig:710) → `FL:p49`/`FE:p0` (preamble flush, main.zig:829-830)
-→ `E2A:`/`E2B:` type passes → fwd-decl/fn-body markers → `FINAL_FLUSH` (main.zig:834; exactly 1
-per trace). The preamble is a SEPARATE `BufferedWriter` (`cwriter`, main.zig:827-830) flushed
-before `emitModule`; the module name is hardcoded `"output"` (main.zig:731) — hence
-`/* Module: output */` in every file.
+The 11 `@socket*` networking builtins (`socketCreate`/`socketBindListen`/`socketAccept`/
+`socketConnect`/`socketSend`/`socketRecv`/`socketSelect`/`socketFdZero`/`socketFdSet`/
+`socketFdIsset`/`socketClose`) and their inline C-emission ports were **REMOVED**
+(netbind S3, 2026-09-04): the emitter's net-gated include block and the per-builtin
+`#ifdef _WIN32 / #else` bodies (helpers `emitSocketCreate`/`emitSocketSelect`/
+`emitSocketClose`/`emitSocketWrite`/`emitSocketOptPtrValue`) are deleted. A direct
+`@socket*` caller now fails `error[3000]: unsupported builtin function` (rc=2, 0 `.c`);
+`repro/mi_matrix/net_builtin_test` is the green negative probe.
 
-### 6.6 extern "c" Functions (Q6, mud_server)
+Networking is now the **std_net extern surface**: target-selected `extern "c"` bindings
+(wsock32/libc) under `@cInclude("<net_prelude.h>")`, WSAStartup init in `std_net.init()`,
+and the `createTcpClient` factory — see `sf/src/std_net.zig` and the QUICK_REF
+"Post-netbind baseline". `emitBuiltinIncludes` now covers only stdio/exit/sleep/console
+gating; there is no socket emission path in `c89_emit.zig`.
 
-extern "c" socket functions are emitted as **bare, unmangled C calls with NO declarations in
-the output** (grep `extern` → 0 hits in mud_server.c `[c89]`). Prototypes come from the
-`@cInclude`d `net_runtime.h` (net_runtime.h:6-17). Examples: `zT_0 = plat_socket_init();`
-(mud_server.c:553), `zT_8 = plat_create_tcp_server(zT_6);` (:567),
-`zT_97 = plat_accept(zT_96);` (:798), `zT_159 = plat_socket_fd_isset(zT_153, zT_154);` (:954),
-`plat_close_socket(zT_145);` (:926).
+---
 
-Mechanism `[source]`: signature uses original name if `is_extern` (`c89_emit.zig:1885`, in
-`emitFunctionSignature` :1875); externs get no fwd decl (the `emitFunctionForwardDecl` caller
-guards on `is_extern == 0`, :2177/:2324) and no body (`if (func.is_extern == 0)` :2370);
-call sites use the original name
-(`:4733`). **[F3 line-ref pass 2026-08-13: extern mechanism refs corrected — :1864→:1885,
-:1927→:2177/:2324, :2333→:2370, :4048→:4733.]**
-Discarded extern results: `_ = plat_send(...)` → `zT_126 = plat_send(...);
-(void)zT_126;` (mud_server.c:883-884, matches `.store_local` `_`→`(void)val;`).
+## 8. Opt-in debug-map emission (`-d` / `--debug`) [added: 2026-10-24 — P3-M1/M4]
 
-**Extern-return wrapping unexercised**: every extern in the 4 examples returns plain i32/void,
-so the `need_wrap` branch (`c89_emit.zig:3150-3165`) never fires. The only optional-wrapping in
-mud is the non-extern `wrap_optional`+`unwrap_optional_abi` for `plat_socket_select`'s `?*u8`
-arg: `zT_75.has_value = 1; zT_75.value = zT_74;` then `zT_76 = zT_75.has_value ? zT_75.value :
-NULL;` (mud_server.c:707-715).
+`-d` is a compiler-development switch. It does **not** change emitted C: the
+emitter's debug pointers (`debug_map`, `debug_store`, `debug_symbols`) default
+null and every hook returns immediately when they are null (no allocation, no
+scan). With `-d`, `phase_C89Emission` opens `<root-stem>.z98dbg.{syms,lines,cnames}`
+in the `--output-dir` and `debugMapAddSpanRun` / `debugMapEmitInst` record the
+source-to-emitted-C line runs plus the symbol and c-name tables
+(`sf/src/debug_map.zig`, `debug_map.DebugMapWriter`). The map is committed next
+to the root module's C stem and honours `--output-dir`; `-d` without an output
+directory is a clean `rc=2` error with no C and no map (operator ruling A).
 
-### 6.7 Instruction Emission vs Actual C89 (Q7)
-
-The §1.9 table matches the actual output for load/store/call (verified against `[source]`
-lines and `[c89]`):
-
-| Inst | Source pattern | Emitted C evidence |
-|------|----------------|--------------------|
-| `.load` | `result = *ptr;` (`:2768`) | lisp:6177 `zT_5 = *fun;`, :5646 `zT_390 = *zT_389;`, :5657 `zT_434 = *zT_433;` |
-| `.store` | `*ptr = val;` (`:2780`) | lisp:2322 `*v = zT_8;`, :5033 `*curr_env = zT_172;`, :5079 `*slot = zT_194;` |
-| `.call` (indirect) | `result = callee(args...);` (`:3103`) | lisp:6198 `zT_12 = f(zT_10, zT_11);` — the ONLY fn-ptr call in all 4 (apply→builtin); counts 0/0/0/1 |
-| `.call_direct` | `result = fn(args...);` (`:3129`, unmangled extern `:3142`) | mud:553 `zT_0 = plat_socket_init();`, :173 `zT_6 = zF_649527FD_eql(zT_1, zT_2);`; MARKER_CALL comments 28/19/127/166 |
-| `.load_index` | `result = base[idx];` (`:2764`) | gol:1232 `zT_15 = zT_11[zT_14];` |
-| `.assign_index` | `base[idx] = src;` (`:2370`) | gol:645 `zT_85[zT_89] = zT_86;` (+23 more) |
-| `.assign` array copy | `{ unsigned int _i=0; while(_i<N){ dst[_i]=src[_i]; _i++; } }` (`:2284`) | gol:490-496 `grid[_i] = zT_1[_i];` |
-| `.undefined_const` tagged-union array | `[_i].tag = 0;` (`:3029`) | gol:482-488 `zT_1[_i].tag = 0;` |
-| `.branch` | `if (c) goto A; else goto B;` (`:2398`) | lisp:6446 `if (zT_75) goto z_bb_38; else goto z_bb_39;` |
-| `.store_local` `_` | `(void)val;` (`:2481`) | gol:908 `(void)zT_243;`, mud:884 `(void)zT_126;` |
-
-Also observed live: `.switch_br` (lisp:6180-6184 `switch (zT_6) { case 5: goto z_bb_1; … }`),
-`.ptr_cast` (lisp:6188 `zT_9 = (zT_E323FAA2_FP_zT_4D8485C8_EU_9)f_ptr;`), tagged-union
-`.load_field` (lisp:6179 `zT_6 = zT_5.tag;`, :6187 `f_ptr = zT_5.payload.Builtin._0;`).
-
-**In-output debug comments**: the emitter writes `/*==MARKER_CALL n=<id> m=<mod>==*/`
-(`c89_emit.zig:3130-3139`), `/*==MARKER_ASSIGN dst=<n> src=<n>==*/`, `/*==LF:f0 b5==*/` and
-similar comment markers INTO the emitted C (200 in mud_server.c `[c89]`). These are gated on
-`pal.isMarkersEnabled()` (controlled by `--markers` CLI flag) and are distinct from the stderr
-`I`/`BIN:`/… markers in §1.16. Without `--markers`, zero MARKER_ comments appear in C89 output.
-[updated: 2026-07-31] The `I` marker (per-instruction, `c89_emit.zig:2273`) appears throughout fn-body
-emission — a "stray I\n late in the trace" is this documented marker, not a separate artifact.
-
-### 6.8 Gaps & Unexercised Paths Found
-
-- **Tagged unions: only the integer-tagged path is exercised.** All 5 tagged unions in the
-  corpus (mud Command, gol Cell, json JsonValue, lisp Value/Token) emit
-  `unsigned int tag;` + per-field `#define <name>_<field> <idx>` (`[source]` `c89_emit.zig:1081-1129`;
-  `[c89]` mud_server.c:13-19, gol:7-14, json:40-56, lisp:80-95). The enum-tagged branch
-  (`TU_`/`zTU_` prefixes, `c89_emit.zig:1008-1080`) never fires.
-- **Extern optional/error_union return wrapping unexercised** (see §6.6).
-- **Collision resolution unexercised** (see §6.2).
-- **Error-set `#define` names exceed 31 chars** (see §6.2) — macro names, not mangler output.
-- **Marker-table gap**: `D6` (`c89_emit.zig:511-519`, getCTypeName debug, fires for every
-  `tid>=20` cname lookup) was not listed in §1.16 (added above).
-
-### 6.9 Networking builtins inventory (Phase-2 std-lib plan, I-NET) [updated: 2026-09-04]
-
-**REMOVED (netbind S3, 2026-09-04, `838009b0`):** the 11 `@socket*` networking builtins and
-their inline C-emission ports (below) were deleted from the compiler — a direct `@socket*`
-caller now fails `error[3000]: unsupported builtin function` (rc=2, 0 `.c`;
-`repro/mi_matrix/net_builtin_test` is the GREEN negative probe). Networking is now the
-**std_net extern surface**: target-selected `extern "c"` bindings (wsock32/libc) under
-`@cInclude("<net_prelude.h>")`, WSAStartup init in `std_net.init()`, and the `createTcpClient`
-client factory — see `sf/src/std_net.zig` + the QUICK_REF "Post-netbind baseline". The inventory
-below is the pre-removal (F6, 2026-08-13) record, retained for history:
-
-**Source of truth:** `sf/src/include/net_runtime.c` (153 lines) + `net_runtime.h:6-17`. All 12
-`plat_*` socket symbols are emitted as **bare unmangled extern calls** (see §6.6) — prototypes
-come from `@cInclude`d `net_runtime.h`, no fwd-decl/body in output. The Phase-2 networking
-builtins (plan F6: socketCreate, socketBindListen, socketAccept, socketConnect, socketSend,
-socketRecv, socketSelect, socketFdZero, socketFdSet, socketFdIsset, socketClose) replace these
-extern calls; 10 of 12 symbols map 1:1, `socketConnect` has **no** existing source (net_runtime.c
-has no `plat_connect`; mud_server is server-only), and `socketInit`/`socketCleanup` are not in
-the 11-builtin list (lifecycle stays extern or folds into builtin init).
-
-**12-symbol inventory** (fd convention = plain `int`/i32, the arch-independence ruling; `u8*`
-buffers/sets):
-
-| # | C signature (net_runtime.c line) | op | builtin map | platform |
-|---|---|---|---|---|
-| 1 | `int plat_socket_init(void)` (:18) | init/WSAStartup | — (lifecycle, not in 11) | Win-only body, POSIX returns 0 |
-| 2 | `void plat_socket_cleanup(void)` (:27) | cleanup | — (lifecycle) | Win-only, POSIX no-op |
-| 3 | `int plat_create_tcp_server(unsigned short port)` (:33) | socket+bind (+SO_REUSEADDR) | socketCreate | both; SO_REUSEADDR POSIX-only |
-| 4 | `int plat_bind_listen(int sock, int backlog)` (:72) | listen | socketBindListen | both |
-| 5 | `int plat_accept(int server_sock)` (:82) | accept | socketAccept | both |
-| 6 | `int plat_recv(int sock, u8* buf, int len)` (:92) | recv | socketRecv | both |
-| 7 | `int plat_send(int sock, const u8* buf, int len)` (:100) | send | socketSend | both |
-| 8 | `void plat_close_socket(int sock)` (:108) | close | socketClose | both (closesocket/close) |
-| 9 | `int plat_socket_select(int nfds, u8* readfds, u8* writefds, u8* exceptfds, int timeout_ms)` (:116) | select | socketSelect | both, identical |
-| 10 | `void plat_socket_fd_zero(u8* set)` (:131) | FD_ZERO | socketFdZero | both, identical |
-| 11 | `void plat_socket_fd_set(int fd, u8* set)` (:139) | FD_SET | socketFdSet | both (SOCKET cast Win) |
-| 12 | `int plat_socket_fd_isset(int fd, u8* set)` (:147) | FD_ISSET | socketFdIsset | both (SOCKET cast Win) |
-
-**`#ifdef`/`#pragma` emission pattern** — the exact pattern the builtins must reproduce:
-- **Include block (:4-16):** `#ifdef _WIN32` → `windows.h` + `winsock.h` (Winsock **1.1** —
-  note: `wsock32.lib`, **not** `ws2_32`) + `#pragma comment(lib, "wsock32.lib")`; `#else` →
-  `sys/socket.h`, `netinet/in.h`, `arpa/inet.h`, `sys/select.h`, `unistd.h`, `fcntl.h`.
-- **Per-function `#ifdef _WIN32`…`#else`…`#endif` in all 12 bodies** (not block-level).
-- **msvc6:** `#pragma comment(lib, "wsock32.lib")` auto-links wsock32 (net_runtime.c:8).
-- **OpenWatcom:** NO `__WATCOMC__` branch exists; OW defines `_WIN32` on Windows targets so it
-  takes the Win path, but `#pragma comment(lib,…)` is MSVC-only → OW must add `library
-  wsock32.lib` to `wlink` manually (mud_server README). Same for MinGW (`-lwsock32`).
-- **POSIX:** `#else` branch only; `#pragma comment` excluded.
-- `htons`/`htonl` used **inline** inside `plat_create_tcp_server` — no standalone wrap (no
-  htons builtin candidate in this file).
-- **Blocking model:** all sockets default-blocking; no `O_NONBLOCK`/`FIONBIO` anywhere.
-  `select()` + `timeout_ms` (>=0 wait, <0 = infinite via NULL `timeval*`) is the only
-  polling primitive. `recv`/`send` are raw returns (byte count, 0=EOF, -1=error); no
-  `errno`/`WSAGetLastError` translation — builtins should preserve this raw i32 contract.
-
-**F6 IMPLEMENTED (2026-08-13) — REMOVED by netbind S3 (2026-09-04, see banner above):** the 11 networking builtins now PORT the 12 plat_* bodies
-inline in the emitter (net_runtime.c is superseded for migrated programs — linked WITHOUT for
-mud_server/rogue_mud/net_builtin_test). Details:
-
-- **LirInst variants:** `builtin_socket_create/bind_listen/accept/connect/send/recv/select/fd_zero/fd_set/fd_isset/close` (lir.zig:89-99). Lowering + sema follow the console-builtin pattern (name_id interning, `node.child_0` dispatch in lower.zig:2949-3046 / semantic_analyzer.zig:1441-1489). **[F3 line-ref pass 2026-08-13: lower/sema socket dispatch ranges corrected.]**
-- **`emitBuiltinIncludes`** gains a net-gated include block (`moduleHasNetBuiltin`, c89_emit.zig:2074-2098): `#ifdef _WIN32` → `windows.h` + `winsock.h` (Winsock 1.1, `wsock32.lib` pragma) + `#else` → `sys/socket.h`, `netinet/in.h`, `arpa/inet.h`, `sys/select.h`, `unistd.h`, `fcntl.h`, plus `#include <string.h>` — mirrors net_runtime.c:4-16.
-- **Per-builtin bodies** (c89_emit.zig:3402-3667 helpers `emitSocketWrite`/`emitSocketOptPtrValue`/`emitSocketCreate`/`emitSocketSelect`/`emitSocketClose`; dispatch arms :5182-5214) — each emits the exact `#ifdef _WIN32 … #else … #endif` body ported from net_runtime.c:18-153 (fd = plain `int`/i32; `SOCKET` casts only in the Win branch):
-  - `emitSocketCreate` ← `plat_create_tcp_server` (socket+SO_REUSEADDR+bind, INADDR_ANY; Win `(int)s`/`closesocket` on fail, POSIX `close` on fail); init/cleanup stay as std_net.zig no-ops (WSAStartup/WSACleanup NOT auto-emitted — documented Win-only lifecycle caveat).
-  - `emitSocketBindListen` ← `plat_bind_listen` (`r = (listen(...) == SOCKET_ERROR) ? -1 : 0` Win / `< 0` POSIX).
-  - `emitSocketAccept` ← `plat_accept` (Win: INVALID_SOCKET→-1 else `(int)client`; POSIX raw return).
-  - `emitSocketConnect` ← NEW (no source existed; per operator ruling): `connect()` against `sockaddr_in` INADDR_ANY, `== SOCKET_ERROR`/`< 0` → `-1 : 0`.
-  - `emitSocketSendRecv` ← `plat_send`/`plat_recv` (`send`/`recv` with `(const char*)`/`(char*)` casts, `0` flags; raw return).
-  - `emitSocketSelect` ← `plat_socket_select` (timeval from `timeout_ms`; `(fd_set*)` casts; `emitSocketOptPtrValue` emits `(NAME.has_value ? NAME.value : NULL)` for optional-typed temps — null-coalesce mirroring `.unwrap_optional_abi`, so a null arg (has_value=0) never reads the uninitialized `.value` field; plain `NAME` otherwise). [updated: 2026-08-14] The emitted `select(...)` body is now wrapped `#ifdef _WIN32 / #else / #endif` with identical arms (mirroring `plat_socket_select` net_runtime.c:124-128); the `struct timeval` setup stays common outside the guard. Spec-catalog sig rows corrected (`@socketCreate` = `(port: u16) i32`; `@socketSelect` = 5-arg `(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32`). [updated: 2026-08-14]
-  - `emitSocketFdZero/FdSet/FdIsset` ← the FD_* macro wrappers (Win `(SOCKET)` cast on fd).
-  - `emitSocketClose` ← `plat_close_socket` (`closesocket`/`close`).
-- **Consumers:** `sf/src/std_net.zig` (zero `extern "c"`; 13 wrappers incl. `init`/`cleanup`) + migrated `examples/z98/mud_server/main.zig` + `examples/z98/rogue_mud/{lib/net.zig,ui.zig,main.zig}` (local `std_net.zig` copies; `net_runtime.c` link REMOVED). Gate: `repro/mi_matrix/net_builtin_test` dump→gcc→run rc=0 prints `1`; mud_server `timeout`-gated socket interaction rc=0; rogue_mud dump/gcc/link rc=0 (0 `plat_*` refs); 4 MD5 gates gol/lisp/json byte-identical, mud re-baselined to `fd0fdaa4…`.
+Cost (measured M1, `-q -ffast`, 3 runs): ≈+0.2 MB RSS on small programs and
+≈+880 KiB on the largest function set (z9torr). The per-function span buffer is
+reused/reset on every function so async spans do not accumulate
+(`debug_span_buf`). The debug map is consumed only by `z9dbg`; see
+`sf/docs/std_lib/debug_map.md` and `z9dbg.md`.

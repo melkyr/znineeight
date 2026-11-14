@@ -1,5 +1,11 @@
 # emission_capture_control_xmod — GREEN control for the C₂ capture family
 
+> **Task 7D (2026-09-22) — re-baselined OK → FAIL (intentional Zig-matching reject).** The guarded
+> shape (a `for` capture `|s|` plus a same-scope local `var s`) shadows an identifier from an outer
+> scope, which official Zig 0.15.2 rejects ("local variable 's' shadows capture from outer scope").
+> Task 7D now emits `error[3057]` at `var s` (rc=2, 0 `.c`) before emission, so this former GREEN
+> control is now an intentional reject. Deliberate corpus movement, not a regression.
+
 Task A-ADD (2026-08-24), R2/R1 self-compile closeout plan (AMENDMENT 1). Compiler under test:
 `/tmp/fx_subfolder/zig1` (current; no rebuild since HEAD `5267f5e6`). Build recipe identical to the
 other `emission_*_xmod` fixtures: emit with `--dump-c89 --output-dir`, compile emitted C with

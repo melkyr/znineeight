@@ -1,0 +1,31 @@
+const std = @import("std");
+
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn sum(p: Point) i32 {
+    return p.x + p.y;
+}
+
+fn shifted(p: Point, dx: i32, dy: i32) Point {
+    return Point{ .x = p.x + dx, .y = p.y + dy };
+}
+
+pub fn main() void {
+    const origin = Point{ .x = 0, .y = 0 };
+    std.io.print("origin is ({}, {})\n", .{ origin.x, origin.y });
+
+    const corner = Point{ .x = 3, .y = 4 };
+    std.io.print("corner is ({}, {})\n", .{ corner.x, corner.y });
+    std.io.print("corner sums to {}\n", .{sum(corner)});
+
+    var cursor = Point{ .x = 10, .y = 20 };
+    cursor.x = cursor.x + 5;
+    std.io.print("cursor moved to ({}, {})\n", .{ cursor.x, cursor.y });
+
+    const far = shifted(corner, 100, 200);
+    std.io.print("far is ({}, {})\n", .{ far.x, far.y });
+    std.io.print("sizeOf(Point) is {}\n", .{@sizeOf(Point)});
+}

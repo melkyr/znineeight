@@ -4,24 +4,20 @@ pub const Arena = struct {
     used: usize,
 };
 
-var g_storage: [1048576]u8 = undefined;
-var g_used: usize = 0;
-
-pub fn create(initial_capacity: usize) Arena {
-    _ = initial_capacity;
-    var a = Arena{ .data = @ptrCast([*]u8, &g_storage[0]), .capacity = 1048576, .used = 0 };
+pub fn init(data: []u8) Arena {
+    var a = Arena{ .data = data.ptr, .capacity = data.len, .used = 0 };
     return a;
 }
 
-pub fn alloc(self: *Arena, size: usize) ?[*]u8 {
-    _ = self;
-    if (g_used + size > 1048576) return null;
-    var result: [*]u8 = @ptrCast([*]u8, &g_storage[0]) + g_used;
-    g_used += size;
+pub const ArenaError = error{OutOfMemory};
+
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8 {
+    if (self.used + size > self.capacity) return error.OutOfMemory;
+    var result: [*]u8 = self.data + self.used;
+    self.used += size;
     return result;
 }
 
 pub fn reset(self: *Arena) void {
-    _ = self;
-    g_used = 0;
+    self.used = 0;
 }

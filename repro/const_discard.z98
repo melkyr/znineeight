@@ -1,0 +1,71 @@
+// repro/const_discard.z98 — standalone FC (Volume II D12) reproduction.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/const_discard_out
+//   <zig1> --dump-c89 --output-dir /tmp/const_discard_out repro/const_discard.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, exactly 8 level-0
+//   `error[3000]: cannot implicitly discard 'const' qualifier`
+// sites and 0 `warning[3000]`:
+//   local decl `[]const i32` -> `[]i32`      (`var m: []i32 = c;`)
+//   local decl `[]const i32` -> `[*]i32`     (`var mp: [*]i32 = c;`)
+//   assignment `[]const i32` -> `[]i32`      (`am = c;`)
+//   return `[]const i32` -> `[*]i32`         (`return c;` in `unfreeze`)
+//   call arg `[]const i32` -> `[]i32`        (`take(c);`)
+//   field init `[]const i32` -> `[]i32`      (`.{ .m = c }`)
+//   `*const i32` -> `*i32`                   (`var q: *i32 = pc;`)
+//   `[*]const i32` -> `[*]i32`               (`var mpq: [*]i32 = mpc;`)
+//
+// DEFECT (before the fix): every shape was accepted — the declaration emitted
+// one `warning[3000]` and the others were silent — and the emitted C mutated
+// the const slice's backing array through the alias. Official Zig 0.15.2
+// rejects each shape (`note: cast discards const qualifier`); the Language
+// Spec's Const Correctness rule forbids it outright.
+//
+// The legal const-ADDING directions (`[]i32` -> `[]const i32` / `[*]const
+// i32`) must stay diagnostic-free.
+const std = @import("std");
+
+const Holder = struct { m: []i32 };
+
+fn take(m: []i32) void {
+    m[0] = 9;
+}
+
+fn unfreeze(c: []const i32) [*]i32 {
+    return c;
+}
+
+pub fn main() void {
+    var arr = [3]i32{ 1, 2, 3 };
+    const c: []const i32 = arr;
+
+    var m: []i32 = c;
+    var mp: [*]i32 = c;
+
+    var am: []i32 = arr;
+    am = c;
+
+    take(c);
+    const rp = unfreeze(c);
+
+    var h: Holder = .{ .m = c };
+
+    const pc: *const i32 = &arr[0];
+    var q: *i32 = pc;
+    const mpc: [*]const i32 = arr;
+    var mpq: [*]i32 = mpc;
+
+    const okc: []const i32 = arr;
+    const okmc: [*]const i32 = arr;
+    _ = okc;
+    _ = okmc;
+    m[0] = 9;
+    mp[0] = 9;
+    am[0] = 9;
+    rp[0] = 9;
+    h.m[0] = 9;
+    q.* = 9;
+    mpq[0] = 9;
+    std.io.print("unreachable\n", .{});
+}

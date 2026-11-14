@@ -16,6 +16,7 @@ pub fn main() void {
     switch (c) {
         .Quit => r = @intCast(i32, 0),
         .Go => |d| r = d,
+        else => {},
     }
     std.io.printInt(r);
 }

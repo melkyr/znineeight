@@ -14,6 +14,7 @@ pub fn deep_copy(v: *value_mod.Value, sand: *sand_mod.Sand) util.LispError!*valu
             const cdr = try deep_copy(data.cdr, sand);
             return try value_mod.alloc_cons(car, cdr, sand);
         },
+        else => return error.Unreachable,
     }
     return error.Unreachable;
 }

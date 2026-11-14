@@ -1,0 +1,13 @@
+incl 10 10 20
+excl 30 30 40
+mixed 60 60 50
+shorthand 80 80 80
+halfsh 81 81 81
+gaps 100 100 100
+gapsx 120 120 130
+xmod 140 140 150
+xmodsh 160 160 160
+stmt 180 180 190
+ints 200 210 220
+chars 230 240
+nomatch 250 260

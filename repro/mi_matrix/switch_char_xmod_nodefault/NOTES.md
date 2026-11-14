@@ -1,4 +1,12 @@
-# switch_char_xmod_nodefault — FAIL (lowerer: char_literal switch case labels dropped)  [Task 3 battery A12, 2026-08-07]
+# switch_char_xmod_nodefault — FAIL (documented strict-`else` reject)  [Task 3 battery A12, 2026-08-07]
+
+> **FA-b status (2026-09-27): documented reject, NOT migrated.** This
+> cross-module stmt switch is intentionally non-exhaustive (`u8` condition,
+> two `char_literal` prongs, no `else`). The FA-a strict rule (`error[3068]`,
+> `switch must have an 'else' prong`) rejects it by design, and FA-b's
+> migration rule never converts a partial switch into an accepted one, so it
+> stays a corpus FAIL reject. The runtime-gap tracking below is historical:
+> the no-default shape it exercises is no longer accepted by the compiler.
 
 ## What it tests
 Cross-module stmt-style `char_literal` switch WITHOUT an `else` prong.

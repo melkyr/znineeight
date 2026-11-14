@@ -1,0 +1,6 @@
+break main.zig:463
+continue
+step
+backtrace
+dump variables @SNAP@
+quit

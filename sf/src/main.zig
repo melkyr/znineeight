@@ -7,8 +7,6 @@ const sm_mod = @import("source_manager.zig");
 const SourceManager = sm_mod.SourceManager;
 const diag_mod = @import("diagnostics.zig");
 const DiagnosticCollector = diag_mod.DiagnosticCollector;
-const nm_mod = @import("name_mangler.zig");
-const NameMangler = nm_mod.NameMangler;
 const token_mod = @import("token.zig");
 const Token = token_mod.Token;
 const TokenKind = token_mod.TokenKind;
@@ -26,29 +24,40 @@ const sym_mod = @import("symbol_table.zig");
 const type_mod = @import("type_registry.zig");
 const TypeRegistry = type_mod.TypeRegistry;
 const c89_mod = @import("c89_emit.zig");
+const c89_plan = @import("c89_plan.zig");
 const lower_mod = @import("lower.zig");
 const SemanticContext = lower_mod.SemanticContext;
 const LirLowerer = lower_mod.LirLowerer;
 const lir_mod = @import("lir.zig");
 const LirSlotArrayList = lir_mod.LirSlotArrayList;
 const lir_stream = @import("lir_stream.zig");
+const debug_map = @import("debug_map.zig");
 const resolved_type_table = @import("resolved_type_table.zig");
 const hash_mod = @import("util/hash.zig");
+const ga_mod = @import("growable_array.zig");
 const ResolvedTypeTable = resolved_type_table.ResolvedTypeTable;
 const coercion_mod = @import("coercion.zig");
 const CoercionTable = coercion_mod.CoercionTable;
 const sa_mod = @import("semantic_analyzer.zig");
 const type_resolver = @import("type_resolver.zig");
 const ce_mod = @import("comptime_eval.zig");
+const const_init_eval = @import("const_init_eval.zig");
 const symbol_registrator = @import("symbol_registrator.zig");
 const const_alias_prepass = @import("const_alias_prepass.zig");
 const front_res = @import("front_resolution.zig");
+const async_analysis = @import("async_analysis.zig");
+const async_frame_layout = @import("async_frame_layout.zig");
+const async_state_machine = @import("async_state_machine.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const AstKind = ast_mod.AstKind;
 const AstStore = ast_mod.AstStore;
 const LirFunction = @import("lir.zig").LirFunction;
 const cinclude = @import("cinclude.zig");
 const spill_store_mod = @import("spill_store.zig");
+// C89 `remove` (the compiler already links libc through pal's fopen family).
+// Used to drop the `-d` `.zig1_dbg.tmp` span spool after the debug map is
+// written; a missing file is ignored (nonzero rc, result discarded).
+extern "c" fn remove(path: [*]const u8) i32;
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -69,6 +78,7 @@ pub const CompilerCli = struct {
     dump_types: bool,
     dump_lir: bool,
     dump_c89: bool,
+    check: bool,
     max_mem: u32,
     spill_level: u32, // -s<N> spill level (0 = all on disk .. SPILL_COUNT = all in RAM)
     max_errors: u32,
@@ -76,18 +86,21 @@ pub const CompilerCli = struct {
     error_format: ErrorFormat,
     warnings_as_errors: bool,
     quiet: bool,
+    debug: bool,
     test_mode: bool,
     sanity_test_mode: bool,
     track_memory: bool,
     no_null_check: bool,
     no_lifetime_check: bool,
     no_leak_check: bool,
+    safe_checks: bool,
      warn_all: bool,
      warn_error: bool,
      show_markers: bool,
      include_dirs: [16][]const u8,
     include_count: u32,
     target_is_windows: bool,
+    target_win_profile: c89_mod.WinProfile,
 };
 
 pub const CompilerContext = struct {
@@ -96,7 +109,6 @@ pub const CompilerContext = struct {
     interner: *StringInterner,
     diag: *DiagnosticCollector,
     source_man: *SourceManager,
-    name_mangler: *NameMangler,
     module_reg: *ModuleRegistry,
     typereg: *TypeRegistry,
     store: *AstStore,
@@ -108,15 +120,53 @@ pub const CompilerContext = struct {
     lir_slots: LirSlotArrayList,
     lir_stream: lir_stream.LirStream,
     enum_value_table: hash_mod.U32ToU32Map,
+    tuple_index_table: hash_mod.U32ToU32Map,
     error_code_registry: hash_mod.U32ToU32Map,
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
-    comptime_values: hash_mod.U32ToU64Map,
-    pointer_only_ids: [*]u32,
-    pointer_only_len: u32,
+    comptime_folds: ce_mod.ComptimeFoldTable,
+    // M2 T1C-F: the shared const-init classification (decl node -> tree root)
+    // built by `phase_ConstInit`; consumed by the storage walk, lowering
+    // (module-init skip + use-site scalar fold) and the C89 emitter. Lives on
+    // the emission arena: the trees outlive the lowering->emission
+    // `sandReset` of the module arena.
+    const_inits: const_init_eval.ConstInitTable,
+    // P4 fix round 2: the completed emission classification (shared_set /
+    // pointer_only_map / needs_def_map / needed_tuple_set) — filled by the
+    // resolver-owned mechanism (`phase_TypeResolution` + the pre-emit
+    // `phase_EmissionClassification` boundary), read by `phase_C89Emission`.
+    emission_classif: type_resolver.EmissionClassification,
+    // P6-pre: the C89 spelling planner state (per-const carrier side tables at
+    // the `phase_EmissionClassification` boundary; P12: `typedef_order`, the
+    // typedef emission order, is planned by the same mechanism). The emitter
+    // reads it at spell time only.
+    spell_plan: c89_plan.C89SpellPlan,
     global_decls: lir_mod.GlobalDeclArrayList,
 
     exported: hash_mod.U64ToU32Map,
+
+    suspending_fns: hash_mod.U64ToU32Map,
+    frame_sizes: hash_mod.U64ToU32Map,
+    state_widths: hash_mod.U64ToU32Map,
+    awaited_fns: hash_mod.U64ToU32Map,
+    async_hidden_fns: hash_mod.U64ToU32Map,
+    driver_targets: hash_mod.U64ToU32Map,
+    parent_result_type_list: ga_mod.U32ArrayList,
+    parent_result_start: hash_mod.U64ToU32Map,
+    parent_result_count: hash_mod.U64ToU32Map,
+    async_layouts: hash_mod.U64ToU32Map,
+    // Task 9 fix round 3 (Q7): module-init dependency edges
+    // (`referrer << 32 | dependency` -> referencing decl node) and the stable
+    // emission order derived from them.
+    module_init_deps: hash_mod.U64ToU32Map,
+    module_init_order: ga_mod.U32ArrayList,
+    // P3-M1: empty/no-op unless `--debug`/`-d` is set.
+    debug_spans: debug_map.DebugSpanStore,
+    debug_symbols: debug_map.DebugSymbolList,
+    debug_map: debug_map.DebugMapWriter,
+    // P3-M1 review F3: one reusable per-function span buffer (emission arena),
+    // independent of the async_pending scratch-reset gate.
+    debug_span_buf: lir_mod.DebugSpanArrayList,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -124,7 +174,31 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var startmsg: []const u8 = "START\n";
     pal.markerWrite(startmsg);
      var cli = parseArgs();
+     if (cli.check) {
+        // Task 3 (Phase 2.5, review fix round 1): `--check` genuinely ignores
+        // `-o`/`-d`/`--output-dir`. Disabling the output-dir flag skips its
+        // existence validation and keeps every scratch spill on the default CWD
+        // path; disabling debug drops the `-d`-requires-`--output-dir` check
+        // (and the debug-map work, which --check never reaches anyway).
+        cli.output_dir_set = false;
+        cli.debug = false;
+     }
      if (cli.show_markers) { pal.markersEnabled(@intCast(u32, 1)); }
+     if (!cli.quiet) {
+        if (cli.debug) {
+            var bon: []const u8 = "Z98 Compiler 2026 (map: on)\n";
+            pal.stderr_write(bon);
+        } else {
+            var boff: []const u8 = "Z98 Compiler 2026 (map: off)\n";
+            pal.stderr_write(boff);
+        }
+     }
+     if (cli.debug and !cli.output_dir_set) {
+        var dmsg: []const u8 = "error: --debug/-d requires --output-dir\n";
+        pal.stderr_write(dmsg);
+        pal.exit(@intCast(u8, 2));
+        return;
+     }
      if (cli.sanity_test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
          var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, 4);
@@ -145,10 +219,28 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         printUsage();
         return;
     }
+    if (cli.output_dir_set and !pal.dirExists(cli.output_dir)) {
+        const msg: []const u8 = "error: output directory does not exist: ";
+        pal.stderr_write(msg);
+        pal.stderr_write(cli.output_dir);
+        const nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(@intCast(u8, 1));
+        return;
+    }
+    if (path_mod.isReservedDosDeviceName(cli.input_file)) {
+        const msg: []const u8 = "error: reserved DOS device name in input file path: ";
+        pal.stderr_write(msg);
+        pal.stderr_write(cli.input_file);
+        const nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(@intCast(u8, 2));
+        return;
+    }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
     compiler_alloc.max_mem = cli.max_mem;
     spill_store_mod.spillSetLevel(cli.spill_level); // set the immutable spill flag prefix before runCompiler
-    var source = pal.readFile(cli.input_file, &compiler_alloc.permanent) orelse {
+    var source = pal.readFile(cli.input_file, &compiler_alloc.scratch) orelse {
         const msg: []const u8 = "error: could not read input file\n";
         pal.stderr_write(msg);
         pal.exit(@intCast(u8, 1));
@@ -156,18 +248,32 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     };
      var interner_bc: u32 = @intCast(u32, source.len) + @intCast(u32, source.len / @intCast(usize, 4));
      if (interner_bc < @intCast(u32, 4096)) interner_bc = @intCast(u32, 4096);
+     // Task 4 R1: source-derived soft floors for the type registry pre-size.
+     // Hints are a floor, NEVER a hard cap — growth resumes if exceeded.
+     var type_hint: u32 = @intCast(u32, source.len / @intCast(usize, 32));
+     if (type_hint < @intCast(u32, 4096)) type_hint = @intCast(u32, 4096);
+     var name_hint: u32 = @intCast(u32, source.len / @intCast(usize, 10));
+     if (name_hint < @intCast(u32, 2048)) name_hint = @intCast(u32, 2048);
+     // Task 6 R2: source-derived soft floor for the comptime fold table. The
+     // self-compile folds ~8-12k values; /9 lands `vals`/`slots` at cap 16,384
+     // so no abandoned geometric generation is carved. Floor, never a hard cap.
+     var fold_hint: u32 = @intCast(u32, source.len / @intCast(usize, 9));
+     if (fold_hint < @intCast(u32, 16)) fold_hint = @intCast(u32, 16);
      var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, interner_bc);
      var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
      var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);
      diag.max_diagnostics = @intCast(usize, cli.max_errors);
      token_mod.initKeywordTable(&compiler_alloc.permanent);
-     var name_mangler = nm_mod.nameManglerInit();
      var mr = mr_mod.moduleRegistryInit(&compiler_alloc.permanent, &interner, &diag);
      mr_mod.moduleRegistrySetSourceMan(&mr, &source_man);
+     // C1b (Amendment 2): target polarity for the parser's untaken-arm import
+     // gate (`@isWindows()` folds at parse time so a dead arm's `@import` never
+     // loads its file — true Zig laziness).
+     mr_mod.moduleRegistrySetTargetIsWindows(&mr, cli.target_is_windows);
      var type_db_arena: alloc_mod.GrowableSand = undefined;
      var type_db_name: []const u8 = "type_db";
      alloc_mod.growableSandInit(&type_db_arena, alloc_mod.poolPtr(), 4096, type_db_name);
-     var typereg = type_mod.typeRegistryInit(&type_db_arena.view, &interner);
+     var typereg = type_mod.typeRegistryInitSized(&type_db_arena.view, &interner, type_hint, name_hint);
      type_mod.typeRegistryRegisterPrimitives(&typereg);
      var store = ast_mod.astStoreInit(&compiler_alloc.module);
      var ast_spill_path: [512]u8 = undefined;
@@ -215,6 +321,36 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
       var ivi: usize = @intCast(usize, 0);
       while (ivi < iv_tmp_name.len and ivp_len < @intCast(usize, 511)) : (ivi += @intCast(usize, 1)) { iv_spill_path[ivp_len] = iv_tmp_name[ivi]; ivp_len += @intCast(usize, 1); }
       ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 1), iv_spill_path[0..ivp_len]);
+      var ec_spill_path: [512]u8 = undefined;
+      var ecp_len: usize = @intCast(usize, 0);
+      if (cli.output_dir_set) {
+          var od6 = cli.output_dir;
+          var oi6: usize = @intCast(usize, 0);
+          while (oi6 < od6.len and ecp_len < @intCast(usize, 511)) : (oi6 += @intCast(usize, 1)) { ec_spill_path[ecp_len] = od6[oi6]; ecp_len += @intCast(usize, 1); }
+          ec_spill_path[ecp_len] = @intCast(u8, '/'); ecp_len += @intCast(usize, 1);
+      } else {
+          ec_spill_path[ecp_len] = @intCast(u8, '.'); ecp_len += @intCast(usize, 1);
+          ec_spill_path[ecp_len] = @intCast(u8, '/'); ecp_len += @intCast(usize, 1);
+      }
+      var ec_tmp_name: []const u8 = ".zig1_extra_ec.tmp";
+      var eci: usize = @intCast(usize, 0);
+      while (eci < ec_tmp_name.len and ecp_len < @intCast(usize, 511)) : (eci += @intCast(usize, 1)) { ec_spill_path[ecp_len] = ec_tmp_name[eci]; ecp_len += @intCast(usize, 1); }
+      ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 2), ec_spill_path[0..ecp_len]);
+      var er_spill_path: [512]u8 = undefined;
+      var erp_len: usize = @intCast(usize, 0);
+      if (cli.output_dir_set) {
+          var od7 = cli.output_dir;
+          var oi7: usize = @intCast(usize, 0);
+          while (oi7 < od7.len and erp_len < @intCast(usize, 511)) : (oi7 += @intCast(usize, 1)) { er_spill_path[erp_len] = od7[oi7]; erp_len += @intCast(usize, 1); }
+          er_spill_path[erp_len] = @intCast(u8, '/'); erp_len += @intCast(usize, 1);
+      } else {
+          er_spill_path[erp_len] = @intCast(u8, '.'); erp_len += @intCast(usize, 1);
+          er_spill_path[erp_len] = @intCast(u8, '/'); erp_len += @intCast(usize, 1);
+      }
+      var er_tmp_name: []const u8 = ".zig1_extra_er.tmp";
+      var eri: usize = @intCast(usize, 0);
+      while (eri < er_tmp_name.len and erp_len < @intCast(usize, 511)) : (eri += @intCast(usize, 1)) { er_spill_path[erp_len] = er_tmp_name[eri]; erp_len += @intCast(usize, 1); }
+      ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 3), er_spill_path[0..erp_len]);
       var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
     var rtt_spill_path: [512]u8 = undefined;
@@ -236,18 +372,43 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var lir_slots = lir_mod.lirSlotArrayListInit(&compiler_alloc.emission);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
+    var tuple_index_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
     var error_code_registry = hash_mod.u32ToU32MapInit(&compiler_alloc.emission);
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
-     var comptime_values = hash_mod.u32ToU64MapInit(&compiler_alloc.module);
+     var comptime_folds = ce_mod.comptimeFoldTableInitSized(&compiler_alloc.module, @intCast(usize, fold_hint));
+     var const_inits = const_init_eval.constInitTableInit(&compiler_alloc.emission);
+     // P4 fix round 2: the emission classification state (maps on the
+     // permanent arena; the three group maps are re-inited at capacity and
+     // assigned by `classifyTypeEmissionGroups`, `needed_tuple_set` is filled
+     // at the `phase_EmissionClassification` boundary).
+     var emission_classif = type_resolver.EmissionClassification{
+         .shared_set = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+         .pointer_only_map = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+         .needs_def_map = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+         .needed_tuple_set = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+     };
+     // P6-pre: the C89 spelling planner state — filled at the
+     // `phase_EmissionClassification` boundary (placeholder-local init per the
+     // struct-literal rule; maps land on the permanent arena there).
+     var spell_plan_ph: c89_plan.C89SpellPlan = undefined;
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
+     var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var state_widths = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var awaited_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var async_hidden_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var driver_targets = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var parent_result_type_list = ga_mod.u32ArrayListInit(&compiler_alloc.module);
+     var parent_result_start = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var parent_result_count = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var async_layouts = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
         .interner = &interner,
         .diag = &diag,
         .source_man = &source_man,
-        .name_mangler = &name_mangler,
         .module_reg = &mr,
         .typereg = &typereg,
         .store = &store,
@@ -258,14 +419,35 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .lir_slots = lir_slots,
         .lir_stream = lir_stream.lirStreamInit(),
         .enum_value_table = enum_value_table,
+        .tuple_index_table = tuple_index_table,
         .error_code_registry = error_code_registry,
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
-        .comptime_values = comptime_values,
+        .comptime_folds = comptime_folds,
+        .const_inits = const_inits,
         .exported = exported,
-        .pointer_only_ids = undefined,
-        .pointer_only_len = @intCast(u32, 0),
+        .suspending_fns = suspending_fns,
+        .frame_sizes = frame_sizes,
+        .state_widths = state_widths,
+        .awaited_fns = awaited_fns,
+        .async_hidden_fns = async_hidden_fns,
+        .driver_targets = driver_targets,
+        .parent_result_type_list = parent_result_type_list,
+        .parent_result_start = parent_result_start,
+        .parent_result_count = parent_result_count,
+        .async_layouts = async_layouts,
+        .emission_classif = emission_classif,
+        .spell_plan = spell_plan_ph,
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
+        // Task 9 fix round 3 (Q7): module-init dependency edges (referrer << 32
+        // | dependency -> referencing decl) and the resulting stable emitted
+        // call order.
+        .module_init_deps = hash_mod.u64ToU32MapInit(&compiler_alloc.module),
+        .module_init_order = ga_mod.u32ArrayListInit(&compiler_alloc.emission),
+        .debug_spans = debug_map.debugSpanStoreInit(),
+        .debug_symbols = debug_map.debugSymbolListInit(&compiler_alloc.emission),
+        .debug_map = debug_map.debugMapWriterInit(),
+        .debug_span_buf = lir_mod.debugSpanArrayListInit(&compiler_alloc.emission),
     };
     runCompiler(&ctx);
 }
@@ -279,12 +461,14 @@ fn runCompiler(ctx: *CompilerContext) void {
     var z4: []const u8 = "4\n"; pal.markerWrite(z4);
     phase_SymbolRegistration(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
+    async_analysis.suspensionAnalysisRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, &ctx.suspending_fns);
     phase_TypeResolution(ctx);
     var t1: []const u8 = "t1\n"; pal.markerWrite(t1);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     var t2: []const u8 = "t2\n"; pal.markerWrite(t2);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        if (ctx.cli.check) { resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); }
         pal.exit(2);
     }
     alloc_mod.checkCombinedPeak(ctx.alloc);
@@ -293,13 +477,34 @@ fn runCompiler(ctx: *CompilerContext) void {
     phase_SemanticAnalysis(ctx);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        if (ctx.cli.check) { resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); }
         pal.exit(2);
     }
     phase_StaticAnalyzers(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        if (ctx.cli.check) { resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); }
         pal.exit(2);
+    }
+    phase_AsyncFrameSize(ctx);
+    phase_ConstInit(ctx);
+    if (ctx.cli.check) {
+        // Task 3 (Phase 2.5): sema-only mode. All semantic/static/const-init
+        // diagnostics are in hand; rc=0 predicts a clean compile. Nothing is
+        // lowered or emitted (no `.c`/`.h`/scripts/.zig1_lir.tmp); the usual
+        // scratch spills were created by earlier phases and are left for the
+        // caller's cleanup, exactly like a normal run.
+        //
+        // Review fix round 1: print ALL diagnostics unconditionally (no-op when
+        // empty) so warnings are visible; `-W`/--warn-error turns a warning-only
+        // run into rc=2, staying inside the documented 0/2 contract.
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        resolved_type_table.resolvedTypeTableClose(ctx.resolved_types);
+        if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) { pal.exit(2); }
+        if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) { pal.exit(2); }
+        pal.exit(0);
+        return;
     }
     phase_LIRLowering(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
@@ -309,6 +514,7 @@ fn runCompiler(ctx: *CompilerContext) void {
     }
     resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); // flush + close dense resolved-type spill (no reads post-lowering)
     alloc_mod.sandReset(&ctx.alloc.module); // free the dead analysis arena at lowering→emission boundary
+    phase_EmissionClassification(ctx);
     phase_C89Emission(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
@@ -346,6 +552,23 @@ fn runCompiler(ctx: *CompilerContext) void {
     diag_mod.diagnosticCollectorPrintAll(ctx.diag);
 }
 
+// Task 1 (z98-print-formatting): does the parsed program REFERENCE the
+// `print` name? Any `ident_expr`/`field_access` payload named `print` counts:
+// that includes a direct `print(...)`/`std.io.print(...)` callee AND an alias
+// initializer (`const p = io.print;`) whose later indirect call is still
+// intercepted by the lowerer's print special case (`fp.name_id ==
+// print_fn_id`). Over-approximating only brings std_fmt into the graph (an
+// unreferenced std_fmt is pruned at emission), so this is the safe direction.
+fn astStoreHasPrintRef(store: *AstStore, print_id: u32) bool {
+    var i: usize = @intCast(usize, 0);
+    while (i < store.nodes.len) : (i += @intCast(usize, 1)) {
+        var node = ast_mod.astStoreNodeAt(store, @intCast(u32, i));
+        if (node.kind != AstKind.ident_expr and node.kind != AstKind.field_access) continue;
+        if (ast_mod.astStoreNodePayload(store, @intCast(u32, i)) == print_id) return true;
+    }
+    return false;
+}
+
 fn phase_ImportResolution(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "I\n"; pal.markerWrite(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
@@ -357,7 +580,7 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     var lib_len = pal.getDefaultLibPath(&lib_buf[0], @intCast(i32, 512));
     if (lib_len > 0) {
         var lib_path = lib_buf[0..@intCast(usize, lib_len)];
-        if (pal.fileExists(lib_path)) {
+        if (pal.dirExists(lib_path)) {
             mr_mod.moduleResolverAddSearchDir(&ctx.module_reg.resolver, lib_path);
         }
     }
@@ -370,7 +593,24 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     var path_id = interner_mod.stringInternerIntern(ctx.interner, root_path);
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
     mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
-    import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+    import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store, ctx.typereg, ctx.symbol_reg);
+    // Task 1 auto-import: whenever the program can lower a `print`, bring the
+    // std_fmt module (and its PAL backing) into the graph so the mangled
+    // `std.fmt` call sites the emitter writes have a definition. The user needs
+    // no new import; `std.io.print` stays the entry point.
+    // Task 10 (B8): the scan is name-based and over-approximates (see
+    // `astStoreHasPrintRef`), so probe the search dirs first and skip silently
+    // when std_fmt.zig is absent — `phase_LIRLowering` reports error[3048] only
+    // if a print VALUE was actually lowered and needs the module.
+    var print_name_id = interner_mod.stringInternerIntern(ctx.interner, "print");
+    if (astStoreHasPrintRef(ctx.store, print_name_id)) {
+        var fmt_name: []const u8 = "std_fmt.zig";
+        if (mr_mod.moduleResolverResolve(&ctx.module_reg.resolver, root_path, fmt_name, &ctx.alloc.scratch) != null) {
+            var fmt_path_id = interner_mod.stringInternerIntern(ctx.interner, fmt_name);
+            _ = mr_mod.moduleRegistryResolveImport(ctx.module_reg, fmt_path_id, mod_id, &ctx.alloc.scratch);
+            import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store, ctx.typereg, ctx.symbol_reg);
+        }
+    }
     var hash_spill_path: [512]u8 = undefined;
     var hsp_len: usize = @intCast(usize, 0);
     if (ctx.cli.output_dir_set) {
@@ -402,11 +642,11 @@ fn phase_SymbolRegistration(ctx: *CompilerContext) void {
     if (smods.len > @intCast(usize, 0) and smods[0].ast_root != @intCast(u32, 0)) {
         var sr = ast_mod.astStoreNodeAt(ctx.store, smods[0].ast_root);
         if (sr.kind == AstKind.module_root) {
-            var sdl = ast_mod.astStoreNodeExtraChildren(ctx.store, smods[0].ast_root);
+            var sdl_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, smods[0].ast_root);
             var sdi: usize = @intCast(usize, 0);
             var sl: []const u8 = "S0"; pal.markerWrite(sl);
-            while (sdi < sdl.len) : (sdi += @intCast(usize, 1)) {
-                var sd = ast_mod.astStoreNodeAt(ctx.store, sdl[sdi]);
+            while (sdi < @intCast(usize, sdl_n)) : (sdi += @intCast(usize, 1)) {
+                var sd = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, smods[0].ast_root, @intCast(u32, sdi)));
                 var sk: u32 = @intCast(u32, @enumToInt(sd.kind));
                 var sb: [20]u8 = undefined;
                 var slen = itoa_mod.itoa(sk, sb[0..]);
@@ -430,22 +670,28 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
         symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph, false);
     }
     const_alias_prepass.constAliasPrepass(ctx.symbol_reg, ctx.typereg, ctx.interner, ctx.store, &ctx.alloc.permanent);
-    type_resolver.typeResolverResolveNames(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.resolved_types, ctx.module_reg, &ctx.alloc.permanent);
+    type_resolver.typeResolverResolveNames(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.resolved_types, ctx.module_reg, ctx.diag, &ctx.alloc.permanent);
     var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
     type_resolver.typeResolverBuildDependencyGraph(&tr);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
     type_resolver.typeResolverResolve(&tr);
-    var ptr_grp = type_resolver.classifyTypeEmissionGroups(&tr, &ctx.alloc.permanent);
-    ctx.pointer_only_ids = ptr_grp.ids;
-    ctx.pointer_only_len = ptr_grp.len;
+    // Task 11J: post-layout enum re-evaluation (Option B). Every type is now
+    // laid out, so an enum member's explicit initializer can fold the full
+    // integer/builtin set (including named-aggregate introspection). Overwrite
+    // the registration-time stored values with a fresh auto-increment cascade;
+    // an unfoldable initializer or a duplicate tag is a clean ERR_3055.
+    type_resolver.enumReevaluateAll(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.module_reg, ctx.diag);
+    // P4: the resolution-time classification step (E1 snapshot + groups);
+    // completed at the pre-emit `phase_EmissionClassification` boundary.
+    type_resolver.classifyTypeEmissionGroups(&tr, &ctx.emission_classif, &ctx.alloc.permanent);
     if (mods.len > @intCast(usize, 0) and mods[0].ast_root != @intCast(u32, 0)) {
         var tr2 = ast_mod.astStoreNodeAt(ctx.store, mods[0].ast_root);
         if (tr2.kind == AstKind.module_root) {
-            var tdl = ast_mod.astStoreNodeExtraChildren(ctx.store, mods[0].ast_root);
+            var tdl_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, mods[0].ast_root);
             var tdi: usize = @intCast(usize, 0);
             var tl: []const u8 = "T0"; pal.markerWrite(tl);
-            while (tdi < tdl.len) : (tdi += @intCast(usize, 1)) {
-                var td = ast_mod.astStoreNodeAt(ctx.store, tdl[tdi]);
+            while (tdi < @intCast(usize, tdl_n)) : (tdi += @intCast(usize, 1)) {
+                var td = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, mods[0].ast_root, @intCast(u32, tdi)));
                 var tk: u32 = @intCast(u32, @enumToInt(td.kind));
                 var tb: [20]u8 = undefined;
                 var tlen = itoa_mod.itoa(tk, tb[0..]);
@@ -470,9 +716,11 @@ fn phase_FrontResolution(ctx: *CompilerContext) void {
         .scratch = &ctx.alloc.scratch,
         .coercion_table = ctx.coercion_table,
         .enum_value_table = &ctx.enum_value_table,
+        .tuple_index_table = &ctx.tuple_index_table,
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .call_param_map = &ctx.call_param_map,
+        .suspending_fns = &ctx.suspending_fns,
     };
     front_res.frontResolveModuleInits(&frc);
 }
@@ -481,16 +729,35 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
     var pc_m: []const u8 = "CE\n"; pal.markerWrite(pc_m);
     var ce = ce_mod.comptimeEvalInit(ctx.typereg, ctx.store, ctx.interner, ctx.symbol_reg);
     ce.host_is_windows = ctx.cli.target_is_windows;
+    ce.diag = ctx.diag;
+    var p7_mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     // Block-by-block sweep: fault in each 4096-node block, scan its slots, let
     // the resident ring evict it on the next fault. Node VALUES are identical to
     // the old contiguous scan (storage-location-only change).
     var ni: usize = 0;
     while (ni < ctx.store.nodes.len) : (ni += @intCast(usize, 1)) {
+        var p7_best_root: u32 = @intCast(u32, 0xFFFFFFFF);
+        var p7_best_id: u32 = type_resolver.MODULE_ID_NONE;
+        var p7_si: usize = 0;
+        while (p7_si < p7_mods.len) : (p7_si += 1) {
+            var p7_r: u32 = p7_mods[p7_si].ast_root;
+            if (p7_r == @intCast(u32, 0)) continue;
+            if (@intCast(usize, p7_r) >= ni and p7_r < p7_best_root) {
+                p7_best_root = p7_r;
+                p7_best_id = p7_mods[p7_si].id;
+            }
+        }
+        ce.module_id = p7_best_id;
         var node = ast_mod.astStoreNodeAt(ctx.store, @intCast(u32, ni));
         if (node.kind == AstKind.builtin_call) {
             var val = ce_mod.comptimeEvalEvaluate(&ce, @intCast(u32, ni));
             if (val) |v| {
-                hash_mod.u32ToU64MapPut(&ctx.comptime_values, @intCast(u32, ni), v.bits);
+                // Task 4: store the EXACT ComptimeVal (Task 1 §6.2). An
+                // out-of-64-bit integer is stored too, so the lowering
+                // materialisation site can reject it with error[3000]
+                // (Task 1 §8 risk 1) instead of silently keeping a wrong
+                // runtime path (the old 64-bit-pattern store dropped it).
+                ce_mod.comptimeFoldTablePut(&ctx.comptime_folds, @intCast(u32, ni), v);
             }
         } else if (node.kind == AstKind.var_decl and node.child_1 != 0) {
             if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
@@ -500,7 +767,31 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
                     ik == @intCast(u32, 62) or ik == @intCast(u32, 64)) {
                     var val2 = ce_mod.comptimeEvalEvaluate(&ce, node.child_1);
                     if (val2) |v2| {
-                        hash_mod.u32ToU64MapPut(&ctx.comptime_values, node.child_1, v2.bits);
+                        // Task 4: exact-value store (see the builtin arm).
+                        ce_mod.comptimeFoldTablePut(&ctx.comptime_folds, node.child_1, v2);
+                    }
+                }
+            }
+        } else if (node.kind == AstKind.if_expr or node.kind == AstKind.if_stmt) {
+            // T3 (spec §3 trigger set; supersedes the Task-1-§7 no-`else`-only
+            // domain): fold and store the condition of EVERY capture-free
+            // `if` — value `if` with or without `else`, and `if` statements —
+            // whose condition the module evaluator folds to a bool. This is
+            // the narrow fixture-pinned trigger set: `@isWindows()` (also
+            // covered by the builtin sweep above; `ce.host_is_windows` makes
+            // the value follow the CLI target), literal `true`/`false`,
+            // comptime `const` conditions, and constant folds. Consumers:
+            // lowering's `if_fold`/`ie_fold` (untaken arm not lowered) and
+            // sema's `semanticAnalyzerIfComptimeCondition` (untaken arm not
+            // analyzed — the spec §3 Zig rule). Function-local condition
+            // operands are not visible to this module-scope sweep (no
+            // local-const scope); sema stamps those into the same table.
+            // Runtime conditions fold to nothing and are untouched.
+            if (ast_mod.astStoreNodePayload(ctx.store, @intCast(u32, ni)) == @intCast(u32, 0)) {
+                var cval = ce_mod.comptimeEvalEvaluate(&ce, node.child_0);
+                if (cval) |cv| {
+                    if (cv.kind == ce_mod.KIND_BOOL) {
+                        ce_mod.comptimeFoldTablePut(&ctx.comptime_folds, node.child_0, cv);
                     }
                 }
             }
@@ -524,9 +815,11 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         .scratch = &ctx.alloc.scratch,
         .coercion_table = ctx.coercion_table,
         .enum_value_table = &ctx.enum_value_table,
+        .tuple_index_table = &ctx.tuple_index_table,
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .call_param_map = &ctx.call_param_map,
+        .suspending_fns = &ctx.suspending_fns,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
@@ -535,22 +828,39 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         var ast_root = mods[mi].ast_root;
         if (ast_root == @intCast(u32, 0)) { var mz: []const u8 = "MZ"; pal.markerWrite(mz); continue; }
         var root = ast_mod.astStoreNodeAt(ctx.store, ast_root);
-        var decls = ast_mod.astStoreNodeExtraChildren(ctx.store, ast_root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, ast_root);
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
-         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg);
+         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.tuple_index_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg, &ctx.suspending_fns);
+        // T3: bind the shared fold table so the spec §3 untaken-arm gate can
+        // consult (and stamp) condition folds — sema/lowering coherence.
+        sa.comptime_folds = &ctx.comptime_folds;
         var di: usize = 0;
-        while (di < decls.len) : (di += 1) {
-            var decl = ast_mod.astStoreNodeAt(ctx.store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, ast_root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(ctx.store, decl_idx);
             var dn: []const u8 = "DN"; pal.markerWrite(dn);
             if (decl.kind == AstKind.fn_decl) {
                 if (decl.child_0 != 0) {
-                    front_res.resolveStmtTypes(&frc, mods[mi].id, decl.child_0, @intCast(u32, 0));
+                    front_res.resolveStmtTypes(&frc, mods[mi].id, decl.child_0, @intCast(u32, 0), mods[mi].source_file_id);
                 }
                 var sa0: []const u8 = "SA"; pal.markerWrite(sa0);
-                sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
+                sa_mod.semanticAnalyzerResolveFnBody(&sa, decl_idx);
                 var sa1: []const u8 = "sA"; pal.markerWrite(sa1);
+            } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
+                var di_inn = ast_mod.astStoreNodeAt(ctx.store, decl.child_1);
+                if (di_inn.kind == AstKind.struct_decl) {
+                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decl_idx);
+                }
+                if (di_inn.kind == AstKind.union_decl and (di_inn.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decl_idx);
+                }
+                if (di_inn.kind == AstKind.enum_decl) {
+                    sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decl_idx);
+                }
+            } else if (decl.kind == AstKind.enum_decl) {
+                sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decl_idx);
             }
         }
     }
@@ -594,8 +904,59 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
                 .in_defer_exec = @intCast(u8, 0),
                 .lifetime_analysis_mode = @intCast(u8, 0),
                 .doublefree_analysis_mode = @intCast(u8, 0),
+                .source_file_id = mods[mi].source_file_id,
+                // T9a (D4a): bind the same shared fold table sema/lowering use,
+                // plus the evaluator inputs for the DED-2 selector fallback.
+                .comptime_folds = &ctx.comptime_folds,
+                .symbol_reg = ctx.symbol_reg,
+                .target_is_windows = ctx.module_reg.target_is_windows,
             };
             az_mod.runAllAnalyzers(&ac, ast_root);
+            sm_mod.sourceManagerResetFaults(ctx.source_man);
+        }
+    }
+}
+
+fn phase_AsyncFrameSize(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
+    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.interner, ctx.module_reg, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.state_widths, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.driver_targets, &ctx.parent_result_type_list, &ctx.parent_result_start, &ctx.parent_result_count);
+}
+
+// M2 T1C-F (D4): classify every file-scope `const` initializer ONCE, before
+// any `lowerFn` runs. The decl->tree map is the shared result consulted by the
+// storage walk below, `lower.zig` (module-init skip + use-site scalar fold)
+// and `c89_emit.zig` (rodata definitions) — never a second kind test.
+fn phase_ConstInit(ctx: *CompilerContext) void {
+    var ci_m: []const u8 = "CIE\n"; pal.markerWrite(ci_m);
+    var ci_ce = ce_mod.comptimeEvalInit(ctx.typereg, ctx.store, ctx.interner, ctx.symbol_reg);
+    ci_ce.host_is_windows = ctx.cli.target_is_windows;
+    ci_ce.diag = ctx.diag;
+    var cic = const_init_eval.ConstInitEvalCtx{
+        .tbl = &ctx.const_inits,
+        .store = ctx.store,
+        .registry = ctx.typereg,
+        .symbol_reg = ctx.symbol_reg,
+        .resolved = ctx.resolved_types,
+        .ce = &ci_ce,
+        .enum_values = &ctx.enum_value_table,
+        .module_reg = ctx.module_reg,
+    };
+    var cmods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var cmi: usize = @intCast(usize, 0);
+    while (cmi < cmods.len) : (cmi += @intCast(usize, 1)) {
+        var croot = cmods[cmi].ast_root;
+        if (croot == @intCast(u32, 0)) continue;
+        ci_ce.module_id = cmods[cmi].id;
+        var cdn = ast_mod.astStoreNodeExtraChildCount(ctx.store, croot);
+        var cdi: usize = @intCast(usize, 0);
+        while (cdi < @intCast(usize, cdn)) : (cdi += @intCast(usize, 1)) {
+            var cdecl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, croot, @intCast(u32, cdi));
+            var cdecl = ast_mod.astStoreNodeAt(ctx.store, cdecl_idx);
+            if (cdecl.kind != AstKind.var_decl) continue;
+            if ((@intCast(u16, cdecl.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) continue;
+            if ((@intCast(u16, cdecl.flags) & @intCast(u16, 0x01)) != @intCast(u16, 0)) continue;
+            if (cdecl.child_1 == @intCast(u32, 0)) continue;
+            _ = const_init_eval.constInitEvaluate(&cic, cmods[cmi].id, cdecl_idx);
         }
     }
 }
@@ -630,6 +991,23 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     var ti: usize = @intCast(usize, 0);
     while (ti < tmp_name.len and sp_len < @intCast(usize, 511)) : (ti += @intCast(usize, 1)) { spill_path[sp_len] = tmp_name[ti]; sp_len += @intCast(usize, 1); }
     lir_stream.lirStreamBeginWrite(&ctx.lir_stream, spill_path[0..sp_len], &ctx.alloc.emission);
+    if (ctx.cli.debug) {
+        var dbg_path: [512]u8 = undefined;
+        var dp: usize = @intCast(usize, 0);
+        if (ctx.cli.output_dir_set) {
+            var odb = ctx.cli.output_dir;
+            var oib: usize = @intCast(usize, 0);
+            while (oib < odb.len and dp < @intCast(usize, 511)) : (oib += @intCast(usize, 1)) { dbg_path[dp] = odb[oib]; dp += @intCast(usize, 1); }
+            dbg_path[dp] = @intCast(u8, '/'); dp += @intCast(usize, 1);
+        } else {
+            dbg_path[dp] = @intCast(u8, '.'); dp += @intCast(usize, 1);
+            dbg_path[dp] = @intCast(u8, '/'); dp += @intCast(usize, 1);
+        }
+        var dbg_name: []const u8 = ".zig1_dbg.tmp";
+        var dni: usize = @intCast(usize, 0);
+        while (dni < dbg_name.len and dp < @intCast(usize, 511)) : (dni += @intCast(usize, 1)) { dbg_path[dp] = dbg_name[dni]; dp += @intCast(usize, 1); }
+        debug_map.debugSpanStoreOpen(&ctx.debug_spans, &ctx.alloc.emission, dbg_path[0..dp]);
+    }
     var sem_ctx: SemanticContext = SemanticContext{
         .store = ctx.store,
         .registry = ctx.typereg,
@@ -639,12 +1017,25 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .diag = ctx.diag,
         .has_symbols = @intCast(u8, 1),
         .enum_value_table = &ctx.enum_value_table,
+        .tuple_index_table = &ctx.tuple_index_table,
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
-        .comptime_values = &ctx.comptime_values,
+        .comptime_folds = &ctx.comptime_folds,
+        .const_inits = &ctx.const_inits,
         .source_file_id = @intCast(u32, 0),
+        .safe_checks = ctx.cli.safe_checks,
+        .suspending_fns = &ctx.suspending_fns,
+        .frame_sizes = &ctx.frame_sizes,
+        .state_widths = &ctx.state_widths,
+        .print_value_lowered = @intCast(u8, 0),
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    // Amendment 9 two-phase async lowering: phase A lowers + layouts + publishes
+    // every suspending function (retaining the LIR), phase B transforms them.
+    // Retained LIR lives in scratch, so scratch resets are deferred once any
+    // suspending function is retained.
+    var async_retained = ga_mod.u32ArrayListInit(&ctx.alloc.module);
+    var async_pending: bool = false;
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
         sem_ctx.source_file_id = mods[mi].source_file_id;
@@ -663,18 +1054,19 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
             var root = ast_mod.astStoreNodeAt(ctx.store, mods[mi].ast_root);
             if (root.kind == AstKind.module_root) {
                 var mr: []const u8 = "R"; pal.markerWrite(mr);
-                var decls = ast_mod.astStoreNodeExtraChildren(ctx.store, mods[mi].ast_root);
-                var decl_len: u32 = @intCast(u32, decls.len);
+                var decls_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, mods[mi].ast_root);
+                var decl_len: u32 = @intCast(u32, decls_n);
                 var dcount_buf: [20]u8 = undefined;
                 var dcount_len = itoa_mod.itoa(decl_len, dcount_buf[0..]);
                 var dstart: usize = @intCast(usize, 19) - @intCast(usize, dcount_len);
                 pal.markerWrite(dcount_buf[dstart..@intCast(usize, 19)]);
                 pal.markerWrite(msep);
-                mr_mod.moduleRegistryCollectIncludes(ctx.store, decls, &mods[mi].c_includes);
+                mr_mod.moduleRegistryCollectIncludes(ctx.store, mods[mi].ast_root, &mods[mi].c_includes);
                 var mod_has_ri: u8 = @intCast(u8, 0);
                 var di: usize = @intCast(usize, 0);
-                while (di < decls.len) : (di += @intCast(usize, 1)) {
-                    var decl = ast_mod.astStoreNodeAt(ctx.store, decls[di]);
+                while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+                    var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, mods[mi].ast_root, @intCast(u32, di));
+                    var decl = ast_mod.astStoreNodeAt(ctx.store, decl_idx);
                     var raw_k: u32 = @intCast(u32, @enumToInt(decl.kind));
                     var rbuf: [20]u8 = undefined;
                     var rlen = itoa_mod.itoa(raw_k, rbuf[0..]);
@@ -685,24 +1077,130 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
             if (decl.kind == AstKind.fn_decl) {
                         var mf: []const u8 = "F"; pal.markerWrite(mf);
                         if ((@intCast(u16, decl.flags) & @intCast(u16, 0x08)) != @intCast(u16, 0)) {
-                            var fexp_proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decls[di]))];
+                            var fexp_proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decl_idx))];
                             var fexp_key: u64 = (@intCast(u64, mods[mi].id) << @intCast(u64, 35)) | (@intCast(u64, 0) << @intCast(u64, 32)) | @intCast(u64, fexp_proto.name_id);
                             _ = hash_mod.u64ToU32MapPut(&ctx.exported, fexp_key, @intCast(u32, 1));
                         }
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
                         lowerer.module_id = mods[mi].id;
                         lowerer.module_reg = ctx.module_reg;
-                        var lf = lower_mod.lowerFn(&lowerer, decls[di]);
-                        var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
-                        lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);
-                        alloc_mod.sandReset(&ctx.alloc.scratch);
+                        lowerer.debug_enabled = @intCast(u8, if (ctx.cli.debug) 1 else 0);
+                        if (ctx.cli.debug) {
+                            var f_sym_proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decl_idx))];
+                            var f_sym_loc = sm_mod.sourceManagerGetLocation(ctx.source_man, mods[mi].source_file_id, decl.span_start);
+                            debug_map.debugSymbolListAppend(&ctx.debug_symbols, debug_map.DebugSymbol{
+                                .kind = @intCast(u8, 0),
+                                .is_extern = @intCast(u8, if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) 1 else 0),
+                                .name_id = f_sym_proto.name_id,
+                                .module_id = mods[mi].id,
+                                .type_id = @intCast(u32, 0),
+                                .src_line = f_sym_loc.line,
+                                .src_file_id = mods[mi].source_file_id,
+                                .decl_span = decl.span_start,
+                            });
+                        }
+                        if (ctx.cli.debug) {
+                            lowerer.debug_spans = ctx.debug_span_buf;
+                            lowerer.debug_spans.len = 0;
+                        }
+                        var lf = lower_mod.lowerFn(&lowerer, decl_idx);
+                        if (async_analysis.asyncIsSuspending(&ctx.suspending_fns, lf.module_id, lf.name_id)) {
+                            // Phase A: compute + publish the layout, retain the LIR
+                            // (persistent copy; its arrays live in scratch) for phase B.
+                            var async_layout = async_frame_layout.asyncLayoutFrame(&ctx.alloc.scratch, ctx.typereg, &lf, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.state_widths, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.driver_targets, &ctx.parent_result_type_list, &ctx.parent_result_start, &ctx.parent_result_count);
+                            async_frame_layout.asyncLayoutPublish(&ctx.alloc.scratch, &ctx.async_layouts, lf.module_id, lf.name_id, async_layout);
+                            var lf_raw = alloc_mod.sandAlloc(&ctx.alloc.scratch, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
+                            var lf_ptr = @ptrCast(*LirFunction, lf_raw);
+                            lf_ptr.* = lf;
+                            ga_mod.u32ArrayListAppend(&async_retained, @intCast(u32, @ptrToInt(lf_ptr)));
+                            async_pending = true;
+                        } else {
+                            var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
+                            lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);
+                            if (ctx.cli.debug) {
+                                debug_map.debugSpanStoreAppend(&ctx.debug_spans, slot.disk_offset, lowerer.debug_spans.items[0..lowerer.debug_spans.len]);
+                            }
+                            if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
+                        }
+                        if (ctx.cli.debug) {
+                            ctx.debug_span_buf = lowerer.debug_spans;
+                            ctx.debug_span_buf.len = 0;
+                        }
                     } else {
                 if (decl.kind == AstKind.var_decl) {
                     if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
-                        var gv_name: u32 = ast_mod.astStoreNodePayload(ctx.store, decls[di]);
+                        var gv_name: u32 = ast_mod.astStoreNodePayload(ctx.store, decl_idx);
                         var gv_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mods[mi].id, gv_name);
                         if (gv_sym) |gvs| {
                             if (gvs.kind == sym_mod.SymbolKind.global) {
+                                // M2 T1C-F: a `const` with a constant-init tree is
+                                // recorded as C89 const rodata (`static const`/
+                                // `const`, no `__module_init` store). Import /
+                                // field-of-import un-sets stay first (module
+                                // identity has no C storage); everything without
+                                // a tree keeps today's `.bss` path verbatim.
+                                var gv_ctree: u32 = @intCast(u32, 0xFFFFFFFF);
+                                if ((@intCast(u16, decl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0) and decl.child_1 != @intCast(u32, 0)) {
+                                    var gv_i0 = ast_mod.astStoreNodeAt(ctx.store, decl.child_1);
+                                    var gv_alias: u8 = @intCast(u8, 0);
+                                    if (gv_i0.kind == AstKind.import_expr) { gv_alias = @intCast(u8, 1); }
+                                    if (gv_i0.kind == AstKind.field_access) {
+                                        var gv_fb0 = ast_mod.astStoreNodeAt(ctx.store, gv_i0.child_0);
+                                        if (gv_fb0.kind == AstKind.import_expr) { gv_alias = @intCast(u8, 1); }
+                                    }
+                                    if (gv_alias == @intCast(u8, 0)) {
+                                        if (hash_mod.u32ToU32MapGet(&ctx.const_inits.roots, decl_idx)) |croot| {
+                                            if (croot != const_init_eval.CIE_NONE) { gv_ctree = croot; }
+                                        }
+                                    }
+                                }
+                                if (gv_ctree != @intCast(u32, 0xFFFFFFFF)) {
+                                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x08)) != @intCast(u16, 0)) {
+                                        var gexp_key: u64 = (@intCast(u64, mods[mi].id) << @intCast(u64, 35)) | (@intCast(u64, 1) << @intCast(u64, 32)) | @intCast(u64, gv_name);
+                                        _ = hash_mod.u64ToU32MapPut(&ctx.exported, gexp_key, @intCast(u32, 1));
+                                    }
+                                    var gv_rt2 = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decl_idx);
+                                    var gv_tid2: u32 = if (gv_rt2) |grt2| grt2 else type_mod.TYPE_UNDEFINED;
+                                    // Un-typed literal carriers (`integer_literal_type`
+                                    // spells `int`, size 0) need a concrete C type for
+                                    // the rodata definition; mirror the use-site
+                                    // fold's carrier rule.
+                                    if (gv_tid2 == type_mod.TYPE_INT_LIT or gv_tid2 == type_mod.TYPE_UNDEFINED or gv_tid2 == @intCast(u32, 0)) {
+                                        var gv_rn = const_init_eval.constInitNodeAt(&ctx.const_inits, gv_ctree);
+                                        if (gv_rn.kind == const_init_eval.CIE_INT or gv_rn.kind == const_init_eval.CIE_CHAR) {
+                                            gv_tid2 = type_mod.TYPE_U32;
+                                            if ((gv_rn.b & @intCast(u32, 1)) != @intCast(u32, 0)) { gv_tid2 = type_mod.TYPE_I64; }
+                                            else if (gv_rn.a > @intCast(u64, 4294967295)) { gv_tid2 = type_mod.TYPE_U64; }
+                                        } else if (gv_rn.kind == const_init_eval.CIE_BOOL) {
+                                            gv_tid2 = type_mod.TYPE_BOOL;
+                                        } else if (gv_rn.kind == const_init_eval.CIE_FLOAT) {
+                                            gv_tid2 = type_mod.TYPE_F64;
+                                        }
+                                    }
+                                    var gv_lv: u8 = @intCast(u8, 0);
+                                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x0A)) != @intCast(u16, 0)) { gv_lv = @intCast(u8, 1); }
+                                    lir_mod.globalDeclArrayListAppend(&ctx.global_decls, lir_mod.ModuleGlobalDecl{
+                                        .name_id = gv_name,
+                                        .module_id = mods[mi].id,
+                                        .type_id = gv_tid2,
+                                        .has_runtime_init = @intCast(u8, 0),
+                                        .const_init = gv_ctree,
+                                        .link_visible = gv_lv,
+                                    });
+                                    if (ctx.cli.debug) {
+                                        var g_sym_loc = sm_mod.sourceManagerGetLocation(ctx.source_man, mods[mi].source_file_id, decl.span_start);
+                                        debug_map.debugSymbolListAppend(&ctx.debug_symbols, debug_map.DebugSymbol{
+                                            .kind = @intCast(u8, 1),
+                                            .is_extern = @intCast(u8, 0),
+                                            .name_id = gv_name,
+                                            .module_id = mods[mi].id,
+                                            .type_id = gv_tid2,
+                                            .src_line = g_sym_loc.line,
+                                            .src_file_id = mods[mi].source_file_id,
+                                            .decl_span = decl.span_start,
+                                        });
+                                    }
+                                } else {
                                 var gv_is_storage: u8 = @intCast(u8, 0);
                                 if ((@intCast(u16, decl.flags) & @intCast(u16, 0x01)) != @intCast(u16, 0)) {
                                     gv_is_storage = @intCast(u8, 1);
@@ -733,14 +1231,32 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                         if (gv_init2.kind != AstKind.undefined_literal) { gv_has_ri = @intCast(u8, 1); }
                                     }
                                     if (gv_has_ri == @intCast(u8, 1)) { mod_has_ri = @intCast(u8, 1); }
-                                    var gv_rt = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decls[di]);
+                                    var gv_rt = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decl_idx);
                                     var gv_tid: u32 = if (gv_rt) |grt| grt else type_mod.TYPE_UNDEFINED;
+                                    var gv_lv2: u8 = @intCast(u8, 0);
+                                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x0A)) != @intCast(u16, 0)) { gv_lv2 = @intCast(u8, 1); }
                                     lir_mod.globalDeclArrayListAppend(&ctx.global_decls, lir_mod.ModuleGlobalDecl{
                                         .name_id = gv_name,
                                         .module_id = mods[mi].id,
                                         .type_id = gv_tid,
                                         .has_runtime_init = gv_has_ri,
+                                        .const_init = @intCast(u32, 0xFFFFFFFF),
+                                        .link_visible = gv_lv2,
                                     });
+                                    if (ctx.cli.debug) {
+                                        var g2_sym_loc = sm_mod.sourceManagerGetLocation(ctx.source_man, mods[mi].source_file_id, decl.span_start);
+                                        debug_map.debugSymbolListAppend(&ctx.debug_symbols, debug_map.DebugSymbol{
+                                            .kind = @intCast(u8, 1),
+                                            .is_extern = @intCast(u8, 0),
+                                            .name_id = gv_name,
+                                            .module_id = mods[mi].id,
+                                            .type_id = gv_tid,
+                                            .src_line = g2_sym_loc.line,
+                                            .src_file_id = mods[mi].source_file_id,
+                                            .decl_span = decl.span_start,
+                                        });
+                                    }
+                                }
                                 }
                             }
                         }
@@ -752,20 +1268,30 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         var ilowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
         ilowerer.module_id = mods[mi].id;
         ilowerer.module_reg = ctx.module_reg;
-        var imf = lower_mod.lowerModuleInit(&ilowerer, decls, mods[mi].id);
+        ilowerer.debug_enabled = @intCast(u8, if (ctx.cli.debug) 1 else 0);
+        if (ctx.cli.debug) {
+            ilowerer.debug_spans = ctx.debug_span_buf;
+            ilowerer.debug_spans.len = 0;
+        }
+        var imf = lower_mod.lowerModuleInit(&ilowerer, mods[mi].ast_root, mods[mi].id, &ctx.module_init_deps);
         var islot = lir_stream.lirStreamAppend(&ctx.lir_stream, imf);
         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, islot);
-        alloc_mod.sandReset(&ctx.alloc.scratch);
+        if (ctx.cli.debug) {
+            debug_map.debugSpanStoreAppend(&ctx.debug_spans, islot.disk_offset, ilowerer.debug_spans.items[0..ilowerer.debug_spans.len]);
+            ctx.debug_span_buf = ilowerer.debug_spans;
+            ctx.debug_span_buf.len = 0;
+        }
+        if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
     }
     var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     if (amods.len > @intCast(usize, 0) and amods[0].ast_root != @intCast(u32, 0)) {
         var ar = ast_mod.astStoreNodeAt(ctx.store, amods[0].ast_root);
         if (ar.kind == AstKind.module_root) {
-            var adl = ast_mod.astStoreNodeExtraChildren(ctx.store, amods[0].ast_root);
+            var adl_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, amods[0].ast_root);
             var adi: usize = @intCast(usize, 0);
             var al: []const u8 = "A0"; pal.markerWrite(al);
-            while (adi < adl.len) : (adi += @intCast(usize, 1)) {
-                var ad = ast_mod.astStoreNodeAt(ctx.store, adl[adi]);
+            while (adi < @intCast(usize, adl_n)) : (adi += @intCast(usize, 1)) {
+                var ad = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, amods[0].ast_root, @intCast(u32, adi)));
                 var ak: u32 = @intCast(u32, @enumToInt(ad.kind));
                 var ab: [20]u8 = undefined;
                 var alen = itoa_mod.itoa(ak, ab[0..]);
@@ -779,7 +1305,105 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
 }
         }
     }
+    // Phase B (Amendment 9): transform every retained suspending function. Its
+    // layout was published in phase A, so callee layouts resolve regardless of
+    // source order.
+    var arl_i: usize = @intCast(usize, 0);
+    while (arl_i < async_retained.len) : (arl_i += @intCast(usize, 1)) {
+        var lf2 = @intToPtr(*LirFunction, @intCast(usize, async_retained.items[arl_i]));
+        if (async_frame_layout.asyncLayoutLookup(&ctx.async_layouts, lf2.module_id, lf2.name_id)) |lay2| {
+            var async_ctx2 = async_state_machine.AsyncTransformCtx{
+                .alloc = &ctx.alloc.scratch,
+                .registry = ctx.typereg,
+                .interner = ctx.interner,
+                .lir_stream = &ctx.lir_stream,
+                .lir_slots = &ctx.lir_slots,
+                .suspending_fns = &ctx.suspending_fns,
+                .layout = lay2,
+                .safe_checks = ctx.cli.safe_checks,
+                .frame_sizes = &ctx.frame_sizes,
+                .async_layouts = &ctx.async_layouts,
+                .diag = ctx.diag,
+            };
+            // The transform consumes the original body (streams the step, plus
+            // the root-`main` driver) and signals "consumed"; phase A already
+            // skipped streaming `lf` for suspending functions.
+            _ = async_state_machine.asyncTransform(lf2, &async_ctx2);
+        }
+    }
+    if (async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
+    computeModuleInitOrder(ctx);
     lir_stream.lirStreamFinishWrite(&ctx.lir_stream);
+    // Task 10 (B8): the auto-import probe in `phase_ImportResolution` skips
+    // std_fmt.zig silently on a resolve miss. A lowered print VALUE is the only
+    // thing that needs a std.fmt symbol, so a program whose `print` reference
+    // never lowered one must not fail; report the missing module here (the same
+    // error[3048] the import path used to raise) only when it was needed.
+    if (sem_ctx.print_value_lowered != @intCast(u8, 0)) {
+        var c89_fmt_base: []const u8 = "std_fmt.zig";
+        if (moduleIdForBasename(mr_mod.moduleRegistryGetModules(ctx.module_reg), ctx.interner, c89_fmt_base) == @intCast(u32, 0xFFFFFFFF)) {
+            var p1: []const u8 = "could not resolve imported file '";
+            var p2: []const u8 = "'";
+            var parts: [3][]const u8 = [3][]const u8{ p1, c89_fmt_base, p2 };
+            var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.interner, &parts[0], @intCast(u32, 3));
+            _ = diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3048_CANNOT_READ_FILE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+        }
+    }
+}
+
+// Task 9 fix round 3 (operator ruling Q7): order the emitted `__module_init`
+// calls so a module's global initializers run after every module they read.
+// Stable: a module is placed in registry order unless an outgoing dependency
+// edge forces an earlier placement, so a program without cross-module global
+// dependencies keeps its exact previous call sequence (the gate dumps do not
+// churn). A cross-module cycle has no valid order and rejects `error[3064]` at
+// one referencing declaration.
+fn computeModuleInitOrder(ctx: *CompilerContext) void {
+    var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var n = mods.len;
+    ctx.module_init_order.len = @intCast(usize, 0);
+    var placed = @ptrCast([*]u8, alloc_mod.sandAlloc(&ctx.alloc.scratch, n + @intCast(usize, 1), @intCast(usize, 1)) catch unreachable);
+    var i: usize = @intCast(usize, 0);
+    while (i < n) : (i += @intCast(usize, 1)) { placed[i] = @intCast(u8, 0); }
+    var remaining = n;
+    while (remaining > @intCast(usize, 0)) {
+        var pick: usize = n;
+        i = @intCast(usize, 0);
+        while (i < n and pick == n) : (i += @intCast(usize, 1)) {
+            if (placed[i] != @intCast(u8, 0)) continue;
+            var ok: u8 = @intCast(u8, 1);
+            var j: usize = @intCast(usize, 0);
+            while (j < n) : (j += @intCast(usize, 1)) {
+                if (placed[j] != @intCast(u8, 0)) continue;
+                var dep_key: u64 = (@intCast(u64, mods[i].id) << @intCast(u64, 32)) | @intCast(u64, mods[j].id);
+                if (hash_mod.u64ToU32MapGet(&ctx.module_init_deps, dep_key) != null) { ok = @intCast(u8, 0); break; }
+            }
+            if (ok != @intCast(u8, 0)) { pick = i; }
+        }
+        if (pick == n) {
+            var ri: usize = @intCast(usize, 0);
+            var reported: u8 = @intCast(u8, 0);
+            while (ri < n and reported == @intCast(u8, 0)) : (ri += @intCast(usize, 1)) {
+                if (placed[ri] != @intCast(u8, 0)) continue;
+                var rj: usize = @intCast(usize, 0);
+                while (rj < n) : (rj += @intCast(usize, 1)) {
+                    if (placed[rj] != @intCast(u8, 0)) continue;
+                    var cyc_key: u64 = (@intCast(u64, mods[ri].id) << @intCast(u64, 32)) | @intCast(u64, mods[rj].id);
+                    if (hash_mod.u64ToU32MapGet(&ctx.module_init_deps, cyc_key)) |ref_decl| {
+                        var cyc_dcl = ast_mod.astStoreNodeAt(ctx.store, ref_decl);
+                        var cyc_msg: []const u8 = "cyclic global initializer dependency";
+                        _ = diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3064_CYCLIC_GLOBAL_INIT)), mods[ri].source_file_id, cyc_dcl.span_start, cyc_dcl.span_start + @intCast(u32, cyc_dcl.span_len), cyc_msg);
+                        reported = @intCast(u8, 1);
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+        placed[pick] = @intCast(u8, 1);
+        ga_mod.u32ArrayListAppend(&ctx.module_init_order, mods[pick].id);
+        remaining -= @intCast(usize, 1);
+    }
 }
 
 fn errorCodeRegistryFinalize(ctx: *CompilerContext) void {
@@ -797,11 +1421,143 @@ fn errorCodeRegistryFinalize(ctx: *CompilerContext) void {
     }
 }
 
+fn pruneTypeMarkByValue(ref_edges: *hash_mod.U32ToU32Map, reg: *TypeRegistry, visited: *hash_mod.U64ToU32Map, src_mid: u32, tid: u32) void {
+    if (tid >= @intCast(u32, reg.types_len)) return;
+    var vkey: u64 = (@intCast(u64, src_mid) << @intCast(u64, 32)) | @intCast(u64, tid);
+    if (hash_mod.u64ToU32MapGet(visited, vkey) != null) return;
+    hash_mod.u64ToU32MapPut(visited, vkey, @intCast(u32, 1));
+    var ty = reg.types_items[@intCast(usize, tid)];
+    // The type's owner module must stay reachable: a type definition is
+    // emitted only in the owner's header, while a by-value use of the type is
+    // emitted in the referencing module.
+    if (ty.module_id != @intCast(u32, 0) and ty.module_id != src_mid) {
+        hash_mod.u32ToU32MapPut(ref_edges, src_mid * @intCast(u32, 65536) + ty.module_id, @intCast(u32, 1));
+    }
+    if (ty.kind == type_mod.TypeKind.struct_type) {
+        var p = reg.st_items[@intCast(usize, ty.payload_idx)];
+        var fi: usize = @intCast(usize, 0);
+        while (fi < @intCast(usize, p.fields_count)) : (fi += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.fe_items[@intCast(usize, p.fields_start) + fi].type_id);
+        }
+    } else if (ty.kind == type_mod.TypeKind.tagged_union_type) {
+        var p = reg.tu_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.tag_type);
+        var fi: usize = @intCast(usize, 0);
+        while (fi < @intCast(usize, p.fields_count)) : (fi += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.fe_items[@intCast(usize, p.fields_start) + fi].type_id);
+        }
+    } else if (ty.kind == type_mod.TypeKind.union_type or ty.kind == type_mod.TypeKind.packed_union_type) {
+        var p = reg.un_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.tag_type);
+        var fi: usize = @intCast(usize, 0);
+        while (fi < @intCast(usize, p.fields_count)) : (fi += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.fe_items[@intCast(usize, p.fields_start) + fi].type_id);
+        }
+    } else if (ty.kind == type_mod.TypeKind.enum_type) {
+        var p = reg.en_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.backing_type);
+    } else if (ty.kind == type_mod.TypeKind.array_type) {
+        var p = reg.array_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.elem);
+    } else if (ty.kind == type_mod.TypeKind.tuple_type) {
+        var p = reg.tup_items[@intCast(usize, ty.payload_idx)];
+        var ei: usize = @intCast(usize, 0);
+        while (ei < @intCast(usize, p.elems_count)) : (ei += @intCast(usize, 1)) {
+            pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, reg.xt_items[@intCast(usize, p.elems_start) + ei]);
+        }
+    } else if (ty.kind == type_mod.TypeKind.optional_type) {
+        var p = reg.opt_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.payload);
+    } else if (ty.kind == type_mod.TypeKind.error_union_type) {
+        var p = reg.eu_items[@intCast(usize, ty.payload_idx)];
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.payload);
+        pruneTypeMarkByValue(ref_edges, reg, visited, src_mid, p.error_set);
+    }
+}
+
+
+// Task 1/10: the std_fmt module id, found by its path basename.
+// 0xFFFFFFFF means "std_fmt is not in the module graph" (see phase_LIRLowering).
+fn moduleIdForBasename(mods: []mr_mod.ModuleEntry, interner: *StringInterner, base: []const u8) u32 {
+    var i: usize = @intCast(usize, 0);
+    while (i < mods.len) : (i += @intCast(usize, 1)) {
+        var p = interner_mod.stringInternerGet(interner, mods[i].path_id);
+        if (p.len >= base.len) {
+            var off: usize = p.len - base.len;
+            var eq: u8 = @intCast(u8, 1);
+            var j: usize = @intCast(usize, 0);
+            while (j < base.len) : (j += @intCast(usize, 1)) {
+                if (p[off + j] != base[j]) { eq = @intCast(u8, 0); break; }
+            }
+            if (eq != @intCast(u8, 0)) {
+                if (off == @intCast(usize, 0)) return mods[i].id;
+                if (p[off - @intCast(usize, 1)] == @intCast(u8, '/')) return mods[i].id;
+            }
+        }
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
+// P4 fix round 2: the backend-neutral pre-emit classification boundary —
+// between `phase_LIRLowering` and `phase_C89Emission`, BEFORE any backend
+// runs (the Decision-vs-spelling rule: the emitter never decides; classification
+// completes HERE). Drives the resolver-owned mechanism: `collectNeededTuples`
+// over the LIR hoisted inventory + module globals (the classification inputs
+// that only exist after lowering), then `classifyTypeEmissionFinalize` — the
+// full-registry completion walk (needed-tuple shared seed E4 included). No
+// marker emitted: the `--markers` stream stays byte-identical (placement-only
+// change; the phase reuses the LIR read view exactly as `phase_C89Emission`'s
+// reachability walk does).
+fn phase_EmissionClassification(ctx: *CompilerContext) void {
+    // P6-pre: the C89 spelling planner step (same boundary) — per-const carrier
+    // derivation into `ctx.spell_plan` side-table state; the emitter reads it at
+    // spell time (Decision-vs-spelling). P12: the same mechanism plans the
+    // typedef order (`spellPlanPlanTypeOrder`, below). No marker emitted (the
+    // `--markers` stream stays byte-identical).
+    c89_plan.spellPlanInit(&ctx.spell_plan, &ctx.alloc.permanent, ctx.lir_slots.len);
+    lir_stream.lirStreamBeginRead(&ctx.lir_stream, &ctx.alloc.emission);
+    var ec_fi: usize = @intCast(usize, 0);
+    while (ec_fi < ctx.lir_slots.len) : (ec_fi += @intCast(usize, 1)) {
+        var ec_fn = lir_stream.lirStreamReadFunction(&ctx.lir_stream, ctx.lir_slots.items[ec_fi], &ctx.alloc.lir_read);
+        var ec_hi: usize = @intCast(usize, 0);
+        while (ec_hi < ec_fn.hoisted_temps.len) : (ec_hi += @intCast(usize, 1)) {
+            type_resolver.collectNeededTuples(ctx.typereg, &ctx.emission_classif.needed_tuple_set, ec_fn.hoisted_temps.items[ec_hi].type_id);
+        }
+        c89_plan.spellPlanPlanFn(&ctx.spell_plan, &ctx.alloc.permanent, ctx.typereg, ctx.lir_slots.items[ec_fi].disk_offset, &ec_fn);
+    }
+    lir_stream.lirStreamEndRead(&ctx.lir_stream);
+    var ec_gi: usize = @intCast(usize, 0);
+    while (ec_gi < ctx.global_decls.len) : (ec_gi += @intCast(usize, 1)) {
+        type_resolver.collectNeededTuples(ctx.typereg, &ctx.emission_classif.needed_tuple_set, ctx.global_decls.items[ec_gi].type_id);
+    }
+    type_resolver.classifyTypeEmissionFinalize(ctx.typereg, &ctx.emission_classif);
+    // P12: the typedef emission order, planned ONCE here at the backend-neutral
+    // boundary and carried in `ctx.spell_plan.typedef_order` (the P2
+    // popped/append derivation runs inside); the emitter walks the carried
+    // order and never sorts.
+    c89_plan.spellPlanPlanTypeOrder(&ctx.spell_plan, &ctx.alloc.permanent, ctx.typereg);
+}
+
+fn buildDebugMapPath(buf: []u8, od: []const u8, stem: []const u8, ext: []const u8) usize {
+    var p: usize = @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < od.len and p < @intCast(usize, 510)) : (i += @intCast(usize, 1)) { buf[p] = od[i]; p += @intCast(usize, 1); }
+    buf[p] = @intCast(u8, '/'); p += @intCast(usize, 1);
+    i = @intCast(usize, 0);
+    var es: []const u8 = ".z98dbg.";
+    while (i < stem.len and p < @intCast(usize, 510)) : (i += @intCast(usize, 1)) { buf[p] = stem[i]; p += @intCast(usize, 1); }
+    i = @intCast(usize, 0);
+    while (i < es.len and p < @intCast(usize, 511)) : (i += @intCast(usize, 1)) { buf[p] = es[i]; p += @intCast(usize, 1); }
+    i = @intCast(usize, 0);
+    while (i < ext.len and p < @intCast(usize, 511)) : (i += @intCast(usize, 1)) { buf[p] = ext[i]; p += @intCast(usize, 1); }
+    return p;
+}
+
 fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
-    if (!ctx.cli.dump_c89) return;
+    if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;
     var mangler: c89_mod.NameMangler = undefined;
-    var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
+    var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + ctx.emission_classif.pointer_only_map.count + @intCast(usize, 32);
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.emission, mangler_hint);
     mangler.exported = &ctx.exported;
     var emitter: c89_mod.C89Emitter = undefined;
@@ -815,25 +1571,58 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         &ctx.alloc.scratch,
         &ctx.alloc.emission,
         &ctx.error_code_registry,
-        ctx.pointer_only_len,
+        &ctx.emission_classif,
+        &ctx.spell_plan,
+        ctx.cli.safe_checks,
     );
     emitter.module_reg = ctx.module_reg;
+    var c89_fmt_base: []const u8 = "std_fmt.zig";
+    emitter.std_fmt_module_id = moduleIdForBasename(mr_mod.moduleRegistryGetModules(ctx.module_reg), ctx.interner, c89_fmt_base);
     errorCodeRegistryFinalize(ctx);
     var gd_slice = lir_mod.globalDeclArrayListGetSlice(&ctx.global_decls);
     emitter.global_decls = gd_slice.ptr;
     emitter.global_decls_len = @intCast(u32, gd_slice.len);
+    emitter.const_inits = &ctx.const_inits;
+    // Task 9 fix round 3 (Q7): the dependency-ordered `__module_init` call list
+    // computed at the end of `phase_LIRLowering`.
+    emitter.module_init_order = ctx.module_init_order.items;
+    emitter.module_init_order_len = ctx.module_init_order.len;
     emitter.spill = &ctx.lir_stream;
     emitter.fn_slots = ctx.lir_slots.items;
     emitter.fn_slots_start = @intCast(usize, 0);
     emitter.fn_slots_len = ctx.lir_slots.len;
     emitter.spill_arena = &ctx.alloc.lir_read;
+    if (ctx.cli.debug) {
+        emitter.debug_map = &ctx.debug_map;
+        emitter.debug_store = &ctx.debug_spans;
+        emitter.debug_symbols = &ctx.debug_symbols;
+    }
     lir_stream.lirStreamBeginRead(&ctx.lir_stream, &ctx.alloc.emission);
     var module_name: []const u8 = "output";
 
     var ts_ref_set = hash_mod.u32ToU32MapInit(&ctx.alloc.emission);
+    var ref_edges = hash_mod.u32ToU32MapInitCap(&ctx.alloc.emission, ctx.lir_slots.len);
+    var type_visited = hash_mod.u64ToU32MapInit(&ctx.alloc.emission);
     var ts_fi: usize = @intCast(usize, 0);
     while (ts_fi < ctx.lir_slots.len) : (ts_fi += @intCast(usize, 1)) {
         var ts_fn = lir_stream.lirStreamReadFunction(&ctx.lir_stream, ctx.lir_slots.items[ts_fi], &ctx.alloc.lir_read);
+        var ts_src: u32 = ts_fn.module_id;
+        // Type-level value references: a reachable module that names a type
+        // owned by another module must keep that module alive (and include its
+        // header), since the type's definition lives in the owner's header.
+        var ts_tti: usize = @intCast(usize, 0);
+        while (ts_tti < ts_fn.hoisted_temps.len) : (ts_tti += @intCast(usize, 1)) {
+            var ts_hty = ts_fn.hoisted_temps.items[ts_tti];
+            pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_hty.type_id);
+        }
+        if (ts_fn.return_type < @intCast(u32, ctx.typereg.types_len)) {
+            pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_fn.return_type);
+        }
+        var ts_pi: usize = @intCast(usize, 0);
+        while (ts_pi < ts_fn.params.len) : (ts_pi += @intCast(usize, 1)) {
+            var ts_pt = ts_fn.params.items[ts_pi];
+            pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_pt.type_id);
+        }
         var ts_bi: usize = @intCast(usize, 0);
         while (ts_bi < ts_fn.blocks.len) : (ts_bi += @intCast(usize, 1)) {
             var ts_blk = ts_fn.blocks.items[ts_bi];
@@ -841,6 +1630,33 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             while (ts_ii < ts_blk.insts.len) : (ts_ii += @intCast(usize, 1)) {
                 var ts_inst = ts_blk.insts.items[ts_ii];
                 var ts_tg = @enumToInt(ts_inst.tag);
+                var ts_edge_has: u8 = @intCast(u8, 0);
+                var ts_edge_dst: u32 = @intCast(u32, 0);
+                if (ts_tg == @enumToInt(lir_mod.LirInst.call_direct)) {
+                    var ts_cd = lir_mod.lirSideGetCallDirect(&ts_fn, ts_inst.call_direct);
+                    ts_edge_dst = ts_cd.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.tail_call)) {
+                    var ts_tc = lir_mod.lirSideGetTailCall(&ts_fn, ts_inst.tail_call);
+                    ts_edge_dst = ts_tc.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.func_ref)) {
+                    ts_edge_dst = ts_inst.func_ref.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.load_global)) {
+                    ts_edge_dst = ts_inst.load_global.module_id; ts_edge_has = @intCast(u8, 1);
+                } else if (ts_tg == @enumToInt(lir_mod.LirInst.store_global)) {
+                    ts_edge_dst = ts_inst.store_global.module_id; ts_edge_has = @intCast(u8, 1);
+                }
+                if (ts_edge_has != @intCast(u8, 0) and ts_edge_dst != ts_src) {
+                    hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_edge_dst, @intCast(u32, 1));
+                }
+                // Task 1: a `.print_val` lowers to a mangled call into std_fmt
+                // that is NOT a LIR call instruction, so record the value-ref
+                // edge by hand: it keeps std_fmt reachable and forces the
+                // caller's header to include std_fmt.h (the prototypes).
+                if (ts_tg == @enumToInt(lir_mod.LirInst.print_val) and emitter.std_fmt_module_id != @intCast(u32, 0xFFFFFFFF)) {
+                    if (emitter.std_fmt_module_id != ts_src) {
+                        hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + emitter.std_fmt_module_id, @intCast(u32, 1));
+                    }
+                }
                 if (ts_tg != @enumToInt(lir_mod.LirInst.load_global) and ts_tg != @enumToInt(lir_mod.LirInst.store_global)) continue;
                 var ts_name_id: u32 = @intCast(u32, 0);
                 var ts_tmp: u32 = @intCast(u32, 0);
@@ -866,16 +1682,107 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         }
     }
     emitter.ts_ref_set = ts_ref_set;
+    // T3 (D2 root fix — the measured leak channel): the runtime-init edge is
+    // NOT an unconditional force-seed any more. Pre-T3 this loop seeded a
+    // root edge for EVERY module with a runtime-initialized global,
+    // regardless of call/type reachability, so a comptime-dead platform
+    // module's `var` global pinned the whole module alive — its `@cInclude`
+    // (`<windows.h>` / `<sys/ioctl.h>`) then broke the other toolchain (the
+    // D2 defect). Measured proof (task-3-report.md §Investigate probe
+    // matrix): the same fixture with the global removed emits no
+    // wrong-platform module, and a global-less non-EU dead-arm reference
+    // pins nothing — the type-level `pruneTypeMarkByValue` channel is
+    // load-bearing but does not pin these shapes; this seed did.
+    // Reachability-consistent form: AFTER the closure below, a root edge is
+    // kept only for ALREADY-reachable modules with runtime-init globals —
+    // exactly the set whose `__module_init` calls the synthesized main
+    // wrapper emits (the `prune_active` gate in `emitModuleInitCalls`), so
+    // their declarations stay in the root header byte-for-byte for every
+    // live module. A module nothing calls or references is dropped whole
+    // (its globals have no readers — Zig's lazy module-init semantics).
+    var ri_mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    // By-value module-global type references: a by-value global emitted in its
+    // own module needs the full type definition that lives only in the type
+    // owner's header, so keep the owner reachable (recursively through any
+    // nested by-value composite fields). Synthetic type-storage globals (name
+    // equal to the type name) are emitted in the owner's module already.
+    var gt_i: usize = @intCast(usize, 0);
+    while (gt_i < ctx.global_decls.len) : (gt_i += @intCast(usize, 1)) {
+        var gt_g = ctx.global_decls.items[gt_i];
+        if (gt_g.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
+        var gt_ty = ctx.typereg.types_items[@intCast(usize, gt_g.type_id)];
+        if (gt_ty.name_id != @intCast(u32, 0) and gt_ty.name_id == gt_g.name_id) continue;
+        pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, gt_g.module_id, gt_g.type_id);
+    }
+
+    // Reachable set = value-ref closure seeded from the root module (module 0).
+    var reachable = hash_mod.u32ToU32MapInitCap(&ctx.alloc.emission, ri_mods.len);
+    hash_mod.u32ToU32MapPut(&reachable, @intCast(u32, 0), @intCast(u32, 1));
+    var rf_changed: u8 = @intCast(u8, 1);
+    while (rf_changed != @intCast(u8, 0)) {
+        rf_changed = @intCast(u8, 0);
+        var rf_s: usize = @intCast(usize, 0);
+        while (rf_s < ri_mods.len) : (rf_s += @intCast(usize, 1)) {
+            var rf_src = ri_mods[rf_s].id;
+            if (hash_mod.u32ToU32MapGet(&reachable, rf_src) == null) continue;
+            var rf_d: usize = @intCast(usize, 0);
+            while (rf_d < ri_mods.len) : (rf_d += @intCast(usize, 1)) {
+                var rf_dst = ri_mods[rf_d].id;
+                if (rf_dst == rf_src) continue;
+                if (hash_mod.u32ToU32MapGet(&reachable, rf_dst) != null) continue;
+                if (hash_mod.u32ToU32MapGet(&ref_edges, rf_src * @intCast(u32, 65536) + rf_dst) != null) {
+                    hash_mod.u32ToU32MapPut(&reachable, rf_dst, @intCast(u32, 1));
+                    rf_changed = @intCast(u8, 1);
+                }
+            }
+        }
+    }
+    // T3 (continuation of the runtime-init edge ruling above): root edges for
+    // REACHABLE modules with runtime-init globals only — the wrapper's
+    // `__module_init` call sites need their declarations in the root header
+    // (identical pre/post for every live module; only dead modules drop out
+    // of the include set and the emission).
+    var ri_i: usize = @intCast(usize, 0);
+    while (ri_i < ri_mods.len) : (ri_i += @intCast(usize, 1)) {
+        if (ri_mods[ri_i].id == @intCast(u32, 0)) continue;
+        if (hash_mod.u32ToU32MapGet(&reachable, ri_mods[ri_i].id) == null) continue;
+        var ri_has: u8 = @intCast(u8, 0);
+        var gd_ri: usize = @intCast(usize, 0);
+        while (gd_ri < ctx.global_decls.len) : (gd_ri += @intCast(usize, 1)) {
+            var gd_g = ctx.global_decls.items[gd_ri];
+            if (gd_g.module_id == ri_mods[ri_i].id and gd_g.has_runtime_init != @intCast(u8, 0)) { ri_has = @intCast(u8, 1); break; }
+        }
+        if (ri_has != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&ref_edges, @intCast(u32, 0) * @intCast(u32, 65536) + ri_mods[ri_i].id, @intCast(u32, 1));
+        }
+    }
+    emitter.reachable = reachable;
 
     if (ctx.cli.output_dir_set) {
-        var poi: u32 = @intCast(u32, 0);
-        while (poi < ctx.pointer_only_len) : (poi += 1) {
-            hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ctx.pointer_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
+        if (ctx.cli.debug) {
+            var dbg_root_stem = c89_mod.moduleQualifiedName(&emitter, 0);
+            var dbg_p1: [512]u8 = undefined;
+            var dbg_p2: [512]u8 = undefined;
+            var dbg_p3: [512]u8 = undefined;
+            var dbg_e1: []const u8 = "syms";
+            var dbg_e2: []const u8 = "lines";
+            var dbg_e3: []const u8 = "cnames";
+            var dbg_n1 = buildDebugMapPath(dbg_p1[0..], ctx.cli.output_dir, dbg_root_stem, dbg_e1);
+            var dbg_n2 = buildDebugMapPath(dbg_p2[0..], ctx.cli.output_dir, dbg_root_stem, dbg_e2);
+            var dbg_n3 = buildDebugMapPath(dbg_p3[0..], ctx.cli.output_dir, dbg_root_stem, dbg_e3);
+            debug_map.debugMapWriterOpen(&ctx.debug_map, &ctx.alloc.emission, dbg_p1[0..dbg_n1], dbg_p2[0..dbg_n2], dbg_p3[0..dbg_n3]);
         }
-        var sorted: [*]u32 = c89_mod.tstTopologicalSort(ctx.typereg, &ctx.alloc.emission);
+        // P4 fix round 2: the classification state (`ctx.emission_classif`) is
+        // completed at the pre-emit `phase_EmissionClassification` boundary and
+        // loaded at `c89EmitterInit` (the emitter reads only).
+        // P12: the typedef order is planned ONCE at the same boundary
+        // (`ctx.spell_plan.typedef_order`); this consumer region reads the
+        // carried order and never sorts.
+        var sorted: [*]u32 = ctx.spell_plan.typedef_order;
         var hpath: [512]u8 = undefined;
         var hp: usize = @intCast(usize, 0);
         var od = ctx.cli.output_dir;
+        c89_mod.emitSupportFiles(&emitter, od);
         var hi: usize = @intCast(usize, 0);
         while (hi < od.len and hp < @intCast(usize, 510)) : (hi += 1) { hpath[hp] = od[hi]; hp += 1; }
         hpath[hp] = @intCast(u8, '/'); hp += 1;
@@ -895,12 +1802,58 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         c89_mod.bufferedWriterFlush(&emitter.writer);
         pal.fileClose(fd);
         var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+        emitter.prune_active = @intCast(u8, 1);
+        // Track-4 S15: synthesized `__Z98Step_<f>` slots are appended to
+        // `lir_slots` after the per-module lowering pass
+        // (async_state_machine.zig), so a step owned by a non-last module is not
+        // part of that module's contiguous lowering run and the cursor walk below
+        // never emits it. Stable-group every slot by its owning module (ids are
+        // dense: `mods[i].id == i`) so each module's `.c`/`.h` carries its own
+        // originals plus its synthesized steps. The single-file path is untouched
+        // (it emits the whole slot list and needs no grouping).
+        var slot_count: usize = ctx.lir_slots.len;
+        if (slot_count > 0) {
+            var grp_counts = @ptrCast([*]u32, alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, 4) * mods.len, @intCast(usize, 4)) catch unreachable);
+            var grp_cursor = @ptrCast([*]u32, alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, 4) * mods.len, @intCast(usize, 4)) catch unreachable);
+            var gci: usize = @intCast(usize, 0);
+            while (gci < mods.len) : (gci += 1) { grp_counts[gci] = @intCast(u32, 0); }
+            var gsi: usize = @intCast(usize, 0);
+            while (gsi < slot_count) : (gsi += 1) {
+                var gsmid = ctx.lir_slots.items[gsi].module_id;
+                if (@intCast(usize, gsmid) < mods.len) { grp_counts[@intCast(usize, gsmid)] += @intCast(u32, 1); }
+            }
+            var gacc: u32 = @intCast(u32, 0);
+            gci = @intCast(usize, 0);
+            while (gci < mods.len) : (gci += 1) {
+                grp_cursor[gci] = gacc;
+                gacc += grp_counts[gci];
+            }
+            var grouped = @ptrCast([*]lir_mod.LirSlot, alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, @sizeOf(lir_mod.LirSlot)) * slot_count, @intCast(usize, 4)) catch unreachable);
+            gsi = @intCast(usize, 0);
+            while (gsi < slot_count) : (gsi += 1) {
+                var gslot = ctx.lir_slots.items[gsi];
+                var gsmid = gslot.module_id;
+                if (@intCast(usize, gsmid) >= mods.len) continue;
+                var gdst = grp_cursor[@intCast(usize, gsmid)];
+                grouped[@intCast(usize, gdst)] = gslot;
+                grp_cursor[@intCast(usize, gsmid)] = gdst + @intCast(u32, 1);
+            }
+            ctx.lir_slots.items = grouped;
+            // T0-M2: `grp_counts` counts only slots whose module id is in
+            // range, so `gacc` is exactly the number of slots written into
+            // `grouped`. Advance the length by the WRITTEN count so the
+            // skipped-tail region is never treated as a live slot (it would
+            // otherwise be read uninitialized by the cursor walk below).
+            ctx.lir_slots.len = @intCast(usize, gacc);
+            emitter.fn_slots = grouped;
+        }
         var fn_cursor: usize = @intCast(usize, 0);
         var mi: usize = @intCast(usize, 0);
         while (mi < mods.len) : (mi += 1) {
             var m = mods[mi];
             var fn_start: usize = fn_cursor;
             while (fn_cursor < ctx.lir_slots.len and ctx.lir_slots.items[fn_cursor].module_id == m.id) : (fn_cursor += @intCast(usize, 1)) {}
+            if (hash_mod.u32ToU32MapGet(&reachable, m.id) == null) continue;
             emitter.fn_slots_start = fn_start;
             emitter.fn_slots_len = fn_cursor - fn_start;
             var base = c89_mod.moduleQualifiedName(&emitter, m.id);
@@ -931,7 +1884,37 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var dep_end: usize = dep_start + @intCast(usize, m.import_count);
             var dep_ids = ctx.module_reg.import_edges_items[dep_start..dep_end];
             var m_c_incs = m.c_includes.items[0..m.c_includes.len];
-            c89_mod.emitModuleHeaderFile(&emitter, m.id, base, m_c_incs, dep_ids, sorted);
+            // Header dependencies = value-ref targets (callee headers carry the
+            // cross-module prototypes) unioned with surviving import edges,
+            // both restricted to the reachable/emitted module set.
+            var inc_raw = alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, @sizeOf(u32)) * mods.len, @intCast(usize, 4)) catch unreachable;
+            var inc_arr = @ptrCast([*]u32, inc_raw);
+            var inc_n: usize = @intCast(usize, 0);
+            var di0: usize = @intCast(usize, 0);
+            while (di0 < dep_ids.len) : (di0 += @intCast(usize, 1)) {
+                var dd0 = dep_ids[di0];
+                if (dd0 == m.id) continue;
+                if (hash_mod.u32ToU32MapGet(&reachable, dd0) == null) continue;
+                var dup0: u8 = @intCast(u8, 0);
+                var dj0: usize = @intCast(usize, 0);
+                while (dj0 < inc_n) : (dj0 += @intCast(usize, 1)) { if (inc_arr[dj0] == dd0) { dup0 = @intCast(u8, 1); break; } }
+                if (dup0 != @intCast(u8, 0)) continue;
+                inc_arr[inc_n] = dd0; inc_n += @intCast(usize, 1);
+            }
+            var vd0: usize = @intCast(usize, 0);
+            while (vd0 < mods.len) : (vd0 += @intCast(usize, 1)) {
+                var vdd0 = mods[vd0].id;
+                if (vdd0 == m.id) continue;
+                if (hash_mod.u32ToU32MapGet(&reachable, vdd0) == null) continue;
+                if (hash_mod.u32ToU32MapGet(&ref_edges, m.id * @intCast(u32, 65536) + vdd0) == null) continue;
+                var dup1: u8 = @intCast(u8, 0);
+                var dj1: usize = @intCast(usize, 0);
+                while (dj1 < inc_n) : (dj1 += @intCast(usize, 1)) { if (inc_arr[dj1] == vdd0) { dup1 = @intCast(u8, 1); break; } }
+                if (dup1 != @intCast(u8, 0)) continue;
+                inc_arr[inc_n] = vdd0; inc_n += @intCast(usize, 1);
+            }
+            var inc_slice = inc_arr[0..inc_n];
+            c89_mod.emitModuleHeaderFile(&emitter, m.id, base, m_c_incs, inc_slice, sorted);
             c89_mod.bufferedWriterFlush(&emitter.writer);
             pal.fileClose(fd2);
             var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
@@ -954,11 +1937,35 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var cw: c89_mod.BufferedWriter = undefined;
             cw = c89_mod.bufferedWriterInitFd(cfd);
             emitter.writer = cw;
+            if (ctx.cli.debug) {
+                var dbg_src_file = sm_mod.sourceManagerGetFileName(ctx.source_man, m.source_file_id);
+                debug_map.debugMapWriterBeginLineGroup(&ctx.debug_map, dbg_src_file, base);
+            }
             c89_mod.emitModuleFile(&emitter, m.id, base);
+            if (ctx.cli.debug) { debug_map.debugMapWriterEndLineGroup(&ctx.debug_map); }
             c89_mod.bufferedWriterFlush(&emitter.writer);
             pal.fileClose(cfd);
             var ff2_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff2_m);
         }
+        if (ctx.cli.debug) {
+            debug_map.debugMapWriterClose(&ctx.debug_map, &ctx.alloc.emission, ctx.debug_symbols.items[0..ctx.debug_symbols.len], ctx.source_man, &mangler, ctx.interner, ctx.module_reg, ctx.typereg);
+            debug_map.debugSpanStoreClose(&ctx.debug_spans);
+            // The span spool is scratch: unlink it now that the sidecar maps
+            // are written (the other `.zig1_*.tmp` spills are read back in the
+            // same run and are left for the caller's cleanup). Absence/racing
+            // is fine -- remove's rc is intentionally ignored.
+            var dbg_rm_path: [512]u8 = undefined;
+            var drp: usize = @intCast(usize, 0);
+            var dori: usize = @intCast(usize, 0);
+            while (dori < od.len and drp < @intCast(usize, 510)) : (dori += 1) { dbg_rm_path[drp] = od[dori]; drp += 1; }
+            dbg_rm_path[drp] = @intCast(u8, '/'); drp += 1;
+            var drname: []const u8 = ".zig1_dbg.tmp";
+            var dri: usize = @intCast(usize, 0);
+            while (dri < drname.len and drp < @intCast(usize, 511)) : (dri += 1) { dbg_rm_path[drp] = drname[dri]; drp += 1; }
+            dbg_rm_path[drp] = 0;
+            _ = remove(@ptrCast([*]const u8, &dbg_rm_path[0]));
+        }
+        c89_mod.emitBuildScripts(&emitter, od, ctx.cli.target_is_windows, ctx.cli.target_win_profile);
         lir_stream.lirStreamEndRead(&ctx.lir_stream);
         ast_mod.astStoreCloseSpill(ctx.store);
         return;
@@ -969,8 +1976,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.emitIncludes(&cwriter);
     c89_mod.bufferedWriterFlush(&cwriter);
 
-    var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.emission);
-    c89_mod.emitModule(&emitter, module_name, c_incs, ctx.pointer_only_ids, ctx.pointer_only_len);
+    var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.emission, ctx.cli.target_is_windows);
+    c89_mod.emitModule(&emitter, module_name, c_incs);
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);
     lir_stream.lirStreamEndRead(&ctx.lir_stream);
@@ -987,6 +1994,7 @@ fn parseArgs() CompilerCli {
         .dump_types = false,
         .dump_lir = false,
         .dump_c89 = false,
+        .check = false,
         .max_mem = @intCast(u32, alloc_mod.DEFAULT_MAX_MEM_KB),
         .spill_level = @intCast(u32, 0), // -s0 (default): all spills on disk
         .max_errors = @intCast(u32, 256),
@@ -994,28 +2002,35 @@ fn parseArgs() CompilerCli {
         .error_format = ErrorFormat.human,
         .warnings_as_errors = false,
         .quiet = false,
+        .debug = false,
         .test_mode = false,
         .sanity_test_mode = false,
         .track_memory = false,
         .no_null_check = false,
         .no_lifetime_check = false,
         .no_leak_check = false,
+        .safe_checks = true,
          .warn_all = false,
          .warn_error = false,
          .show_markers = false,
          .include_count = @intCast(u32, 0),
         .include_dirs = undefined,
         .target_is_windows = false,
+        .target_win_profile = c89_mod.WinProfile.win9x,
     };
     var argc = pal.argCount();
     var i: i32 = 1;
     const s_dump_types: []const u8 = "--dump-types";
     const s_dump_lir: []const u8 = "--dump-lir";
     const s_dump_c89: []const u8 = "--dump-c89";
+    const s_check: []const u8 = "--check";
+    const s_help: []const u8 = "--help";
     const s_max_mem: []const u8 = "--max-mem";
     const s_max_errors: []const u8 = "--max-errors";
     const s_output_dir: []const u8 = "--output-dir";
     const s_quiet: []const u8 = "--quiet";
+    const s_debug: []const u8 = "--debug";
+    const s_d: []const u8 = "-d";
     const s_test: []const u8 = "--test";
     const s_sanity_test: []const u8 = "--sanity-test";
     const s_warnings: []const u8 = "--warnings-as-errors";
@@ -1041,13 +2056,23 @@ fn parseArgs() CompilerCli {
     const s_W: []const u8 = "-W";
     const s_osl: []const u8 = "-osl";
     const s_osw: []const u8 = "-osw";
+    const s_profile_9x: []const u8 = "9x";
+    const s_profile_nt: []const u8 = "nt";
     const s_target: []const u8 = "--target";
+    const s_fsafe: []const u8 = "-fsafe";
+    const s_ffast: []const u8 = "-ffast";
     while (i < argc) {
         var arg_ptr = pal.argGet(i);
         var arg = cstrToSlice(arg_ptr);
         if (arg.len > 0 and arg[0] == '-') {
-            if (matchFlag(arg, s_dump_c89)) {
+            if (matchFlag(arg, s_help)) {
+                printUsage();
+                pal.exit(@intCast(u8, 0));
+                return cli;
+            } else if (matchFlag(arg, s_dump_c89)) {
                 cli.dump_c89 = true;
+            } else if (matchFlag(arg, s_check)) {
+                cli.check = true;
             } else if (matchFlag(arg, s_max_mem) or matchFlag(arg, s_m)) {
                 i += 1;
                 if (i < argc) {
@@ -1057,8 +2082,8 @@ fn parseArgs() CompilerCli {
                 // -mm<N>: N MB hard pool budget in one token (e.g. -mm64). Folded into cli.max_mem (KB).
                 cli.max_mem = parseMMBytes(arg[3..]);
             } else if (matchSFlag(arg)) {
-                // -s<N>: decremental spill level 0..5 (default 0 = all on disk). Level N deactivates
-                // the first N spills (order AST,LIR,HASH,RES,SIDE) to Ram; higher -s = more RAM.
+                // -s<N>: decremental spill level 0..6 (default 0 = all on disk). Level N deactivates
+                // the first N spills (order AST,LIR,HASH,RES,SIDE,EXTRA) to Ram; higher -s = more RAM.
                 cli.spill_level = parseSLevel(arg[2..]);
             } else if (matchFlag(arg, s_max_errors) or matchFlag(arg, s_e)) {
                 i += 1;
@@ -1073,6 +2098,8 @@ fn parseArgs() CompilerCli {
                 }
             } else if (matchFlag(arg, s_quiet) or matchFlag(arg, s_q)) {
                 cli.quiet = true;
+            } else if (matchFlag(arg, s_debug) or matchFlag(arg, s_d)) {
+                cli.debug = true;
             } else if (matchFlag(arg, s_test)) {
                 cli.test_mode = true;
             } else if (matchFlag(arg, s_sanity_test)) {
@@ -1114,11 +2141,33 @@ fn parseArgs() CompilerCli {
                  cli.target_is_windows = false;
              } else if (matchFlag(arg, s_osw)) {
                  cli.target_is_windows = true;
+                 cli.target_win_profile = c89_mod.WinProfile.win9x;
+                 if (i + 1 < argc) {
+                     var nxt = cstrToSlice(pal.argGet(i + 1));
+                     if (nxt.len > 0 and nxt[0] != '-') {
+                         if (matchFlag(nxt, s_profile_9x)) {
+                             cli.target_win_profile = c89_mod.WinProfile.win9x;
+                             i += 1;
+                         } else if (matchFlag(nxt, s_profile_nt)) {
+                             cli.target_win_profile = c89_mod.WinProfile.nt;
+                             i += 1;
+                         }
+                     }
+                 }
              } else if (matchFlag(arg, s_target)) {
                  i += 1;
                  if (i < argc) {
                      cli.target_is_windows = parseTargetIsWindows(pal.argGet(i));
+                     if (cli.target_is_windows) {
+                         cli.target_win_profile = c89_mod.WinProfile.win9x;
+                     }
                  }
+             } else if (matchFlag(arg, s_ffast)) {
+                 // -ffast: disable the -fsafe runtime checks + undefined poison.
+                 cli.safe_checks = false;
+             } else if (matchFlag(arg, s_fsafe)) {
+                 // -fsafe (default): enable runtime checks + undefined poison.
+                 cli.safe_checks = true;
              } else {
                  cli.input_file = cstrToSlice(arg_ptr);
              }
@@ -1233,7 +2282,7 @@ fn matchSFlag(arg: []const u8) bool {
 
 // -s<N>: parse the decimal level suffix already stripped of the "-s" prefix.
 // Level 0 (default) = all spills on disk; level N deactivates the first N
-// spills (order AST,LIR,HASH,RES,SIDE) to Ram. Valid range 0..SPILL_COUNT.
+// spills (order AST,LIR,HASH,RES,SIDE,EXTRA) to Ram. Valid range 0..SPILL_COUNT.
 // Bare -s / non-digit / out-of-range all error rc=1 (mirror -mm discipline).
 fn parseSLevel(rest: []const u8) u32 {
     var i: usize = 0;
@@ -1246,7 +2295,7 @@ fn parseSLevel(rest: []const u8) u32 {
         n += 1;
         if (over == 0) {
             var d = @intCast(u32, c - '0');
-            var nl = level * @intCast(u32, 10) + d; // level <= 5 here, so no u32 overflow
+            var nl = level * @intCast(u32, 10) + d; // level <= 6 here, so no u32 overflow
             if (nl > spill_store_mod.SPILL_COUNT) {
                 over = 1;
             } else {
@@ -1256,13 +2305,13 @@ fn parseSLevel(rest: []const u8) u32 {
         i += 1;
     }
     if (n == 0 or i != rest.len) {
-        const em: []const u8 = "error: -s<N> requires a decimal level 0..5 (e.g. -s0 all on disk, -s5 all in RAM)\n";
+        const em: []const u8 = "error: -s<N> requires a decimal level 0..6 (e.g. -s0 all on disk, -s6 all in RAM)\n";
         pal.stderr_write(em);
         pal.exit(@intCast(u8, 1));
         return @intCast(u32, 0);
     }
     if (over != 0) {
-        const em: []const u8 = "error: -s<N> spill level out of range (0..5: 0 = all on disk, 5 = all in RAM)\n";
+        const em: []const u8 = "error: -s<N> spill level out of range (0..6: 0 = all on disk, 6 = all in RAM)\n";
         pal.stderr_write(em);
         pal.exit(@intCast(u8, 1));
         return @intCast(u32, 0);
@@ -1324,14 +2373,54 @@ fn printUsage() void {
     pal.stderr_write(msg);
     const mm_help: []const u8 = "  -mm<N>    hard pool budget in MB (default 64; pool.peak over budget -> ICE rc=3)\n";
     pal.stderr_write(mm_help);
-    const s_help: []const u8 = "  -s<N>     spill level 0..5 (default 0 = all spills on disk; -s1..-s5 deactivate the\n";
+    const s_help: []const u8 = "  -s<N>     spill level 0..6 (default 0 = all spills on disk; -s1..-s6 deactivate the\n";
     pal.stderr_write(s_help);
-    const s_help2: []const u8 = "            first N spills to RAM in order AST,LIR,HASH,RES,SIDE: higher -s = more RAM,\n";
+    const s_help2: []const u8 = "            first N spills to RAM in order AST,LIR,HASH,RES,SIDE,EXTRA: higher -s = more RAM,\n";
     pal.stderr_write(s_help2);
-    const s_help3: []const u8 = "            less disk I/O (pool= rises; -s5 = all in RAM ~71 MB -> pair with -mm128)\n";
+    const s_help3: []const u8 = "            less disk I/O (pool= rises; -s6 = all in RAM -> pair with -mm128)\n";
     pal.stderr_write(s_help3);
-    const os_help: []const u8 = "  -osl       compile target = linux (default); -osw = windows\n";
+    const os_help: []const u8 = "  -osl      compile target = linux (default)\n";
     pal.stderr_write(os_help);
-    const tgt_help: []const u8 = "  --target <linux|windows>  long-form target alias for -osl/-osw\n";
+    const osw_help: []const u8 = "  -osw [9x|nt]  compile target = windows (default 9x = Win9x; nt = NT/XP profile)\n";
+    pal.stderr_write(osw_help);
+    const tgt_help: []const u8 = "  --target <linux|windows>  long-form target alias for -osl/-osw (windows = 9x default)\n";
     pal.stderr_write(tgt_help);
+    const io_help: []const u8 = "  -o, --output-dir <dir>    output directory (default .)\n";
+    pal.stderr_write(io_help);
+    const mem_help: []const u8 = "  -m, --max-mem <size>      hard pool budget with k/m/g suffix (same as -mm<N>)\n";
+    pal.stderr_write(mem_help);
+    const err_help: []const u8 = "  -e, --max-errors <n>      max diagnostics (default 256)\n";
+    pal.stderr_write(err_help);
+    const quiet_help: []const u8 = "  -q, --quiet               suppress non-error output\n";
+    pal.stderr_write(quiet_help);
+    const mode_help: []const u8 = "  --test                    run test blocks\n  --sanity-test             lexer sanity test\n";
+    pal.stderr_write(mode_help);
+    const warn_help: []const u8 = "  -W, --warnings-as-errors  treat warnings as errors; --warn-error also sets warn_error\n";
+    pal.stderr_write(warn_help);
+    const warn_all_help: []const u8 = "  --warn-all                enable all warnings\n";
+    pal.stderr_write(warn_all_help);
+    const diag_help: []const u8 = "  --color <auto|always|never>  diagnostic color mode (default auto)\n";
+    pal.stderr_write(diag_help);
+    const fmt_help: []const u8 = "  --error-format <human|json|sarif>  diagnostic format (default human)\n";
+    pal.stderr_write(fmt_help);
+    const track_help: []const u8 = "  --track-memory            report peak memory\n";
+    pal.stderr_write(track_help);
+    const checks_help: []const u8 = "  --no-null-check | --no-lifetime-check | --no-leak-check  disable those checks\n";
+    pal.stderr_write(checks_help);
+    const markers_help: []const u8 = "  --markers                 emit phase markers\n";
+    pal.stderr_write(markers_help);
+    const inc_help: []const u8 = "  -I <dir>, --lib-dir <dir> add an include/library directory (max 16)\n";
+    pal.stderr_write(inc_help);
+    const safe_help: []const u8 = "  -fsafe                    enable runtime checks + undefined poison (default)\n";
+    pal.stderr_write(safe_help);
+    const fast_help: []const u8 = "  -ffast                    disable runtime checks + undefined poison\n";
+    pal.stderr_write(fast_help);
+    const c89_help: []const u8 = "  --dump-c89                emit C89 into the output directory\n";
+    pal.stderr_write(c89_help);
+    const check_help: []const u8 = "  --check                   run import/type/sema/static/const-init only; no emission (rc=0/2)\n";
+    pal.stderr_write(check_help);
+    const dbg_help: []const u8 = "  -d, --debug               emit <stem>.z98dbg.{syms,lines,cnames} (requires --output-dir)\n";
+    pal.stderr_write(dbg_help);
+    const help_help: []const u8 = "  --help                    show this help\n";
+    pal.stderr_write(help_help);
 }

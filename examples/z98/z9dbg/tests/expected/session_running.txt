@@ -1,0 +1,10 @@
+Z98 debugger has started...
+Stopped at examples/z98/z9dbg/tests/fixtures/hello/main.zig:14
+at main
+  12:
+  13: pub fn main() void {
+> 14:     var c = Counter{ .value = 41 };
+  15:     // Comment between statements; a break here snaps to the next statement.
+  16:     c.value = addOne(c.value);
+(z9dbg) (z9dbg) break: only valid while stopped
+(z9dbg) z9dbg: exiting

@@ -1,0 +1,20 @@
+intrange 10 10 20
+untyped 12 12 22
+exact 14 24
+mixed 16 16 26
+mixedconst 15 25 15
+xmod 30 30 40
+xmodexact 32 42
+enexact 50 60
+enalias 52 62
+entyped 54 64
+engap 56 66
+xmodenum 58 68
+xmodgap 59 69
+boolp 90 92
+stmt 100 102
+enrange 70 70 80
+enrangemix 72 72 82
+enrangeident 74 74 74
+xmodrange 76 76 86
+boolfull 94 96

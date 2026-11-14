@@ -102,3 +102,51 @@ pub fn normalizePath(buf: []u8, src: []const u8) ?[]const u8 {
     }
     return buf[0..out_len];
 }
+
+// Reserved DOS device names (CON, PRN, AUX, NUL, COM1..COM9, LPT1..LPT9).
+// Windows/DOS `fopen` maps any path whose basename stem (the basename before
+// any extension, and the whole basename when it carries none) equals one of
+// these, case-insensitively, onto the device itself, so such a path can never
+// open a real file. Both the CLI input path and `@import` targets are
+// rejected up front when the basename stem matches.
+pub fn isReservedDosDeviceName(name: []const u8) bool {
+    var base_start: usize = 0;
+    var i: usize = 0;
+    while (i < name.len) {
+        if (name[i] == '/' or name[i] == '\\') base_start = i + 1;
+        i += 1;
+    }
+    var stem_end = name.len;
+    i = base_start;
+    while (i < name.len) {
+        if (name[i] == '.') {
+            stem_end = i;
+            break;
+        }
+        i += 1;
+    }
+    var n = stem_end - base_start;
+    if (n != 3 and n != 4) return false;
+    var buf: [4]u8 = undefined;
+    i = 0;
+    while (i < n) {
+        var c = name[base_start + i];
+        if (c >= 'A' and c <= 'Z') {
+            c = c - @intCast(u8, 'A') + @intCast(u8, 'a');
+        }
+        buf[i] = c;
+        i += 1;
+    }
+    if (n == 3) {
+        if (buf[0] == 'c' and buf[1] == 'o' and buf[2] == 'n') return true;
+        if (buf[0] == 'p' and buf[1] == 'r' and buf[2] == 'n') return true;
+        if (buf[0] == 'a' and buf[1] == 'u' and buf[2] == 'x') return true;
+        if (buf[0] == 'n' and buf[1] == 'u' and buf[2] == 'l') return true;
+        return false;
+    }
+    var d = buf[3];
+    if (d < '1' or d > '9') return false;
+    if (buf[0] == 'c' and buf[1] == 'o' and buf[2] == 'm') return true;
+    if (buf[0] == 'l' and buf[1] == 'p' and buf[2] == 't') return true;
+    return false;
+}

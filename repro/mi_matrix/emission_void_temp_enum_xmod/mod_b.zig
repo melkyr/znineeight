@@ -7,6 +7,7 @@ fn kindNum(kind: TokenKind) i32 {
         .ident => 1,
         .lparen => 2,
         .rparen => 3,
+        else => unreachable,
     };
 }
 

@@ -1,0 +1,852 @@
+# C89-Ahead Features Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add `static`, `do…while`, and type-alias as Z98 features (RED→GREEN, corpus-gated), and resolve `volatile` through an explicit feasibility task (operator-ruled Go/No-Go) — never silently cut.
+
+**Architecture:** Each feature is a small compiler-frontend change (token → parse → AST → sema → lowering → C89 emission) following the INTWIDTH/PACK RED-first pattern. Compiler source edits converge a new fixed point via N-hop; the emitted-C correctness bar is runtime byte-identity + corpus zero-asymmetry.
+
+**Tech Stack:** Z98 (`sf/src/*.zig`), LIR, C89 emitter, corpus fixtures in `repro/mi_matrix/`.
+
+**Spec:** `docs/superpowers/specs/2026-09-09-c89-ahead-features-design.md`
+
+## Global Constraints
+
+- **Feature order:** `static` first, then `do…while`, then type-alias; `volatile` fourth and gated on its feasibility task (Task 5). Operator ruling: volatile is NOT cut — feasibility task lives inside this plan.
+- **Reference per the seed model** (`release/seed/`); every compiler edit converges a new fixed point via N-hop (≤4 hops, hop1≠hop2 expected after self-affecting changes). Measurement compiler = the N-hop-converged binary, stated per report. Dump CWD = repo root, relative `sf/src/main.zig`.
+- **Bootstrap-staging constraint:** new-feature compiler code written in constructs the current committed seed understands.
+- **Flag-set rule:** every gcc `-c` = `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`; `-Wall -Wextra -O3 -fsyntax-only` separate verification gate. Self-emission link set = `zig_runtime.c` + `zig_pal.c` + `c_exit.c`.
+- **RED-first per feature:** fixture classifies RED (clean reject / parse error) at plan start; GREEN byte-exact deterministic (RUNRC=0) after the feature lands; fixture stays in the corpus permanently.
+- **Corpus primary oracle:** 420 dirs = 404 OK / 9 GREEN / 7 FAIL at HEAD (post-EMITCOMPACT). Each feature zero-asymmetric except its own fixture dir(s). Golden 9/9 + matrix 21/21 run byte-identity vs PRE.
+- **4-MD5:** a feature changing a gate program's emission moves that md5 → **recorded-not-rebaselined per feature**; operator-ruled full re-baseline at the Task-6 STOP only.
+- **Warning/compat:** emitted C warning-clean under `-Wall -Wextra -O3 -fsyntax-only`; compat audit POST ≤ PRE (no bare `long long`, ≤31-char identifiers, no `%zu`, no empty macro args).
+- **Working conventions:** SDD mandatory; compression forbidden during build sessions; memories via `mnemoria --path .opencode/memory add` under agent `c89ahead-session`; edits via `edit`/`fastedit` only; no commit until review clean; pre-existing dirty set never staged.
+- Report `.superpowers/sdd/task-C89AHEAD-report.md`; ledger `.superpowers/sdd/progress.md`; memory agent `c89ahead-session`.
+
+---
+
+### Task 1: Baseline + RED reproduction + volatile feasibility research (part 1) (I, record-only)
+
+**Files:**
+- Read: `sf/src/token.zig`, `sf/src/parser.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/type_registry.zig`, Zig langref volatile section
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 1`)
+- No source edits, no commit, nothing staged.
+
+- [ ] **Step 1: Baseline.** Reconfirm HEAD, fixed point `ea149e05` (seed v6), 4-MD5 (gol `bbafa30f…`, lisp `c1767529…`, json `3ada7d8b…`, mud `ee42f9b7…`), EXPECTED_FAIL v76, corpus 420 dirs = 404/9/7. Record.
+- [ ] **Step 2: RED reproduction.** Author scratch probes (NOT committed) for each feature confirming today's class:
+  - `static var x` / module-scope `static` → parse `error[2000]` (keyword absent from `token.zig`).
+  - `do { … } while (…)` → parse `error[2000]`.
+  - type-alias `const T = u32;` → record actual behavior (may half-work today via the `const` type-expr path — classify precisely, incl. use in annotations / `@sizeOf(T)`).
+  - `volatile` → record actual behavior.
+  - Record deterministic stderr md5s per probe.
+- [ ] **Step 3: Volatile feasibility research part 1.** From the Zig langref (pointer-qualifier `*volatile T` + `@volatileCast`, no `var volatile` storage qualifier), document the exact Z98 mapping surface: `volatile` keyword in pointer-type position, ptr-type `volatile` flag (which TypeKind payload/slab), `@volatileCast`, and the C89 emission placement rules for pointer-vs-pointee qualifiers. Enumerate the type-system sites a flag would thread through (`typeRegistryGetOrCreatePtr` and siblings, coercion, lowering, `getCTypeName`). Draft the Go/No-Go criteria for the Task-5 ruling.
+- [ ] **Step 4: Census anchors.** For each feature, list the exact edit-map sites (token table, parse arms, AST flags, sema, lowering, emission) as the Task-2/3/4/5 briefs' starting map.
+- [ ] **Step 5: Report + ledger.** Append the full census; one ledger line. No commit.
+
+---
+
+### Task 2: `static` (F)
+
+**Files:**
+- Modify: per Task-1 census — expected `sf/src/token.zig` (kw_static), `sf/src/parser.zig` (local `static var` decl arm + module-level `static` prefix), `sf/src/lower.zig` / `sf/src/semantic_analyzer.zig` (static-local semantics + file-scope internal-linkage handling), `sf/src/c89_emit.zig` (emit `static` storage class; suppress `pub`/header export for module static)
+- Create (fixtures): `repro/mi_matrix/static_local_xmod/main.zig`, `repro/mi_matrix/static_filestatic_xmod/main.zig`
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 2`)
+- Commit: `feat: c89-ahead — static storage (function-local + file-scope) (C89AHEAD)`
+
+**Interfaces:**
+- Consumes: Task-1 static edit-map.
+- Produces: `static var` local persists across calls; module-level `static` has internal linkage (no header export); clean rejects for meaningless `static`.
+
+- [ ] **Step 1: RED fixtures first.** `static_local_xmod`: `fn next() i32 { static var n: i32 = 0; n += 1; return n; }` + main printing `1 2 3` — classifies RED today (parse `error[2000]`). `static_filestatic_xmod`: a module-scope `static var`/`static fn` + proof the symbol is absent from the emitted cross-module header — RED today. Verify RED deterministic 3×, record stderr md5s.
+- [ ] **Step 2: Implement.** Token (`kw_static`), parse arms for `static var` in function bodies and `static` prefix at module scope, AST flags, sema (`static` only where meaningful; clean `error[3000]` otherwise), lowering (static local → a C function-scoped `static` variable, init-once; module static → internal-linkage emission, no header export). Keep plain locals byte-identical.
+- [ ] **Step 3: GREEN gate.** Fixtures GREEN byte-exact deterministic 3× (RUNRC=0). Emitted-C grep: the counter shows a `static` C local (single declaration, no re-init). Golden 9/9 + matrix 21/21 run byte-identity vs PRE. Corpus `-s0` zero-asymmetric except the 2 new dirs. 4-MD5 recorded-not-rebaselined. Self-compile N-hop converges to a new fixed point (record chain).
+- [ ] **Step 4: Commit** (message above; scope = census files + 2 fixture dirs).
+- [ ] **Step 5: Report + ledger.**
+
+---
+
+### Task 3: `do…while` (F)
+
+**Files:**
+- Modify: per Task-1 census — expected `sf/src/token.zig` (kw_do), `sf/src/parser.zig` (`do { body } while (cond);` grammar arm), `sf/src/lower.zig` + `sf/src/c89_emit.zig` (post-test loop lowering/emission)
+- Create (fixtures): `repro/mi_matrix/dowhile_countdown_xmod/main.zig`, `repro/mi_matrix/dowhile_once_xmod/main.zig`
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 3`)
+- Commit: `feat: c89-ahead — do…while post-test loop (C89AHEAD)`
+
+- [ ] **Step 1: RED fixtures first.** `dowhile_countdown_xmod`: `var i: i32 = 5; do { print; i -= 1; } while (i > 0);` → RED today (parse `error[2000]`). `dowhile_once_xmod`: `do { print "ran"; } while (false);` body runs once — RED today. Verify RED deterministic 3×.
+- [ ] **Step 2: Implement.** `kw_do` token; parse `do` statement; lower to a post-test loop (C `do{}while()` shape or the existing loop machinery per census); `break`/`continue` behave as `while`. Keep `while` byte-identical.
+- [ ] **Step 3: GREEN gate** (as Task 2 Step 3): fixtures GREEN 3× (`5 4 3 2 1`; the `while(false)` body prints once); emitted C shows a `do { } while` shape; golden/matrix byte-identity; corpus zero-asymmetric; 4-MD5 recorded-not-rebaselined; N-hop convergence recorded.
+- [ ] **Step 4: Commit** (message above).
+- [ ] **Step 5: Report + ledger.**
+
+---
+
+### Task 4: type-alias (F)
+
+**Files:**
+- Modify: per Task-1 census — expected registration/type-resolution sites so `const T = <type-expr>` registers `T` as a usable type (annotations, params, returns, `@sizeOf(T)`), plus `pub` alias export if the census shows it missing
+- Create (fixtures): `repro/mi_matrix/typealias_prim_xmod/main.zig` (`const Handle = u32;`), `repro/mi_matrix/typealias_agg_xmod/main.zig` (`const Buf = [16]u8;` / struct alias)
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 4`)
+- Commit: `feat: c89-ahead — type alias (const T = <type>) (C89AHEAD)`
+
+- [ ] **Step 1: RED fixtures first.** Per the Task-1 exact-classification, author the fixtures so each is RED today (whatever gap the census found — alias not usable in annotations, `@sizeOf` fails, or `pub` alias not exported). Verify RED deterministic 3×.
+- [ ] **Step 2: Implement** the census-identified gap so `const T = <existing-type>` (primitives + composites) registers and resolves everywhere a type name is legal; error messages show the alias name. Plain enum/struct `const` declarations stay byte-identical.
+- [ ] **Step 3: GREEN gate** (as Task 2 Step 3): fixtures GREEN 3× (`@sizeOf(Handle)` prints 4 etc.); golden/matrix byte-identity; corpus zero-asymmetric; 4-MD5 recorded-not-rebaselined; N-hop convergence recorded.
+- [ ] **Step 4: Commit** (message above).
+- [ ] **Step 5: Report + ledger.**
+
+---
+
+### Task 5: `volatile` feasibility task (I → operator Go/No-Go → F on Go)
+
+**Files:**
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 5`)
+- On Go: modify per the Task-1 edit-map (type-system volatile flag + `@volatileCast` + C89 qualifier emission) + fixture
+- On No-Go: modify `docs/reference/z98_bootstrap_manual.md` (quirk note: extern `"c"` wrapper for volatile C access)
+- Commit: Go → `feat: c89-ahead — volatile pointer qualifier (C89AHEAD)`; No-Go → `docs: c89-ahead — volatile documented extern-c-wrapper quirk (C89AHEAD)`
+
+- [ ] **Step 1 (I): Complete the feasibility research** started in Task 1 (part 2): the exact Z98 type-system threading, the C89 emission placement rules (`volatile T*` pointee vs `T * volatile` pointer), coercion/`@ptrCast` interactions, and a concrete fixture design (`*volatile u32` read/write against a normal array). Assess: does C89 emission of a volatile-qualified pointer type survive the existing carrier/typedef machinery byte-cleanly?
+- [ ] **Step 2 (I): Present Go/No-Go to the operator** with the evidence. The operator rules (this is the mandated B2 gate). Do NOT commit either way until the ruling.
+- [ ] **Step 3 (F, on Go only): Implement** RED→GREEN per the ruling; run the full GREEN gate (as Task 2 Step 3); commit.
+- [ ] **Step 4 (F, on No-Go only): Record the quirk note** in the manual (`docs/reference/z98_bootstrap_manual.md` constraints table: "if you need volatile, write an `extern "c"` wrapper whose body is the volatile C access") and commit the docs-only note. The feature is closed as annotated, not silently dropped.
+- [ ] **Step 5: Report + ledger.**
+
+---
+
+### Task 6: Full battery + N-hop + gate re-baseline STOP-present (I, record-only)
+
+**Files:**
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 6`)
+- No commit, nothing staged.
+
+- [ ] **Step 1: Full external battery** on the N-hop-converged compiler (measurement compiler stated): golden 9/9 + matrix 21/21 run byte-identity; corpus `-s0` zero-asymmetric (all new feature dirs OK/GREEN); upgraded-examples goldens + net round-trips; mingw32 `-osw` cross (final step, 0 new warnings, POST ⊆ PRE); warning sets POST ⊆ PRE; compat audit POST ≤ PRE.
+- [ ] **Step 2: N-hop determinism (gate A)** from the committed seed; record the chain (gn==gn+1 ≤4 hops).
+- [ ] **Step 3: STOP-present the operator-ruled re-baseline:** any moved 4-MD5 rows → new values, fixed point → new value, Task-7 docs-GATE plan. Await operator approval.
+
+---
+
+### Task 7: Docs GATE + seed rotation (F, after operator approval)
+
+**Files:**
+- Modify: `docs/sf/QUICK_REF.md` (4 gate-table rows if re-baselined + newest-first bullet above the newest existing bullet), `repro/mi_matrix/EXPECTED_FAIL.md` (bump for the feature RED→GREEN flips), `release/seed/CHANGELOG.md`, `release/seed/zig1-seed.tgz` (rotated)
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## Task 7`)
+- Commit: `docs: GATE — c89-ahead features + re-baseline + seed rotation (C89AHEAD)`
+
+- [ ] **Step 1: Rotate the seed** via `bash scripts/seed/archive_seed.sh <fixed-point-binary> <fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog`; verify archive md5 == CHANGELOG row, internal binary == operator-approved fixed point, layout intact, 0 spill.
+- [ ] **Step 2: Docs edits** — QUICK_REF gate-table rows (if re-baselined) + newest-first bullet (features landed, emission/RED→GREEN facts, fixed point, seed); EXPECTED_FAIL bump for the feature fixture flips (new GREEN sections, history verbatim).
+- [ ] **Step 3: Commit** the docs-GATE set; pre-existing dirty set never staged.
+- [ ] **Step 4: Report + ledger close**, then STOP-present the plan close for operator sign-off.
+
+---
+
+## Next-up items (NOT tasks of this plan — spec §6, kept so they aren't forgotten)
+
+- Stdlib growth plan runs before this one in the forward queue; EMITCOMPACT before that.
+- If volatile was ruled No-Go, a future plan may revisit full volatile support when the type system is further along.
+- Other deferred C89 items (recorded): `goto`, `long double`, preprocessor macros, method syntax, named `anytype`.
+
+---
+
+## AMENDMENT 2 — Divergence & Runtime Safety; `static`/`do…while` dropped (2026-09-10)
+
+> Operator-approved 2026-09-10. This amendment belongs to the same plan; execute A1–A13 in order.
+> **Supersedes** original **Task 2 (`static`)** and **Task 3 (`do…while`)** — both **DROPPED** (documented
+> Zig idioms instead). Original **Task 1** is replaced by **A1**; original **Task 4 (type-alias)** → **A9**;
+> original **Task 5 (volatile)** → **A10**; original **Tasks 6/7** → **A12/A13**.
+> Design: `docs/superpowers/specs/2026-09-09-c89-ahead-features-design.md` (amended 2026-09-10; §3 new).
+
+### Amended Global Constraints
+
+All original constraints remain in force. Additions / corrections:
+
+- **Safety flag:** `-fsafe` (**default**) enables runtime checks; `-ffast` disables them. **All six**
+  runtime checks (cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow) are gated by
+  `-fsafe`. `unreachable` and `@panic` trap **unconditionally** (not gated).
+- **Compiler self-build = `-ffast`:** `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh`
+  pass `-ffast` when emitting the compiler's own C; the recorded fixed point is the `-ffast` binary.
+  User programs default to `-fsafe`.
+- **Trap primitive:** `pal_trap()` = x86 `int 3`, non-x86 fallback `pal_abort()`.
+- **Baseline correction (original plan is stale):** original baseline (seed v6 `ea149e05`, 420 dirs) is
+  superseded. A1 reconfirms and records: fixed point `4da59bb11270e3c85638bcbb120afc2d`; seed v9 archive
+  `7c1421f6312b59c4c449dcf336e32694`; canonical corpus `bash scripts/corpus/list_corpus_dirs.sh` (463
+  dirs). Dump CWD = repo root, relative entry `sf/src/main.zig`.
+- Report `.superpowers/sdd/task-C89AHEAD-report.md`; ledger `.superpowers/sdd/progress.md`; memory agent
+  `c89ahead-session`.
+
+---
+
+### Task A1: Baseline + feasibility census (I, record-only)
+
+**Files:**
+- Read: `sf/src/token.zig`, `sf/src/main.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`,
+  `sf/src/semantic_analyzer.zig`, `sf/src/analyzer.zig`, `sf/src/type_registry.zig`, `sf/src/lir.zig`,
+  `sf/src/pal.zig`, `sf/src/include/zig_pal.c`, `sf/src/include/zig_runtime.c/.h`, `sf/src/std_arena.zig`,
+  `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh`
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (appended `## A1`)
+- No source edits, no commit, nothing staged.
+
+- [ ] **Step 1: Baseline.** Reconfirm HEAD, fixed point `4da59bb1…`, seed v9 archive `7c1421f6…`, EXPECTED_FAIL v76, canonical corpus `bash scripts/corpus/list_corpus_dirs.sh` (463). Record.
+- [ ] **Step 2: Trap feasibility.** Confirm how to emit `int 3` from `zig_pal.c` for gcc (i386/`-m32`), MSVC6, and OpenWatcom under the flag-set rule; confirm the non-x86 `pal_abort()` fallback and that the emitted C stays C89-clean and warning-clean. Decide the exact `pal_trap()` C body.
+- [ ] **Step 3: Flag plumbing + seed staging.** Locate CLI parsing (`main.zig`), the compiler config struct, and where lowering/emission would read the mode; design the two-hop staging with the committed seed that predates the flag (seed emits today's behaviour on hop 1; hop 1 understands `-ffast`; hop 2 checked-off). Specify the exact `build_from_seed.sh`/`archive_seed.sh` edits.
+- [ ] **Step 4: Safety-check emission sites.** For each of the six checks, give the exact lowering/emitter anchors and the backend-neutral LIR representation. Include the `@intCast` helper-pair gap (`c89_emit.zig:5282-5322`) and where new helpers are emitted; the OOB length source for arrays vs slices; the overflow-detection form for `i32`/`u32`/arbitrary-width.
+- [ ] **Step 5: Diagnostics sites.** Specify where the uninitialized-var, ignored-error-union, and missing-return checks hook (parser/sema/lowering), and the new diagnostic codes/severity, without breaking existing corpus programs.
+- [ ] **Step 6: Arena migration census.** Enumerate every `std.arena.alloc` caller and every `orelse unreachable` in examples/std/fixtures; define the new error-union signature and the migration pattern.
+- [ ] **Step 7: type-alias classification + volatile research part 1.** Classify what `const T = <type>` already does today; document the volatile mapping (pointer-type flag threading, `@volatileCast`, C89 pointee-vs-pointer placement).
+- [ ] **Step 8: RED probes.** Author scratch probes (NOT committed) confirming the current behaviour of each silent mode and each dropped-feature idiom; record deterministic stderr md5s.
+- [ ] **Step 9: Report + ledger; STOP-present.** Append the full census; one ledger line; STOP-present the baseline, staging design, and check/disposition list. No commit.
+
+---
+
+### Task A2: `pal_trap()` + divergence fix (F)
+
+**Files:**
+- Modify: `sf/src/pal.zig` (extern), `sf/src/include/zig_pal.c` (`pal_trap`), `sf/src/include/zig_runtime.c/.h` (panic helper), `sf/src/emit_support.zig` (canonical support bytes), `sf/src/lir.zig` (backend-neutral trap terminator), `sf/src/lower.zig` (`unreachable`, `@panic`), `sf/src/semantic_analyzer.zig` (`@panic` → `noreturn`), `sf/src/c89_emit.zig` (emit `pal_trap()`), `sf/src/std_debug.zig` (`assert`/`panic` → `pal_trap`)
+- Create (fixtures): `repro/mi_matrix/trap_unreachable_xmod/main.zig`, `trap_orelse_unreachable_xmod/main.zig`, `trap_panic_xmod/main.zig`, `trap_arena_exhaustion_xmod/main.zig`, `switch_expr_unreachable_xmod/main.zig` (RED: `return switch (c) { … else => unreachable }` emits a function with no return — the `block_terminated` leak at `lower.zig:4485`), `if_expr_unreachable_xmod/main.zig` (both `if_expr` arms)
+- Fix (A2I finding, operator-approved): reset `block_terminated` after `lower.zig:4485` (`switch_expr` result path) so a valid-path `return switch {…}` is not lost; guard both `if_expr` arms (`lower.zig:4075-4076` then, `:4083-4084` else)
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (`## A2`)
+- Commit: `fix: c89-ahead — real trap for unreachable/@panic (pal_trap) (C89AHEAD)`
+
+**Interfaces:**
+- Consumes: A1 trap feasibility + staging.
+- Produces: `pal_trap()` runtime primitive; `unreachable`/`@panic`/`orelse unreachable` that terminate.
+
+- [ ] **Step 1: RED fixtures.** `trap_unreachable_xmod` reaches an `unreachable` and must trap (rc≠0 / signal); today it falls through. `trap_panic_xmod` reaches `@panic("...")` and must print + trap (today no-op). `trap_orelse_unreachable_xmod` does an `orelse unreachable` on a null optional. `trap_arena_exhaustion_xmod` exhausts a tiny arena and must trap instead of writing address 0. Verify RED deterministic 3× with `timeout 120`; record.
+- [ ] **Step 2: Implement.** Add the `pal_trap` extern + C body; add the LIR trap terminator; lower `unreachable` to it; lower `@panic` (evaluate+print arg) and retype it `noreturn`; update `std.debug.assert/panic`; emit `pal_trap()`.
+- [ ] **Step 3: GREEN gate.** Fixtures trap deterministically, `-ffast` too (unconditional). Golden 9/9 + matrix 21/21 byte-identity vs PRE where no trap is expected; corpus `-s0` zero-asymmetric except the 4 new dirs; 4-MD5 recorded-not-rebaselined; self-compile N-hop converges (record chain + new fixed point).
+- [ ] **Step 4: Commit** (scope = census files + support + fixtures). **Step 5: Report + ledger.**
+
+---
+
+### Task A3: `-fsafe`/`-ffast` framework + `undefined` poison (F)
+
+**Files:**
+- Modify: `sf/src/main.zig` (flag parse), config/CLI struct, `sf/src/lower.zig` + `sf/src/c89_emit.zig` (mode plumbing), `sf/src/c89_emit.zig` (`undefined` init), `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (`-ffast`)
+- Create (fixtures): `repro/mi_matrix/safe_undefined_poison_xmod/main.zig`, plus a `-ffast` control
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (`## A3`)
+- Commit: `feat: c89-ahead — -fsafe/-ffast mode + undefined poison (C89AHEAD)`
+
+- [ ] **Step 1: RED fixture.** A program reading `undefined` prints `0` today; it must print a poison marker under `-fsafe`. Record today's behaviour.
+- [ ] **Step 2: Implement.** Add `-fsafe` (default) / `-ffast` parsing + config; thread the mode into lowering/emission; implement `undefined` poison (`0xAA`) under `-fsafe`. Update the seed scripts to pass `-ffast`.
+- [ ] **Step 3: GREEN gate.** Fixture GREEN both modes; compiler self-emission `-ffast` N-hop converges; golden/matrix/corpus/4-MD5 per convention.
+- [ ] **Step 4: Commit.** **Step 5: Report + ledger.**
+
+---
+
+### Task A4: Cheap runtime checks (F) — `@intCast`, div/mod, shift, null-unwrap
+
+**Files:**
+- Modify: `sf/src/lower.zig`, `sf/src/c89_emit.zig` (checked cast helpers + guards), `sf/src/include/zig_runtime.c/.h` (new helper pairs as needed)
+- Create (fixtures): `repro/mi_matrix/safe_cast_overflow_xmod`, `safe_div_zero_xmod`, `safe_shift_count_xmod`, `safe_null_unwrap_xmod`
+- Report: `.superpowers/sdd/task-C89AHEAD-report.md` (`## A4`)
+- Commit: `feat: c89-ahead — -fsafe cheap checks (cast/div/shift/null) (C89AHEAD)`
+
+- [ ] **Step 1: RED fixtures** (each traps under `-fsafe`, current behaviour under `-ffast`).
+- [ ] **Step 2: Implement** the four checks; keep `-ffast` byte-identical to PRE.
+- [ ] **Step 3: GREEN gate** incl. `-ffast` control byte-identity; N-hop; record.
+- [ ] **Step 4: Commit.** **Step 5: Report + ledger.**
+
+---
+
+### Task A5: Index out-of-bounds runtime check (F)
+
+**Files:** Modify `sf/src/lower.zig` (index_access), `sf/src/c89_emit.zig` (emit the guard); fixture `repro/mi_matrix/safe_bounds_xmod`; report; commit `feat: c89-ahead — -fsafe bounds check (C89AHEAD)`.
+
+- [ ] Steps: RED fixture (OOB read + OOB write) → implement guard for arrays and slices → GREEN under `-fsafe`, `-ffast` control byte-identical → N-hop → commit → report/ledger.
+
+---
+
+### Task A6: Integer-overflow runtime check (F) — `+`, `-`, `*`, unary neg
+
+**Files:** Modify `sf/src/lower.zig` (binary/unary ops), `sf/src/c89_emit.zig` + `sf/src/include/zig_runtime.c/.h` (overflow helpers); fixture `repro/mi_matrix/safe_int_overflow_xmod`; report; commit `feat: c89-ahead — -fsafe integer-overflow check (C89AHEAD)`.
+
+- [ ] Steps: RED fixture (signed + unsigned + arbitrary-width overflow) → implement detection → GREEN under `-fsafe`, `-ffast` control byte-identical → measure size/perf impact (report) → N-hop → commit → report/ledger.
+
+---
+
+### Task A7: Compile-time diagnostics (F) — uninitialized var, ignored error union, missing return
+
+**Files:** Modify `sf/src/semantic_analyzer.zig` / `sf/src/lower.zig` / `sf/src/diagnostics.zig`; fixtures `repro/mi_matrix/diag_uninit_var_xmod`, `diag_ignored_error_xmod`, `diag_missing_return_xmod`; report; commit `feat: c89-ahead — failure diagnostics (uninit/ignored-error/missing-return) (C89AHEAD)`.
+
+- [ ] Steps: RED fixtures (currently compile silently) → implement the three checks with clean diagnostics → GREEN (clean reject, 0 `.c`); full canonical sweep for regressions (fix any `sf/src`/example sites the new diagnostics flag — in-scope fallout; STOP-present if non-mechanical) → N-hop → commit → report/ledger.
+
+---
+
+### Task A8: Arena error-union API + consumer migration (F)
+
+**Files:** Modify `sf/src/std_arena.zig` (`alloc` → error union), `examples/z98/json_parser*/**.zig`, `examples/z98/json_parser_upgraded/**.zig`, `repro/mi_matrix/extern_runtime_symbol_xmod/lib.zig`; fixture (arena OOM GREEN); report; commit `feat: c89-ahead — std.arena error-union alloc (C89AHEAD)`.
+
+- [ ] Steps: RED (current `?` API + `orelse unreachable` sites) → change signature + migrate all callers to `try`/`catch` → GREEN fixtures + byte-identical migrated-consumer outputs → N-hop → commit → report/ledger.
+
+---
+
+### Task A9: Type-alias verify/finish (F)
+
+**Files:** per A1 census; fixtures `repro/mi_matrix/typealias_prim_xmod`, `typealias_agg_xmod`; report; commit `feat: c89-ahead — type alias (const T = <type>) (C89AHEAD)`.
+
+- [ ] Steps: RED fixtures per the A1 classification → implement the missing registration/resolution (+ `pub` export if missing) → GREEN → N-hop → commit → report/ledger.
+
+---
+
+### Task A10: `volatile` feasibility (I → operator Go/No-Go → F on Go)
+
+**Files:** report `## A10`; on Go: type-system `volatile` flag + `@volatileCast` + C89 pointee-qualified emission + `repro/mi_matrix/volatile_mmio_xmod`; on No-Go: `docs/reference/z98_bootstrap_manual.md` quirk note. Commit `feat: c89-ahead — volatile pointer qualifier (C89AHEAD)` or `docs: c89-ahead — volatile documented quirk (C89AHEAD)`.
+
+- [ ] Steps: complete the feasibility research from A1 → present Go/No-Go with evidence → on Go implement RED→GREEN + N-hop + commit; on No-Go commit the docs note. Report/ledger.
+
+---
+
+### Task A11: Documentation (F) — dropped-feature idioms, safety mode, spec
+
+**Files:** Modify `docs/reference/Language_Spec_Z98.md` (§3/§4/§5/§7 — remove `static`/`do…while` from "Not Yet Supported", add the documented idioms; document `-fsafe`/`-ffast`, `undefined`, diagnostics, `pal_trap`), `docs/reference/Caveats_and_Workarounds.md` (silent-mode guarantees), `README.md` (flag/workflow if needed); report; commit `docs: c89-ahead — failure semantics + feature idioms (C89AHEAD)`.
+
+- [ ] Steps: apply the doc edits; verify no stale claim remains (spec §7 no longer lists dropped features as designed-but-unimplemented); commit; report/ledger.
+
+---
+
+### Task A12: Full battery + N-hop + gate re-baseline STOP-present (I, record-only)
+
+- [ ] **Step 1: Full external battery** on the N-hop-converged `-ffast` compiler; per-feature fixtures GREEN; `-fsafe` differentials trap; golden 9/9 + matrix 21/21; canonical corpus zero-asymmetric; upgraded examples + net; mingw32 `-osw`; warning/compat POST ≤ PRE.
+- [ ] **Step 2: N-hop determinism** from the committed seed (≤4 hops); record chain + new fixed point.
+- [ ] **Step 3: STOP-present** moved 4-MD5 rows, new fixed point, and the A13 docs-GATE plan (including the emission-default change and any EXPECTED_FAIL bumps). Await operator approval.
+
+---
+
+### Task A13: Docs GATE + seed rotation (F, after operator approval)
+
+**Files:** `docs/sf/QUICK_REF.md`, `repro/mi_matrix/EXPECTED_FAIL.md`, `release/seed/CHANGELOG.md`, `release/seed/zig1-seed.tgz`; report; commit `docs: GATE — c89-ahead failure semantics + features + seed rotation (C89AHEAD)`.
+
+- [ ] **Step 1:** Rotate via `bash scripts/seed/archive_seed.sh <fixed-point-binary> <fresh-gen-dir> release/seed/zig1-seed.tgz --update-changelog`; verify archive md5 == CHANGELOG row, internal binary == approved fixed point, layout intact, 0 spill.
+- [ ] **Step 2:** QUICK_REF gate-table rows (re-baselined) + newest-first bullet; EXPECTED_FAIL bump for the feature/diagnostic flips; README if needed.
+- [ ] **Step 3:** Commit; report/ledger close; STOP-present the plan close.
+
+---
+
+## AMENDMENT 3 — Per-feature investigation (I) phases with question sets (2026-09-10)
+
+> Operator-directed 2026-09-10. This amendment replaces the "lone implementation task" shape of
+> AMENDMENT 2's A2–A11: **every feature/implementation task gains a dedicated investigation phase
+> `A<n>I` (record-only) that runs before its implementation phase `A<n>F`.** The I phase answers the
+> feature-specific question set below, enumerates caveats, and ends with an operator STOP-present.
+> `A<n>F` must not start until the operator approves the I result. A1 stays the plan-wide census;
+> A12 stays the closeout I; A13 (docs GATE) is gated by A12 and needs no separate I.
+>
+> **Supersedes** the task *bodies* of AMENDMENT 2 A2–A11 only where noted; the file lists, commits,
+> and gates of the A<n>F phases are unchanged. Full per-feature question sets live here (the spec
+> carries the protocol + topic index, §6.1).
+
+### Protocol (binding for every `A<n>I`)
+
+1. **Record-only:** no source edits, nothing staged, no commit.
+2. Answer **every** question in the task's set with a source anchor or a reproducible command
+   (`timeout 120` on every binary execution).
+3. List the caveats/risks the paired `A<n>F` must respect, and any question that could not be
+   answered (state why).
+4. Append `## A<n>I` to `.superpowers/sdd/task-C89AHEAD-report.md`; append one ledger line.
+5. **STOP-present** the answers + caveats; await operator GO before starting `A<n>F`.
+6. If an answer changes the feature's shape or contradicts the spec, STOP-present the change; do not
+   proceed on an amended assumption without operator approval.
+
+---
+
+### A2I — Divergence & `pal_trap()` investigation (I, record-only) → A2F
+
+- **Q1** Exact `pal_trap()` C body per toolchain in scope (gcc `-m32`, MSVC6, OpenWatcom): C89-clean,
+  warning-clean under `-Wall -Wextra -O3 -fsyntax-only`, and linkable from emitted C; where it is
+  declared/defined (`sf/src/include/zig_pal.c`, `sf/src/include/zig_runtime.h`, canonical bytes in
+  `sf/src/emit_support.zig`).
+- **Q2** Backend-neutral terminator: does `unreachable` need a new LIR terminator (spec §3.1) or can it
+  reuse `.nop`+`block_terminated`? Enumerate every consumer of terminators/`block_terminated`
+  (lowering, DCE, `lir_opt_pass.zig`, emitter block layout) and the required changes.
+- **Q3** `@panic` → `noreturn`: what breaks across the ~25 `@panic(` sites in `sf/src`+tests and in the
+  corpus; how the argument is evaluated and printed first (reuse the `std_panic` runtime pattern).
+- **Q4** Confirm the trap terminator removes the fall-through for every parent construct (`orelse`,
+  `catch`, `if/else`, switch-else) at the anchors in spec §3.1; no residual `unwrap_*` on a dead path.
+- **Q5** Which of the 4-MD5 gate programs and the compiler self-emission contain `unreachable`/`@panic`
+  and therefore move.
+- **Q6** `std.debug.assert`/`panic` switch from `while (true) {}` to `pal_trap`: effect on stdlib
+  fixtures.
+- **Q7** N-hop staging: A2 is unconditional (no flag) — confirm the hop plan and whether A2 alone moves
+  the fixed point.
+
+### A3I — `-fsafe`/`-ffast` + `undefined` investigation (I, record-only) → A3F
+
+- **Q1** CLI parse site (`sf/src/main.zig`), config field, and plumbing to lowering+emission;
+  name-collision check against existing flags.
+- **Q2** Exact two-hop bootstrap staging with the committed seed that predates the flag; which hop first
+  understands `-ffast`; the `build_from_seed.sh`/`archive_seed.sh` edits; what the recorded fixed point
+  corresponds to.
+- **Q3** `undefined`→`0xAA` representation per type class (iN/uN/enum/pointer/optional/error-union/
+  struct/array/tuple) and the emitter init under `-fsafe`; `-ffast` stays byte-identical.
+- **Q4** Corpus (463) + compiler-self emission impact of `-fsafe` default; size delta vs the 16 MB
+  budget.
+- **Q5** Interaction with A2 (unconditional traps) — no double-trap; diagnostics unaffected.
+
+### A4I — cheap checks investigation (I, record-only) → A4F
+
+- **Q1** Backend-neutral LIR check form + exact anchors for cast / div-mod / shift / null-unwrap.
+- **Q2** `@intCast` missing helper pairs (`c89_emit.zig:5282-5322`): enumerate-vs-general; size impact.
+- **Q3** Div/mod-by-zero forms that do not themselves invoke C UB; signed/unsigned; arbitrary-width.
+- **Q4** Shift-count: compile-time vs runtime; width source; whether left-shift overflow belongs to A6.
+- **Q5** Enumerate every null-unwrap path (`unwrap_optional`, `orelse`, captures); `.?` unparsed today.
+- **Q6** `-ffast` byte-identity proof surface + corpus zero-asymmetry; ordering after A2/A3.
+
+### A5I — index-OOB investigation (I, record-only) → A5F
+
+- **Q1** Length source: array (compile-time) vs slice (runtime `.len`); where it lives.
+- **Q2** LIR/emitter guard form + placement; index-type normalization (signed/unsigned/arbitrary-width).
+- **Q3** `[*]T` (no length), multi-dim, `@ptrCast` aliases — what is checkable vs documented-unchecked.
+- **Q4** Compile-time constant-OOB fold or runtime-only.
+- **Q5** Corpus programs relying on OOB (expected none) — verify zero-asymmetry; size/perf.
+
+### A6I — integer-overflow investigation (I, record-only) → A6F
+
+- **Q1** Overflow-detection form that stays C89 + cross-toolchain (no GCC `__builtin_*` assumed on
+  MSVC6/OpenWatcom): unsigned/wider arithmetic or explicit pre-checks.
+- **Q2** Signed/unsigned; `+ - *`, unary `-`; arbitrary-width and sub-word types.
+- **Q3** `-ffast` byte-identity; check cost vs the 16 MB budget; measured size/perf.
+- **Q4** Whether it subsumes left-shift overflow (avoid double checks with A4).
+- **Q5** Corpus programs that intentionally wrap (verify).
+
+### A7I — compile-time diagnostics investigation (I, record-only) → A7F
+
+- **Q1** Hook sites: definite-assignment (uninit), unused error-union expression-statement, control-flow
+  fall-off / bare return; which pass holds the data.
+- **Q2** Diagnostic codes/severity; reuse the unused `ERR_3003`/`WARN_3010`/`WARN_3011` vs new;
+  error-vs-warning per Zig semantics.
+- **Q3** Corpus/examples/`sf/src` fallout: enumerate every rejected site; fix vs exempt; STOP-present if
+  non-mechanical.
+- **Q4** Interaction with `= undefined` (allowed) and `-fsafe` (mode-independent).
+
+### A8I — arena error-union investigation (I, record-only) → A8F
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
+
+- **Q1** Is `error{OutOfMemory}` / `error.OutOfMemory` supported today? Exact supported form; is a custom
+  error set needed?
+- **Q2** Error-union ABI/representation; `try`/`catch` lowering for the new shape.
+- **Q3** Full caller census (std, examples, fixtures, `extern_runtime_symbol_xmod` 16 B); migration
+  pattern; untracked `json_parser_upgraded` handling.
+- **Q4** Keep migrated consumer output byte-identical; `init`/`reset` unchanged.
+- **Q5** Ordering vs A2 (trap changes the `orelse unreachable` sites first).
+
+### A9I — type-alias investigation (I, record-only) → A9F
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
+
+- **Q1** Exact current behaviour of `const T = <type>` (primitives/arrays/structs/enums) in
+  annotations/params/returns/`@sizeOf`/`pub` export.
+- **Q2** The precise missing registration/resolution sites from A1.
+- **Q3** `pub` re-export + cross-module headers; alias-name in error messages.
+- **Q4** RED fixture design; plain `const E = enum`/struct stays byte-identical.
+
+### A10I — volatile feasibility investigation (I, record-only) → A10F on Go
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
+
+- **Q1** Type-system threading: which TypeKind/slab carries the flag; `typeRegistryGetOrCreatePtr` +
+  siblings; equality/coercion.
+- **Q2** `@volatileCast` semantics + parser/sema/lowering.
+- **Q3** C89 qualifier placement for single + multi-level pointers; interaction with the carrier/typedef
+  machinery (`getCTypeName`); `@ptrCast`/coercion qualifier-discard warnings.
+- **Q4** Fixture design (`*volatile u32` MMIO-style) + Go/No-Go criteria.
+
+### A11I — documentation audit (I, record-only) → A11F
+- **Layer lens (mandatory, AMENDMENT 4):** state and justify the correct architectural layer (sema vs lowering/LIR vs emitter), and use semantically-complete LIR ops (no emitter-side Zig semantics).
+
+- **Q1** Enumerate every stale claim the amendment invalidates across `Language_Spec_Z98.md`
+  §3/§4/§5/§7, `Caveats_and_Workarounds.md`, `README.md`, `z98_bootstrap_manual.md`; list exact edits.
+- **Q2** Confirm the dropped-feature idioms and the `-fsafe`/`pal_trap`/`undefined`/diagnostics docs
+  match the landed implementation (no overclaim).
+
+### A12 (I) / A13 (F) — unchanged
+
+A12 remains the closeout battery/N-hop STOP-present; A13 remains the docs GATE + seed rotation, gated on
+operator approval of A12.
+
+### A1 STOP-present — operator rulings (2026-09-10)
+
+- **MSVC6 trap:** `__asm { int 3 }` (not `__debugbreak` — VC6 predates the intrinsic). Spec §3.1
+  corrected accordingly.
+- **OpenWatcom trap:** `__asm { int 3 }` (Open Watcom supports `__asm { }` inline-asm blocks). Cannot be
+  verified locally — no Open Watcom toolchain in the container; the non-x86 fallback remains
+  `pal_abort()`.
+- **type-alias (`A9F`):** the spurious `warning[3000]` emitted for an array alias
+  (`const MyArr = [3]i32`, used as `[_]i32{…}`) is a **defect and MUST be fixed** — a spurious
+  diagnostic is treated as an error, not tolerated.
+- **diagnostics (`A7`):** proceed even if it flags existing `sf/src`/example/corpus sites — idiomatic,
+  safe code is preferred over silently unsafe code. Mechanical in-scope fallout fixes are allowed; STOP
+  only if the fallout is non-mechanical.
+- **4-MD5 baseline:** copied from the recorded baseline (no gate impact); accepted.
+
+### A2I STOP-present — operator rulings (2026-09-10)
+
+- **OpenWatcom trap:** confirmed — braced `__asm { int 3 }` (A1's unbraced form is superseded).
+- **`switch_expr` `block_terminated` leak (`lower.zig:4485`):** approved to fix in A2F, **and must ship a
+  committed `repro/mi_matrix/` RED→GREEN fixture** (`switch_expr_unreachable_xmod`) so the defect is
+  catchable — the same RED→GREEN contract applies to the trap-emission fixtures.
+- **`if_expr`:** guard **both** arms (`lower.zig:4075-4076` then, `:4083-4084` else).
+- **A2F wiring facts (from A2I):** `sf/src/pal.zig` has no `pal_abort` extern → add the `pal_trap` extern;
+  `std_panic` retargets to `pal_trap()`; second dead mirror `emitZigRuntimeC` (`c89_emit.zig:8337`) and
+  `emitZigRuntimeCSupport`/`emitZigRuntimeHSupport` canonical bytes all need the `pal_trap` declaration;
+  new LIR `trap: void` needs an explicit `emitInst` arm (its `else` drops unknown ops).
+
+### A3I STOP-present — operator rulings (2026-09-10)
+
+- **`undefined` poison mechanism:** approved — new runtime helper `zig_poison_fill(void*, unsigned int)`
+  doing a **byte-exact** `0xAA` fill (no numeric `0xAA…` literal, no `memset`); added to the canonical
+  runtime bytes (`sf/src/include/zig_runtime.h/.c` + `emit_support.zig` mirrors); **lowering-gated** and
+  helper-emitted only under `-fsafe`, so `-ffast` stays byte-identical.
+- **Fixture:** A3F ships a committed `repro/mi_matrix/` RED→GREEN `undefined`-poison fixture (plus a
+  `-ffast` control).
+- **4-MD5:** all four gate dumps move under default `-fsafe`; disposition remains
+  **recorded-not-rebaselined** until the A12/A13 re-baseline.
+- **A3F wiring facts:** `-fsafe` default / `-ffast` opt-out; seed scripts pass `-ffast` (dump line
+  `scripts/seed/build_from_seed.sh:87` + `archive_seed.sh` text); the recorded fixed point is the
+  `-ffast` binary. Do not inherit the two pre-existing invalid-C `undefined` sites (nested-array zero
+  loop; `undefined` to struct/optional param); global `var = undefined` currently emits no init (BSS).
+
+### A4I STOP-present — operator rulings (2026-09-10)
+
+- **`@intCast` gating (option a, ratified):** gate the **whole** cast path at **lowering** (`chk` AND
+  `safe_checks`, mirroring `lower.zig:5533`). This intentionally **breaks strict `-ffast` byte-identity
+  vs PRE** because the pre-existing cast checks are currently ungated → the `-ffast` fixed point moves
+  and the four 4-MD5 move (**recorded-not-rebaselined**). The Global Constraint is re-scoped for A4F to
+  "**no *new* emission for div/shift/null**". Do NOT drop the `intTypeNeedsWidthWrap` gate verbatim:
+  `emitWidthCheckedCheckStmt`'s unsigned branch is `arb_uint_type`-only (`c89_emit.zig:4715`), so
+  fixed-width `uN` targets must branch on target signedness (`intCastTypeIsSigned`/`typeRegistryIntIsSigned`)
+  or keep the registered helper path.
+- **Null-unwrap (kind=4):** approved as **emit-level defense-in-depth** only — `.?` is unparsed and every
+  `unwrap_optional` emit is already `check_optional`-guarded, so it cannot be a runtime RED→GREEN fixture.
+  Ship an emit-level assertion fixture; document that runtime trapping is unverifiable until `.?` lands.
+- **`INT_MIN / -1`:** belongs to **A4** (use `satMinLitBound` `c89_emit.zig:4605`); A6 stays `+`, `-`,
+  `*`, unary negation.
+- **DCE:** the new `check_trap` LIR op needs a `dceMarkAllReads` arm (`c89_emit.zig:8048`; `else` at
+  `:8107`) or DCE drops `cond`.
+- **Shift:** `1 << 40` const-folds to `0`; left-shift **overflow** is A6's, only the count-≥-width guard
+  is A4's.
+
+### A5I STOP-present — operator rulings (2026-09-10)
+
+- **Scope:** A5F guards **read and write `arr[i]`** only (the `load_index` / `assign_index` forms). The
+  other index-through-BIN_ADD forms (`&arr[i]` at `lowerLValueAddr:1029-1039`; `base[i].field = v` at
+  `lowerFieldStore:1375-1382`) are **documented as unchecked**; so are `[*]T`, `@ptrCast` aliases, and
+  multi-dim `[R][C]T` (which already emits invalid C — pre-existing).
+- **Signed index:** confirmed — normalize so a signed index wider than `usize` (e.g. `i64` on `-m32`)
+  cannot pass a negative index (add the `idx >= 0` conjunct / unsigned form).
+- **Length source:** arrays = compile-time `array_items[…].length` (`array_to_slice` `lower.zig:5893-5911`);
+  slices = runtime `SLICE_FIELD_LEN` off `li_orig_base`/`ai_orig_base`. Runtime-only (no constant-OOB fold);
+  `-ffast` gains no new emission.
+
+### A6I STOP-present — operator rulings (2026-09-10)
+
+- **Left-shift value overflow:** **INCLUDED** in A6F (resolves the plan:518 vs Task-A6-body conflict toward
+  plan:518). Guard `<<` / `<<=` value overflow (A4 keeps only the count-≥-width guard). Extend the
+  `repro/mi_matrix/` fixtures to cover the shift-overflow cases.
+- **`check_trap{kind=6}` contract:** **APPROVED** — expand the LIR op with `op`/`result_type` fields
+  (packed to keep the streamed 32-byte size), render the signed short-circuit guards in the emitter from
+  `aux`/`imm`, and extend the `kind==2`-only DCE/opt-pass `imm`-read arms. **Repros required** (under
+  `repro/mi_matrix/`) for the short-circuit guard behaviors.
+- **Unsigned unary `-`:** **prefer compile-time rejection** (a `-unsigned` diagnostic) if not too
+  complicated; otherwise fall back to the runtime trap. Either way, ship a `repro/mi_matrix/` repro.
+- **All new repros stay under `repro/mi_matrix/`.**
+
+### A6F STOP-present — operator rulings (2026-09-10)
+
+- **Default `-fsafe` overflow traps on wrap-reliant programs are intended.** `golden_tco_factorial`,
+  `matrix_tco_factorial` (`acc*n`), `matrix_rogue_mud` (LCG), and corpus `intwidth_wrap_xmod` /
+  `intwidth_full_xmod` genuinely overflow under `-fsafe` (they relied on wrapping). **Do NOT weaken the
+  check.** Instead **migrate them to explicit wrap ops (`+%`/`*%`)** and **document the previous wrapping
+  behavior as part of `-fsafe` semantics, pointing at the offending code**.
+- **Literal-LHS shift hole:** **FIX in A6F** — `1 << 40` / `2 << 31` are unguarded because the literal LHS
+  temp has width 0; materialize a typed temp so the LHS has a real width and the `<<`/`<<=` guard applies.
+- **All new repros under `repro/mi_matrix/`.**
+
+### A7I STOP-present — operator rulings (2026-09-10)
+
+- **Missing-return (A): BUILD THE REACHABILITY MODEL.** Implement a real "definitely-returns" predicate
+  over block/`if`/`switch` (with `return`/`unreachable`/`@panic` as terminators) instead of the unsound
+  `block_terminated` flag. Zig-faithful: a non-void function that can fall off the end, or a bare `return;`
+  in a non-void function, is an error. The `if/else` both-return sites (21 `sf/src` + 8 `std_net` + corpus)
+  are correct and must NOT be flagged.
+- **Uninit (B): KEEP THE ERROR.** Real Zig requires initialization (`var x: T;` is a compile error;
+  `= undefined` is the escape) — spec §3.4 is Zig-faithful. No change.
+- **Ignored value (C):** scope stays **error-union-only** per spec §3.4. Real Zig is stricter (ignoring any
+  non-void value is an error); record this as a documented deviation — do not broaden in A7F.
+- **Unsigned unary `-` (D):** stays A6F's `-fsafe` runtime trap (Zig treats plain `-` as overflow-checked,
+  not a blanket compile error; the compile-error proposal is unadopted). Compile-time rejection for
+  comptime-known values is out of A7F scope.
+
+---
+
+## AMENDMENT 4 — Guard semantics must live in backend-neutral LIR (leak refactor) (2026-09-10)
+
+> Operator ruling: reject the "working-but-leaky" state. Every Zig-semantic guard decision must live in
+> **backend-neutral LIR** (or the architecturally-correct layer), never in the C89 emitter. Adds the
+> refactor task set **A14–A18** and amends **A7F** and the remaining **I-tasks (A8I–A11I)** with a
+> layer-placement mandate. No corner-cutting.
+
+### Leak inventory (verified; `c89_emit.zig` line anchors)
+
+| Leak | Where the Zig semantics live today |
+|---|---|
+| kind 2 div/mod `INT_MIN/-1` | emitter `c89_emit.zig:6014-6035` |
+| kind 4 null-unwrap | emitter `c89_emit.zig:8085-8092` (no `check_trap kind=4` emitted) |
+| kind 6 `+ - * unary- <<` overflow | emitter `emitOverflowGuard` `c89_emit.zig:5759-5991` |
+| `undefined` poison | emitter `c89_emit.zig:3710-3749` (+ helper `emit_support.zig:504-514`) |
+| `@intCast` checked bounds | emitter `c89_emit.zig:4710-4757`, `:7681-7748` (pre-existing) |
+
+Clean precedents to follow: kind 3 (shift count) and kind 5 (bounds) — lowering computes the condition
+temp (`lower.zig:630-640`, `:752-811`); the emitter only prints `if (!(cond)) { pal_trap(); }`
+(`c89_emit.zig:6007-6013`). `check_error`/`check_optional` are likewise neutral (`c89_emit.zig:7928-7937`,
+`:8055-8066`). The project's own architecture docs require this: `docs/sf/Design_p2.md:1964-1966`
+("The LIR is backend-agnostic … a new backend implements the same interface", planned
+`--backend=c89|x86|llvm`); spec §3.2.
+
+### Binding design rules (apply to A14–A18 and all later work)
+
+- **Semantically-complete LIR ops.** Each guard is a single LIR op carrying everything a backend needs
+  (operands + checked-op identity); backends map it to a primitive. Mirror Zig AIR
+  (`@addWithOverflow`, `@subWithOverflow`, `@mulWithOverflow`, `@shlWithOverflow`, checked div, etc.).
+- **Dumb emitter.** `c89_emit.zig` may only emit `if (!(cond)) { pal_trap(); }` or call a runtime helper —
+  **no** MIN/MAX bound math, signedness selection, or short-circuit construction in the emitter.
+- **Gate once.** The `-fsafe`/`-ffast` decision is made once in **lowering** (LIR); the emitter never reads
+  `safe_checks` to decide Zig semantics.
+- **Right layer per concern.** Runtime value guards → LIR (lowering). Compile-time diagnostics →
+  sema/`analyzer.zig`. Type/coercion decisions → sema side tables consumed by lowering.
+
+### Refactor tasks (execute A14–A18 after A6F, before A7F onward)
+
+- **A14 (I, record-only): guard-layer census + LIR-op design → STOP-present.** For each leaked guard
+  above, design the semantically-complete backend-neutral LIR op (name + payload fields + tag-ordinal /
+  streamed-`@sizeOf` impact) and its C89 primitive mapping; state the correct layer and any
+  UB-free-math strategy (wider type for sub-word/i32, LIR overflow ops + runtime helpers for i64/
+  arbitrary-width). Enumerate consumers to update (`lir.zig`, `lower.zig`, `lir_opt_pass.zig`,
+  `lir_stream.zig`, `c89_emit.zig`, `emit_support.zig`).
+- **A15 (F): overflow ops → LIR.** Introduce `add/sub/mul/neg/shl_with_overflow` LIR ops; delete
+  `emitOverflowGuard`'s semantic body (emitter maps op→helper/primitive). Fixtures + `-ffast` no-new-
+  emission + N-hop.
+- **A16 (F): div/mod `INT_MIN/-1` + null-unwrap → LIR.** Emit a neutral guard (condition or dedicated op)
+  in lowering; remove the emitter-side `INT_MIN/-1` and null-unwrap guard logic.
+- **A17 (F): `undefined` poison → LIR.** Move the poison decision to lowering/LIR; emitter maps.
+- **A18 (F): `@intCast` checked bounds → LIR.** Convert the checked-cast bound tests to LIR ops /
+  runtime helpers selected in lowering (pre-existing leak).
+- Each A1x follows the I→(STOP)→F protocol of AMENDMENT 3; report/ledger/memory per convention.
+
+### Amendment to A7F
+
+A7F's three diagnostics hook **sema/`analyzer.zig`**, not lowering: existing compile errors are emitted
+from `semantic_analyzer.zig` (e.g. `:509`, `:1978`) and `analyzer.zig` (`:469`, `:260`); `lower.zig`
+emits only ICEs. Missing-return is an **analyzer/sema reachability pass over the AST**. Ignored-EU hook is
+the stmt-iter site (`parser.zig:2577-2582` / `lower.zig:5959-5965`) but the *decision* is a sema/analyzer
+check, not emitter/lowering.
+
+### Amendment to A8I–A11I (layer lens — mandatory in each investigation)
+
+Each of A8I/A9I/A10I/A11I must, as an explicit part of its question set: (a) state and justify the
+**correct architectural layer** for the feature/guard (sema vs lowering/LIR vs emitter); (b) confirm the
+implementation uses **semantically-complete LIR ops** (no emitter-side Zig semantics); (c) list the LIR-op
+plumbing needed. A12 (closeout) must verify the leak inventory is empty.
+
+---
+
+## AMENDMENT 5 — Lower noreturn-valued `if`/`switch` expressions (A7F follow-up) (2026-09-10)
+
+> Operator ruling (option a): keep the A7F reachability widening (`f224177f`) and fix the **real layer** by
+> adding task **A19** — make lowering handle noreturn-typed value expressions instead of emitting
+> uncompilable C. No corner-cutting: do not narrow the predicate back.
+
+### Context / defect (verified by the A7F re-review)
+
+A7F's definitely-returns predicate (`f224177f`) now correctly accepts expression-position `if`/`switch` whose
+arms all terminate, e.g. `const x = if (c) return 1 else return 2;` and
+`const x = if (c) { return 1; } else { return 2; };`. Before `f224177f` those shapes were hard-rejected
+`error[3003]`. Now the resolver accepts them, but `lower.zig` lowers a noreturn-typed `if_expr`/`switch_expr`
+in a value position by materializing a result temp whose type is noreturn — which has no C type — so the
+compiler exits `rc=0` while emitting uncompilable C (`error: unknown type name 'zT_…'`). This turns a clean
+diagnostic into **silent bad output**.
+
+### Binding rules
+
+- The fix lives in **lowering/LIR** (the architecturally-correct layer per AMENDMENT 4), **not** the emitter;
+  no emitter-side Zig semantics.
+- A noreturn-valued expression must lower like the existing divergence constructs: its arms emit their own
+  terminators (`return` / `unreachable` / `@panic` / `trap`) and the enclosing block is marked terminated;
+  **no result temp is materialized** for a value that can never be produced.
+- Cover every value position the resolver accepts: initializer (`var_decl`), assignment RHS, `return`
+  operand, call argument, nested `if`/`switch`, optional/error-union contexts — verify each and pin the ones
+  that work with fixtures; STOP-present if any accepted shape needs a design decision.
+- `-ffast` byte-identity is re-established (the intended, recorded move only); run the A1x gate set
+  (fixtures, battery golden 9/9 + matrix 21/21, corpus sweep, `check_emit_support.sh` 5/5, 4-MD5 recorded
+  not re-baselined) and an N-hop; record the new fixed-point chain.
+
+### Task A19 (F) — lower noreturn-valued `if`/`switch` expressions
+
+RED repros first (all under `repro/mi_matrix/`), implement in `lower.zig`, GREEN, full gates, ONE commit:
+`feat: c89-ahead — lower noreturn-valued if/switch expressions (C89AHEAD)`. Report `## A19` + one ledger
+line + mnemoria entry per convention.
+
+---
+
+## AMENDMENT 6 — Arena error-union rulings + `orelse` type guard (A8F / A20) (2026-09-10)
+
+> Operator rulings on the A8I STOP-present (2026-09-10): (a) named `ArenaError`; (b) append `OutOfMemory` to
+> `FileError`; (c) add task **A20** for the latent `orelse`-on-non-optional sema guard; plus add a new
+> OOM-GREEN fixture. A8I's census/migration table (report `## A8I`) is the implementation map.
+
+### A8F — `std.arena.alloc` returns `error.OutOfMemory` (binding rulings)
+
+- **Signature (named set, `Allocator.Error` idiom):** in `sf/src/std_arena.zig` add
+  `pub const ArenaError = error{OutOfMemory};` and change `alloc` to
+  `pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8` (keep the `[*]u8` payload; `init`/`reset`
+  unchanged). On exhaustion `return error.OutOfMemory;`.
+- **`FileError` (×3: `examples/z98/json_parser{,_upgraded,_workaround}/file.zig`):** append `OutOfMemory`
+  **last** (existing member ordinals stay stable); `file.zig`'s alloc becomes `try`.
+- **Migrate all 26 sites** per the A8I table: json sites `try std.arena.alloc(...)` (`ParseError` already has
+  `OutOfMemory`); `stdlib_arena_xmod` `catch ZERO` (byte-identical); `extern_runtime_symbol_xmod/lib.zig:7`
+  `catch @ptrCast([*]u8,0)` (signature unchanged); dead `json_parser*/arena.zig` `alloc_bytes` → `ArenaError![]u8`
+  + `try` (keep the file, stay consistent); `trap_arena_exhaustion_xmod:16` → `catch unreachable`
+  (preserves A2 trap `rc133`). No `orelse unreachable` may remain.
+- **New OOM-GREEN fixture** under `repro/mi_matrix/` pinning the exhaustion path (graceful handler), in
+  addition to the existing `stdlib_arena_xmod` coverage.
+- std_arena is a **user std module** (absent from the compiler graph) → self-emission fixed point does NOT
+  move; std-importing 4-MD5 rows move (runtime-identical) → **recorded-not-rebaselined**, re-baseline at
+  A12/A13. Commit: `feat: c89-ahead — std.arena error.OutOfMemory + consumer migration (C89AHEAD)`.
+
+### Task A20 (F) — reject `orelse` on a non-optional operand (sema type rule)
+
+- **Defect:** `semantic_analyzer.zig:1438-1440` silently returns `TYPE_VOID` for an `orelse` whose operand is
+  not optional; lowering then unconditionally emits optional unwrap → rc0 bad C / void-var errors.
+- **Fix (correct layer = sema):** when the `orelse` operand type is not `optional_type`, emit a clean
+  diagnostic (reuse `ERR_3000_TYPE_MISMATCH`, or add `ERR_3016_ORELSE_REQUIRES_OPTIONAL`) instead of
+  returning `TYPE_VOID`. This is Zig- and spec-faithful (§3.1: `orelse` is for optionals; error unions use
+  `catch`). Do **not** make `orelse` accept error unions.
+- RED fixture(s) under `repro/mi_matrix/` (valid optional `orelse` must still compile and run; non-optional
+  operand must be cleanly rejected). Sema-only change → fixed point moves → run an N-hop. Commit:
+  `feat: c89-ahead — orelse requires an optional operand (C89AHEAD)`.
+
+**Order:** A8F first, then A20, before A9I. Spec §6.1's `std.arena.alloc(...) orelse unreachable` example and
+the arena/`orelse` docs are now stale → update in **A11F**.
+
+---
+
+## AMENDMENT 7 — Type-alias rulings + A9F split (A9F-a / A9F-b) (2026-09-10)
+
+> Operator rulings on the A9I STOP-present (2026-09-10): **all 7 confirmed.** A9I report `## A9I` is the
+> investigation of record (form × position table, spurious-warning root cause, missing sites).
+
+### Binding rulings
+
+1. **Split A9F.** `A9F-a` = the already-parseable forms (`[N]T`, `[]T`, `[*]T`, arbitrary-width ints,
+   alias chains, cross-module `pub` aggregate aliases) — **no parser change**. `A9F-b` = parser support for
+   `*T`, `?T`, `E!T`, `fn(...)` aliases (separate follow-up task, executed after A9F-a).
+2. **Q2 fix shape = (b):** in sema `semanticAnalyzerResolveArrayInit` derive the element type from the
+   annotation, **and** add array→array structural assignability to `typeRegistryIsAssignable` /
+   `classifyCoercion` (also covers the many-ptr `&array` spurious `warning[3000]`). The `warning[3000]` for
+   `[_]T{…}` is **not alias-specific** and is fixed by this shape.
+3. **Fixtures:** approve the A9I Q4 RED set; the plan's original `typealias_prim_xmod`/`typealias_agg_xmod`
+   are GREEN guards, not RED — keep them as guards.
+4. **Cross-module aggregate alias is in A9F-a scope** (silent bad C: imported module not emitted, copy loop
+   references phantom `x`).
+5. **Re-baseline policy:** if any 4-MD5 gate row moves, **STOP-present the moved rows**; do **not**
+   re-baseline in A9F-a.
+6. **Alias-name in diagnostics:** **accept erasure** to the underlying type for now (do not preserve the
+   alias identifier); record as a documented limitation for A11F.
+7. **`const B = A` chain:** fix by having `constAliasPrepass` set `sym.kind` (**preferred**) or a `main.zig`
+   classification guard; pin with the `r_fallback_constalias*` fixtures first and record the blast radius
+   over all `const X = Y` module globals.
+
+### Task A9F-a (F) — parseable type-alias forms + spurious-warning fix
+
+- **Deliverable:** (i) `[_]T{…}` / annotated-array init no longer emits the spurious `warning[3000]`
+  (shape b); (ii) cross-module `pub` array/slice/many-ptr aliases emit and link correctly; (iii) `const B = A`
+  alias chain fixed (ruling 7). No parser change.
+- RED fixtures first under `repro/mi_matrix/` (from A9I Q4); green guards for valid aliases; confirm correct
+  programs (`const E = enum`/`const S = struct`, existing alias users) stay byte-identical.
+- Gates: fixtures + existing alias users byte-identical; battery golden 9/9 + matrix 21/21; corpus sweep
+  zero unexpected fallout; strict `-Wall -Wextra -O3 -fsyntax-only` 0 errors; `check_emit_support.sh` 5/5;
+  4-MD5 recorded-not-rebaselined **unless moved → STOP-present** (ruling 5); N-hop with the new fixed point.
+- ONE commit: `feat: c89-ahead — type-alias forms + array-init warning fix (C89AHEAD)`.
+
+### Task A9F-b (F) — parser support for pointer/optional/error-union/function aliases
+
+- **Deliverable:** `const T = *U` / `?U` / `E!U` / `fn(...)...` aliases parse and resolve (A9I `parser.zig`
+  sites). RED fixtures first; same gate set; ONE commit:
+  `feat: c89-ahead — pointer/optional/error-union/function type aliases (C89AHEAD)`.
+- STOP-present if the parser change proves larger/non-mechanical than a targeted addition.
+
+---
+
+## AMENDMENT 8 — Volatile GO + qualifier-safety scope (A10F) (2026-09-10)
+
+> Operator ruling on the A10I STOP-present (2026-09-10): **GO** on volatile, **Option 1** (full
+> qualifier-safety — close implicit *and* explicit qualifier laundering). A10I report `## A10I` is the
+> implementation sketch of record.
+
+### A10F — volatile (`*volatile T`) per the A10I sketch, plus qualifier safety
+
+**Core (from A10I):** add `kw_volatile` (TokenKind ordinal shift; `token.zig` keyword table 37→38); thread a
+volatile bit in the pointer type (`typeRegistryGetOrCreatePtr` key currently `(base<<1)|is_const`); render the
+qualifier **volatile-only** (const stays dropped for byte-identity) with the **append rule** for multi-level
+(`*volatile *u32` → `unsigned int* volatile*`); make `getCTypeName`'s six flag-blind fast-path returns
+(`c89_emit.zig:733-738`, incl. `u8`/`u32`/`c_char`/`usize`) qualifier-aware; `@volatileCast` on the existing
+`ptr_cast` path; `*volatile fn(...)` out of scope. Layer = sema type-system + thin emitter rendering; **no new
+LIR op** (AMENDMENT 4).
+
+**Qualifier-safety (Option 1, binding):**
+- **A.** One shared helper `pointerQualifiersMonotone(src_flags, tgt_flags, mask)` — the target must contain
+  every qualifier bit the source has (add allowed, drop forbidden). Unifies the A10I finding-#1 superset guard.
+- **B.** Apply it to **every pointer-ish conversion branch** in BOTH `typeRegistryIsAssignable`
+  (`type_registry.zig`: ptr→ptr incl. the `TYPE_VOID` shortcuts `:1172-1173`; ptr→slice `:1204-1209`;
+  array→many `:1216-1219`; ptr→many `:1221-1229`; slice→many `:1235-1239`; ptr→optional `:1240-1244`) and
+  `classifyCoercion` (`coercion.zig` mirrors). Replace unconditional `return true`/`none` with the monotone
+  gate. Non-pointer sources (arrays/ints) have flags=0 → unaffected.
+- **C.** In sema's `@ptrCast` resolution, reject a ptr→ptr cast whose target drops a qualifier the source has.
+  Provide **`@volatileCast(ptr)`** as the only sanctioned remover of the volatile bit (same base; clears just
+  that bit). (`@constCast` optional/not required.)
+- **D.** `*volatile T → *void` drops volatility (C `void` cannot carry it): reject implicitly; document that
+  `@ptrCast` cannot rescue it.
+- **E.** First cut **mask = volatile only** (const behavior unchanged) to guarantee zero non-volatile
+  fallout; extending the mask to const requires a clean corpus census first.
+
+**Tests / gates:** RED→GREEN fixtures for the MMIO `*volatile u32` form AND rejection fixtures for each
+implicit drop path (`*volatile u32` → `*u32` / `[]u32` / `[*]u32` / `?*u32` / fn-param) and the `@ptrCast`
+drop; acceptance for `@volatileCast` and for *adding* volatile. Hard gate: **non-volatile 4-MD5
+byte-identical** and corpus zero-fallout; battery golden 9/9 + matrix 21/21; strict
+`-Wall -Wextra -O3 -fsyntax-only` 0 errors; `check_emit_support.sh` 5/5; N-hop (fixed point moves via the
+TokenKind shift). ONE commit: `feat: c89-ahead — volatile pointer qualifier + qualifier safety (C89AHEAD)`;
+report `## A10F` + ledger + mnemoria per convention.
+
+---
+
+## AMENDMENT 9 — Review scope: skip A10F re-review; documentation tasks are doc-only (2026-09-10)
+
+> Operator ruling (2026-09-10).
+
+1. **A10F re-review is SKIPPED.** A10F's review found a Critical (`*volatile [N]T → []T` drop) + Importants;
+   the fix (`60e60df9`) is accepted on the implementer's evidence without a separate re-review. The full
+   battery + whole-branch review at **A12** covers A10F (and A7F/A8F/A9F-a/A9F-b/A10F) retroactively.
+2. **Documentation tasks (A11I/A11F) reviews are DOC-ONLY.** Because A11 changes only docs (no compiler
+   graph), its task reviews verify document accuracy/consistency and must **not** run the full
+   battery/N-hop/4-MD5 gate; those run once in **A12**. A11F may still run `check_emit_support.sh` or a
+   targeted doc/build-script sanity check if the docs it edits touch a recipe, but no compiler-wide battery.
+
+---
+
+## AMENDMENT 10 — Documentation (A11F) scope ruling (2026-09-10)
+
+> Operator rulings on the A11I STOP-present (2026-09-10). A11I report `## A11I` is the edit list of record.
+
+- **A11F is doc-only** (AMENDMENT 9) and covers **9 docs**:
+  `docs/reference/Language_Spec_Z98.md`, `docs/reference/Caveats_and_Workarounds.md`, `README.md`,
+  `docs/reference/z98_bootstrap_manual.md`, `docs/sf/QUICK_REF.md`, `docs/sf/AGENTS.md`, plus the
+  **extended** adjacent stale docs `docs/reference/c89_emission.md`, `docs/reference/builtins.md`,
+  `docs/reference/runtime_api.md` (the latter two cite the **removed** `__bootstrap_panic`).
+- **`Caveats_and_Workarounds.md`:** add a zig1 runtime-safety section — it currently has **zero** zig1
+  content (zig0-era header).
+- **Fix the A11I Minor anchor:** the `try`-on-non-error-union latent gap is at
+  `semantic_analyzer.zig:1525-1531` (not `:1411-1413`).
+- **Don't overstate:** do not document `std.debug` as a reliable *printed* abort (stdout is buffered and can
+  be lost before the trap; `@panic` uses stderr); do not repeat the design spec's inaccurate "`-ffast` keeps
+  deterministic zeroing for locals".
+- Apply the landed-implementation corrections from A11I (arena `ArenaError![*]u8`; `@panic`/`unreachable`
+  trap; `-fsafe`/`-ffast` + six checks + `undefined` 0xAA; diagnostics `3014/3015/3003/3016`; alias forms +
+  erasure; `*volatile T`/`@volatileCast` + qualifier safety; `static`/`do…while` idioms). ONE commit:
+  `docs: c89-ahead — documentation update (volatile/safety/diagnostics/arena/aliases) (C89AHEAD)`.
+

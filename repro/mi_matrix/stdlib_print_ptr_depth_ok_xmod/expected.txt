@@ -1,0 +1,4 @@
+s14=.{ .p = ?*?*?*?*?*?*?*i32@1400, .n = 14 }
+s10=.{ .p = ?*?*?*?*?*i32@1000, .n = 10 }
+ep=error{E00aaaaaaa,E01aaaaaaa,E02aaaaaaa,E03aaaaaaa,E04aaaaaaa,E05aaaaaaa,E06aaaaaaa,E07aaaaaaa,E08aaaaaaa,E09aaaaaaa,E10aaaaaaa,E11aaaaaaa,E12aaaaaaa,E13aaaaaaa,E14aaaaaaa,E15aaaaaaa,E16aaaaaaa,E17aaaaaaa,E18aaaaaaa,E19aaaaaaa,E20aaaaaaa,E21aaaaaaa,E22aaaaaaa,E23aaaaaaa,E24aaaaaaa,E25aaaaaaa,E26aaaaaaa,E27aaaaaaa,E28aaaaaaa,E29aaaaaaa,E30aaaaaaa,E31aaaaaaa,E32aaaaaaa,E33aaaaaaa,E34aaaaaaa,E35aaaaaaa,E36aaaaaaa,E37aaaaaaa,E38aaaaaaa,E39aaaaaaa,E40aaaaaaa,E41aaaaaaa,E42aaaaaaa,F0aaaaaaaaaaaaa,F1aaaaaaaaaaaaa}@520
+done

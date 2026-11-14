@@ -7,8 +7,6 @@ const sm_mod = @import("source_manager.zig");
 const SourceManager = sm_mod.SourceManager;
 const diag_mod = @import("diagnostics.zig");
 const DiagnosticCollector = diag_mod.DiagnosticCollector;
-const nm_mod = @import("name_mangler.zig");
-const NameMangler = nm_mod.NameMangler;
 const token_mod = @import("token.zig");
 const Token = token_mod.Token;
 const TokenKind = token_mod.TokenKind;
@@ -57,7 +55,6 @@ pub const CompilerContext = struct {
     interner: *StringInterner,
     diag: *DiagnosticCollector,
     source_man: *SourceManager,
-    name_mangler: *NameMangler,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {

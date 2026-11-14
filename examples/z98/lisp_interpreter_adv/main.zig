@@ -54,6 +54,7 @@ fn print_value(v: *value_mod.Value) void {
             print_list(v);
             print_str(")");
         },
+        else => {},
     }
 }
 

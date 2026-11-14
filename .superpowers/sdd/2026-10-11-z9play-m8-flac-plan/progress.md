@@ -1,0 +1,32 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-10-11-z9play-m8-flac-plan.md
+
+Branch `zig1_improvements`; agent Zni-005. Base `6b376022` (M7 complete). M8 optional confirmed by operator on 2026-10-18 (Amendment 1 `b03f8ed4`).
+Seed v102: archive `702f34d87b7e6bf401dd206d2517dbee`, fixed point `b299b4b435e624d0ddbd2edde681cbc3`.
+Defects: D1/D2 FIXED; D3/D4/D5 OPEN. No compiler/std changes; no seed rotation expected.
+
+## Preflight scan (plan text vs plan text / shared interfaces)
+
+| Pair | Produces → consumes | Finding |
+|---|---|---|
+| T1 → T2 | frontend `decoder.zig` selector → FLAC backend | Clean; T2 adds `flac.open`/`flac.decode` consumed by the selector. |
+| T1 → T3 | selector interface → mixed `.ogg`/`.flac` gate | Clean; T3 asserts selection works. |
+| T1 → main/ui | selector API → assembly sites | Touch set explicitly includes `main.zig`/`ui.zig` (Amendment 1); no player-core edit. |
+| T2 → T3 | FLAC decode → tier golden | Clean. |
+| T3 → T4 | gate evidence → docs | Clean. |
+| T4 → T5 | docs → final handoff | Clean; T5 must state Win9x design-verified/hardware pending. |
+| T5 | final status | Clean; no open Critical/Important required. |
+
+Self-consistency: no task mandates a compiler feature; no std change; seed rotation only if `sf/**` changes (not planned). T1 keeps the existing `player.Decoder` vtable caller-owned/by-pointer. No contradictions found.
+
+## Tasks
+Task T1: complete (commits `c4b53d84` decoder selector, `9024d433` report; review Approved, spec ✅, 0 Critical/0 Important/3 Minor). `decoder.zig` `DecoderKind{ vorbis, flac }` + `decoderOpenVorbis(out: *player.Decoder, vc)` caller-owned vtable; main `--wav`/interactive and `ui.playTrack` route through it; no player.zig change; FLAC arm inert. Gates: main/ui build; tier_cli 23/0, tier_tui 40/0, tier_audio 27/0, info 20/0, setup 21/0, win9x 14/0; seed v102 unchanged. Dump moved main `75133080→1a0e5440`, ui `e7bc57a2→38e4e1ca` (module split). Minor: selector nominal until T2; test duplicate assembly; D8 wording.
+Next: T2 FLAC stream/frame decode + selector wiring.
+Task T2: complete (commits `07d92393` FLAC decoder, `73991c5b` report; review Approved, spec ✅, 0 Critical/0 Important/6 Minor). Native FLAC stream/frame decode (constant/verbatim/fixed/LPC + Rice + channel decorrelation) + selector (`OggS`/`fLaC`) wiring in main/ui; exact PCM 88200 frames max_delta=0, 3× deterministic; tiers cli 23/0, tui 40/0, audio 27/0, info 20/0, setup 21/0, win9x 14/0; seed unchanged. Deferred minors: 32-bit FLAC rejected mid-decode (open accepts); nominal union/dead fields; test buffer/guard limitations; test not in runner (T3); FLAC metadata open on 4 MB arena; trailing junk after last frame → BadFrame.
+Next: T3 `tier_flac.sh` (fixtures + mixed selection).
+Task T3: complete (commits `903ea2ab` tier, `c6f9bedb` report; review Approved, spec ✅, 0 Critical/0 Important/5 Minor). `tier_flac.sh` PASS twice 59/0; real public paths (`main --wav`, TUI mixed `.ogg`/`.flac` selection); FLAC payload exact + deterministic 3×; `.ogg` tiers cli 23/0/tui 40/0/audio 27/0; Win9x PE32 KERNEL32+WINMM import gate PASS; dumps main `e56af791…`, ui `22676fd9…`; seed unchanged. Deferred minors: 16-bit fixture hardcode; WAV header partial; mingw hard requirement; tool re-download/network; inherited LD path.
+Next: T4 docs (FLAC support, dump md5, truthful limitations).
+Task T4: complete (commits `808355d3` docs, fix `ee485934` pin truth-up, `67ba38dd`/`0772f3ee` reports; review Needs-fixes → fix round 1 → scoped re-review all 3 findings ADDRESSED, no new breakage). Docs now truthful: FLAC paths + Vorbis-only request modes, tier 59/0, current Linux pins `e56af791…`/`22676fd9…`, `-osw` current `aa687823…` (M6 `ad9ccfd3…` historical), seed v102, D status, hardware pending; docs-only. Deferred minors: FLAC tags unparsed, CRC-16 skipped, 32-bit FLAC; tier cited not rerun.
+Next: T5 final handoff note.
+Task T5: complete (commit `8fb5d18d` report; review Approved, spec ✅, 0 Critical/0 Important/2 Minor). Final handoff records z9play feature-complete per spec (OGG + optional FLAC; CLI+TUI; Linux verified, Win9x design-verified/hardware pending), deferred arms, z9torr M6 next milestone, no open M8 Critical/Important, seed v102 unchanged, tier evidence 59/0 + OGG regressions. M8 **COMPLETE**.
+Next: z9torr M6 seed/upload (plan truth-up `44cd1237`), execution pending.
+

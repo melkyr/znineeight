@@ -1,0 +1,35 @@
+@cInclude("stdlib.h");
+@cInclude("string.h");
+
+const std = @import("std");
+
+extern "c" fn getenv(name: [*]const u8) [*]u8;
+extern "c" fn strlen(s: [*]const u8) usize;
+
+// Look up one environment variable. getenv returns a C `char *`: the address
+// of the value, or a null pointer when the name is not set.
+fn find(name: []const u8) [*]u8 {
+    return getenv(name.ptr);
+}
+
+pub fn main() void {
+    var present: []const u8 = "PATH";
+    var missing: []const u8 = "Z98_CH11_NOT_SET";
+
+    var p: [*]u8 = find(present);
+    if (@intFromPtr(p) != 0) {
+        std.io.print("PATH: set\n", .{});
+    } else {
+        std.io.print("PATH: unset\n", .{});
+    }
+
+    var q: [*]u8 = find(missing);
+    if (@intFromPtr(q) != 0) {
+        std.io.print("Z98_CH11_NOT_SET: set\n", .{});
+    } else {
+        std.io.print("Z98_CH11_NOT_SET: unset\n", .{});
+    }
+
+    var msg: []const u8 = "talking to C";
+    std.io.print("strlen: {}\n", .{strlen(msg.ptr)});
+}

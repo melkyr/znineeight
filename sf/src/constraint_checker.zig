@@ -13,8 +13,8 @@ pub fn checkReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCo
     if (node.kind != AstKind.return_stmt) return;
     if (node.child_0 == @intCast(u32, 0)) {
         if (current_fn_return != type_mod.TYPE_VOID and current_fn_return != type_mod.TYPE_NORETURN) {
-            var msg: []const u8 = "return with no value";
-            diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 0),
+            var msg: []const u8 = "return with no value in function returning non-void";
+            diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3003),
                 @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
         }
     } else {
@@ -22,46 +22,6 @@ pub fn checkReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCo
         if (!type_mod.typeRegistryIsAssignable(reg, return_expr_type, current_fn_return)) {
             var msg: []const u8 = "return type mismatch";
             diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 0),
-                @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
-        }
-    }
-}
-
-pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, rtt: *ResolvedTypeTable, node_idx: u32) void {
-    var node = ast_mod.astStoreNodeAt(store, node_idx);
-    if (node.child_0 == @intCast(u32, 0)) return;
-    var cond_tid = rtt_mod.resolvedTypeTableGet(rtt, node.child_0);
-    if (cond_tid) |tid| {
-        if (tid == type_mod.TYPE_VOID or tid == @intCast(u32, 0)) return;
-        var ty = reg.types_items[@intCast(usize, tid)];
-        if (ty.kind != type_mod.TypeKind.enum_type and ty.kind != type_mod.TypeKind.tagged_union_type) return;
-        if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) return;
-        var member_count: u16 = 0;
-        if (ty.kind == type_mod.TypeKind.enum_type) {
-            var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
-            member_count = ep.members_count;
-        } else {
-            var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
-            member_count = tp.fields_count;
-        }
-        var prongs = ast_mod.astStoreNodeExtraChildren(store, node_idx);
-        var covered_count: u16 = 0;
-        var has_else: u8 = 0;
-        var pi: usize = 0;
-        while (pi < prongs.len) : (pi += 1) {
-            var prong = ast_mod.astStoreNodeAt(store, prongs[pi]);
-            if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { has_else = 1; } else {
-                if (ast_mod.astStoreNodePayload(store, prongs[pi]) != @intCast(u32, 0)) {
-                    var items = ast_mod.astStoreNodeExtraChildren(store, prongs[pi]);
-                    var count: u16 = @intCast(u16, items.len);
-                    covered_count += count;
-                }
-            }
-        }
-        if (has_else == @intCast(u8, 0) and covered_count < member_count) {
-            var msg: []const u8 = "switch not exhaustive";
-            diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
-                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3004_SWITCH_NOT_EXHAUSTIVE)),
                 @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
         }
     }
@@ -88,25 +48,25 @@ pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCo
                     diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 0),
                         @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
                 }
-                if (node.child_0 != @intCast(u32, 0)) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
-                if (node.child_1 != @intCast(u32, 0)) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
-                if (node.child_2 != @intCast(u32, 0)) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
+                if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
+                if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
+                if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
                 var bp = ast_mod.astStoreNodePayloadPacked(store, n, node.kind);
-                if (bp != @intCast(u64, 0)) {
-                    var extra = ast_mod.astStoreGetExtraChildren(store, bp);
+                if (bp != @intCast(u64, 0) and (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call)) {
+                    var extra_n = ast_mod.astStoreGetExtraChildCount(store, bp);
                     var ei: usize = 0;
-                    while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }
+                    while (ei < @intCast(usize, extra_n)) : (ei += 1) { stack_n[sp] = ast_mod.astStoreGetExtraChildAt(store, bp, @intCast(u32, ei)); stack_d[sp] = nd; sp += 1; }
                 }
                 continue;
             }
-            if (node.child_0 != @intCast(u32, 0)) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
-            if (node.child_1 != @intCast(u32, 0)) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
-            if (node.child_2 != @intCast(u32, 0)) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
+            if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
+            if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
+            if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
             var gp = ast_mod.astStoreNodePayloadPacked(store, n, node.kind);
-            if (gp != @intCast(u64, 0)) {
-                var extra = ast_mod.astStoreGetExtraChildren(store, gp);
+            if (gp != @intCast(u64, 0) and (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call)) {
+                var extra_n = ast_mod.astStoreGetExtraChildCount(store, gp);
                 var ei: usize = 0;
-                while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }
+                while (ei < @intCast(usize, extra_n)) : (ei += 1) { stack_n[sp] = ast_mod.astStoreGetExtraChildAt(store, gp, @intCast(u32, ei)); stack_d[sp] = nd; sp += 1; }
             }
     }
 }

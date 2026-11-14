@@ -1,5 +1,10 @@
 # emission_sibling_payload_catchcap_xmod — RED fixture for residual C₂ (catch-capture + same-named local)
 
+> **Task 7D (2026-09-22) — re-baselined OK → FAIL (intentional Zig-matching reject).** The local
+> `var e` shadows the enclosing `catch |e|` payload (official Zig 0.15.2: "local variable 'e' shadows
+> capture from outer scope"). Task 7D now emits `error[3057]` (rc=2, 0 `.c`). Deliberate corpus
+> movement, not a regression.
+
 Task R-VAR (2026-08-21, AMENDMENT 7 Ruling 4). Branch `zig1_start`. Compiler under test: `/tmp/fx_subfolder/zig1`.
 
 ## Purpose

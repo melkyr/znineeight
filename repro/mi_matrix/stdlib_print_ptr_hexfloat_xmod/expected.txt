@@ -1,0 +1,19 @@
+p1=i32@1234 p2=i32@1234 p3=u8@1235 p4=bool@1236 p5=f64@1240 p6=c_char@1237 p7=void@1238
+f1=fn () void@2200 f2=fn (i32, u8) i32@2300 pp=*i32@1200 po=?i32@1300 psl=[]const u8@1400 pes=error{A,B}@1500
+peu=error{A,B}!i32@2100
+ps=.{ .a = 1, .b = 2 } pe=.y ptu=.{ .a = 7 } pu=.{ ... }
+ppacked=.{ .a = 1, .b = 2, .c = true } ppu=.{ .a = 7, .b = 7 }
+pf=.{ .p = i32@1600, .n = 1 }
+sf=.{ .p = .{ .a = 1, .b = 2 }, .n = 2 }
+ef=.{ .p = .y, .n = 3 }
+ff=.{ .f = fn () void@1700, .ok = true }
+mf=.{ .p = i32@1800, .n = 4 }
+ppf=.{ .p = *i32@1900, .n = 5 }
+pof=.{ .p = ?i32@1a00, .n = 6 }
+psf=.{ .p = []const u8@1b00, .n = 7 }
+pesf=.{ .p = error{A,B}@1c00, .n = 8 }
+ppkf=.{ .p = .{ .a = 1, .b = 2, .c = true }, .n = 9 }
+ppuf=.{ .p = .{ .a = 7, .b = 7 }, .n = 10 }
+d1=0x1.8p0 d2=0x0.0p0 d3=-0x0.0p0 d4=0x1p1 d5=-0x1p1 d6=0x1.5555555555555p-2 d7=0x1.5af1d78b58c4p66 d8=0x0.00000000316a2p-1022
+g1=0x1.8p0 g2=0x1.99999ap-4 g3=0x1.5af1d8p66 g4=-0x0.0p0
+done

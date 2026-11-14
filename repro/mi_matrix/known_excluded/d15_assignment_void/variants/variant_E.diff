@@ -1,0 +1,74 @@
+--- /tmp/phase35-9l-clean/sf/src/semantic_analyzer.zig	2026-11-09 15:43:44.860938898 +0000
++++ expE/sf/src/semantic_analyzer.zig	2026-11-09 15:55:47.116378258 +0000
+@@ -4722,11 +4722,11 @@
+     if (as_assign) {
+         tryRecordCoercion(self, node.child_1, eff_src, lhs);
+         var as1: []const u8 = "AS1"; pal_mod.markerWrite(as1);
+-        return lhs;
++        return type_mod.TYPE_VOID;
+     }
+     if (as_fst == FLOAT_NARROW_ACCEPT) {
+         semanticAnalyzerFloatNarrowRecord(self, node.child_1, lhs);
+-        return lhs;
++        return type_mod.TYPE_VOID;
+     }
+     if (as_fst == FLOAT_NARROW_NONE and lhs == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, eff_src)) {
+         var asn_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+--- /tmp/phase35-9l-clean/sf/src/lower.zig	2026-11-09 15:43:44.857938839 +0000
++++ expE/sf/src/lower.zig	2026-11-09 15:55:56.610589231 +0000
+@@ -6103,7 +6103,13 @@
+ fn lowerCompoundAssignRest(self: *LirLowerer, node_idx: u32, lhs_val: u32, rhs_val: u32, check_op: u8, bin_op: u8, mode: u8, stmt_add_markers: u8) u32 {
+     var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+     var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+-    if (op_rt) |t| { op_r_box[0] = t; }
++    if (op_rt) |t| {
++        if (t != type_mod.TYPE_VOID) { op_r_box[0] = t; }
++        else {
++            var op_lhs_t = getTempType(self, lhs_val);
++            if (op_lhs_t != type_mod.TYPE_UNDEFINED and op_lhs_t != type_mod.TYPE_VOID) { op_r_box[0] = op_lhs_t; }
++        }
++    }
+     if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+     var op_r = nextTemp(self, op_r_box[0]);
+     if (mode == @intCast(u8, 0)) {
+--- /tmp/phase35-9l-clean/sf/src/async_analysis.zig	2026-11-09 15:43:44.852120119 +0000
++++ expE/sf/src/async_analysis.zig	2026-11-09 15:58:54.104471038 +0000
+@@ -380,6 +380,28 @@
+ // as lowering sees it), falling back to the declaration's type node for
+ // `var_decl`. Over-reservation is intentional; P3's `precise <= frame_sizes[key]`
+ // assert stays the guard.
++fn asyncIsAssignKind(k: AstKind) bool {
++    if (k == AstKind.plain_assign) return true;
++    if (k == AstKind.add_assign) return true;
++    if (k == AstKind.sub_assign) return true;
++    if (k == AstKind.mul_assign) return true;
++    if (k == AstKind.div_assign) return true;
++    if (k == AstKind.mod_assign) return true;
++    if (k == AstKind.shl_assign) return true;
++    if (k == AstKind.shr_assign) return true;
++    if (k == AstKind.and_assign) return true;
++    if (k == AstKind.xor_assign) return true;
++    if (k == AstKind.or_assign) return true;
++    if (k == AstKind.wrap_add_assign) return true;
++    if (k == AstKind.wrap_sub_assign) return true;
++    if (k == AstKind.wrap_mul_assign) return true;
++    if (k == AstKind.sat_add_assign) return true;
++    if (k == AstKind.sat_sub_assign) return true;
++    if (k == AstKind.sat_mul_assign) return true;
++    if (k == AstKind.sat_shl_assign) return true;
++    return false;
++}
++
+ fn scanFrameLocals(store: *ast_mod.AstStore, body_idx: u32,
+     stack: *ga_mod.U32ArrayList, reg: *type_mod.TypeRegistry,
+     resolved_types: *rtt_mod.ResolvedTypeTable, offset: *u32, max_align: *u32) void {
+@@ -394,6 +416,9 @@
+         var lvt: u32 = type_mod.TYPE_UNDEFINED;
+         if (rtt_mod.resolvedTypeTableGet(resolved_types, ni)) |t| { lvt = t; }
+         if (lvt == type_mod.TYPE_UNDEFINED and k == AstKind.var_decl) { lvt = frameLocalTypeId(resolved_types, n); }
++        if (asyncIsAssignKind(k) and n.child_0 != @intCast(u32, 0)) {
++            if (rtt_mod.resolvedTypeTableGet(resolved_types, n.child_0)) |lt| { lvt = lt; }
++        }
+         _ = addFrameField(reg, lvt, offset, max_align);
+         if (k == AstKind.builtin_call) {
+             var ecb_n = ast_mod.astStoreNodeExtraChildCount(store, ni);

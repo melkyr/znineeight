@@ -9,6 +9,9 @@ pub const Symbol = struct {
     decl_node: u32,
     module_id: u32,
     scope_level: u32,
+    // Task 18 fix round: the source file that owns `decl_node`, so a related
+    // span pointing at a cross-module declaration renders the right filename.
+    file_id: u32,
 };
 
 pub const SymbolKind = enum(u8) {

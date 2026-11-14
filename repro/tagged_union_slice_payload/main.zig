@@ -35,5 +35,6 @@ pub fn main() void {
         .LParen => __bootstrap_print_int(@intCast(i32, 0)),
         .Int => |v| __bootstrap_print_int(@intCast(i32, v)),
         .Eof => __bootstrap_print_int(@intCast(i32, 0)),
+        else => {},
     }
 }

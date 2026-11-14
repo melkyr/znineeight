@@ -11,10 +11,12 @@ pub fn main() void {
     switch (arr[0]) {
         .Quit => r = @intCast(i32, 0),
         .Go => |d| r = d,
+        else => {},
     }
     switch (arr[1]) {
         .Quit => r = r + @intCast(i32, 0),
         .Go => |d| r = r + d,
+        else => {},
     }
     std.io.printInt(r);
 }

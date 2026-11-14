@@ -8,6 +8,7 @@ pub fn name(c: Color) i32 {
         .Red => 0,
         .Green => 1,
         .Blue => 2,
+        else => unreachable,
     };
 }
 
@@ -15,5 +16,6 @@ pub fn sides(s: Shape) i32 {
     return switch (s) {
         .Circle => 0,
         .Square => 4,
+        else => unreachable,
     };
 }

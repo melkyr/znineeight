@@ -104,6 +104,16 @@ pub fn stateMapMergeStates(parent: *StateMap, branch_a: *StateMap, branch_b: *St
     }
 }
 
+pub fn stateMapMergeInsertMissing(parent: *StateMap, branch: *StateMap, insert_state: u8) void {
+    var j: usize = 0;
+    while (j < branch.entries_len) : (j += 1) {
+        var entry = branch.entries_items[j];
+        if (stateMapGet(parent, entry.name_id) == null) {
+            stateMapSet(parent, entry.name_id, insert_state);
+        }
+    }
+}
+
 pub fn stateMapGetEntries(self: *StateMap) []StateEntry {
     return self.entries_items[0..self.entries_len];
 }

@@ -1,0 +1,7 @@
+i04e: InvalidToken
+i-0e: InvalidToken
+i99999999999999999999e: Overflow
+duplicate-key: DuplicateKey
+deep-101: TooDeep
+short-string: InvalidToken
+limits ok

@@ -1,0 +1,14 @@
+random ok
+entrance ok
+blocked-cluster ok
+parity32 ok
+leave-reenter ok
+nondiv ok
+edge-order ok
+node-order ok
+scratch ok
+intra ok
+special ok
+trunc ok
+determinism ok
+hpa basic ok

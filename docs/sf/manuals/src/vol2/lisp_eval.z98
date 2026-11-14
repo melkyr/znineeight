@@ -1,0 +1,64 @@
+const std = @import("std");
+
+const Bin = struct { l: u32, r: u32 };
+
+const Expr = union(enum) {
+    num: i32,
+    neg: u32,
+    add: Bin,
+    sub: Bin,
+    mul: Bin,
+    div: Bin,
+};
+
+const Pool = struct { nodes: []Expr, used: u32 };
+
+fn make(pool: *Pool, e: Expr) u32 {
+    const i = pool.used;
+    pool.nodes[@intCast(usize, i)] = e;
+    pool.used = i + 1;
+    return i;
+}
+
+fn eval(nodes: []Expr, i: u32) error{DivideByZero}!i32 {
+    switch (nodes[@intCast(usize, i)]) {
+        .num => |v| return v,
+        .neg => |j| return -(try eval(nodes, j)),
+        .add => |b| return (try eval(nodes, b.l)) + (try eval(nodes, b.r)),
+        .sub => |b| return (try eval(nodes, b.l)) - (try eval(nodes, b.r)),
+        .mul => |b| return (try eval(nodes, b.l)) * (try eval(nodes, b.r)),
+        .div => |b| {
+            const rhs = try eval(nodes, b.r);
+            if (rhs == 0) return error.DivideByZero;
+            return (try eval(nodes, b.l)) / rhs;
+        },
+        else => unreachable,
+    }
+}
+
+pub fn main() !void {
+    var buf: [8192]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    const raw = try std.arena.alloc(&arena, @sizeOf(Expr) * 64);
+    var pool = Pool{ .nodes = @ptrCast([*]Expr, raw)[0..64], .used = 0 };
+
+    const two = make(&pool, .{ .num = 2 });
+    const three = make(&pool, .{ .num = 3 });
+    const ten = make(&pool, .{ .num = 10 });
+    const four = make(&pool, .{ .num = 4 });
+
+    const sum = make(&pool, .{ .add = .{ .l = two, .r = three } });
+    const diff = make(&pool, .{ .sub = .{ .l = ten, .r = four } });
+    const product = make(&pool, .{ .mul = .{ .l = sum, .r = diff } });
+    const answer = make(&pool, .{ .div = .{ .l = product, .r = two } });
+
+    std.io.print("eval((2+3)*(10-4)/2) = {}\n", .{ try eval(pool.nodes, answer) });
+
+    const zero = make(&pool, .{ .sub = .{ .l = ten, .r = ten } });
+    const bad = make(&pool, .{ .div = .{ .l = ten, .r = zero } });
+    _ = eval(pool.nodes, bad) catch {
+        std.io.print("eval(10/(10-10)) caught DivideByZero\n", .{});
+        return;
+    };
+    std.io.print("unreachable\n", .{});
+}

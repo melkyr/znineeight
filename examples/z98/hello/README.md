@@ -9,27 +9,48 @@ It demonstrates multi-module compilation, cross-module function calls, and runti
 - `std.zig`: Minimal standard library mock.
 - `std_debug.zig`: Debug utilities.
 
-## Building and Running
+## Building with zig1
 
-### 1. Generate C89 Source
-Use the bootstrap compiler to translate the Zig modules into C:
-```bash
-# Assuming zig0 is built in the root directory
-../../zig0 main.zig greetings.zig std.zig std_debug.zig -o output/
+The compiler is self-hosted. A seed build (`scripts/seed/build_from_seed.sh`)
+puts `lib/` next to the `zig1` binary, and the compiler searches `<exe-dir>/lib`
+automatically. When the binary lives elsewhere, pass the library directory with
+`-I lib` (relative to the current directory). On Windows never use `-I /lib`:
+that is the drive root, and the compiler reports `cannot find std`.
+
+`-o <dir>` selects the output directory and is required; without it the
+compiler emits nothing. Create the directory first.
+
+### Linux
+
+```sh
+mkdir -p out
+/path/to/zig1_5_clean -o out main.zig
+sh out/build_target.sh
+./out/prog
 ```
 
-### 2. Compile with a C89 Compiler
-Compile the generated `.c` files along with the Zig runtime:
-```bash
-cd output/
-# Copy runtime files if needed, or include them from their source
-gcc -std=c89 -pedantic -Wno-pointer-sign -I. -o hello main.c greetings.c std.c std_debug.c ../../../src/runtime/zig_runtime.c -I../../../src/include
+### Windows 9x / NT
+
+Run this from the example directory in a Command Prompt. `-osw` selects the
+Windows target and emits the batch scripts.
+
+```bat
+mkdir out
+z1.exe -I lib -osw -o out main.zig
+cd out
+build_owc_crt.bat
+prog.exe
 ```
 
-### 3. Run the Executable
-```bash
-./hello
-```
+`build_owc_crt.bat` (OpenWatcom, static CRT) is the verified path;
+`build_target_crt.bat` is the MSVC 6 equivalent (run `VCVARS32.BAT` first);
+`build_owc_nocrt.bat` / `build_target_nocrt.bat` are the no-CRT alternates; and
+`build_mingw_crt.bat` is the MinGW fallback (needs `msvcrt.dll`). The output is
+`out\prog.exe`.
+
+Sources: `main.zig` (entry) imports `greetings.zig`; pass only `main.zig` — the
+compiler resolves the rest.
+
 **Expected Output:**
 ```
 Hello, world!

@@ -1,0 +1,12 @@
+// repro/empty_named_struct_bare.z98 — standalone A2-F D2 segfault control.
+//
+// `const E = struct {};` with no struct payload yet points `payload_idx` at
+// uninitialized `st_items` and crashes the seed compiler.
+//
+// Seed v90: dump rc 139 (segmentation fault).
+// Fixed:    dump rc 0.
+//
+// Compile (seed-built zig1):
+//   <zig1> --dump-c89 repro/empty_named_struct_bare.z98 > /tmp/esb2.c ; echo "rc=$?"
+const E = struct {};
+export fn main() void {}

@@ -1,0 +1,73 @@
+// repro/labeled_analyzer_reject.z98 — FX8 standalone reject probe: the
+// `error[3034]` (definite null deref) and `error[3035]` (double free) classes
+// the `labeled_stmt` traversal now reaches, plus the unchanged if control and
+// the conservative loop-merge residual.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast --dump-c89 repro/labeled_analyzer_reject.z98 >/dev/null
+//
+// EXPECTED (POST `4e76f5a4`): dump rc=2, 0 `.c`, exactly
+//   error[3034] x3  (nullDerefInIf control, nullDerefInLabeledBlock,
+//                    nullDerefInLabeledWhile)
+//   error[3035] x1  (doubleFreeInLabeledBlock)
+//   warning[3037] x3 (the shared analyzeExpr null-deref warning, one per
+//                     null site)
+// `freeInLabeledLoopThenFreeAfter` adds NO diagnostic on POST or PRE: the
+// labeled-loop body fork/merge joins the body's `freed` with the enclosing
+// `allocated` as `unknown`, and a free of an `unknown` name is silent — the
+// same conservative loop-merge behavior an unlabeled loop has (a definite
+// join would false-positive when the loop body never runs).
+// PRE (`ff059647`): rc=2, error[3034] x1 + warning[3037] x1 (the if control
+// only); every labeled shape above was silent, including the whole
+// freeInLabeledLoopThenFreeAfter function.
+extern fn arena_alloc(size: usize) *u8;
+extern fn arena_free(alloc: usize, p: *u8) void;
+
+fn nullDerefInIf(c: bool) void {
+    var p: ?*i32 = null;
+    if (c) {
+        if (p.* == 0) {
+        }
+    }
+}
+
+fn nullDerefInLabeledBlock() void {
+    var p: ?*i32 = null;
+    blk: {
+        if (p.* == 0) {
+        }
+    }
+}
+
+fn nullDerefInLabeledWhile(c: bool) void {
+    var p: ?*i32 = null;
+    lw: while (c) {
+        if (p.* == 0) {
+        }
+    }
+}
+
+fn doubleFreeInLabeledBlock() void {
+    var p: *u8 = arena_alloc(8);
+    blk: {
+        arena_free(0, p);
+    }
+    arena_free(0, p);
+}
+
+fn freeInLabeledLoopThenFreeAfter(c: bool) void {
+    var p: *u8 = arena_alloc(8);
+    lw: while (c) {
+        arena_free(0, p);
+        break :lw;
+    }
+    arena_free(0, p);
+}
+
+pub fn main() void {
+    nullDerefInIf(true);
+    nullDerefInLabeledBlock();
+    nullDerefInLabeledWhile(true);
+    doubleFreeInLabeledBlock();
+    freeInLabeledLoopThenFreeAfter(true);
+}

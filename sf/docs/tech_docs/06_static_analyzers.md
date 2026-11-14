@@ -1,4 +1,6 @@
-# 06 — Static Analyzers
+# 06 — Static Analyzers [updated: 2026-09-28 — FX8 (Volume II defect fix, `labeled_stmt` traversal): `visitStatement` gains a `labeled_stmt` arm that unwraps the statement and routes `child_0` through the same statement walk — a labeled block reaches `walkBlock`; a labeled loop/switch reaches the matching arm — so labeled blocks/loops get the FX2 treatment (defer enqueue at the walked `current_depth` and drain at their own scope exit, leak check, null/lifetime/double-free visibility). Measured: an allocation leak inside a labeled block (probe f1, silent on the FX2/FX7 compiler) now reports `warning[3038]` (x2: label-block exit + function exit); a leak in a labeled loop body reports `warning[3038]` x1; a null deref inside a labeled block/loop reports `error[3034]` + `warning[3037]` (rc 2); a double free split across a labeled block reports `error[3035]` (rc 2); a free after a labeled block no longer warns `warning[3039]`. Labeled statements are now fully traversed (remaining untraversed statement classes: prong case items, deferred statement bodies). A free split across a labeled LOOP is silent (`freed` + `allocated` -> `unknown`, the pre-existing loop merge — not FX8). Runtime behavior unchanged (lowering owns defer execution). Fixtures `repro/mi_matrix/stdlib_analyzer_labeled_xmod` (stdlib pin 262 -> 263) + `repro/mi_matrix/analyzer_labeled_reject_xmod` + standalone `repro/labeled_analyzer.z98` / `repro/labeled_analyzer_reject.z98`; fixed point `ff059647856e5c223c1622d1b031579b` -> `4e76f5a4268486d6deae080cebf89978` (hop1 == hop2, explicit gate); 4-MD5 emitted-C UNCHANGED 8/8 both modes; corpus zero class movers.] [updated: 2026-09-28 — FX7 (Volume II defect fix, switch-merge prong-name propagation): the `swt_ex` arm merges each prong with the existing conservative merge and, in the double-free pass only, inserts prong-only names into the enclosing state as `AllocState.unknown` via the new `stateMapMergeInsertMissing` (`sf/src/state_map.zig`). The join is the contract's divergent-state value: "maybe allocated in this prong, untracked on the others" — neither `allocated` (no spurious leak) nor absent/untracked (no spurious `WARN_6006`). A pointer first assigned `arena_alloc` in a prong and freed after the switch is now tracked (a second post-switch free is a definite `error[3035]`). The if/while/for merges are unchanged; the null/lifetime maps are unchanged because every enclosing variable is already seeded at its declaration/param binding there, so a prong-only name is necessarily prong-local (propagating it would track a dead binding). Fixtures `repro/mi_matrix/stdlib_analyzer_switch_merge_xmod` (stdlib pin 261 -> 262) + `repro/mi_matrix/analyzer_switch_merge_reject_xmod` + standalone `repro/switch_merge.z98` / `repro/switch_merge_reject.z98`; fixed point `1a258bd4bcb5194fc3256be0be456311` -> `ff059647856e5c223c1622d1b031579b` (hop1 == hop2, explicit gate); 4-MD5 emitted-C UNCHANGED 8/8 both modes; corpus 1065 = 907 OK / 52 GREEN / 106 FAIL, zero class movers over the 1063 common dirs; gate-program stderr byte-identical.] [updated: 2026-09-27 — FX2 (Volume II defect fix, D1 extras): `visitStatement` now traverses switch-prong and bare-block statements. The `swt_ex` arm first analyzes the condition (preserving the previous `expr_stmt(swt_ex)` condition route) and then walks every prong body through the existing fork -> walkBlock -> merge; the `expr_stmt` arm detects a statement-switch wrapper and recurses `visitStatement(swt_ex)`; a bare `block` statement routes through `walkBlock` (depth increment, defer enqueue/drain at its own block exit, leak check). Defers inside prongs/blocks now reach the null/lifetime/double-free passes; runtime behavior is unchanged (analyzer-only). Accepted movement: duplicate bare-block `WARN_6005`; lisp `WARN_6002` counts +58/+73/+85 (`lisp_interpreter_adv/curr/upgraded` only, zero other warning movers over 1055 corpus dirs; zero error movement); FX7 (switch-merge prong-name propagation) and FX8 (`labeled_stmt`) stay out of scope. Fixtures `repro/mi_matrix/stdlib_defer_switch_block_xmod` (stdlib pin 256 -> 257) + standalone `repro/defer_traversal.z98`; fixed point `98cd68f4a4f99b520f663d6964673e67` -> `325f741f0326ebaf177a0503e000312a` (hop1 == hop2); 4-MD5 emitted-C UNCHANGED. FX2-only traversal SIGSEGVs without FG (the newly queued prong defers reach the stale queue), so it lands after `resetDeferQueue`.] [updated: 2026-09-26 — FG (Volume II defect fix, D1): new `resetDeferQueue` (analyzer.zig) clears the defer queue's `items/len/cap` and is called immediately after each of the four per-phase/per-function `sandReset` sites in `runAllAnalyzers`, so the queue can no longer alias recycled scratch memory that a live `StateMap` now occupies; fixes the D1 SIGSEGV (`checkLeaksOnScopeExit` / `stateMapMergeStates`) for a plain-`defer` fn plus a nested-block-`defer` fn in one module. Bookkeeping-only (the queue is drained at every block exit); fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod`; fixed point `6b68ca72…` -> `c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2); 4-MD5 UNCHANGED] [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
+
+> Covers: `analyzer.zig`, `state_map.zig`
 
 ## Summary Table
 
@@ -8,7 +10,7 @@
 | `PtrState` variants | 4 | `uninit`, `is_null`, `safe`, `maybe` |
 | `Provenance` variants | 6 | `unknown`, `local`, `param`, `param_addr`, `global`, `heap` |
 | `AllocState` variants | 6 | `untracked`, `allocated`, `freed`, `returned_val`, `transferred`, `unknown` |
-| `StateMap` ops | 5 | `init`, `get`, `set`, `fork`, `mergeStates` |
+| `StateMap` ops | 7 | `init`, `get`, `set`, `fork`, `mergeStates`, `mergeInsertMissing`, `getEntries` |
 | StateMap parent linking | delta-chain | Fork creates empty child → parent link; get walks up chain |
 | Merge strategy | conservative | Mismatch → `unknown_state` (99) |
 | Alloc call detection | 3 fn names | `sandAlloc`, `sand_alloc`, `arena_alloc` |
@@ -17,81 +19,13 @@
 
 ---
 
-## Deep-Dive Evidence (P6, 2026-07-31)
-
-> **Status (2026-07-31):** Fixed. The guard at analyzer.zig:780 previously tested
-> `decl.child_1` (always 0 for fn_decls); corrected to `decl.child_0` (the function
-> body, per parser.zig:1417). All 4 analyzers now run on functions with bodies.
-> Additionally, ~21 sites that read `ident_expr.payload` directly as a name_id
-> were corrected to resolve via `store.identifiers.items[payload]`
-> (per ast.zig:346-350 — the payload is an index into `store.identifiers`, not a
-> raw name_id). Before this fix, false diagnostics appeared (ERR_2010 on valid
-> code, WARN_6005 on non-allocated variables). Verified by:
-> `[gdb]` (breakpoints on all 4 pass entry points: hits now match fn bodies),
-> `[fprintf]` (per-function `[ZZ] fn=` reports now appear), and `[repro]`
-> (double-free/leak program now emits WARN_6005).
-
-### Per-example analysis counts (4 working examples) — [updated: 2026-08-01]
-
-`[markers]` counts from the LIR per-module/per-decl loop (main.zig:537 `M`); the
-per-fn_decl count uses the `FNL` marker (lower.zig:4116, emitted once per lowered
-`fn_decl`) — **not** the bare `F` marker (main.zig:571), whose raw bytes in the
-traces are dominated by F-prefixed LIR markers (FND/FNT/FNR/...). The static
-analyzer phase itself emits only the `A` phase marker (main.zig:473) and
-`analyzer.zig`/`state_map.zig` contain **zero** `markerWrite` calls. Cross-checked
-with `[fprintf]` decl-kind dumps from an instrumented build.
-
-| Example | modules | fn_decls (markers `FNL`) | fn_decls (fprintf dump) | fn_decls with body (`child_0!=0`) | functions analyzed |
-|---------|---------|------------------------|-------------------------|-----------------------------------|--------------------|
-| mud_server | 4 | 20 | 20 | 7 | 0 |
-| game_of_life | 3 | 11 | 11 | 7 | 0 |
-| lisp_interpreter_curr | 10 | 48 | 48 | 45 | 0 |
-| json_parser | 3 | 32 | 32 | 19 | 0 |
-
-Per-pass runs: signature / null / lifetime / doublefree each ran **0** times per
-example (0 breakpoint hits on every pass entry point; 0 per-pass fprintf reports).
-
-### StateMap fork/merge evidence
-
-Because no function is analyzed, StateMap is never forked/merged in the pipeline
-(`[fprintf]` counters were never printed — no function analyzed; fork/merge counts
-are therefore 0 by construction; no
-`budget_peak` output → `PER_FUNC_BUDGET` check at analyzer.zig:797 is
-unreachable today). The merge **semantics** were verified standalone via a
-direct harness of `state_map.zig` (`[fprintf]`):
-
-| Scenario | parent entry | branch_a | branch_b | merged result |
-|----------|--------------|----------|----------|---------------|
-| both branches differ | 2 | 2 | 3 | `99` (unknown_state) |
-| both branches agree (new) | — | 5 | 5 | `5` |
-| only in branch_a, no parent | — | 1 | — | **dropped** (parent stays empty) |
-| only in branch_a, parent differs | 2 | 5 | — | `99` |
-| only in branch_a, parent same | 2 | 2 | — | `2` (kept) |
-| only in branch_b, parent differs | 2 | — | 5 | `2` (parent value kept) |
-| only in branch_b, no parent | — | — | 4 | **dropped** (parent stays empty) |
-
-Key precision-loss cases confirmed by the harness:
-
-1. **Disagreeing branches → `unknown_state(99)`** (conservative merge).
-2. **Branch-only-declared variable, no parent entry → silently dropped** — the
-   merge loop only writes when `ps`/`ps_val` exists (state_map.zig:84-91, :96-103);
-   a name present in only one fork and absent in the parent is neither merged nor
-   marked 99. After the merge, `stateMapGet(parent, name)` returns `null`.
-   This is the branch-only-declared precision loss the pre-plan audit flagged.
-
-The table above is `[fprintf]` output from `/tmp/smap_out/smap_test` (harness
-driving `state_map.zig` directly with name_ids 1-3; values 0=uninit,1=is_null,
-2=safe,3=maybe,4+,255=absent).
-
----
-
-## analyzer.zig (`sf/src/analyzer.zig`, 803 lines)
+## analyzer.zig (`sf/src/analyzer.zig`, 864 lines)
 
 4 independent analyzer passes in phase 6. Each runs per-function with a fresh `StateMap` and resets the scratch arena between passes.
 
 ---
 
-### DeferEntry (`sf/src/analyzer.zig:18-22`)
+### DeferEntry (`sf/src/analyzer.zig`)
 
 ```zig
 pub const DeferEntry = struct {
@@ -105,7 +39,7 @@ Tracked in `AnalyzerContext.defer_queue_items[]`. Used by `walkBlock` to execute
 
 ---
 
-### PtrState enum (`sf/src/analyzer.zig:24-29`)
+### PtrState enum (`sf/src/analyzer.zig`)
 
 | Variant | Meaning |
 |---------|---------|
@@ -118,7 +52,7 @@ Used by the null analyzer to track pointer nullity through `StateMap`.
 
 ---
 
-### Provenance enum (`sf/src/analyzer.zig:31-38`)
+### Provenance enum (`sf/src/analyzer.zig`)
 
 | Variant | Meaning |
 |---------|---------|
@@ -133,7 +67,7 @@ Used by the lifetime analyzer to track where pointers originate. Checked by `che
 
 ---
 
-### AllocState enum (`sf/src/analyzer.zig:40-47`)
+### AllocState enum (`sf/src/analyzer.zig`)
 
 | Variant | Meaning |
 |---------|---------|
@@ -143,21 +77,30 @@ Used by the lifetime analyzer to track where pointers originate. Checked by `che
 | `returned_val` | Allocated pointer was returned from function |
 | `transferred` | Ownership was passed to another function |
 | `unknown` | State after overwrite with unknown value |
+| `freed_reported` | Freed and a same-block use-after-free was already reported |
 
 State machine for the double-free analyzer. Transitions:
-- `init → untracked`
+- `assign null_literal → untracked`
 - `alloc call → allocated`
 - `free call on allocated → freed`
-- `free call on freed → ERR_2005_DOUBLE_FREE`
-- `free call on untracked → WARN_6006_FREEING_UNTRACKED`
+- `free call on freed (or freed_reported) → ERR_2005_DOUBLE_FREE`
+- `free call on a name with no state entry → WARN_6006_FREEING_UNTRACKED`
+- `free call on any other tracked state → freed` (no diagnostic)
+- `dereference/index/field use of freed (first use in the same block) → ERR_2006_USE_AFTER_FREE`, then `freed_reported`; a bare pointer copy is not a use
 - `return of allocated → returned_val`
 - `pass allocated to fn → transferred`
 - `overwrite allocated → WARN_6005_MEMORY_LEAK`
 - `scope exit with allocated → WARN_6005_MEMORY_LEAK`
 
+The alloc/free matchers accept both bare calls (`gpaAlloc(g, n, a)`,
+`sandAlloc(...)`, `arena_alloc(...)`, `gpaFree(g, p)`, `sandFree(...)`,
+`arena_free(...)`) and module-qualified member calls (`gpa.gpaAlloc(...)`,
+`gpa.gpaFree(...)`), matching on the callee's final identifier. UAF/leak
+tracking is same-block only; no interprocedural/alias claims.
+
 ---
 
-### NullGuard struct (`sf/src/analyzer.zig:354-357`)
+### NullGuard struct (`sf/src/analyzer.zig`)
 
 ```zig
 pub const NullGuard = struct {
@@ -170,7 +113,7 @@ Result of `detectNullGuard`. Captures a variable nullity condition from `if`/`wh
 
 ---
 
-### AnalyzerContext struct (`sf/src/analyzer.zig:359-377`)
+### AnalyzerContext struct (`sf/src/analyzer.zig`)
 
 ```zig
 pub const AnalyzerContext = struct {
@@ -191,6 +134,10 @@ pub const AnalyzerContext = struct {
     skip_lifetime_check: u8,
     skip_doublefree_check: u8,
     warn_all: u8,
+    on_stmt_cb: fn(*AnalyzerContext, *StateMap, u32) void,
+    in_defer_exec: u8,
+    lifetime_analysis_mode: u8,
+    doublefree_analysis_mode: u8,
 };
 ```
 
@@ -198,7 +145,7 @@ Passed as `ctx` throughout. Controls which analyzers run via `skip_*` flags and 
 
 ---
 
-### resolveOrigin (`sf/src/analyzer.zig:49-59`)
+### resolveOrigin (`sf/src/analyzer.zig`)
 
 `[inference: follow field_access/index_access/slice_expr chain to root identifier's name_id]`
 
@@ -206,7 +153,7 @@ Walks the AST upward through field accesses and index accesses to find the root 
 
 ---
 
-### classifyProvenance (`sf/src/analyzer.zig:61-100`)
+### classifyProvenance (`sf/src/analyzer.zig`)
 
 `[inference: AstKind dispatch → symbol lookup → StateMap lookup → Provenance variant]`
 
@@ -223,7 +170,7 @@ Called by the lifetime analyzer to determine pointer provenance.
 
 ---
 
-### checkReturnProvenance (`sf/src/analyzer.zig:102-170`)
+### checkReturnProvenance (`sf/src/analyzer.zig`)
 
 `[inference: classifyProvenance → if local → check address_of/slice_expr/ident → emit ERR_2020/WARN_6011/WARN_6010; if param_addr → emit ERR_2021]`
 
@@ -235,7 +182,7 @@ Validates that function return expressions don't create dangling references:
 
 ---
 
-### isAllocCall (`sf/src/analyzer.zig:172-190`)
+### isAllocCall (`sf/src/analyzer.zig`)
 
 `[inference: unwrap try_expr → check fn_call + ident_expr callee → match name_id against sandAlloc/sand_alloc/arena_alloc]`
 
@@ -243,7 +190,7 @@ Returns `true` if an expression is a call to any recognized allocation function.
 
 ---
 
-### isFreeCall (`sf/src/analyzer.zig:192-209`)
+### isFreeCall (`sf/src/analyzer.zig`)
 
 `[inference: check fn_call + ident_expr callee → match arena_free/sandFree → extract first arg's name_id]`
 
@@ -251,7 +198,7 @@ Returns `?u32` — the `name_id` of the pointer being freed, or `null` if not a 
 
 ---
 
-### compositeNameId (`sf/src/analyzer.zig:211-233`)
+### compositeNameId (`sf/src/analyzer.zig`)
 
 `[inference: join base.field as "base_str.field_str" → intern and return name_id]`
 
@@ -259,7 +206,7 @@ Creates composite identifier strings for struct field tracking (e.g. `foo.bar`).
 
 ---
 
-### handleAllocCall (`sf/src/analyzer.zig:235-238`)
+### handleAllocCall (`sf/src/analyzer.zig`)
 
 `[inference: isAllocCall guard → stateMapSet(name_id, AllocState.allocated)]`
 
@@ -267,15 +214,15 @@ Marks a variable as allocated. Called from `onDoubleFreeStmt` for `var_decl` wit
 
 ---
 
-### handleFreeCall (`sf/src/analyzer.zig:240-268`)
+### handleFreeCall (`sf/src/analyzer.zig`)
 
-`[inference: isFreeCall → current state → allocated→freed; freed→ERR_2005_DOUBLE_FREE; untracked→WARN_6006_FREEING_UNTRACKED]`
+`[inference: isFreeCall → current state → allocated→freed; freed/freed_reported→ERR_2005_DOUBLE_FREE; no entry→WARN_6006_FREEING_UNTRACKED; other tracked→freed]`
 
 State machine transition on free. Emits diagnostics for double-free (error) and freeing untracked pointers (warning).
 
 ---
 
-### checkLeaksOnScopeExit (`sf/src/analyzer.zig:270-283`)
+### checkLeaksOnScopeExit (`sf/src/analyzer.zig`)
 
 `[inference: stateMapGetEntries → any state == AllocState.allocated → WARN_6005_MEMORY_LEAK]`
 
@@ -283,7 +230,7 @@ Called at the end of `walkBlock` after executing defer queue. Reports any alloca
 
 ---
 
-### handleAllocAssign (`sf/src/analyzer.zig:285-314`)
+### handleAllocAssign (`sf/src/analyzer.zig`)
 
 `[inference: if LHS was allocated → WARN_6005_MEMORY_LEAK (overwritten); then classify RHS → alloc call→allocated, null→untracked, else→unknown]`
 
@@ -291,7 +238,7 @@ Handles assignments that might overwrite a previously allocated pointer (leak), 
 
 ---
 
-### handleOwnershipReturn (`sf/src/analyzer.zig:316-326`)
+### handleOwnershipReturn (`sf/src/analyzer.zig`)
 
 `[inference: if ret_expr is ident_expr and state == allocated → set returned_val]`
 
@@ -299,7 +246,7 @@ Marks an allocated pointer as returned (transfers ownership out of function).
 
 ---
 
-### handleOwnershipPass (`sf/src/analyzer.zig:328-352`)
+### handleOwnershipPass (`sf/src/analyzer.zig`)
 
 `[inference: iterate fn_call args → if allocated → set transferred + INFO_7001_OWNERSHIP_TRANSFERRED]`
 
@@ -307,7 +254,7 @@ Marks allocated pointers passed as arguments as ownership-transferred. Warning l
 
 ---
 
-### deferQueueEnsureCapacity (`sf/src/analyzer.zig:379-390`)
+### deferQueueEnsureCapacity (`sf/src/analyzer.zig`)
 
 `[inference: grow-by-doubling from min 8, memcpy DeferEntry array]`
 
@@ -315,15 +262,28 @@ Grows the defer queue (parallel arena from `ctx.defer_queue_alloc`) when full.
 
 ---
 
-### analyzeSignature (`sf/src/analyzer.zig:392-407`)
+### resetDeferQueue (`sf/src/analyzer.zig`)
 
-`[inference: iterate param types → validateSignatureType; validate return type]`
+`[inference: defer_queue_items = undefined; defer_queue_len = 0; defer_queue_cap = 0]`
 
-First pass over function signatures. Validates parameter types and return type for completeness.
+Drops the defer queue's stale bookkeeping (items pointer + length + capacity). Called
+immediately after each of the four `alloc_mod.sandReset(ctx.alloc)` sites in
+`runAllAnalyzers` (after the signature pass and after each optional pass), because the
+queue lives in the scratch arena that `sandReset` recycles. The queue is drained at every
+block exit (`executeDeferQueue` from `walkBlock`), so it is empty between
+functions/phases and the reset is a semantic no-op that only kills the stale pointer —
+without it, the next `DeferEntry` write (`:713`) reused the stale capacity and overlaid
+recycled scratch memory that now held a live `StateMap` (D1 SIGSEGV).
 
 ---
 
-### validateSignatureType (`sf/src/analyzer.zig:409-447`)
+### analyzeSignature (`sf/src/analyzer.zig`)
+
+`[inference: iterate param types → validateSignatureType + rejectAnytypeType; validate return type + rejectAnytypeType]`
+
+First pass over function signatures. Validates parameter types and return type for completeness, then runs the recursive `anytype` reject over the same type nodes.
+
+### validateSignatureType (`sf/src/analyzer.zig`)
 
 `[inference: ident_expr → nameCacheGet → type-kind dispatch → incomplete type/void param/anytype/large return checks]`
 
@@ -331,11 +291,19 @@ Checks performed:
 - `unresolved_name` or incomplete `struct_type`/`union_type`/`tagged_union_type`/`enum_type` → `ERR_2011_INCOMPLETE_TYPE`
 - `void_type` as param → `ERR_2010_VOID_PARAMETER`
 - `size > 64` on return type → `WARN_7010_LARGE_RETURN`
-- `anytype` ident → `ERR_2012_ANYTYPE_NOT_SUPPORTED`
+- `anytype` ident → `ERR_2012_ANYTYPE_NOT_SUPPORTED` (deduped via `diagnosticCollectorMarkNodeOnce`; A1-F passes the module's real `ctx.source_file_id`, so it renders `file:line:col` + caret). Direct ident only — nested/wrapped `anytype` is handled by `rejectAnytypeType`.
 
 ---
 
-### analyzeExpr (`sf/src/analyzer.zig:449-497`)
+### rejectAnytypeType (`sf/src/analyzer.zig`)
+
+`[inference: recurse the type-expression tree; on an ident_expr named 'anytype' emit ERR_2012 once per node]`
+
+A1-F helper called from `analyzeSignature` for every parameter type and the return node. Walks `ptr_type`/`many_ptr_type`/`slice_type`/`optional_type`/`array_type` (child_0), `error_union_type` (child_0 + child_1) and `fn_type` (child_0 return + payload extra children) to reach each leaf, emitting level-0 `ERR_2012_ANYTYPE_NOT_SUPPORTED` (`error[16]`) with the leaf span and `ctx.source_file_id`, deduped via the shared `diagnosticCollectorMarkNodeOnce` (one diagnostic per node; the parser's S1 `anytype` sentinel re-activated the previously-dead check).
+
+---
+
+### analyzeExpr (`sf/src/analyzer.zig`)
 
 `[inference: AstKind dispatch → recursive child analysis → state updates for null tracking]`
 
@@ -345,14 +313,15 @@ Checks performed:
 | `index_access` | recurse on child_0 |
 | `field_access` | recurse on child_0 |
 | `fn_call` | recurse on all args |
-| `plain_assign` | recurse on rhs, `classifyExpr` rhs → `stateMapSet` lhs |
+| `builtin_call` | recurse on all args |
+| `plain_assign` | recurse on rhs, `classifyExpr` rhs → `stateMapSet` lhs (ident lhs only) |
 | other | recurse children 0-2 |
 
 Core expression analysis for null tracking. Updates `StateMap` on assignments so subsequent expressions see refined states.
 
 ---
 
-### classifyExpr (`sf/src/analyzer.zig:499-519`)
+### classifyExpr (`sf/src/analyzer.zig`)
 
 `[inference: AstKind dispatch → return PtrState variant]`
 
@@ -373,7 +342,7 @@ Classifies any expression into a `PtrState`. Used by `analyzeExpr` for deref che
 
 ---
 
-### isNullExpr / isIdentExpr (`sf/src/analyzer.zig:521-537`)
+### isNullExpr / isIdentExpr (`sf/src/analyzer.zig`)
 
 `[inference: match AstKind.null_literal or int_literal(0) → return u8 bool]`
 
@@ -383,7 +352,7 @@ Helpers used by `detectNullGuard` to pattern-match null comparisons.
 
 ---
 
-### detectNullGuard (`sf/src/analyzer.zig:539-566`)
+### detectNullGuard (`sf/src/analyzer.zig`)
 
 `[inference: condition AstKind dispatch → cmp_ne→NullGuard{is_not_null:1}, cmp_eq→{is_not_null:0}, ident→{is_not_null:1}, bool_not→invert inner guard]`
 
@@ -400,7 +369,7 @@ Detects null-check patterns in `if`/`while` conditions so the null analyzer can 
 
 ---
 
-### applyNullGuardRefinement (`sf/src/analyzer.zig:568-579`)
+### applyNullGuardRefinement (`sf/src/analyzer.zig`)
 
 `[inference: detectNullGuard → set then_state/else_state PtrState accordingly]`
 
@@ -411,7 +380,7 @@ Called from `visitStatement` when `null_analysis_mode` is active, before forking
 
 ---
 
-### handleNullVarDecl (`sf/src/analyzer.zig:581-591`)
+### handleNullVarDecl (`sf/src/analyzer.zig`)
 
 `[inference: classifyExpr(init) → stateMapSet(name_id, st); if no init → stateMapSet(name_id, uninit)]`
 
@@ -419,7 +388,7 @@ Initializes null tracking state for variable declarations. Called from `visitSta
 
 ---
 
-### handleNullAssign (`sf/src/analyzer.zig:593-602`)
+### handleNullAssign (`sf/src/analyzer.zig`)
 
 `[inference: classifyExpr(rhs) → stateMapSet(lhs.name_id, rhs_state)]`
 
@@ -427,7 +396,7 @@ Updates null tracking state on assignments. Only handles `ident_expr` LHS.
 
 ---
 
-### executeDeferQueue (`sf/src/analyzer.zig:614-628`)
+### executeDeferQueue (`sf/src/analyzer.zig`)
 
 `[inference: pop entries from end while scope_depth >= target_depth → execute kind==0 always, kind==1 only if is_error]`
 
@@ -435,7 +404,7 @@ Executes deferred statements on scope exit. Normal defers (kind=0) always run; e
 
 ---
 
-### walkBlock (`sf/src/analyzer.zig:630-649`)
+### walkBlock (`sf/src/analyzer.zig`)
 
 `[inference: increment depth → visit child statements → execute defer queue at saved depth → check leaks → restore depth]`
 
@@ -443,7 +412,7 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 
 ---
 
-### visitStatement (`sf/src/analyzer.zig:651-716`) — [updated: 2026-08-03]
+### visitStatement (`sf/src/analyzer.zig`)
 
 `[inference: AstKind dispatch — handles branching (fork+merge), loops, switch, return, defer, null analysis, fallback]`
 
@@ -451,31 +420,82 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 |------|--------|
 | `if_stmt`/`if_capture` | evaluate cond → fork then_state/else_state → optional `applyNullGuardRefinement` + if_capture safe → walkBlock each → `stateMapMergeStates(state, then, else, 99)` |
 | `while_stmt`/`while_capture` | evaluate cond → fork body_state → optional while_capture safe → walkBlock → `stateMapMergeStates(state, state, body, 99)` |
-| `swt_ex` | per-prong: fork → walkBlock → `stateMapMergeStates(state, state, ps, 99)` |
+| `swt_ex` | analyze condition (`analyzeExpr(child_0)`) → per-prong: fork → walkBlock → `stateMapMergeStates(state, state, ps, 99)`; double-free pass: `stateMapMergeInsertMissing(state, ps, unknown)` inserts prong-only names (FX7) |
 | `for_stmt` | fork body_state → walkBlock → `stateMapMergeStates(state, state, body, 99)` |
 | `return_stmt` | if child: `checkReturnProvenance` + `handleOwnershipReturn` → on_stmt |
 | `defer_stmt`/`errdefer_stmt` | push to defer_queue |
 | `var_decl` (null mode) | `handleNullVarDecl` → on_stmt |
 | `plain_assign` (null mode) | `handleNullAssign` → on_stmt |
-| `expr_stmt` | `analyzeExpr` only |
+| `expr_stmt` | statement-switch wrapper (`child_0` kind `swt_ex`) → recurse `visitStatement`; else `analyzeExpr(child_0)` |
+| `block` | `walkBlock` (depth increment, defer queue drain at block exit, leak check) |
+| `labeled_stmt` | unwrap: recurse `visitStatement(child_0)` — labeled block → `walkBlock`; labeled loop/switch → the matching arm (FX8) |
 | other | on_stmt |
 
 Central statement dispatch for all analyzers. The null analysis if/else/loop state forking logic is the most complex part — each path gets a forked `StateMap`, and after both paths execute, `stateMapMergeStates` computes a conservative merge.
 
-#### Detection Wiring (activated 2026-08-03)
+#### Statement-traversal contract (FX2)
 
-The null/lifetime/doublefree detection paths are now live: each `run*Analyzer`
-entry point routes its statement handler through `visitStatement` for full
-control-flow-aware analysis instead of flat `walkBlock` dispatch. A single wrapper
-function `detectorVisit` (`sf/src/analyzer.zig:759`) calls
+A statement `switch` is parsed as `expr_stmt(swt_ex)`
+(`sf/src/parser.zig`). `visitStatement`'s `expr_stmt` arm detects that wrapper
+and recurses through the `swt_ex` arm, which analyzes the condition first
+(preserving the previous condition-only route) and then walks each prong body
+with the shared fork/walkBlock/merge. A bare `block` statement routes through
+`walkBlock`, so a defer inside it enqueues at the walked `current_depth` and
+drains at its own block exit (LIFO) and the double-free pass leak-checks on
+scope exit. This makes defers inside switch prongs and bare blocks visible to
+all three optional analyzers; lowering alone owns defer execution, so runtime
+behavior is unchanged.
+
+Known limits (not changed by FX2):
+- the `swt_ex` prong-only-name drop is **fixed by FX7** for the double-free
+  pass (`stateMapMergeInsertMissing`; a prong-only name joins as
+  `AllocState.unknown`, so post-switch frees stay tracked and a second free is
+  `error[3035]`); the if/while/for merges still drop branch-only names;
+- a bare block whose allocation leaks to function exit reports `WARN_6005`
+  twice (inner block exit + function exit) — operator-accepted duplicate;
+- analyzer diagnostics carry no source span (`file_id 0`);
+- `labeled_stmt` bodies are traversed as of **FX8** (see below); prong case
+  items and deferred statement bodies stay untraversed (`executeDeferQueue`
+  re-enters with `in_defer_exec = 1`, so the defer arm skips);
+- capture-safe marking for prong captures is deliberately skipped (an unmarked
+  capture only reaches the conservative `WARN_6002` path).
+
+FX2-only traversal must land after FG's `resetDeferQueue`: the newly queued
+prong defers otherwise reach the stale queue pointer and SIGSEGV (measured:
+FX2-only compiler rc 139 on the fixture/sibling shapes; FG+FX2 rc 0).
+
+#### Labeled-statement traversal (FX8)
+
+`visitStatement` unwraps `AstKind.labeled_stmt` and routes `child_0` through
+the same statement walk, so a labeled block (`blk: { ... }`) reaches
+`walkBlock` and a labeled loop (`lw: while (...)`) or labeled `for`/`switch`
+reaches the matching arm — the same treatment FX2 gave bare blocks, switch
+prongs and unlabeled loops. Defers inside labeled constructs enqueue at the
+walked `current_depth` and drain at their own scope exit (so the runtime
+ordering is lowering's, unchanged); the leak/null/lifetime/double-free
+handlers see the body. Measured on the FX2/FX7 compiler vs the FX8 compiler:
+labeled-block leak silent -> `warning[3038]` x2, labeled-loop leak silent ->
+`warning[3038]` x1, null deref in a labeled block/loop silent -> `error[3034]`
++ `warning[3037]` (rc 2), double free split across a labeled block silent ->
+`error[3035]` (rc 2), free-after-labeled-block `warning[3039]` -> no warning.
+A free split across a labeled LOOP is silent on both compilers: the loop-body
+fork/merge joins the body's `freed` with the enclosing `allocated` as
+`unknown`, and a free of an `unknown` name is silent — the pre-existing loop
+merge, not changed by FX8.
+
+#### Detection Wiring
+
+Each `run*Analyzer` entry point routes its statement handler through
+`visitStatement` for control-flow-aware analysis instead of flat `walkBlock`
+dispatch. A single wrapper function `detectorVisit` in `analyzer.zig` calls
 `visitStatement(ctx, state, node_idx, ctx.on_stmt_cb, detectorVisit)`; each pass
-stores its handler in `AnalyzerContext.on_stmt_cb` (`sf/src/analyzer.zig:383`).
+stores its handler in `AnalyzerContext.on_stmt_cb`.
 
 | Entry point | Statement handler | Diagnostics enabled |
 |-------------|-------------------|---------------------|
-| `runNullAnalyzer` (:763) | `onNullStmt` | ERR_2004, WARN_6001, WARN_6002 |
-| `runLifetimeAnalyzer` (:771) | `onLifetimeStmt` | ERR_2020, ERR_2021, WARN_6010, WARN_6011 |
-| `runDoubleFreeAnalyzer` (:792) | `onDoubleFreeStmt` | ERR_2005, WARN_6006, WARN_6005 |
+| `runNullAnalyzer` | `onNullStmt` | ERR_2004, WARN_6001, WARN_6002 |
+| `runLifetimeAnalyzer` | `onLifetimeStmt` | ERR_2020, ERR_2021, WARN_6010, WARN_6011 |
+| `runDoubleFreeAnalyzer` | `onDoubleFreeStmt` | ERR_2005, ERR_2006, WARN_6006, WARN_6005 |
 
 Because `detectorVisit` recurses through `visitStatement`, nested control flow
 (if/while/switch/for) is analyzed recursively. `onDoubleFreeStmt` additionally
@@ -483,7 +503,7 @@ calls `handleFreeCall` before `handleOwnershipPass` for fn_call nodes.
 
 ---
 
-### onNullStmt (`sf/src/analyzer.zig:718-720`)
+### onNullStmt (`sf/src/analyzer.zig`)
 
 `[inference: no-op]`
 
@@ -491,7 +511,7 @@ Placeholder statement handler for the null analyzer. All null analysis is done i
 
 ---
 
-### onLifetimeStmt (`sf/src/analyzer.zig:722-739`)
+### onLifetimeStmt (`sf/src/analyzer.zig`)
 
 `[inference: var_decl → classifyProvenance(init) → stateMapSet; plain_assign → classifyProvenance(rhs) → stateMapSet(lhs)]`
 
@@ -499,15 +519,15 @@ Statement handler for the lifetime analyzer. Tracks provenance on variable decla
 
 ---
 
-### onDoubleFreeStmt (`sf/src/analyzer.zig:741-753`)
+### onDoubleFreeStmt (`sf/src/analyzer.zig`)
 
-`[inference: var_decl → handleAllocCall; plain_assign → handleAllocAssign; fn_call → handleFreeCall then handleOwnershipPass]`
+`[inference: checkUseAfterFreeExpr (deref/index/field on freed → ERR_2006); var_decl → handleAllocCall; plain_assign → handleAllocAssign; fn_call → handleFreeCall then handleOwnershipPass]`
 
 Statement handler for the double-free analyzer. Routes to the appropriate alloc-state transition function.
 
 ---
 
-### runSignatureAnalyzer (`sf/src/analyzer.zig:755-757`)
+### runSignatureAnalyzer (`sf/src/analyzer.zig`)
 
 `[inference: delegate to analyzeSignature(fn_decl_idx)]`
 
@@ -515,7 +535,7 @@ Thin entry point that calls `analyzeSignature` on the function declaration node.
 
 ---
 
-### runNullAnalyzer (`sf/src/analyzer.zig:763-769`)
+### runNullAnalyzer (`sf/src/analyzer.zig`)
 
 `[inference: stateMapInit → set null_analysis_mode → walkBlock with onNullStmt → clear null_analysis_mode]`
 
@@ -523,7 +543,7 @@ Entry point for the null pointer analysis pass. Creates a fresh `StateMap`, enab
 
 ---
 
-### runLifetimeAnalyzer (`sf/src/analyzer.zig:771-790`)
+### runLifetimeAnalyzer (`sf/src/analyzer.zig`)
 
 `[inference: stateMapInit → iterate params → stateMapSet(param, Provenance.param) → walkBlock with onLifetimeStmt]`
 
@@ -531,7 +551,7 @@ Entry point for the lifetime/dangling-pointer analysis pass. Pre-populates the `
 
 ---
 
-### runDoubleFreeAnalyzer (`sf/src/analyzer.zig:792-798`)
+### runDoubleFreeAnalyzer (`sf/src/analyzer.zig`)
 
 `[inference: stateMapInit → walkBlock with onDoubleFreeStmt]`
 
@@ -539,9 +559,9 @@ Entry point for the double-free/memory-leak analysis pass. Creates a fresh `Stat
 
 ---
 
-### runAllAnalyzers (`sf/src/analyzer.zig:802-833`)
+### runAllAnalyzers (`sf/src/analyzer.zig`)
 
-`[inference: iterate module_root decls → skip non-fn_decl + no-body → sandResetPeak → runSignatureAnalyzer → sandReset → [optional runNullAnalyzer → sandReset] → [optional runLifetimeAnalyzer → sandReset] → [optional runDoubleFreeAnalyzer → sandReset] → check peak vs PER_FUNC_BUDGET]`
+`[inference: iterate module_root decls → skip non-fn_decl + no-body → sandResetPeak → runSignatureAnalyzer → sandReset + resetDeferQueue → [optional runNullAnalyzer → sandReset + resetDeferQueue] → [optional runLifetimeAnalyzer → sandReset + resetDeferQueue] → [optional runDoubleFreeAnalyzer → sandReset + resetDeferQueue] → check peak vs PER_FUNC_BUDGET]`
 
 Orchestrates all 4 analyzers across every function in the module:
 
@@ -552,20 +572,13 @@ Orchestrates all 4 analyzers across every function in the module:
 4. **`runDoubleFreeAnalyzer`** — double-free / memory leak analysis (skip if `skip_doublefree_check`)
 5. **Budget check**: if `ctx.alloc.peak > PER_FUNC_BUDGET` → `WARN_7002_ANALYZER_BUDGET_EXCEEDED`
 
-Each pass resets the scratch arena (`alloc_mod.sandReset`) after completion, so per-function peak is measured independently. The budget check happens after all passes complete for that function.
-
-**⚠️ Verified gap (`[gdb]`/`[fprintf]`, 2026-07-31):** the "no-body" guard at
-analyzer.zig:780 (`if (decl.child_1 == 0) continue;`) reads `child_1`, but the
-parser stores the fn body in `child_0` (parser.zig:1417) and sema/lower read
-`child_0` (semantic_analyzer.zig:1391/1421, lower.zig:4164). Since `child_1` is
-always 0 for fn_decls, **every function is skipped** and none of the 4 passes
-runs — see Deep-Dive Evidence above. Correct guard: `decl.child_0`.
+Each pass resets the scratch arena (`alloc_mod.sandReset`) after completion, so per-function peak is measured independently. Each reset is immediately followed by `resetDeferQueue(ctx)`: the queue is allocated from the same scratch arena, and clearing its `items/len/cap` kills the stale pointer before the next pass can reuse the capacity (D1 fix). The budget check happens after all passes complete for that function.
 
 ---
 
 ## state_map.zig (`sf/src/state_map.zig`, 109 lines)
 
-### StateEntry (`sf/src/state_map.zig:4-7`)
+### StateEntry (`sf/src/state_map.zig`)
 
 ```zig
 pub const StateEntry = struct {
@@ -574,7 +587,7 @@ pub const StateEntry = struct {
 };
 ```
 
-### StateMap (`sf/src/state_map.zig:9-15`)
+### StateMap (`sf/src/state_map.zig`)
 
 ```zig
 pub const StateMap = struct {
@@ -590,7 +603,7 @@ Parent-linked delta map. A child fork is born empty — it only stores entries t
 
 ---
 
-### stateMapInit (`sf/src/state_map.zig:17-25`)
+### stateMapInit (`sf/src/state_map.zig`)
 
 `[inference: return StateMap with zero entries, null parent, no alloc]`
 
@@ -598,7 +611,7 @@ Creates an empty root StateMap. Used at the start of each analyzer pass.
 
 ---
 
-### stateMapGet (`sf/src/state_map.zig:39-47`)
+### stateMapGet (`sf/src/state_map.zig`)
 
 `[inference: reverse scan own entries for name_id → if found return state → else recurse on parent → null]`
 
@@ -606,7 +619,7 @@ Walk order: own entries (reverse), then parent chain. This means child overrides
 
 ---
 
-### stateMapSet (`sf/src/state_map.zig:49-60`)
+### stateMapSet (`sf/src/state_map.zig`)
 
 `[inference: scan own entries → if name_id exists, update state in-place → else ensure capacity → append new entry]`
 
@@ -614,7 +627,7 @@ Updates or inserts an entry in the current level. Does NOT propagate to parent �
 
 ---
 
-### stateMapFork (`sf/src/state_map.zig:62-71`)
+### stateMapFork (`sf/src/state_map.zig`)
 
 `[inference: alloc StateMap on scratch → zero init → parent=self → return child ptr]`
 
@@ -632,7 +645,7 @@ Fork pattern:
 
 ---
 
-### stateMapMergeStates (`sf/src/state_map.zig:73-105`)
+### stateMapMergeStates (`sf/src/state_map.zig`)
 
 `[inference: iterate branch_a entries, iterate branch_b entries → if a_state != b_state → set parent with unknown_state; else set parent with common state; if only in a or only in b → check parent for divergence]`
 
@@ -654,20 +667,39 @@ For each entry in branch_b not in branch_a:
 
 The `unknown_state` parameter is always `99`, which represents a "merged" or "uncertain" state. This is conservative — if either branch disagrees, the merged state becomes unknown.
 
-**⚠️ Precision loss — branch-only-declared variables (`[fprintf]` standalone
-harness, 2026-07-31):** when a name exists in only one fork and the parent has
-no entry for it, `stateMapMergeStates` **silently drops it** — the merge loops
-only write when `stateMapGet(parent, name)` returns a value (state_map.zig:84-91,
-:96-103). After the merge, `stateMapGet(parent, name)` returns `null`, so the
-variable's per-branch state is lost entirely (it does not even degrade to 99).
-Observed: `a-only-no-parent → dropped (255=absent)`, `b-only-no-parent →
-dropped (255=absent)`; by contrast `a-only-diff-parent → 99` and
-`b-only-diff-parent → parent value kept (2)`. This is the undocumented
-branch-only-declared precision loss flagged by the pre-plan audit.
+**⚠️ Precision loss — branch-only-declared variables:** when a name exists in
+only one fork and the parent has no entry for it, `stateMapMergeStates`
+**silently drops it** — the merge loops only write when
+`stateMapGet(parent, name)` returns a value. After the merge,
+`stateMapGet(parent, name)` returns `null`, so the variable's per-branch state
+is lost entirely (it does not even degrade to `99`). By contrast, a
+branch-only name whose parent entry *differs* becomes `unknown_state (99)`, and
+one whose parent entry *matches* keeps the parent value. (The if/while/for
+merges keep this behavior; the switch merge's double-free pass uses the
+insert variant below — FX7.)
 
 ---
 
-### stateMapGetEntries (`sf/src/state_map.zig:107-109`)
+### stateMapMergeInsertMissing (`sf/src/state_map.zig`)
+
+`[inference: for each branch-local entry absent from parent → stateMapSet(parent, name, insert_state)]`
+
+Insert-on-merge variant used by the `swt_ex` arm after each prong's
+`stateMapMergeStates` call, double-free pass only (FX7). For every name present
+locally in the prong state and absent from the parent (and its chain), the
+parent gets `insert_state` — the `AllocState.unknown` value for the
+double-free map. This is the sound conservative join of "name written in this
+prong" with "name untracked on the other prongs": the enclosing state tracks
+the name (so a post-switch `arena_free` marks it freed instead of warning
+`WARN_6006` untracked, and a second free reports `error[3035]`), but the value
+is neither `allocated` (no spurious leak for the untaken prongs) nor
+`freed`. The other analyzers do not call it: their maps seed every enclosing
+variable at its declaration/param binding, so a prong-only name is a
+prong-local binding whose entry dies with the prong.
+
+---
+
+### stateMapGetEntries (`sf/src/state_map.zig`)
 
 `[inference: return slice of own entries_items[0..entries_len]]`
 
@@ -684,9 +716,7 @@ phase_StaticAnalyzers (main.zig)
        │
        ├─ Iterate root module declarations
        │
-       ├─ For each fn_decl with body:
-       │     (⚠️ 2026-07-31: guard analyzer.zig:780 tests child_1, always 0 →
-       │      body lives in child_0 → every fn is skipped; passes below never run)
+       ├─ For each fn_decl with body (`decl.child_0 != 0`):
        │
        │  ┌─ sandResetPeak (track per-function budget)
        │  │
@@ -694,6 +724,7 @@ phase_StaticAnalyzers (main.zig)
        │  │   └─ analyzeSignature → validateSignatureType per param + return
        │  │
        │  ├─ sandReset
+       │  ├─ resetDeferQueue (drop the stale scratch-arena queue pointer)
        │  │
        │  ├─ [if !skip_null_check] runNullAnalyzer(body_idx)
        │  │   └─ StateMap → walkBlock → visitStatement(if/while forking + merging)
@@ -702,6 +733,7 @@ phase_StaticAnalyzers (main.zig)
        │  │       └─ stateMapMergeStates for branch convergence
        │  │
        │  ├─ sandReset
+       │  ├─ resetDeferQueue (drop the stale scratch-arena queue pointer)
        │  │
        │  ├─ [if !skip_lifetime_check] runLifetimeAnalyzer(decl_idx, body_idx)
        │  │   └─ StateMap (pre-populated with param provenances)
@@ -711,6 +743,7 @@ phase_StaticAnalyzers (main.zig)
        │  │       └─ checkReturnProvenance on return statements
        │  │
        │  ├─ sandReset
+       │  ├─ resetDeferQueue (drop the stale scratch-arena queue pointer)
        │  │
        │  ├─ [if !skip_doublefree_check] runDoubleFreeAnalyzer(body_idx)
        │  │   └─ StateMap → walkBlock → onDoubleFreeStmt
@@ -732,7 +765,7 @@ Resolver types + AstStore + SymbolTable + Interner
   ▼
 AnalyzerContext (per-function orchestrator)
   │
-  ├─ defer_queue (DeferEntry[], scope-managed)
+  ├─ defer_queue (DeferEntry[], scope-managed; cleared by resetDeferQueue after each sandReset)
   ├─ null_analysis_mode (enables null tracking in visitStatement)
   ├─ skip_* flags (disable individual analyzers)
   │
@@ -754,17 +787,11 @@ DiagnosticCollector ← errors/warnings/info
 
 ## Debugging
 
-### PER_FUNC_BUDGET = 512KB (`sf/src/analyzer.zig:770`)
+### PER_FUNC_BUDGET = 512KB (`sf/src/analyzer.zig`)
 
 Each function gets a 512KB scratch arena budget across all 4 analyzers. If `ctx.alloc.peak > PER_FUNC_BUDGET` after all passes run, `WARN_7002_ANALYZER_BUDGET_EXCEEDED` is emitted.
 
 The budget is measured per-function because the scratch arena is reset (`sandReset`) between each analyzer pass and between each function. This means peak allocation across all passes for a single function determines budget compliance.
-
-⚠️ **Reachability (`[gdb]`/`[fprintf]`, 2026-07-31):** the peak check at
-analyzer.zig:797 is currently **unreachable** — no function passes the
-`child_1`-based body guard (see Deep-Dive Evidence), so no analyzer pass runs
-and `ctx.alloc.peak` stays 0. `WARN_7002` has never been emitted for the 4
-working examples.
 
 ### Disabling individual analyzers
 
@@ -778,17 +805,14 @@ Set via CLI flags. Signature analyzer always runs (no skip flag).
 
 ### Key Markers for Tracing
 
-| Marker | File | Line | Meaning |
-|--------|------|------|---------|
-| `A` | main.zig | 471 | Start of static analysis phase |
+| Marker | File | Meaning |
+|--------|------|---------|
+| `A` | main.zig | Start of the static analysis phase |
 
-Verified `[markers]` (2026-07-31): the `A` phase marker fires (observed glued to
-sema's final `sA` as `sAA`, immediately before the LIR `L\nnodes=` marker), but
 `analyzer.zig` and `state_map.zig` contain **zero** `markerWrite` calls — there
-are no per-function/per-pass markers. The per-module/per-decl markers
-(`M` main.zig:535, `F` main.zig:569, kind numbers) are emitted by
-**phase_LIRLowering**, not the static analyzer phase, and are the usable source
-for counting fn_decls per module (see Deep-Dive Evidence table).
+are no per-function/per-pass markers. The per-module/per-decl markers (`M`, `F`,
+kind numbers) are emitted by `phase_LIRLowering` in `main.zig`, not by the
+static analyzer phase.
 
 Note: unlike other phases, the static analyzers produce no trace markers of
 their own. Most debugging is done via diagnostic output (error/warning codes)
@@ -800,9 +824,10 @@ or direct GDB breakpoints on the analyzer entry points.
 |------|----------|-----------|
 | `ERR_2004_DEFINITE_NULL_DEREF` | error | Dereference of provably-null pointer |
 | `ERR_2005_DOUBLE_FREE` | error | Freeing already-freed pointer |
+| `ERR_2006_USE_AFTER_FREE` | error | Dereference/index/field use of a same-block freed pointer (first use; bare copies excluded) |
 | `ERR_2010_VOID_PARAMETER` | error | `void` used as parameter type |
 | `ERR_2011_INCOMPLETE_TYPE` | error | Incomplete type in function signature |
-| `ERR_2012_ANYTYPE_NOT_SUPPORTED` | error | `anytype` in signature |
+| `ERR_2012_ANYTYPE_NOT_SUPPORTED` | error | `anytype` in a signature/type position (direct or nested; renders as `error[16]`, one per node, with file:line:col + caret — A1-F) |
 | `ERR_2020_RETURNING_ADDRESS_OF_LOCAL` | error | Returning `&local` from function |
 | `ERR_2021_RETURNING_ADDRESS_OF_PARAM` | error | Returning `&param` from function |
 | `WARN_6001_UNINIT_DEREF` | warning | Dereference of uninitialized pointer |

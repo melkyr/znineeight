@@ -1,0 +1,82 @@
+const std = @import("std");
+
+const Shape = struct {
+    draw_fn: fn (*void) void,
+    area_fn: fn (*void) f32,
+    data: *void,
+};
+
+const Circle = struct { r: f32 };
+const Square = struct { side: f32 };
+
+fn circleDraw(data: *void) void {
+    const c = @ptrCast(*Circle, data);
+    std.io.print("circle r={}\n", .{c.r});
+}
+
+fn circleArea(data: *void) f32 {
+    const c = @ptrCast(*Circle, data);
+    const pi: f32 = 3.14159;
+    return pi * c.r * c.r;
+}
+
+fn squareDraw(data: *void) void {
+    const s = @ptrCast(*Square, data);
+    std.io.print("square side={}\n", .{s.side});
+}
+
+fn squareArea(data: *void) f32 {
+    const s = @ptrCast(*Square, data);
+    return s.side * s.side;
+}
+
+fn circle_init(c: *Circle, r: f32) Shape {
+    c.r = r;
+    return Shape{ .draw_fn = circleDraw, .area_fn = circleArea, .data = @ptrCast(*void, c) };
+}
+
+fn square_init(s: *Square, side: f32) Shape {
+    s.side = side;
+    return Shape{ .draw_fn = squareDraw, .area_fn = squareArea, .data = @ptrCast(*void, s) };
+}
+
+fn draw(s: Shape) void {
+    s.draw_fn(s.data);
+}
+
+fn area(s: Shape) f32 {
+    return s.area_fn(s.data);
+}
+
+const ShapeList = struct {
+    items: [4]Shape,
+    len: i32,
+};
+
+fn shapeList_push(list: *ShapeList, s: Shape) void {
+    list.items[@intCast(usize, list.len)] = s;
+    list.len += 1;
+}
+
+pub fn main() void {
+    std.io.print("Shape size={} align={} fn={}\n", .{ @sizeOf(Shape), @alignOf(Shape), @sizeOf(fn (*void) void) });
+
+    var c1: Circle = undefined;
+    var sq: Square = undefined;
+    var c2: Circle = undefined;
+
+    var list: ShapeList = undefined;
+    list.len = 0;
+    shapeList_push(&list, circle_init(&c1, 1.0));
+    shapeList_push(&list, square_init(&sq, 3.0));
+    shapeList_push(&list, circle_init(&c2, 2.0));
+
+    var i: i32 = 0;
+    while (i < list.len) {
+        const sh = list.items[@intCast(usize, i)];
+        draw(sh);
+        std.io.print("  area {}\n", .{area(sh)});
+        i += 1;
+    }
+    std.io.print("shapes drawn {}\n", .{list.len});
+}

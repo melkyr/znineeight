@@ -11,6 +11,7 @@ pub fn main() void {
     switch (u) {
         .A => |a| r = a + @intCast(i32, 100),
         .B => |b| r = b,
+        else => {},
     }
     __bootstrap_print_int(r);
 }

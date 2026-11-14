@@ -12,5 +12,6 @@ pub fn main() void {
         .Value => |n| {
             _ = n;
         },
+        else => {},
     }
 }

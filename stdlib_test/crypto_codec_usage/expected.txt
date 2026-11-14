@@ -1,0 +1,13 @@
+crypto_codec_usage
+codepoints: 5
+cp-first: 90
+cp-second: 233
+b64: Wjk4IMOp
+hex: 5a393820c3a9
+sha256: 390edd46037981d883bd4363c30dccc4bc9b01b08dbc43192415539910872f09
+crc32: f2e959aa
+roundtrip: 1
+invalid: 1
+buf-len: 27
+buf-crc32: ab387860
+crypto_codec ok

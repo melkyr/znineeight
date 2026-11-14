@@ -1,0 +1,24 @@
+// switch_zero_prong_reject.z98 — FA-a fix round 1 standalone reject repro.
+//
+// `switch (x) {}` has no prongs at all, so it reached the zero-prong early
+// returns in `semanticAnalyzerResolveSwitchExpr` BEFORE the mandatory-`else`
+// gate: it compiled rc 0, and in value position read the poisoned result temp
+// (`0xAAAAAAAA` under `-fsafe`). FA-a fix round 1 reports the same
+// `error[3068]` from both early returns.
+//
+// Expected: compile rc 2 / 0 emitted `.c` / exactly 2 x error[3068]
+// (one per zero-prong switch node: value and statement).
+const std = @import("std");
+
+fn emptyValue(x: i32) i32 {
+    return switch (x) {};
+}
+
+fn emptyStmt(x: i32) void {
+    switch (x) {}
+}
+
+pub fn main() void {
+    std.io.print("v={}\n", .{emptyValue(1)});
+    emptyStmt(1);
+}

@@ -1,0 +1,77 @@
+const std = @import("std");
+
+// The @asyncInit argument record's fields ARE the coroutine's parameters, so
+// this one-field record maps positionally onto task's single `ta` parameter.
+const TaskArgs = struct {
+    id: i32,
+    budget: i32,
+    done: *i32,
+};
+
+const TaskArgsRec = struct { ta: *TaskArgs };
+
+// A suspending function: its body contains @asyncSuspend. The compiler rewrites
+// it into a step machine and chooses its state word from the suspension count.
+fn task(ta: *TaskArgs) void {
+    var step: i32 = 0;
+    while (step < ta.budget) : (step += 1) {
+        std.io.print("task {} step {}\n", .{ ta.id, step });
+        @asyncSuspend(null);
+    }
+    ta.done.* += 1;
+    std.io.print("task {} done\n", .{ta.id});
+}
+
+const NTASKS: usize = 3;
+const BUDGET: i32 = 2;
+const POOL_WORDS: usize = 64;
+
+pub fn main() void {
+    std.io.print("frame size = {}\n", .{@asyncFrameSize(task)});
+
+    // Per-task child-frame pool and root frame. Both buffers must be
+    // 8-aligned, so back them with [K]u64, never a bare [N]u8.
+    var pools: [NTASKS][POOL_WORDS]u64 = undefined;
+    var frames: [NTASKS][POOL_WORDS]u64 = undefined;
+    var tasks: [NTASKS]std.async.Task = undefined;
+    var task_ptrs: [NTASKS]*std.async.Task = undefined;
+    var args: [NTASKS]TaskArgs = undefined;
+    var recs: [NTASKS]TaskArgsRec = undefined;
+    var sched_tasks: [NTASKS]*std.async.Task = undefined;
+
+    var done: i32 = 0;
+    var sched = std.async.schedulerInit(sched_tasks[0..]);
+
+    var i: usize = 0;
+    while (i < NTASKS) : (i += 1) {
+        args[i] = TaskArgs{
+            .id = @intCast(i32, i),
+            .budget = BUDGET,
+            .done = &done,
+        };
+        recs[i] = TaskArgsRec{ .ta = &args[i] };
+        task_ptrs[i] = &tasks[i];
+        task_ptrs[i].ctx = std.async.contextInit(
+            @ptrCast([*]u8, &pools[i])[0 .. POOL_WORDS * 8],
+        );
+        task_ptrs[i].frame = @asyncInit(
+            task_ptrs[i].ctx,
+            @ptrCast([*]u8, &frames[i]),
+            task,
+            @ptrCast(*const void, &recs[i]),
+        );
+        task_ptrs[i].state = .ready;
+        task_ptrs[i].cancel_requested = false;
+        task_ptrs[i].result = @ptrCast(*void, &done);
+        task_ptrs[i].arg = @ptrCast(*void, &recs[i]);
+        task_ptrs[i].waiting_on = task_ptrs[i];
+        task_ptrs[i].has_waiting_on = false;
+        _ = std.async.addTask(&sched, task_ptrs[i]);
+    }
+
+    std.async.waitAll(&sched) catch {
+        std.io.print("pool exhausted\n", .{});
+        return;
+    };
+    std.io.print("done = {}\n", .{done});
+}

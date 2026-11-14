@@ -1,0 +1,31 @@
+fn getCharOnce() u8 {
+    return @getChar();
+}
+
+fn die() noreturn {
+    @panic("stop");
+}
+
+pub fn main() void {
+    @putChar('P');
+    @putChar('Q');
+    @putChar('\n');
+
+    var out: []const u8 = "stdoutWrite\n";
+    @stdoutWrite(out.ptr, out.len);
+
+    if (@isWindows()) {
+        var win: []const u8 = "isWindows true\n";
+        @stdoutWrite(win.ptr, win.len);
+    } else {
+        var nowin: []const u8 = "isWindows false\n";
+        @stdoutWrite(nowin.ptr, nowin.len);
+    }
+
+    @sleepMs(5);
+    var slept: []const u8 = "slept 5 ms\n";
+    @stdoutWrite(slept.ptr, slept.len);
+
+    var err: []const u8 = "stderrWrite\n";
+    @stderrWrite(err.ptr, err.len);
+}

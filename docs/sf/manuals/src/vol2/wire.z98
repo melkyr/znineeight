@@ -1,0 +1,54 @@
+const std = @import("std");
+
+// A 16-bit wire header: two 4-bit fields packed into the first byte, then
+// the payload length in the second byte. LSB-first.
+const Header = packed struct {
+    version: u4,
+    flags: u4,
+    length: u8,
+};
+
+// A 16-bit control register, read left to right on a datasheet:
+// enable (bit 0), mode (bits 1-3), divisor (bits 4-15).
+const Ctrl = packed struct {
+    enable: u1,
+    mode: u3,
+    divisor: u12,
+};
+
+pub fn main() void {
+    var h: Header = .{ .version = 6, .flags = 10, .length = 200 };
+    var hp = @ptrCast([*]const u8, &h);
+
+    std.io.print("Header size={} bits={}\n", .{ @sizeOf(Header), @bitSizeOf(Header) });
+    std.io.print("Header bit offsets version={} flags={} length={}\n", .{
+        @bitOffsetOf(Header, "version"),
+        @bitOffsetOf(Header, "flags"),
+        @bitOffsetOf(Header, "length"),
+    });
+    std.io.print("Header byte offsets version={} flags={} length={}\n", .{
+        @offsetOf(Header, "version"),
+        @offsetOf(Header, "flags"),
+        @offsetOf(Header, "length"),
+    });
+    std.io.print("Header bytes {} {}\n", .{ hp[0], hp[1] });
+
+    var raw: u16 = @intCast(u16, hp[0]) | (@intCast(u16, hp[1]) << 8);
+    var back: Header = .{
+        .version = @intCast(u4, raw & 15),
+        .flags = @intCast(u4, (raw >> 4) & 15),
+        .length = @intCast(u8, (raw >> 8) & 255),
+    };
+    std.io.print("decoded version={} flags={} length={}\n", .{ back.version, back.flags, back.length });
+
+    var c: Ctrl = .{ .enable = 1, .mode = 5, .divisor = 2748 };
+    var cp = @ptrCast([*]const u8, &c);
+    std.io.print("Ctrl size={} bits={}\n", .{ @sizeOf(Ctrl), @bitSizeOf(Ctrl) });
+    std.io.print("Ctrl bit offsets enable={} mode={} divisor={}\n", .{
+        @bitOffsetOf(Ctrl, "enable"),
+        @bitOffsetOf(Ctrl, "mode"),
+        @bitOffsetOf(Ctrl, "divisor"),
+    });
+    std.io.print("Ctrl bytes {} {}\n", .{ cp[0], cp[1] });
+    std.io.print("Ctrl fields enable={} mode={} divisor={}\n", .{ c.enable, c.mode, c.divisor });
+}

@@ -49,11 +49,11 @@ A convenience wrapper that allocates memory from the `zig_default_arena`. Provid
 
 ## 2. Runtime Safety
 
-### 2.1 `__bootstrap_panic` (Internal)
+### 2.1 `std_panic` (Internal)
 ```c
-static void __bootstrap_panic(const char* msg, const char* file, int line)
+void std_panic(const char* msg)
 ```
-Reports a fatal runtime error and aborts the program. Used for out-of-memory conditions, null pointer dereferences (if checked), and failed numeric casts.
+Writes `panic: <msg>\n` to stderr and then traps (`pal_trap()`; x86 `int 3`, non-x86 `pal_abort()`). Used by the `-fsafe` runtime checks, the legacy `__bootstrap_<target>_from_<source>` cast helpers, and arena-exhaustion paths. The old `__bootstrap_panic` wrapper has been removed.
 
 ## 2.2 Console Output (`__bootstrap_print`, `__bootstrap_write`)
 The Z98 runtime provides low-level print functions for debugging and standard output.

@@ -85,6 +85,12 @@ fn testFile(path: []const u8, name: []const u8) void {
         .in_defer_exec = @intCast(u8, 0),
         .lifetime_analysis_mode = @intCast(u8, 0),
         .doublefree_analysis_mode = @intCast(u8, 0),
+        .source_file_id = @intCast(u32, 0),
+        .comptime_folds = null,
+        .symbol_reg = null,
+        .target_is_windows = false,
+        .current_fn_span_start = @intCast(u32, 0),
+        .current_fn_span_end = @intCast(u32, 0),
     };
     az_mod.runAllAnalyzers(&ac, ast_root);
 
@@ -110,10 +116,10 @@ pub fn main() void {
     var m: []const u8 = "start\n";
     pal.stderr_write(m);
 
-    var p_hello: []const u8 = "examples/hello/main.zig";
+    var p_hello: []const u8 = "examples/z98/hello/main.zig";
     var n_hello: []const u8 = "hello (simple)";
     testFile(p_hello, n_hello);
-    var p_fib: []const u8 = "examples/fibonacci/main.zig";
+    var p_fib: []const u8 = "examples/z98/fibonacci/main.zig";
     var n_fib: []const u8 = "fibonacci (simple)";
     testFile(p_fib, n_fib);
 

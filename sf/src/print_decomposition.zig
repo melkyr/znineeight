@@ -38,21 +38,22 @@ pub fn printDecompParseAndValidate(store: *AstStore, interner: *StringInterner, 
     if (node_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(store, node_idx);
     if (node.kind != AstKind.fn_call) return null;
-    var args = ast_mod.astStoreNodeExtraChildren(store, node_idx);
-    if (args.len != @intCast(usize, 2)) return null;
-    var fmt_node = ast_mod.astStoreNodeAt(store, args[0]);
+    var args_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
+    if (args_n != @intCast(u32, 2)) return null;
+    var fmt_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
     if (fmt_node.kind != AstKind.string_literal) return null;
-    var raw = interner_mod.stringInternerGet(interner, ast_mod.astStoreNodePayload(store, args[0]));
+    var raw = interner_mod.stringInternerGet(interner, ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))));
     var spec_count = printDecompScanFormat(raw);
-    var tup_node = ast_mod.astStoreNodeAt(store, args[1]);
+    var tup_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1));
+    var tup_node = ast_mod.astStoreNodeAt(store, tup_idx);
     if (tup_node.kind != AstKind.tuple_literal) return null;
-    var fields = ast_mod.astStoreNodeExtraChildren(store, args[1]);
-    var fcount: u8 = @intCast(u8, fields.len);
+    var fields_n = ast_mod.astStoreNodeExtraChildCount(store, tup_idx);
+    var fcount: u8 = @intCast(u8, fields_n);
     if (spec_count != fcount) {
         var fmsg: []const u8 = "format string argument count mismatch";
         diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 1), @intCast(u16, 0),
             @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), fmsg);
         return null;
     }
-    return PrintDecompEntry{ .fmt_node_idx = args[0], .spec_count = spec_count };
+    return PrintDecompEntry{ .fmt_node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), .spec_count = spec_count };
 }

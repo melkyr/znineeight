@@ -19,6 +19,7 @@ pub fn parse_expr(tokens: *token_mod.Tokenizer, perm_sand: *sand_mod.Sand, temp_
         },
         .RParen => return error.UnexpectedRParen,
         .Eof => return error.UnexpectedEof,
+        else => return error.UnexpectedToken,
     }
     return error.UnexpectedToken;
 }

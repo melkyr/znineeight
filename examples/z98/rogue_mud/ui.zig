@@ -86,7 +86,45 @@ pub fn drawToSocket(sock: i32, rows: usize, cols: usize, cells: []const Cell) vo
     _ = std_net.send(sock, reset.ptr, @intCast(i32, reset.len));
 }
 
-fn sendColorANSI(sock: i32, fg: u8) void {
+pub const ClientArgs = struct {
+    sock: i32,
+    rows: usize,
+    cols: usize,
+    cells: [*]const Cell,
+};
+
+pub fn drawToSocketCoroutine(ctx: *std.async.Context, args: *void) void {
+    const ca = @ptrCast(*ClientArgs, args);
+    const sock = ca.sock;
+    const rows = ca.rows;
+    const cols = ca.cols;
+    const cells = ca.cells;
+
+    const clear_home: []const u8 = "\x1b[2J\x1b[H";
+    _ = std_net.send(sock, clear_home.ptr, @intCast(i32, clear_home.len));
+
+    var last_fg: u8 = 255;
+    var y: usize = 0;
+    while (y < rows) : (y += 1) {
+        var x: usize = 0;
+        while (x < cols) : (x += 1) {
+            const cell = cells[y * cols + x];
+            if (cell.fg != last_fg) {
+                sendColorANSI(sock, cell.fg);
+                last_fg = cell.fg;
+            }
+            const char_buf: [1]u8 = [1]u8{ cell.ch };
+            _ = std_net.send(sock, &char_buf[0], 1);
+        }
+        const nl: []const u8 = "\r\n";
+        _ = std_net.send(sock, nl.ptr, 2);
+        _ = @asyncSuspend(null);
+    }
+    const reset: []const u8 = "\x1b[0m";
+    _ = std_net.send(sock, reset.ptr, @intCast(i32, reset.len));
+}
+
+pub fn sendColorANSI(sock: i32, fg: u8) void {
     const esc: []const u8 = "\x1b[";
     _ = std_net.send(sock, esc.ptr, 2);
 
@@ -199,6 +237,7 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
                     std.io.write(dir_str);
                     std.io.print(", you see an Orc!\n");
                 },
+                else => {},
             }
             return;
         }
@@ -217,6 +256,7 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
             std.io.write(dir_str);
             std.io.print(", you see a heavy wooden door.\n");
         },
+        else => {},
     }
 }
 

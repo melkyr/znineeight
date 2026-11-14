@@ -41,10 +41,10 @@ pub fn main() void {
         var ast_root = parser_mod.parserParseModuleRoot(&p) catch unreachable;
         var root: AstNode = ast_mod.astStoreNodeAt(&store, ast_root);
         if (root.kind == AstKind.module_root) {
-            var decls: []u32 = ast_mod.astStoreNodeExtraChildren(&store, ast_root);
+            var decls_n = ast_mod.astStoreNodeExtraChildCount(&store, ast_root);
             var di: usize = @intCast(usize, 0);
-            while (di < decls.len) : (di += @intCast(usize, 1)) {
-                var decl: AstNode = ast_mod.astStoreNodeAt(&store, decls[di]);
+            while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+                var decl: AstNode = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodeExtraChildAt(&store, ast_root, @intCast(u32, di)));
                 if (decl.kind == AstKind.fn_decl) {
                     var mf: []const u8 = "F";
                     pal.stderr_write(mf);

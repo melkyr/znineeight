@@ -16,6 +16,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <fcntl.h>
 #endif
 
 /* std_net extern-call aliases. std_net's public API owns the names

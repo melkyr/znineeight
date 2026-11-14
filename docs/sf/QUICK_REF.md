@@ -5,60 +5,420 @@
 **Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
 exact, verified commands. Do not improvise flags or rediscover linking — copy these.
 
+> **Runtime safety:** `-fsafe` is the default (six runtime checks — cast / div-mod / shift /
+> null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables
+> them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**).
+> `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`).
+
+> **Mutable `for` capture (`|*item|`):** `for (xs) |*item|` / `|*item, index|` binds a pointer
+> into the iterable storage (`*T`, or `*const T` for a const element type such as `[]const T` /
+> `*const [N]T`, or a const-bound array; a const binding of a mutable slice keeps `*T`); `item.*` /
+> `item.field` write through it while the binding stays immutable. A range iterable, a
+> non-variable array value, or an iterable with no resolvable element type rejects `error[3078]`.
+> `if`/`while`/switch-prong pointer captures remain unsupported.
+
+> **CWD collision hazard:** `zig1` writes shared `.zig1_*.tmp` spill files in the CWD. Two `zig1`
+> runs in the same directory collide — parallel invocations can emit empty or corrupt dumps, and a
+> byte-identity/pin md5 taken from such a run is meaningless. Run gate/compile invocations
+> **sequentially**, or give each run its own CWD. Measured 2026-10-27: two parallel dumps in one CWD
+> produced empty stdout (md5 `d41d8cd98f00b204e9800998ecf8427e`); sequential reruns were clean.
+
 ### Build zig1 (the compiler under test)
-```bash
-cd /workspace/znineeight
-bash sf/scripts/build_release.sh
+
+zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
+`sf/build/out_release/`) no longer builds current `sf/src` — do NOT use it as
+the build path or gate on it. Rebuild from the committed seed with the recipe
+in the next section; that is the only supported path.
+
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-11 — seed v149]
+
+**Seed location + contents:** the committed rotating seeds are
+`release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
+`release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
+provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v149 CHANGELOG entry.
+
+**Current seed: v149** (rotated 2026-11-11 for the Phase 4 P3 final review;
+packaging base HEAD `50190ea4`). Archived binary md5
+(= fixed point) `73c75a65e30dfd212fdf93ae1e57a687`; archive md5
+`52984a63a5dcdf41e8c4c142e3bb366f`; Win9x zip md5
+`9b9326db35dc3f3a6adffe9a6b9c8e9b`; `gen/` 48 `.c` + 49 `.h` (12,932,829
+bytes); `lib/` **65** std `.zig` (`std.zig` + 64 `std_*.zig`) plus
+`lib/manifest.md5` (per-file std attribution pin, manifest md5
+`b4089e728b41aff27afbeffd9aa7e862`; includes `std_ddraw.zig`,
+`std_ddraw_pal.zig`, `std_dinput.zig`, `std_dinput_pal.zig`, `std_dsound.zig`,
+`std_dsound_pal.zig`, `std_tls_io.zig`, `std_hpack.zig`, `std_http2.zig`).
+A rebuild from the committed v149 archive is two-hop
+**hop1 == hop2 == `73c75a65…`**. The compiler source is **`-fsafe`-clean**.
+v149 is the std-only Phase 4 P3 final-review rotation: it updates
+`std_ddraw_pal.zig` and `std_dsound_pal.zig` with no compiler-source or barrel
+change, so the fixed point stays `73c75a65…` and the 8 emission pins are
+unchanged; `lib/` remains 65 from v148. v147 was the final
+Phase 3.5 expected-type-contract rotation; its narrative and fixed-point history
+remain in `release/seed/CHANGELOG.md`.
+
+
+**Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
+`zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
+`zig1 -osw` compiler C/runtime with the two emitted static-CRT compiler
+build scripts plus the MinGW fallback pair, no prebuilt `zig1.exe`. To build
+the compiler on the era machine:
+
+```bat
+rem OpenWatcom: run C:\WATCOM\OWSETENV.BAT in this window first
+cd zig1-seed-w9\win
+build_owc_crt.bat
+copy prog.exe ..\zig1.exe
 ```
-- **GATE ON THIS LINE ONLY:** `=== [release] Done: sf/build/out_release/zig1 ===`.
-- The script now exits **0** cleanly. (The old `zig1-dump` step — which built `sf/src/main_dump.zig`
-  and FAILED on a pre-existing `main_dump.zig`/`source_manager.zig` break, making the script exit
-  nonzero and look broken — is commented out with marker `main-dump failing`. Do NOT re-enable it;
-  do NOT try to "fix" that dump build. It is out of scope and expected-broken.)
-- Resulting binary: **`sf/build/out_release/zig1`**. Oracle reference compiler: **`sf/build/zig0`**
-  (git-ignored; already built).
-- `-Wall` gcc **warnings** may scroll past during the build — they are harmless. Only a nonzero exit
-  or a missing `[release] Done` line means a real failure.
+
+or `build_target_crt.bat` from a fresh window after `VCVARS32.BAT` (never with
+the Watcom env); with a Windows-hosted MinGW gcc put its `bin` directory on
+`PATH` and use `build_mingw_crt.bat` (CRT-linked) or `build_mingw_nocrt.bat`
+(no-CRT). The OpenWatcom/MSVC scripts read compiler flags from `z98_cc.rsp`
+(`/fpc` / `/Op`) and link inputs from `z98_link.lnk` / `z98_link.rsp`; the
+MinGW scripts are response-file-free (gcc 3.4.5 has no `@file`) with explicit
+chunked `gcc -r` partial links and a short final link. Each script echoes
+every command and its output to `00.txt` in `win/` (last line `Built: prog.exe`
+or `BUILD FAILED`) and writes `prog.exe` (arguments are ignored by design — the
+scripts are command.com-safe); copy it to `..\zig1.exe`. The MSVC script's
+`CL_EXE` / `LINK_EXE` variables can point at absolute tool paths when another
+toolchain shadows `cl.exe`/`link.exe`. `..\lib\` is the standard library. The MSVC/OWC pair uses a static CRT (`/MT` / OpenWatcom static CLIB),
+no `msvcrt.dll`, single EXE, and may import KERNEL32 names beyond the strict 9x
+whitelist. The compiler
+source in the zip is `-fsafe`-clean; the Windows-hosted `std_async.zig:259`
+field-resolution failure was root-caused to a C89 update-stream fseek elision
+in `spill_store.zig` and fixed, so this CRT build is **app-ready**. The compiler's own
+no-CRT build is deferred until the asm_x86 backend; emitted programs still
+default to no-CRT. The zip is not a fixed-point artifact; `archive_seed.sh`
+packs it deterministically with python3 `zipfile`.
+
+
+Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
+module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
+runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
+(the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
+`zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
+tracked seed archive **v149 carries the full 65 std `.zig`** = `std.zig` plus
+64 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+the current `sf/src` set into the produced compiler's `lib/` and the archive),
+and `SEED_README.txt`.
+
+**Std-module inventory:** the `sf/src` std set is **64** `std_*.zig` + `std.zig`
+(`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
+`std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
+`std_time_pal`, `std_page`, `std_page_pal`, `std_gpa`, `std_pool`, `std_buf`,
+`std_file`, `std_file_pal`, `std_stdin`,
+`std_stdin_pal`, `std_stream`, `std_crypto`, `std_cipher`, `std_ecc`,
+`std_parse`, `std_bencode`,
+`std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
+`std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
+`std_deflate`, `std_ddraw`, `std_ddraw_pal`, `std_dinput`, `std_dinput_pal`, `std_dsound`, `std_dsound_pal`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
+`std_tls`, `std_tls_io`, `std_hpack`, `std_http2`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`,
+`std_fold`, `std_fft`). `std.zig` re-exports
+the core **17** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/page/gpa/pool/buf/fold`);
+the higher-layer modules (L3-L6) are imported by path, not re-exported.
+`scripts/seed/build_from_seed.sh` installs all 65 into the rebuilt compiler's `lib/`.
+
+**Phase 3.1 allocators (`std.page`/`std.gpa`/`std.pool`) — scope and limits.**
+`std.page` exposes `posix_mode` = `auto`/`remap`/`protect`/`modern` (POSIX
+`mmap`/`mprotect`; Windows `VirtualAlloc`); the optional `madvise_fn` callback is
+used only by the `modern` mode. Win32 `pageRelease` is
+`VirtualFree(ptr, 0, MEM_RELEASE)` — the size argument is deliberately 0, unlike
+POSIX `munmap`, which rounds the reservation size. `std.gpa` profiles are
+`target32/64/128/256/512/modern`; the default is `target64` (64 KiB medium cap,
+2 MiB chunks, 64 MB target). `align` must be a power of two in `[8, 4096]`.
+`safe_checks` is explicit in `GpaConfig`: `-fsafe` alone does **not** enable the
+GPA magic/ownership validation. TLS is design-only; `.encrypted` is deferred;
+there is no compiler allocator migration and no security or cycle-target claim.
+Win9x evidence is cross-build/Wine only.
+**`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
+**`std_crypto` M2 additions:** SHA-384/512, HMAC-SHA256 (one-shot + streaming), HKDF extract/expand (RFC 5869), BLAKE2s + HMAC-BLAKE2s (RFC 7693 / WireGuard MAC), and verify-only RSA PKCS#1 v1.5 / PSS (RFC 8017, generic modexp cap 4096-bit). Errors: `BadSignature` / `Corrupt` (`UnsupportedAlgorithm` is unrepresentable via `HashAlg`).
+**`std_cipher` (M2):** ChaCha20 (RFC 8439, 20 rounds unrolled), Poly1305 (donna 5×26-bit limbs, constant-time), ChaCha20-Poly1305 AEAD (`error.AuthenticationFailed`), AES-128 (FIPS-197, 4 KiB `const` T-tables `R/r` rodata), AES-128-GCM (SP800-38D, GHASH 4-bit tables). Pure, no heap/arena; fixtures `stdlib_chacha_poly_xmod` + `stdlib_aes_gcm_xmod`; T-table gate `scripts/compiler/gate_cipher_rodata.sh`. Doc: `sf/docs/std_lib/cipher.md`.
+**`std_ecc` (M2):** X25519 (ref10 26/25-bit ladder, RFC 7748 clamp + all-zero `error.WeakPublicKey`), P-256 keygen/ECDH/ECDSA verify, P-384 ECDSA verify (shared BearSSL i31 engine, MIT). No heap/libm/f64; constant-time scalar paths; uncompressed pubkeys 65/97 bytes. Fixtures `stdlib_x25519_xmod` + `stdlib_ecc_verify_xmod` (plus `scripts/stdlib/run_ecc_safe.sh`). Doc: `sf/docs/std_lib/ecc.md`.
+**`std_asn1` (M3):** streaming DER TLV reader (`Asn1Reader`/`Tlv`/`TagClass`, `asn1Init`/`asn1Remaining`/`asn1ReadTlv`); no allocation, slices alias the input, definite/minimal-length only, `error.Corrupt` only. Fixture `stdlib_asn1_xmod`. Doc: `sf/docs/std_lib/asn1.md`.
+**`std_x509` (M3):** certificate parse (`Cert`/`x509Parse`), browser-grade leaf-to-anchor chain verification (`x509VerifyChain`, depth ≤ 8, exact §5.4 error set), SAN dNSName-only hostname matching, and pinned §5.5 trust store (`trustStoreLoad`). Fixtures `stdlib_x509_parse_xmod`, `stdlib_x509_verify_xmod`, `stdlib_truststore_xmod`. Asset + converter: `examples/z98/demo/tls_demo/ca_store.bin`, `examples/z98/demo/tls_demo/caconv/`. Doc: `sf/docs/std_lib/x509.md`.
+**`std_tls` (M4/M5):** sans-I/O TLS 1.2/1.3 record layer + client handshakes — 5-byte header, 16 KiB plaintext cap, four TLS 1.2 suites (`ECDHE-{ECDSA,RSA}-{AES128-GCM,CHACHA20-POLY1305}-SHA256`) plus two TLS 1.3 suites (`AES_128_GCM_SHA256`/`CHACHA20_POLY1305_SHA256`), RFC 5288/7905 nonces, ECDHE P-256/x25519 (1.2) and x25519 key_share (1.3), SNI, `std_x509` chain validation at the caller's `now_unix`, PRF_SHA256 Finished (1.2) / HKDF-Expand-Label + 32-byte Finished (1.3), ECDSA P-256/P-384 and RSA-PSS CertificateVerify (PKCS#1 v1.5 rejected), `SendClientHello … Established`. KeyUpdate is unsupported (receipt → `error.Closed`). Fixtures `stdlib_tls_record_xmod`, `stdlib_tls12_handshake_xmod`, `stdlib_tls13_handshake_xmod`, `stdlib_tls13_auth_xmod`, `stdlib_tls13_fallback_xmod`. Demo `examples/z98/demo/tls_demo`; tier includes local 1.3 (both suites), 1.2 fallback, and a `Z98_NET=1` RSA-PSS host. Doc: `sf/docs/std_lib/tls.md`.
+**`std_tls` ALPN + `prefer_chacha20` (Phase 3.3):** `TlsConfig.alpn_h2` (default `false`) appends the ALPN extension offering `h2` then `http/1.1`; `TlsSession.alpn`/`tlsAlpnSelected` report `.none`/`.h2`/`.http11`/`.other`, and a server-selected protocol the client never offered is rejected (`HandshakeFailed`). `TlsConfig.prefer_chacha20` (default `false`) reorders suites ChaCha20-first (TLS 1.3 `0x1303` before `0x1301`; the TLS 1.2 ChaCha pair before AES) and supported groups x25519-first; the HTTP/2 path sets it, and the default keeps existing wire fixtures byte-identical. Fixture `stdlib_tls_alpn_xmod`; gate `scripts/stdlib/run_tls_alpn.sh`.
+**`std_tls_io` (Phase 3.3):** nonblocking TLS socket driver on `std_net` — `TlsIo`, `TlsIoError` (the full `TlsError`∪`NetError` name union, 31 names; no catch-map), `tlsIoInit`/`tlsIoHandshakePump`/`tlsIoReadPump`/`tlsIoWritePump`/`tlsIoClose`/`tlsIoCloseForce`, with `tlsIoPending` (queued ciphertext, `out_off < out_len`) and `tlsIoClosePending` (a prior close deferred). The pumps are non-suspending, own their out/in buffers, flush pending wire bytes before each step, and return `WouldBlock` instead of blocking; `tlsIoCloseForce` flushes best-effort then closes the fd. Fixture `stdlib_tls_io_xmod`; gate `scripts/stdlib/run_async_io.sh <zig1> tlsio`.
+**`std_hpack` (Phase 3.3):** 61-entry static table, integer/string codec, full canonical-Huffman decode (two-level table + rare-code tail), ring dynamic table with caller storage and O(1) eviction; encoding is literal-only. `hpackInit`/`hpackDecode`/`hpackEncode`; malformed input fails closed as `HpackError.Corrupt`. Fixtures `stdlib_hpack_vectors_xmod`, `stdlib_hpack_huffman_xmod`, `stdlib_hpack_dynamic_xmod`.
+**`std_http2` (Phase 3.3):** frame/settings codec, connection/streams/flow control, TLS+ALPN and h2c prior-knowledge adapters, and the body API. `Http2Config` defaults: `max_streams` 16, `max_header_list` 65536, `initial_window` 65535, `max_frame_size` 16384, `header_table_size` 4096. `http2OpenTransport` is the test seam; `http2OpenTls` returns `NotHttp2` unless `tlsAlpnSelected == .h2`; `http2OpenTcp` is h2c prior knowledge. `http2Submit` queues, `http2Pump` is non-suspending (`progress`/`would_block`/`closed`) and never blocks, and `http2Wait` suspends. The caller loop must select **read AND write** readiness with a bounded timeout and a stall watchdog, and re-arm writability whenever the pump reports pending output. A closed/reset stream slot is **leased**, not free: `http2Wait` by id stays valid until `http2Release` returns the slot to idle; `http2Close` reclaims abandoned leases and is graceful/retryable: it returns `CloseStatus.pending` while HTTP output, queued TLS ciphertext (`tlsIoPending`), or a deferred TLS close (`tlsIoClosePending`) remains, drives one nonblocking `tlsIoWritePump(io, empty)` flush per call when ciphertext is queued, re-checks after `close_fn`, and the caller re-arms writability and retries until `.closed` (a blocked close never finalizes or leaks the socket); `http2CloseForce` is the unconditional teardown (one best-effort flush, exactly one transport close, unsent output dropped; the TLS path uses `tlsIoCloseForce`, which closes the fd even when the final ciphertext flush would block), and `http2ClosePending` remains available for polling loops. Buffered `TooLarge` is stream-local: `http2Pump` continues, `http2Wait` returns `error.TooLarge`, and other streams keep running. Malformed response header semantics (RFC 7540 §8.1.2.6: empty/uppercase/non-token names, CR/LF/NUL values, missing/duplicate/misordered `:status`) are also stream-local: RST that stream, keep pumping, and `http2Wait` returns `error.Protocol`; HPACK `Corrupt` remains connection-level. Convenience functions `http2Get`/`http2Post`/`http2GetStream`/`http2PostStream` are `Http2Error!void` with a trailing `id_out: *u32` (D14: Z98 cannot lower the suspending `Http2Error!u32` wrapper shape), wait internally, and do not release. Buffered bodies are copied into the **caller-owned `out.body` capacity** and capped at 1 MiB; over-cap or too-small capacity returns `TooLarge`, and larger bodies use `ResponseSink`. Headers stay valid until release. No server push, no priority scheduling, no HTTP/2 Upgrade. Fixtures `stdlib_http2_frames_xmod`/`_state_`/`_body_`/`_tls_`/`_h2c_xmod`; gates `run_fixtures.sh` / `run_phase33_safe.sh` and `run_http2.sh` (Node 18+; absent prints `SKIP`, never PASS). z9git remains HTTP/1.1.
+**`std_wireguard` (M6):** sans-I/O WireGuard **initiator** (`WgDevice`/`WgPeer`, `wgInit`/`wgAddPeer`/`wgTick`/`wgReceive`/`wgSend`; `WgAction = union(enum){ none, send_handshake, send_keepalive, session_up, inner_packet, dropped_replay }`). NoiseIK per §5.7 with HKDF-BLAKE2s KDF and ChaCha20-Poly1305; initiation 148 B / response 92 B / transport header 16 B with zero padding to 16 and a 64-bit LE counter nonce. TAI64N comes from `wall_unix_ns` (never `now_ms` — a monotonic-derived timestamp is rejected as a replay after restart). Timers via `wgTick(now_ms)` only (no `sleep`): 120 s rekey, 180 s reject (`wgSend`/`wgReceive` → `error.SessionExpired`), 5 s + bounded jitter retry, 10 s keepalive. 2048-bit replay window (authenticate before window update), CookieReply consumption with `mac2` (generation out of scope), and rekey continuity (active session/keys/indices/counter/replay preserved while a new initiation is pending; the response installs pending state atomically and returns `.session_up`). Errors `Corrupt`/`AuthenticationFailed`/`NoSession`/`SessionExpired`/`OutputTooSmall` (+ `NoSpace`/`InvalidPeer`). Fixtures `stdlib_wg_handshake_xmod`, `stdlib_wg_transport_xmod`, crosscheck `stdlib_wireguard_cross_xmod` (3 vectors). Doc: `sf/docs/std_lib/wireguard.md`.
+**`std_tcpip` (M7):** client-only userspace IPv4 stack (`TcpipConfig`/`TcpipStack`, `tcpipInit`/`tcpipPoll`, `tcpConnect`/`tcpSend`/`tcpRecv`/`tcpClose`, `udpOpen`/`udpSendTo`/`udpRecvFrom`, `dnsResolve`, `icmpPing`; `TcpipAction = union(enum){ send_pkt, wait, connected, data, closed, failed, done }`). Sans-I/O pump: the caller feeds raw IPv4 datagrams and sends the returned datagrams. TCP client only (3WHS, fixed 8 KiB window, MTU-authoritative `mss = min(peer MSS, mtu - 40)`, fixed 1 s RTO with simplified Karn, slow start + AIMD, no SACK/scaling, no fragment reassembly); UDP one TX/RX slot per socket; DNS A/IN only (CNAME chains `DnsFailed`); ICMP echo with fixed 1 s × 3 retries. `tcpipPoll` returns `.done` on a terminal DNS/ICMP request; the final helper call returns the A record/RTT or `DnsFailed`/terminal `Timeout`. State is arena-backed and fixed: `TcpipStack` 648 B + `max_sockets × (TcpSock 65648 + UdpSock 2988)`. Fixtures `stdlib_tcpip_tcp_xmod`, `stdlib_tcpip_udp_xmod`, `stdlib_tcpip_dns_xmod`; demo `examples/z98/demo/wireguard_demo`; tier `tier_wireguard.sh`. Doc: `sf/docs/std_lib/tcpip.md`.
+**`std_http` transport (M4 + Phase 3 v136/v138):** `HttpTransport` (read/write/close callbacks) and `httpGetOver` (GET, HTTP/1.1, `Connection: close`, identity + chunked body decode) make HTTPS a std capability. Phase 3 adds `httpPostOver` (POST with `content_type`/`accept`; empty values omit those headers; same 1 MiB whole-body cap) and `httpPostStreamOver` with `ResponseSink` (headers land in `out_head` with an empty body; de-chunked body bytes flow to the sink in bounded ~1 MiB chunks, unbounded apart from hardware); the convenience `post()` mirrors `get()`. v138 adds `httpGetHeadersOver` (buffered GET with caller headers, including `Range` for static servers), `httpGetStreamOver` (the same extra-header GET with the body streamed to a `ResponseSink`), and `RequestSource`/`httpPostStreamBodyOver` (a POST request body streamed from a caller source with a declared `Content-Length`, response streamed through the same sink path). Extra-header names/values reject CR/LF/NUL with `BadHeader`. `get()`/`post()` follow a 301/302/303/307 `Location` once. The pure `parseResponse` still requires a `Content-Length` or a close-delimited body and rejects `Transfer-Encoding: chunked` with `BadResponse` (the transport paths decode chunked); keep-alive remains **DEFERRED**. Fixtures `stdlib_http_transport_xmod`, `stdlib_http_post_xmod`, `stdlib_http_post_stream_xmod` (v138 adds no new fixture dirs; the eight `stdlib_http_*` dirs are 8/8 PASS). Doc: `sf/docs/std_lib/http.md`.
+**`std_zstd` dictionaries (Phase 3 v136):** `zstdDecompressDict(src, dst, dict, max_window_log) !u32` accepts RFC 8878 magic dictionaries (id parsed; a frame's nonzero dict id must match, a frame id of 0 accepts any supplied dict) and raw-content dictionaries (dict-id-0 frames only); the dict's entropy tables seed first-block Repeat and its content pre-seeds history. `zstdDecompress` itself is unchanged and still rejects a nonzero dict id. Fixtures `stdlib_zstd_dict_{basic,entropy,hist,mismatch,raw}_xmod`. Doc: `sf/docs/std_lib/zstd.md`.
+**`std_deflate` (Phase 3 v136):** new L4 single-shot inflater, no heap, caller-owned `dst`. `inflateRaw(src, dst, used) !u32` decodes RFC 1951 raw DEFLATE; `inflateZlib(src, dst, used) !u32` validates the RFC 1950 CMF/FLG/FCHECK wrapper, rejects `FDICT`, and verifies Adler-32. Both write the consumed input byte count (wrapper included) to `used`; errors are `error.Corrupt` / `error.OutputTooSmall`. Fixtures `stdlib_deflate_*_xmod`. Doc: `sf/docs/std_lib/deflate.md`.
+**`std_math` f64 (M2, z9play):** adds pure-Z98 `sqrt(x: f64) f64` (correctly rounded: exact integer square root of the significand, 0 ULP), plus `sin(x: f64) f64` / `cos(x: f64) f64` (Cody-Waite argument reduction on a split `2/pi` + fdlibm `__kernel_sin`/`__kernel_cos` minimax, one op per statement so the C89 emitter's f64 stores defeat x87 excess precision). **Pure Z98 — no libm, no `@sqrt`/`@sin`/`@cos` builtins**; the emitted C imports no math symbol (the z9play M2 tier asserts `nm -u` has no `sqrt`/`sin`/`cos`/`pow` and DT_NEEDED has no `libm`). `sin`/`cos` are valid for `|x| <= 2^20*(pi/2) ≈ 1.65e6` (fdlibm medium-reduction cap; covers the Vorbis IMDCT/window range with >60x headroom) and return NaN outside it; `sqrt` maps `x<0` to NaN and passes `0`/`inf` through. Accuracy <= 1 ULP vs a glibc/python oracle. Fixture: `repro/mi_matrix/stdlib_math_f64_xmod`; z9play gate: `examples/z98/z9play/tests/tier_math.sh`. See `sf/src/std_math.zig`.
+**`std_noise` (M2):** Kurt Spencer's **2014 OpenSimplex v1.1** (NOT OpenSimplex2) — `opensimplexInit`/`noise2d`/`noise3d`/`noiseFbm2d`, 512 B state (`perm` + `perm_grad`) seeded via `std_rand` xoshiro Fisher–Yates; f64 throughout (no f32 shortcut — it fails the visual golden). Canonical 2014-reference constant literals (`0.366025403784439` / `-0.16666666666666666`); the temporary adjacent-literal lexer workaround was removed at the M2 T1D closeout (T1B correctly-rounded `parseF64`). Pins: crosscheck `scripts/stdlib/vectors/std_noise/grid.expected` md5 `94314ebd32053089b226387770c0cd5d` (Z98 == C89 ref), visual golden `pgm fnv1a64 4921c94f3ec08543` (`stdlib_noise_basic_xmod`). Doc: `sf/docs/std_lib/noise.md`.
+**`std_num` (M4):** Dormand–Prince **7-stage embedded 5(4)** adaptive RK45 (`Rk45Config`/`Rk45State`/`rk45Step`), FSAL 7th stage reused via the caller's `dy`, scaled-RMS error norm, accept `err <= 1`, reject `0.9*err^(-1/5)`, grow `1.5x` only when `err < 0.5` (capped at `max_step`). Allocation-free, caller-owned `y`/`dy`, error set exactly `error.StepTooSmall`, fixed scratch cap `RK45_MAX_DIM = 64`. Explicit method — stiff systems are out of scope. Pins: basic fixture `stdlib_num_basic_xmod` (byte-exact stdout), crosscheck `stdlib_num_cross_xmod` + `scripts/stdlib/vectors/std_num/basic.{in,expected}` (Z98 == C89 ref). Doc: `sf/docs/std_lib/num.md`.
+**`std_pathfind` (M5):** Jump Point Search (`Point`/`Grid`/`jpsFind`) plus optional static-grid JPS+ (`JpsPlus`/`jpsPlusBuild`/`jpsPlusFind`). 8-connected uniform cell cost: cardinal 10, diagonal 14, heuristic `10*max+4*min`; strict no-corner-cut (a diagonal needs both adjacent cardinals walkable), Harabor & Grastien SoCS 2012. `jpsFind` reads the live grid; `jpsPlusBuild` precomputes 8 signed `i32` distances per cell in N,NE,E,SE,S,SW,W,NW order (positive jump, negative wall, 0 blocked) at 32 bytes/cell persistent (33 bytes/cell peak with the transient build bitmap), arena only, and the map must be rebuilt if tiles change. Both functions return the full tile count; `out` is capacity, writes at most `out.len/2` forward pairs, ignores an odd trailing slot. Pins: basic/plus fixtures + crosscheck (`stdlib_pathfind_*`, Z98 == C89 A*); report-only perf: JPS+ 6.06 ms vs `jpsFind` 8.87 ms per query (22% obstacle), 0.127 ms vs 3.37 ms (open); A* still faster. Doc: `sf/docs/std_lib/pathfind.md`.
+
+**`std_physics` (M6):** Position-Based Dynamics (`Particle`/`DistanceConstraint`/`PbdWorld`, `pbdInit`/`pbdAddParticle`/`pbdAddDistance`/`pbdPin`/`pbdStep`) for cloth, soft bodies, and ropes. `pbdStep` integrates non-pinned particles with `new = pos + (pos-prev)*(1-damping) + gravity*dt*dt`, stores `prev = old pos`, then runs `iterations` projection rounds over a seeded Fisher–Yates shuffle of the constraint order. Distances use f64 `std_math.sqrt` then an f32 cast; projection splits by inverse mass (`wa/(wa+wb)`, `wb/(wa+wb)`) and skips `len==0`/`wa+wb==0`. `stiffness` is the per-iteration fraction (1 = exact in one projection); cloth starts at 1 with 4–8 iterations, soft bodies use lower stiffness and more iterations. v1 has no collision constraints; a pin is `inv_mass = 0` (never moves). Same seed + world + dt sequence ⇒ bit-identical trajectory. Over-capacity adds, negative `inv_mass`, `a==b`, out-of-range indices, and `pbdPin` out of range panic. Pins: basic/cross fixtures, particle/distance panic fixtures, `stdlib_test/physics_usage`, and crosscheck (`stdlib_physics_*`, Z98 == C89 ref). Doc: `sf/docs/std_lib/physics.md`.
+
+**`std_hpa` (M7):** Exact-cost **HPA\*** (`Cluster`/`AbstractNode`/`AbstractEdge`/`AbstractMap`, `hpaBuild`/`hpaFind`) over the M5 8-connected grid (cardinal 10, diagonal 14, strict no-corner-cut). Clusters are clipped `cluster_w × cluster_h` rectangles, row-major. One abstract node per **transition tile** (walkable with a legal cross-cluster 8-neighbour); node ids are cluster-major then row-major. Cross-cluster adjacencies are directed 10/14 edges both ways; every reachable same-cluster transition-node pair gets both directed edges at the exact cluster-restricted `jpsFind` cost. Adjacency ranges are sorted by `to`. `hpaFind` adds temporary `S`/`G` nodes (cluster-local reachability, plus a direct `S -> G` edge for same-cluster queries), searches with the octile heuristic and `(f<<32)|(~g)` key, then refines with cluster-local `jpsFind`, dropping duplicate boundary tiles. Build leaves only map allocations in the caller arena; query scratch is separate and resettable. Maps are static — rebuild after any tile change. Classic Botea entrance-segment compression is deferred; v1 is exact, not approximate. `out` is capacity in `u32` slots, writes at most `out.len/2` forward pairs, ignores an odd trailing slot, and returns the full tile count. Pins: basic/cross fixtures, `stdlib_test/hpa_usage`, crosscheck (`stdlib_hpa_*`, Z98 == C89 full-grid A\*), 3× deterministic. Doc: `sf/docs/std_lib/hpa.md`.
+
+- **Compiler↔std separation:** the compiler's import graph reaches **no std module** —
+  the transitive `@import` closure from `sf/src/main.zig` is zero std modules. The std lib is
+  **user-side `.zig`, compiled on demand** from `<exe_dir>/lib/`; the self-emission fixed point
+  is therefore **independent of the std lib** (adding or removing std modules does not move it).
+- zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
+- **C89-AHEAD note:** `runtime/` carries the compiler's **emitted, mode-specific** support (the
+  `-ffast` self-emission support), not the canonical `-fsafe` `sf/src/include` files, so a
+  gcc-only rebuild of the archive C reproduces the archived binary's fixed point exactly.
+
+
+### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]
+
+The type-registry `Type` record (`sf/src/type_registry.zig`) is **20 B**; its four
+ceiling columns are `name_id`/`payload_idx` = **u32** and `module_id`/`alignment` =
+**u16**. The only residual ceilings are the u16 pair — **65,535** modules / alignment
+value — and both are **effectively unreachable** (no program reaches 65,535 modules or
+such alignment values; `name_id`/`payload_idx` are back to the pre-plan u32 width).
+
+The earlier structural-narrowing `Type` 32 B→16 B shrink had created real user-facing
+ceilings that the **type-limit widening** (2026-10-08) raised: `name_id` u16 (65,535
+distinct interned strings — a **global** interner id, not a type count), `payload_idx`
+u16 (65,535 entries in one payload array), `module_id` u8 (256 modules) and `alignment`
+u8 (255). The widening removed those and deleted the
+`typeDbCeiling`/`typeNarrowU16`/`typeNarrowU8` guards.
+
+The string interner imposes **no** ceiling: its buckets auto-migrate u16→u32 when the
+u16 range is exhausted (`sf/src/string_interner.zig`), so a wide program keeps interning.
+No `Type`-column user ceiling remains in practice.
+
+### Compiler limits — expression / recursion depth  [added: 2026-10-26]
+
+Two independent depth ceilings exist. Both are documented here; the defects file
+(`examples/torrent_example_defects.md`) tracks only open defects.
+
+**1. Parser — expression *nesting* cap: 12.** `sf/src/parser.zig:373-378` increments
+`expr_depth` per nested expression and emits `panic: max expression recursion depth
+exceeded` past 12. This bounds *nesting* (`f(g(h(x)))`, `if (c) if (c) …`), not chain
+length. A chain `a0 + a1 + … + aN` is left-associative and parses at depth 1, so it is
+unaffected by this cap.
+
+**2. Semantic analyzer — expression *chain* ceiling.**
+`semanticAnalyzerResolveExpr` (`sf/src/semantic_analyzer.zig`, 86 recursive call sites)
+recurses per AST level at ~7.7 KB of C stack.
+
+**Effective ceiling is a fixed 130 terms on every platform** — `SEMA_GUARD_MAX`
+(`sf/src/semantic_analyzer.zig`), a depth guard added 2026-10-26. Past it the compiler
+reports a clean `error[3077] expression nesting too deep for semantic analysis (limit 130)`
+and emits no `.c`. The guard is a flat count, so it does **not** scale with available
+stack. The table below is the *natural* stack-derived ceiling the guard is sized under;
+on a large-stack platform the guard is what actually binds, not the stack.
+
+| stack | natural ceiling (terms) | effective |
+|---|---|---|
+| 1 MB — Win9x MSVC default `/STACK` | ~139 | **130** (guard) |
+| 2 MB — MinGW `SizeOfStackReserve` | ~270 | **130** (guard) |
+| 8 MB — Linux default | ~1080 | **130** (guard) |
+
+**The guard does not raise the ceiling** — it makes the failure honest instead of a
+stack-overflow SIGSEGV. Phase 2.5 Task 2 executed both refinements: the cap was
+re-measured and raised 128 -> 130 (1 MB wall ~139 terms; 131 trips with an 8-frame
+margin) and the diagnostic moved to the limit-family `error[3077]`
+(`ERR_3077_EXPR_NESTING_LIMIT`, outside the corpus `ICE_RE`), so a guard trip classifies
+as FAIL rather than ICE. Raising it further still needs `semanticAnalyzerResolveExpr`
+converted to the explicit continuation stack the lowerer uses (deferred; see the
+semantic-analyzer limit note above).
+
+**`error[3078]` is the mutable-capture reject, not a depth guard.**
+`ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED` fires level-0 (rc=2 / 0 `.c`) for a `|*item|`
+capture whose iterable has no addressable element: a range iterable or a
+non-variable array value reports `mutable for-item capture requires an addressable
+element (a range or a copied array value has none)`, and a named capture over an
+iterable with no resolvable element type reports `mutable for-item capture requires
+an iterable with a resolvable element type`. It is outside the corpus `ICE_RE`.
+
+**Real-world incidence is low.** Every real Z98 source in the repo was scanned — the
+compiler itself, the std library, all `examples/`, all 1193 corpus dirs. Longest operator
+chains: 35 ops (a synthetic repro fixture), 10 (`std_ecc.zig` curve polynomial multiplies),
+9 (`lexer.zig` keyword-match `and` chains). Distribution: 1 line ≥20 ops, **0 lines ≥40**.
+Production code tops out at ~10 terms, so the tightest platform (Win9x, 1 MB) has ~3.8x
+headroom over real code.
+
+**The lowerer is no longer depth-limited.** It was converted to an explicit continuation
+stack in the iterative-lowering milestone (2026-10-26), so lowering no longer consumes C
+stack per expression level. `repro/mi_matrix/emission_sibling_payload_xmod` (the original
+70-term repro) compiles at 1 MB stack; it did not before.
+
+### Calling convention (Win9x) — `extern "stdcall"` / `extern "cdecl"`  [added: 2026-09-14]
+
+- **Surface:** a calling convention may be written on an extern fn declaration and on a function-pointer type — `extern "stdcall" fn(...) T`, `extern "cdecl" fn(...) T`, `extern "c" fn(...) T`; a bare `fn(...) T` is default cdecl. Accepted names: `"c"`/`"cdecl"` → cdecl (byte-identical to no string), `"stdcall"` → stdcall. Unknown → `error[3045]`; variadic `stdcall` → `error[3012]`; assigning a cross-convention fn-pointer → `error[3000]` (all clean: rc=2, 0 `.c`).
+- **`Z98_STDCALL` macro** (emitted in `zig_compat.h`; single hand-edited source `sf/src/emit_support.zig`, `sf/src/include/zig_compat.h` is its generated snapshot): `__attribute__((stdcall))` on Win32 gcc, `__stdcall` on MSVC/Watcom, **empty on non-Windows** — so linux default-cdecl emission is byte-identical.
+- **Option-B use-site-cast rule (operator ruling; SUPERSEDES the earlier forced-prototype rule):** do **NOT** emit a second convention-bearing prototype for a convention extern. The C header remains the **sole declaration source** (this is what lets `std_net` use the real `<winsock.h>`/`windows.h` prototypes without conflict). The convention rides on the fn type/LIR and is applied **at the use site** as a cast to the convention-qualified `FS_…` fn-pointer typedef in `zig_special_types.h`: `((zT_…_FS_…)MessageBoxA)(...)`. `typeRegistryGetOrCreateFn` marks the stdcall fn type used so the `FS_…` typedef is emitted. Standalone (non-header-covered) stdcall fixtures are **emission-inspection only** — the cast names the extern symbol, whose declaration is the C header's responsibility.
+- **`std_net` Win32 externs** are migrated to `extern "stdcall"` (all 15 in `sf/src/std_net.zig`); every `std`-importing program's dump gains the `FS_…` typedefs + use-site casts (the re-export pulls `std_net` in).
+
+
 
 ### Compile + RUN a program (repro or example) with zig1  — VERIFIED RECIPE
 ```bash
-sf/build/out_release/zig1 --dump-c89 <FILE.zig> > /tmp/x.c 2>/tmp/x.err ; echo "dump rc=$?"
+# the gate compiler is the seed-built zig1; sf/build/out_release/zig1 is retired (cannot build)
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_seed
+/tmp/z9_seed/zig1_5_clean --dump-c89 <FILE.zig> > /tmp/x.c 2>/tmp/x.err ; echo "dump rc=$?"
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
     /tmp/x.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/x ; echo "gcc rc=$?"
 /tmp/x ; echo "run rc=$?"
 ```
 - You **must** link `sf/src/include/zig_runtime.c` AND `sf/src/include/zig_pal.c`, and pass
   `-I sf/src/include`. Missing any of these is the #1 cause of wasted turns.
+- **Default safety mode is `-fsafe`.** A user program's emitted C includes the six check guards, so it
+  differs from the `-ffast` compiler self-emission. Pass `-ffast` to `zig1` to reproduce pre-C89-AHEAD
+  emitted C. No new link flags are needed — `pal_trap()` lives in the already-linked `zig_pal.c`.
 - For **mud_server** add `sf/src/include/net_runtime.c` ONLY when building the pre-F6
   `examples/zig0/mud_server` bootstrap example — the migrated `examples/z98/mud_server`
   (std_net) links WITHOUT it (F6).
 - For a **no-`main` repro** (compile-only, no link/run) use `gcc -m32 -std=c89 -c ... -o /dev/null`.
-- **[updated: 2026-08-14 — F-MIGRATE] examples/repros now use bare `@import("std")`**, resolved
+- **[updated: 2026-08-14] examples/repros now use bare `@import("std")`**, resolved
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig <exe_dir>/lib/`
-  (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The local `std*.zig` copies are
-  gone from the migrated examples/repros; `std_import_bare_xmod/local/` remains a fixture (the Task R
-  `--lib-dir` GREEN test), and the 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass /
-  control) intentionally ship local `std.zig`/`std_io.zig` copies with explicit `.zig` imports as
-  collision-repro fixtures (out of scope to migrate).
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_page.zig sf/src/std_page_pal.zig sf/src/std_gpa.zig sf/src/std_pool.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_deflate.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig sf/src/std_asn1.zig sf/src/std_x509.zig sf/src/std_tls.zig sf/src/std_tls_io.zig sf/src/std_hpack.zig sf/src/std_http2.zig sf/src/std_wireguard.zig sf/src/std_tcpip.zig sf/src/std_gfx.zig sf/src/std_gfx_pal.zig sf/src/std_fold.zig sf/src/std_fft.zig <exe_dir>/lib/`
+  (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The canonical set
+  includes `std_fmt.zig` (the print-formatting layer, auto-imported by the compiler
+  whenever a `print` is lowered); a compiler whose `lib/` predates it can resolve a
+  `print`-using program only when the std_fmt file is import-adjacent.
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [added: 2026-09-02 — spill-backend-config F-S]
+**`--check` (sema-only; no emission).** `zig1 --check <FILE.zig>` runs import resolution →
+semantic analysis → static analyzers → const-init and stops. It prints the banner and all
+diagnostics, exits 0 when clean and 2 on errors; with `-W`/`--warn-error` a warning-only run
+also exits 2. It truly ignores `-o`/`--output-dir`/`-d` (no output-path validation, no spill
+redirect): no `.c`/`.h`/build scripts/`.zig1_lir.tmp` are written, while the earlier
+`.zig1_*.tmp` scratch spills are left in the CWD. Use it for syntax/type checks without an
+output directory.
 
-`-s<N>` picks how many of the five spills live in RAM instead of the `.zig1_*.tmp` disk files.
+### Windows (`-osw`) build — Win9x target; every `std` import emits `std_net`, so link `-lwsock32`  [updated: 2026-09-30]
+
+On seed v89 the `std` re-export pulls `std_net` in, so **every** `@import("std")` program — even a stdio-only one such as `docs/sf/manuals/src/vol3/hello.z98` — emits **`std_net_*.c/.h`** and its mingw link **needs `-lwsock32`** (without it: `undefined reference to '_imp__recv@16'` / `'_imp__WSAStartup@8'`). This is consistent with the `std_net` use-site-cast note above; the earlier "EMITEMIT prunes `std_net` from a never-net `std` import" claim does not hold for the seed-v89 re-export.
+- `net_prelude.h` is now **emitted into the output dir by the compiler** (self-contained emission, alongside `zig_compat.h`/`zig_runtime.h`/`zig_runtime.c`/`zig_pal.c`/`c_exit.c`); it resolves via `-I .` in the dump dir. It is no longer pulled from `sf/src/include`. (The pre-EMITEMIT header-location note is superseded: `net_prelude.h` is now emitted, while link-time `-lwsock32` is still needed by every `std` importer on seed v89.)
+- **PROBE (re-measured 2026-09-30, seed v89):** never-net `repro/mi_matrix/std_import_bare_xmod` `-osw` **does** emit `std_net_*.c/.h`; mingw link **without** `-lwsock32` FAILS (`undefined reference to '_imp__recv@16'`), **with** rc=0. `docs/sf/manuals/src/vol3/hello.z98` (only `std.io.print`) behaves identically. Net `repro/mi_matrix/net_bind_startup_xmod` likewise emits `std_net` and needs `-lwsock32`.
+- The emitted companion `build_target.sh` sets `LIBS="-lwsock32"` in its mingw branch for every `std`-importing program (the `.bat`/owc scripts likewise on `-osw`); prefer it:
+```bash
+cd /workspace/znineeight
+# 1) emit the self-contained dir (default emission; no --dump-c89 needed)
+timeout 120 <zig1> -osw -o <dump> <entry.zig>
+# 2) build for windows (mingw gcc); the script links -lwsock32 (every std import emits std_net)
+cd <dump> && timeout 120 sh build_target.sh mingw
+```
+- Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — `cross_build_run.sh` links `-lwsock32` unconditionally (Amendment A0), so no extra flag is needed.
+
+### GUI (`std_gfx`) no-CRT build + Xvfb/Wine smoke — `gfx_demo` / `z9edit` [added: 2026-10-27]
+
+`std_gfx` is a std module pair (`sf/src/std_gfx.zig` + `std_gfx_pal.zig`) with a
+Win9x window + windowed DirectDraw7 backend. GUI programs are built with the
+no-CRT harness and three additive hooks:
+
+```bash
+cd /workspace/znineeight
+DUMP_TARGET="-osw" \
+EXTRA_LIBS="-luser32 -lgdi32" \
+  bash scripts/win32_cross/cross_nocrt.sh <zig1> \
+    examples/z98/z9edit/main.zig /tmp/z9edit/work /tmp/z9edit/z9edit.exe
+
+bash scripts/win32_cross/check_win9x_imports.sh /tmp/z9edit/z9edit.exe 9x
+# PASS: GDI32/USER32/KERNEL32, no DDRAW, no MSVCRT
+```
+
+- `DUMP_TARGET="-osw"` is required when the program imports `std_time`/`std_os`
+  (z9edit does, for the 2 s ident-idle timer); without it the emitted C takes
+  the POSIX branches and the mingw link fails on `gettimeofday`/`fork`. The
+  env var is empty by default, so every pre-existing caller is unchanged.
+- No extra C file is needed: DDraw is loaded dynamically from `ddraw.dll` and
+  the window is polled (`GetClientRect`/`IsWindow`) instead of using a stdcall
+  WndProc shim. `EXTRA_LIBS` adds GDI/User32 only (no `ddraw`).
+- `EXTRA_CFLAGS` (default empty) is appended to every emitted/runtime C compile;
+  pass `EXTRA_CFLAGS="-O2"` for an optimized shipping build (the default keeps
+  existing callers byte-identical).
+- **OWC no-CRT is not a GUI build:** the emitted `build_owc_nocrt.bat` uses
+  `option nodefaultlibs` and links only `kernel32,clib3r,winmm`, so `user32`
+  and `gdi32` stay unresolved. For GUI programs use `build_owc_crt.bat`
+  (verified static-CRT Win9x path), `build_target_crt.bat` (MSVC 6), or
+  `build_mingw_crt.bat` (MinGW, needs `msvcrt.dll`); the no-CRT alternates
+  remain valid for non-GUI console programs.
+- The gate is `examples/z98/z9edit/tests/tier_edit_gui.sh` (build + import
+  gate + compile RSS + Xvfb/Wine `--smoke` 2× save-byte golden + all three
+  theme screenshots/save bytes + F2 cycle + bad-config fallback). `gfx_demo` has
+  the layer-only `examples/z98/gfx_demo/tests/tier_gfx.sh` (also runs
+  `--theme-test` for the memory-safe theme API).
+- **Themes (P4-M4):** `std_gfx.Theme = { white, solarized, dark }`, default
+  **white**; `gfxSetTheme` rebuilds the PAL brushes + glyph atlas (old theme
+  kept on failure). z9edit reads `z9edit.ini` then `z9edit.cfg` (exe dir first,
+  then CWD) for `theme=white|solarized|dark`, case-insensitive; unknown/missing/
+  malformed -> white. `F2` cycles white -> solarized -> dark -> white for the
+  session only (it never rewrites the config). A memory Gfx accepts
+  `gfxSetTheme` and leaves the grid unchanged.
+- **GDI fallback (Phase 2.5):** startup-only backend choice in `std_gfx_pal`.
+  GDI is used when any DirectDraw open step fails, when
+  `GetDeviceCaps(GetDC(NULL), BITSPIXEL) < 8` (16-color machines), or when
+  `Z98_GFX_SOFTWARE=1`. The GDI path reuses the glyph atlas into a compatible
+  client-sized back bitmap and presents with one window-DC `BitBlt` per frame;
+  memory mode ignores the env var and never opens a backend. `gfxOpen` logs
+  exactly one `gfx: backend=ddraw|gdi` line. Both GUI tiers run the same
+  windowed/pixel sections in normal and forced-GDI modes. The automatic
+  fallback and real 16-color fidelity are operator-hardware checks.
+- **Visible startup errors:** `gfxShowError(title, msg)` uses `MessageBoxA` in
+  a GUI build (live window or before the window opens) and stderr + the
+  existing exit code in console/memory mode; `--smoke`/memory paths never call
+  it, and the tiers never trigger the message box (timeout-guarded runs).
+
+**Xvfb + Wine smoke recipe** (evidence, never a pixel gate):
+
+```bash
+Xvfb :77 -screen 0 1024x768x24 -nolisten tcp &
+export DISPLAY=:77 WINEPREFIX=/tmp/z9edit/wineprefix WINEARCH=win32 WINEDEBUG=-all
+wineboot -i
+cd /tmp/z9edit && wine ./z9edit.exe --smoke in.z98 out.tmp &   # prints flushed READY
+# wait for READY, then:
+import -window root shot.png
+wineserver -k; kill %1
+cmp out.tmp edit_smoke.expected
+```
+
+The app paints a few frames before the scripted sequence so windowed DDraw has
+presented (an immediate capture during the first idle can be black). Pixel
+output is Wine/font-specific; the save-byte golden and exit 0 are the gates.
+Real hardware is the operator's Win98 session.
+
+**Measured on this test box (P4-M3, 2026-10-27):**
+
+| Metric | Value | Notes |
+|:--|--:|:--|
+| `z9edit/main.zig` compile max RSS (`-osw --dump-c89`) | **7,012–7,304 KiB** | compile-only 16 MB gate |
+| `z9edit` runtime RSS under Wine | **≈35.4 MiB** | evidence only, not gated (Wine overhead) |
+| Open 100 KB (native core `bufLoad` + `identScan`) | **≈40 ms** | 3,414 lines |
+| `--smoke` save bytes | md5 `974243c97df614039f01da3b86c67b3c` | 2× byte-identical |
+| Xvfb screenshot | 1024×768, mean 0.0280 / 222 colors | evidence only |
+
+**The 16 MB gate is compile-only.** Runtime RSS is not gated; the Wine number
+is evidence, and real Win98 keystroke→screen/runtime RSS are **not measured**
+here (operator hardware).
+
+
+### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [updated: 2026-10-29]
+
+`-s<N>` picks how many of the six spills live in RAM instead of the `.zig1_*.tmp` disk files.
 Default `-s0` = all on disk. Deactivation order (oldest-spill-first): **S-AST → S-LIR → S-HASH →
-S-RES → S-SIDE** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s5` = all RAM (no spill files).
-Higher `-s` = more RAM, less disk I/O; emission is **byte-identical in every mode** (same data,
-different storage). Measured self-compile `pool=` (self-hosted binary, `--markers --track-memory`):
-`-s0` ~14.9 M, `-s1` ~33.3 M (both fit the 64 MB `-mm` default); `-s2`..`-s5` ~71-73 M → **exceed
-the default and must be paired with `-mm128`** (else `memory limit exceeded`, rc=3). Range 0..5;
-bare `-s` / non-digit / out-of-range (`-s6`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
-`-s1`, `.zig1_lir.tmp` absent at `-s2`, etc. — the spill-file ladder is the mode marker.
+S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s6` = all RAM (no spill
+files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
+(`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
+**byte-identical in every mode** (same data, different storage). **Current v137 spill ladder
+(unchanged from v135/v136 — same fixed point `cf68f192…`; the numbers were measured on the v135
+seed on 2026-11-05, not re-measured for v136 or v137):** `-s0` pool=18677K (18.2 MB, all disk);
+`-s1` pool=50421K (49.2 MB); `-s2`/`-s3` pool=119477K (116.7 MB); `-s4` pool=123573K
+(120.7 MB); `-s5` pool=126645K (123.7 MB); `-s6` pool=131765K (128.7 MB, all RAM). `-s0`
+and `-s1` fit the 64 MB `-mm` default; `-s2`–`-s5` must be paired with `-mm128`, and
+**`-s6` now needs `-mm160`** (its pool exceeds 128 MB; `-mm128` ICEs with rc=3). Historical v123
+ladder (fixed point `2fc64ffe…`, measured 2026-10-27): `-s0` pool=18416K; `-s1` 51407K;
+`-s2`/`-s3` 120400K; `-s4` 124496K; `-s5` 127568K; `-s6` 130640K. Historical (superseded): seed v89 ≈
+20.6/57.4/…/130.6 MB pool; `553a39b4…` ≈ 13.8/33.1/70.0/73.0/74.0/77.0 MB;
+M1 `21c957…` `-s0` pool=18871K. Range 0..6; bare
+`-s` / non-digit / out-of-range (`-s7`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
+`-s1`, `.zig1_lir.tmp` absent at `-s2`, ..., `.zig1_extra_ec.tmp`/`.zig1_extra_er.tmp` absent at
+`-s6` — the spill-file ladder is the mode marker.
 
-### Corpus gate (330 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-09-02 — spill backend config plan GATE; the full gate sweep is the corpus at `-s0`, 404 dirs = 330 mi_matrix + 53 top-level repro + 21 z98 (`slice_matrix` skipped)]
+### Corpus gate (`repro/mi_matrix/*/main.zig` + the top-level `repro/` sweep) — classify by gcc EXIT CODE  [updated: 2026-09-02]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile
 every emitted per-module `.c` file:
 ```bash
@@ -66,9 +426,12 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
 ```
 - **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
   stderr-emptiness classifier gives false counts like 68/63).
-- `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001|3043)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
-  (Note: `error[3048]` is deliberately NOT in the ICE regex — the F-S10 file diagnostics must
-  classify as ordinary FAIL, not ICE.)
+- `dump` rc≥128 = CRASH; stderr matching `error\[(48|9001|3043)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
+  (`error[3048]` file diagnostics and a clean undefined-module-member `error[3042]` reject with 0 `.c` are
+  deliberately NOT in the ICE regex — they are frontend rejections, not internal compiler errors, so they
+  classify as ordinary FAIL. Genuine ICE markers `error[48]`/`error[9001]`/`error[3043]`/`AddressSanitizer`
+  stay ICE. The canonical classifier is `scripts/corpus/classify`.)
+
 - **A repro that fails the frontend (dump emits 0 `.c` files with a `error[NNNN]` diagnostic) is a
   FAILURE — a real compiler gap — NOT "OK".** Do NOT count an empty output dir as OK. The per-file
   gcc loop above is only the emission check; a frontend error must be checked separately:
@@ -79,269 +442,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
   the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
   (See EXPECTED_FAIL.md "Green-guards" section.)
-- **Post-voiddecl-family baseline (GATE gate sweep, 2026-08-20, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `df82d010`, canonical std reinstalled): `OK=275 FAIL=7 ICE=0 CRASH=0 GREEN=4` over 286 dirs** (275+7+4=286). Corpus grew 277→286 (+9 dirs: `parsergap_slice_expr_xmod`, `parsergap_zeroarr_slice_xmod`, `voiddecl_ifexpr_xmod` + `voiddecl_ifexpr_ctl_xmod` (R1 two-fixture), `voiddecl_switchexpr_xmod`, `voiddecl_u64cast_xmod`, `voiddecl_xmodtype_xmod`, `voiddecl_tagprobe_xmod`, `voiddecl_payload_xmod`) — 8 new dirs OK, `parsergap_slice_expr_xmod` now **FAIL** (clean-reject `error[2000]`, the F-REJECT ICE→FAIL flip). **VOID-decl family fully fixed** (Root 1 front_resolution F1 `27c71619` + Root 2 `.tag` F2 `660ff8e2`) — self-compile `error[3000]` **9→0**; **F-ICE 3-loci + Fix A + Fix B** (`fd56da3b`, AMENDMENT 5 ratified) — `error[3043]`→0 whole-tree; **F-REJECT** scalar-base clean reject (`838935ce`); **R/I/F-PAYLOAD** 2-locus `.payload` (`19d919bd`, AMENDMENT 6) — `voiddecl_payload_xmod` RED→OK. FAIL=7 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` + `parsergap_specifier_xmod` + `parsergap_strict_comma_xmod` + `strictzig_brace_if_xmod` (M1 hard-RED, FAIL **by design**) + `parsergap_slice_expr_xmod` (clean-reject). Green-guards unchanged (4). 21-example matrix **21/21** dump/gcc/link OK (game_of_life + mud_server + rogue_mud timeout-gated rc=124 with correct output — counted PASS; json_parser parses test.json rc=0 from its dir). 4 MD5 gates: gol `9cf758d9…` [→ `4afb203f…`], lisp `88dcb7f9…` [→ `5f886646…`] (repo-root CWD), mud `a1d0dd55…` byte-identical; **json RE-BASELINED `fc357296…` → `9720478c…`** (AMENDMENT 3 ruling 2026-08-19 — F1 front-resolution types json_parser's `var g_arena`, 5 temp decls `unsigned int`→`Arena*`; runtime-identical). test_analyzer_bin PASS ("5 passed, 4 failed"). Self-compile re-check: **error[3000]==0 AND error[3043]==0** hold; rc=134 at the recorded next blocker **PANIC `c89_emit.zig:5002`** `width_bits = @intCast(u8, size*8)` u8 overflow on a 40-byte tagged-union temp — **recorded, NOT fixed** (frontier).
-- **Post-widthbits-overflow baseline (GATE gate sweep, 2026-08-20, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `d5a966f7`, canonical std reinstalled): `OK=276 FAIL=7 ICE=0 CRASH=0 GREEN=4` over 287 dirs** (276+7+4=287; 286 + the `widthbits_union_intconst_xmod` R1 fixture flipped OK). Corpus grew 286→287 (+1 dir: the R1 fixture `widthbits_union_intconst_xmod`, commit `582bfc4e`, RED→OK). **FAIL=7 set unchanged** from v42 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` (error[2000]) + `parsergap_slice_expr_xmod` (error[2000]+[3000], clean-reject) + `parsergap_specifier_xmod` (error[3013]) + `parsergap_strict_comma_xmod` (error[2000]) + `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL **by design**). Green-guards unchanged (4). **Widthbits fix (F1 `d5a966f7`, Option B u32):** `width_bits`/`wb` u8→u32 across the 3-site class (`c89_emit.zig:5002` PANIC locus + `:3190` emitSatBinary + `comptime_eval.zig:139` second live site) + the full enumerated surface, with the STOP-approved `>=` shift-guard hardening (`comptime_eval.zig:141`/`:185` `wb >= @intCast(u32, 64)`) — self-compile PANIC gone. 21-example matrix **21/21** dump/gcc OK. 4 MD5 gates byte-identical: gol `9cf758d9…` [→ `4afb203f…`], lisp `88dcb7f9…` [→ `5f886646…`] (repo-root CWD), json `9720478c…`, mud `a1d0dd55…`. test_analyzer_bin PASS ("5 passed, 4 failed"). **MAJOR MILESTONE — self-compile FULLY GREEN:** `timeout 120 zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig` → **rc=0, 40 `.c`, zero `error[` non-9999, zero PANIC** — the widthbits fix was the **last self-compile blocker; next frontier blocker: NONE** (the `--markers` .c failing strict single-file `gcc -c` is a pre-existing emission quirk, NOT a blocker).
-- **Post-residual-closeout baseline (GATE gate sweep, 2026-08-22, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `b9256f2e`, canonical std reinstalled): `OK=292 FAIL=7 ICE=0 CRASH=0 GREEN=4` over 303 dirs** (292+7+4=303; 287 + the 16 emission-fixture dirs from the residual plan's R tasks — all 16 classify **OK**, incl. `emission_mangler_collision_xmod` / `emission_type_storage_extern_xmod` / the sibling-payload + void-temp + variation fixtures, all RED→OK). **FAIL=7 set unchanged** from v43 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` (error[2000]) + `parsergap_slice_expr_xmod` (error[2000]+[3000], clean-reject) + `parsergap_specifier_xmod` (error[3013]) + `parsergap_strict_comma_xmod` (error[2000]) + `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL **by design**). Green-guards unchanged (4). **Residual plan CLOSED (AMENDMENT 12 — terminal gate re-scoped):** the 4 scoped fixes landed — **F-C3-tighten** (`6534a65b`, `json_parser_workaround` stdout byte-identical to base, md5 `dc22fa47…`, RV 21/21), **F-A2EXT** (`b019c671`, self-compile `zG_` 9→0), **F-E2DOWN** (`9e00bec7`, `TokenValue has no member 'none'` 62→0), **F-SWITCH** (`b9256f2e`, switch-on-plain-enum case values correct — `emission_mangler_collision_xmod` prints **4**, `emission_type_storage_extern_xmod` prints **3**). Scoped gates HOLD: `zG_` 0, `TokenValue.none` 0, json regression fixed. **Self-compile NOT buildable (deferred):** `timeout 120 zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig` → **194 remaining gcc errors** (`incompatible types when assigning` ×86, `zT_<n> undeclared` ×68, `request for member` ×22, `has no member` ×8, `pal` ×5, misc ×5) = deferred NEW residual classes (out of scope, recorded for a future plan). 21-example matrix **21/21** dump/gcc/link rc=0 (mud_server + rogue_mud + game_of_life timeout-gated rc=124 with correct output — counted PASS; json_parser parses test.json rc=0 from its dir). **4 MD5 gates: gol `9cf758d9…` → `4afb203f…` RE-BASELINED + lisp `88dcb7f9…` → `5f886646…` (repo-root CWD) RE-BASELINED** (both predate the F-attempt emission changes; runtime-identical — gol glider grid rc=0, lisp `(+ 1 2)`→3 etc. rc=0 — per the operator's runtime-priority rule); **json `9720478c…` + mud `a1d0dd55…` UNCHANGED** (byte-identical). test_analyzer_bin PASS ("5 passed, 4 failed").
-- **Post-194-closeout baseline (GATE gate sweep, 2026-08-24, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `5c739971`, canonical std reinstalled): 194-error plan CLOSED.** Corpus 303 → 310 dirs (+7 emission-fixture dirs from the 194-plan's R tasks: `emission_assign_xmod`, `emission_zT_undeclared_xmod`, `emission_request_member_xmod`, `emission_no_member_xmod`, `emission_pal_xmod`, `emission_misc_xmod`, `emission_orelse_xmod`). **Fixes landed:** F-MIGRATE `1a06716b` + `df9c3017` (bare `pal`→`pal_mod` + undeclared-identifier diagnostic, `pal` ×5→0), F-A `6b44d7a3` (LirInst tag-emission, assign ×48), F-B `6d4892bf` + `56a80136` (hoisted-local disambiguation, name-keyed conflation ×108), F-ORELSE `f8e3d914` (orelse value-flow, ×6), F-C `cb378f17` (no-member + misc, 8+5); AMENDMENTs 4 `f5ab3bc3` / 5 `05ea274d` (docs commits). **Self-compile residual (194-plan FINAL):** `timeout 120 zig1 --markers --dump-c89 --output-dir /tmp/sc sf/src/main.zig` → **12 remaining gcc errors = R2 `zT_<n>` undeclared ×11 + R1 `Opt_10` assign ×1** (11+1=12), deferred to the R2/R1 implementation plan — FORWARD: docs/superpowers/plans/2026-08-23-self-compile-closeout-r2r1-plan.md. 21-example matrix **21/21** dump/gcc/link rc=0. **4 MD5 gates:** **json RE-BASELINED `9720478c…` → `d31e43b1…`** (operator-approved during F-ORELSE — runtime-identical, the orelse fix repairs the semantically-broken null path); gol `4afb203f…` + lisp `5f886646…` (repo-root CWD) + mud `a1d0dd55…` unchanged.
-- **Post-out-of-scope-residual-closeout baseline (GATE-FINAL, 2026-08-25, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `ec306847`, canonical std reinstalled): out-of-scope residual closeout PLAN COMPLETE (AMENDMENTs 1-6).** Corpus 323 dirs = **OK=313 / FAIL=0 / ICE=0 / CRASH=0 / GREEN=10** (313+0+0+0+10=323). The FAIL=9 residual set is fully closed (FAIL→OK or →green-guard), CRASH 1→0. Classification changes: plat_stubs_missing_xmod CRASH→OK (F-PLATSTUBS `7d1b512d`); emission_orelse_labeled_xmod + emission_catch_labeled_xmod FAIL→OK (F-LABELED `2cbf1fd3`); emission_opt_fptr_wrap_xmod added+OK (R `70af559c` + F-OPTFPTR `53b9f1b6`); parsergap_specifier_xmod FAIL→OK (F-SPECIFIER `a9ea91f0`, {x} prints `41`); field_store_drop FAIL→OK (fixture correction `3ef2e8c8`, canonical `pal.zig` import; temp-0 sentinel superseded); strictzig_brace_if_xmod + parsergap_selfblok_xmod (brace-less if/else) + parsergap_strict_comma_xmod (missing comma) + parsergap_slice_expr_xmod (scalar-base slice, no ICE) + self_embed_optional_cycle (error[24] circular-type — real Zig rejects `?X` value self-reference) FAIL→green-guard; emission_pal_xmod already green-guard. **Oracle rulings:** {x} = lowercase hex no prefix (langref); brace-less `if;else` correctly rejected (migrated sf/src sites via `22006588`); canonical self-reference pattern is `?*X` optional POINTER (pointer-sized, null=0; langref linked-list `prev: ?*Node, next: ?*Node`) — Z98's error[24] for `?X` is CORRECT. **json gate RE-BASELINED `d31e43b1…` → `089e4f046464ce3882aa2b2c4e585013`** (AMENDMENT 4, F-NULLWRAP `a6fe169b` — `has_value = result != 0`; runtime-identical normal path, repairs the NULL path; gol/lisp/mud byte-identical); `089e4f04…` is the authoritative json hash. **MAJOR MILESTONE — self-compile gcc-CLEAN AND LINK-green AND binary RUNS crash-free:** `bash scripts/self_compile/build_zig1_5.sh` → dump rc=0, 40 `.c`, in-script gcc -c clean (0 error lines), BOTH `zig1_5_clean` + `zig1_5_asan` link rc=0 (c_exit linked via `aa552f5d`), self-compiled binary runs on real input crash-free (rc=2 misparse = the recorded deferred **self-emission fidelity gap**, NOT a regression — needs its own R/I/F plan). 21-example matrix **21/21** dump/gcc/link rc=0. test_analyzer_bin PASS (rc=0). Open question (not a blocker): `?*X` optional-pointer self-reference support.
-- **Upgraded-examples closeout baseline (docs gate, 2026-09-04, measured on the AMENDMENT-6 tree HEAD `29229586`, design `2026-09-04-upgraded-examples-closeout-design.md` `90fc7e7d` / plan `2026-09-04-upgraded-examples-closeout-plan.md` AMENDMENT 6 `29229586`): the single reproducible closeout verification gate + doc records LANDED (Task 7, no `sf/src` change).** `scripts/closeout/verify_upgraded.sh` (self-contained, calls the Task-1 `run_upgraded.sh` helper; exits nonzero on first failure) + `scripts/closeout/flush.c` (repo-authoritative 5-line `setvbuf(_stdout, _IONBF)` LD_PRELOAD constructor shim — std.io.print lowers to fully-buffered `fwrite(stdout)`, so a timeout-killed server loses its buffer without it) now gate the two upgraded programs against their COMMITTED canonical/demo goldens: lisp canonical feed byte-identical md5 `96654b39…`; lisp demo feed masked-compare (the non-deterministic `(address)` integer line must match a positive-int pattern per AMENDMENT 4 — every other line byte-compares, README-documented, no determinism flags); rogue canonical q `3fb6709e…` / move `b3c5b0e1…` / demo `7361d248…` (whole-file byte gates); export symbol gates (`alloc_value`, `saveDungeon`/`loadDungeon` source-named non-static with zero `zF_` mangling, cross-module `render_calls` `zG_…` storage global referenced from >= 2 modules); net variant B6 (dump `demo/net_main.zig` + `demo/net_demo_client.zig` from the rogue program dir CWD — module resolution is CWD-relative, dumping from the repo root fails `error[3048]`; `gcc -m32 -shared` flush.so; backgrounded server on :4000 under `timeout -k 2 12 env LD_PRELOAD=$W/flush.so` with `/dev/null` stdin; client under `timeout 10`; server stdout byte-identical md5 `aa40a52e…`; PID-discipline kill, port 4000 verified clear after, never pkill). Gate end-to-end PASS A1-A4 + B1-B6 (A5/B7 echo-only). **No gate movement:** 4-MD5 gates byte-identical UNCHANGED (gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `53405b3b…` — NO re-baseline), self-compile fixed point untouched (no compiler source change). **zig0 scope (Global Constraints AMENDMENT 2) = `examples/zig0` ONLY** — no `sf/build/zig0` build is ever executed against an `examples/z98` entrypoint; the zig0-incompatibility closeout evidence is documented-only (A5/B7 echo the scope line + the C1 tag-`==` construct sites: lisp `eval.zig:45`/`builtins.zig:142`; rogue `lib/combat.zig:32`/`lib/pathfinding.zig:83`/`lib/scenario.zig:241+253`/`ui.zig:192+196`).
-- **Post-netbind baseline (GATE, 2026-09-05, HEAD `838009b0`): target model + std_net extern OS bindings + socket-builtin removal — netbind plan COMPLETE (S1-S3 + S4 battery, operator-approved re-baselines 2026-09-04).** Design `docs/superpowers/specs/2026-09-05-std-net-extern-target-design.md` `4e322a71` / plan `docs/superpowers/plans/2026-09-05-std-net-extern-target-plan.md` (AMENDMENTs `37fb40af`/`f1b62a87`/`bc8eede0`); commits **S1 `bd2666b1`** (target model), **S2 `93e7d247`** (std_net extern rewrite), **S3-C1 `12a16726`** (createTcpClient + demo migration), **S3 `838009b0`** (socket-builtin removal). Target flags `-osl`/`-osw` + `--target linux|windows` alias (default linux); `@isWindows()` now folds from the per-invocation target (was the compiler-build `config.zig` const, hard false) — no-flag == `-osl` byte-identical on every gate. std_net rewritten with target-selected wsock32 (WSAStartup 1.1 → WSACleanup) / libc `extern "c"` bindings under `if (@isWindows())` comptime selection, the single OS-prototype source = new `sf/src/include/net_prelude.h` via `@cInclude("<net_prelude.h>")`; additive public `createTcpClient(port: u16) i32` client factory + public `htonsManual`/`htonlManual` byte-swap helpers (extern `htons`/`htonl`); `-1` INVALID_SOCKET/SOCKET_ERROR mapping preserved; bind INADDR_ANY / connect `htonl(0x7F000001)` 127.0.0.1. The 11 `@socket*` builtins deleted — a direct caller now gets the clean `error[3000]: unsupported builtin function` (rc=2, 0 `.c`); the demo client `net_demo_client.zig` migrated to std_net (`init()`→`createTcpClient(4000)`→`send`→`recv`→`close`→`cleanup()`; grep-0 `@socket`). **mud 4-MD5 RE-BASELINED `53405b3b…` → `846106ac42e770a3bd2bf69afbfcb5db`** (operator-approved 2026-09-04; intermediate `962a692c…` superseded); **self-compile fixed point RE-BASELINED `85733145…` → `10f0ca2b703e9c4ffde6ed262f4d8881`** (operator-approved 2026-09-04 — 41 `.c`/0 err/0 PANIC, hop1==hop2 closure); **gol/lisp/json UNCHANGED byte-identical** `302df36b…`/`3591bad9…`/`76056b97…`. NEW reference md5 `c8f1b3d0…` (rebuilt at HEAD `838009b0`, canonical std reinstalled; history `7c08d2d5…` → `7e0691dc…` [S1] → `c8f1b3d0…` [S3 rebuild]). Wine net verified under `-osw`: mud_server BINDS + serves (`MUD server listening on port 4000`, **zero `10093`**), std_net/demo client connect rc 0, select live — 3× deterministic each. Corpus 428 dirs `-s0` = **OK=406/FAIL=13/GREEN=9/GCCFAIL=0/ICE=0/CRASH=0** — per-row zero delta vs the S3-F sweep; the ONLY row move `net_builtin_test` OK→GREEN (clean error[3000] class); two NEW GREEN fixtures `target_is_windows_xmod` (`-osw`→111/`-osl`→222) + `net_bind_startup_xmod` (`7` both targets). Golden 9/9 PASS; matrix 21/21 PASS; `verify_upgraded.sh` A1–B7 PASS (B6 net `aa40a52e…`).
-- **Post-F-CLEANDIAG baseline (GATE, 2026-09-04, HEAD `932fea8d`): clean unsupported-builtin/unknown-type diagnostics GREEN (F-CLEANDIAG docs GATE, operator-approved fixed-point re-baseline).** The two clean-diagnostic gates landed — `1e373449` (`test:` two new fixtures) + `932fea8d` (`feat:` `sf/src/semantic_analyzer.zig` ONLY — the `semanticAnalyzerIsBuiltinSupported` membership helper + unsupported-builtin arm + unknown-type check at the var-decl annotation site). Both byte-neutral for valid programs: an unknown/unsupported `@builtin` (e.g. `@totallyBogus`) now fails cleanly with PRIMARY `error[3000]: unsupported builtin function`, rc=2, 0 `.c` (a downstream `error[3000]: cannot declare variable of type void` CASCADE on the untyped-var result is EXPECTED per AMENDMENT 2 `c294fce0` — not a defect); an unknown TYPE annotation (`var a: bogusfoo`) now reports `error[3000]: unknown type in variable declaration` (was the misleading `cannot declare variable of type void`), rc=2, 0 `.c`, cascade suppressed. Two new fixtures GREEN (run-gate/classifier verified): `cleandiag_unknown_builtin_xmod` OK→GREEN (compile-flip) + `cleandiag_unknown_type_xmod` stays GREEN (message-only). `int_arbitrary_width_xmod` MESSAGE FLIP — its stderr now reports `unknown type in variable declaration` on the four bare-ident annotations, 0 `cannot declare variable of type void`, class unchanged GREEN. Corpus 426 dirs `-s0` = **OK=405/FAIL=13/GCCFAIL=0/GREEN=8/ICE=0/CRASH=0** — **zero delta on the common 424** (only the two NEW dirs move; FAIL 13 / GREEN 6-common name-sets row-identical). 4-MD5 gates byte-identical UNCHANGED (gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `53405b3b…` — NO gate re-baseline). Golden 9/9 PASS; matrix 21/21 PASS. NEW reference md5 `7c08d2d5…` (rebuilt at HEAD `932fea8d`, canonical std reinstalled); NEW self-compile fixed point `bf1e37ca…` → `85733145…` (operator-approved re-baseline — 42 `.c`/0 err/0 PANIC, hop2==hop1 closed, moved because the compiler source grew across the feat).
-- **Post-COMBINED-3-6 baseline (GATE, 2026-09-03, HEAD `bbe47d0e`): @bitCast/cross-module-store/export/switch-range GREEN (COMBINED items-3-6 docs GATE, operator-approved fixed-point re-baseline).** Four fixes landed — F-BITCAST `3922a8d7` (@bitCast same-size integer reinterpretation), F-CROSSMOD-STORE `3ad5c12e` (cross-module pub var scalar store fix), F-EXPORT `9b2fef74` (export fn/var source-name symbols), F-SWITCHRANGE `bbe47d0e` (switch case-range per-value expansion + itoa64 hardening). Five R3/R4/R5/R6 fixtures GREEN (run-gate verified, byte-exact RUNRC=0): `builtin_bitcast_xmod` `-1`, `crossmod_pubvar_xmod` `7 7`, `export_fn_xmod` `81` (+ non-static source-name `square` symbol gate), `export_var_xmod` `3` (+ non-static `counter` symbol gate), `switch_case_range_xmod` `130 47`. 4-MD5 gates byte-identical UNCHANGED (gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `53405b3b…` — NO gate re-baseline). Golden 9/9 PASS; matrix 21/21 PASS; corpus 424 dirs `-s0` **OK=405/FAIL=13/GCCFAIL=0/GREEN=6/ICE=0/CRASH=0** — the ONLY compile-asymmetry is 3 dirs (crossmod ICE→OK + export×2 FAIL→OK); the @bitCast + case-range flips (RED = compile-OK runtime-wrong) are visible ONLY via the run-gate. NEW reference md5 `821d77ff…` (rebuilt at HEAD `bbe47d0e`); NEW self-compile fixed point `0468a42b…` → `bf1e37ca…` (operator-approved re-baseline — 42 `.c`/0 err/0 PANIC, hop2==hop1 closed, moved because the compiler source grew across the four plans).
-- **Post-F-PTRBUILTIN baseline (GATE, 2026-09-03, HEAD `35468510`): the pointer builtins `@intFromPtr`/`@ptrFromInt`/`@fieldParentPtr` now lower (F-PTRBUILTIN `c5381d94`+`35468510`).** `@intFromPtr` = alias branch-extension of the existing `@ptrToInt`; `@ptrFromInt` = ANNOTATED form reading the target pointer type from the expected-type stack (fixture amend `c5381d94` annotates the target var); `@fieldParentPtr` = struct byte-offset chain (resolve field by name → ptr_to_int(&o.field) − offset → int_to_ptr back to `*Outer`). The two R2 fixtures are GREEN with byte-exact stdout `42`/`1` (builtin_ptr_roundtrip_xmod / builtin_fieldparentptr_xmod, run-gate verified). 4-MD5 gates byte-identical: gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `53405b3b…` (unchanged hashes — NO gate re-baseline). Golden 9/9 PASS; matrix 21/21 PASS; corpus 424 dirs `-s0` OK=402/FAIL=15/GCCFAIL=0/GREEN=6/ICE=1/CRASH=0 — 2-dir delta ONLY (the 2 builtin dirs GCCFAIL→OK), 0 asymmetric elsewhere (FAIL 15 / GREEN 6 / ICE 1 sets row-identical to the F-INTRO sweep). NEW reference md5 `d0da7204…` (rebuilt at HEAD `35468510`); NEW self-compile fixed point `0468a42b…` (operator-approved re-baseline — 42 `.c`/0 err/0 PANIC, hop2==hop1 closed).
-- **Post-F-INTRO baseline (GATE, 2026-09-03, HEAD `c8145a8b`): the introspection builtins `@offsetOf`/`@bitSizeOf`/`@bitOffsetOf` now fold at comptime (F-INTRO `c8145a8b`) — struct-only `@offsetOf`/`@bitOffsetOf` field byte offsets (non-packed exact), `@bitSizeOf` size×8 with bool→1.** The three R1 fixtures are GREEN with byte-exact stdout `0 4 8`/`1 8 32`/`0 32 64` (builtin_offsetof_xmod / builtin_bitsizeof_xmod / builtin_bitoffsetof_xmod, run-gate verified). 4-MD5 gates byte-identical: gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `53405b3b…` (unchanged hashes — NO gate re-baseline). Golden 9/9 PASS; matrix 21/21 PASS; corpus 424 dirs `-s0` OK=400/FAIL=15/GCCFAIL=2/GREEN=6/ICE=1/CRASH=0 — 3-dir delta ONLY (the 3 builtin dirs GCCFAIL→OK), 0 asymmetric elsewhere (FAIL 15 / GREEN 6 / ICE 1 sets row-identical to the LANGWINS G1 sweep). NEW reference md5 `ecdec6f4…` (rebuilt at HEAD `c8145a8b`); NEW self-compile fixed point `d9b3e041…` (operator-approved re-baseline — 42 `.c`/0 err/0 PANIC, hop2==hop1 closed).
-- **Post-SWEXPR + store-drop baseline (GATE, 2026-09-03, HEAD `f014259b`): switch-expr payload-capture fix (`6d71b917`) + global array-element store-drop fix (`f014259b`, C4-helper/C3-semantics in c89_emit.zig) LANDED.** Record: mud 4-MD5 gate RE-BASELINED `4591fef0…` → `53405b3b…` (runtime-verified vs zig0 oracle — "north" replies `A sunny clearing…`; mud was a broken sample pre-fix: world never initialized). gol/lisp/json byte-identical (`302df36b…`/`3591bad9…`/`76056b97…`). Both I/F RED fixtures now GREEN (`switch_expr_payload_capture_xmod` helloA/helloB 28 B; `global_struct_array_store_xmod` `1 5 5 10`). Golden 9/9 PASS; matrix 21/21 PASS; corpus 405 dirs `-s0` OK=395/FAIL=5(=green-guards)/GREEN=5/ICE=0/CRASH=0, asymmetric 0; self-compile round-trip 42 `.c`/0 err/0 PANIC, NEW fixed point `3b45184e…`; json_parser_upgraded run rc=0 stdout byte-identical.
-- **Post-self-host-closure baseline (GATE, 2026-09-02, measured on the plan's fixed-point chain — reference `/tmp/fx_subfolder/zig1` (zig0-built, md5 `29327e2c1d17cb3afc7b2c0dc6c639c8`) vs the 5 byte-identical self-host binaries under `/tmp/zig1_5*` (md5 `e2028dcf2324785016bbfaa1454880de`, size 2,930,952 B): zig1 self-host closure PLAN COMPLETE — determinism fixed point CLOSED (docs-only GATE).** Self-compile round-trips (`/tmp/zig1_5_gate_self`, `/tmp/zig1_5_gate_selfself`, + the two hop builds) each produced byte-identical binaries (md5 `e2028dcf`) → **fixed point closed, 5/5 self-host binaries byte-identical**; the plan-doc value `0c09fe1a` is STALE (binaries rebuilt during the bootstrap-chain restore) — actuals recorded. **Emission + runtime determinism:** all 4 compilers (zig0-built ref + 3 self hops) emit `sf/src/main.zig` byte-identically — 42 `.c` + 43 `.h` each, rc=0, 0 `error[`, 0 PANIC, 85-file md5 manifest fingerprint `c5ab5df5` (hidden `.zig1_ast.tmp`/`.zig1_lir.tmp` spill scratch is non-deterministic — compare `.c`/`.h` only); T-Z98-DET **21/21** `examples/z98` emission-identical zig1 vs zig1_5_clean (normalize-diff empty; only std install-path module-hash tokens differ) AND 21/21 runtime-identical (stdout byte-equal + rc equal). **Full battery (both new hops):** 4 MD5 gates byte-identical — gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `4591fef0…` (unchanged, no re-baseline); golden 9/9 PASS (stdout identical to reference golden); matrix 21/21 PASS (mud/rogue/gol timeout-gated rc=124 = PASS); corpus sweep 404 dirs at `-s0` = **reference OK=394 / FAIL=10 (= exactly the 10 green-guards) / ICE=0 / CRASH=0, hop identical, asymmetric = 0**; self-compile round-trips 42 `.c` / 0 `error[` / 0 PANIC, produced binary md5 == hop md5. **Perf tradeoff** (T-PERF, measured on the final hop `/tmp/zig1_5_self_self/zig1_5_clean`): self-compile pool per `-s` = `-s0` 14,857 K / `-s1` 33,289 K / `-s2` 70,921 K / `-s3` 70,921 K / `-s4` 71,945 K / `-s5` 72,969 K (RSS 16.9→59.8 MB; disk spill files 17.7 MB→0; wall ~3.6–4.2 s flat); `-s2`..`-s5` exceed the `-mm64` default → ICE `memory limit exceeded` rc=3 unless paired with `-mm128`; small examples barely move (~0.2–2 MB pool); higher `-s` = more RAM, less disk I/O. **`_upgraded` examples (TWO committed, ONE deferred):** `examples/z98/lisp_interpreter_upgraded` (commit `ab318b1e`; lisp_interpreter_curr base + 2 C1 naked-tag `==` hoists — eval.zig truthiness `.Nil` test + builtins.zig builtin_is_nil; 15 files source-only; stdout byte-identical vs original; all 4 compilers identical); `examples/z98/rogue_mud_upgraded` (commit `93d3ee79`; rogue_mud base + 4 C1 rewrites — combat.zig / pathfinding.zig / scenario.zig carveH+carveV / ui.zig; 29 files; stdout byte-identical vs original under q-quit + moves+look feed; all 4 compilers identical; the C2 drop-`else` rewrites deliberately NOT applied — emission-bug class); `examples/z98/json_parser_upgraded` **DEFERRED, NOT committed** — U-INV's const-from-switch-expression rewrite for json.zig key extraction crashes rc=139 SIGSEGV on all 4 compilers due to a REAL zig1 emission bug (switch-as-**expression** with **payload capture** mis-lowers: payload binding emitted after the dispatch `goto` before the case label → skipped → uninitialized read); statement-switch form emits correctly; untracked dir left in place for the future fix (follow-up I/F task to be created). **Migration-readiness:** the bootstrap cycle (zig0 → zig1) is at a deterministic fixed point — zig1 self-compiles to a byte-identical binary across hops, emission- and runtime-identical to the zig0-built reference; the cycle is **closable via the future cInclude-zig1-only migration** (dropping the zig0 front end once zig1 compiles its own `@cInclude` sites).
-- **Post-spill-backend-config baseline (GATE, 2026-09-02, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `cc5c37c1`, canonical std reinstalled): spill backend config PLAN COMPLETE — FULL sweep + reconciliation (docs-only GATE).** The five F-series tasks landed (F-SIDE `a1bfa260` AST value pools disk-backed → F-FMT `eb8730c8` RES 5 B/node → F-SBackend `89c310a7` `SpillStore` Disk/Ram → F-MM `16d28337` `-mm<N>` default 64 MB ACTIVE → F-S `cc5c37c1` `-s<N>` decremental levels + help/README). **4 MD5 gates byte-identical at EVERY level `-s0`..`-s5` (no re-baseline, repo-root CWD): gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `4591fef0…`** — the `-s`/`-mm` changes are storage/config only, emission is byte-identical in every mode. Golden 9/9 fixtures 9/9 at every level. Matrix 21/21 (mud_server/rogue_mud server-timeout by design). Corpus sweep at `-s0` 404 dirs: **334 RUN_OK + 56 LINK_FAIL + 10 DUMP_FAIL (= exactly the 10 green-guards) + 2 RUN_TIMEOUT (mud_server/rogue_mud) + 2 RUN_FAIL (intcast_range_check rc=134, voiddecl_xmodtype_xmod rc=139)** — 0 asymmetric, 0 NEW (gol now RUN_OK rc=0, was timeout in the memory-refactor sweep = timing artifact). Self-compile `build_zig1_5.sh` → **42 `.c` (41 + `spill_store`), 0 `error[`, 0 PANIC**, hello byte-equal; reference emission vs self-emission byte-identical (0 diff pairs). Warning-clean both builds (1 pre-authorized fwrite carve-out each). **Pool trajectory** (self-compile `--track-memory`): allocator-crux GATE 25,742 K → plan start (I-SIDE) 15,324 K → `-s0` **14,857 K** (Disk, default) / `-s1` 33,290 K (both fit the `-mm64` default) / `-s2` 70,922 K / `-s3` 70,922 K / `-s4` 72,970 K / `-s5` **72,970 K** (all-Ram, no spill files). **`-mm64` default is ACTIVE and HOLDS `-s0`/`-s1` self-compile; `-s2`..`-s5` exceed it → `memory limit exceeded` ICE rc=3 unless paired with `-mm128`** (documented tradeoff); canary `-mm1` self-compile ICEs rc=3 (`pool limit=1024K pool=6513K`). Spill-file ladder verifies prefix deactivation: `-s1` drops `.zig1_ast.tmp`, `-s2` also `.zig1_lir.tmp`, `-s3` also `.zig1_hash.tmp`, `-s4` also `.zig1_res.tmp`, `-s5` none.
-- **Post-memory-refactor baseline (GATE-FINAL, 2026-08-26, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `179257dc`, canonical std reinstalled): zig1 memory-refactor execution PLAN COMPLETE — FULL battery + reconciliation (docs-only GATE).** `--track-memory --markers` self-compile: **`track-memory: perm=1661K mod=2047K scr=2047K pool=25742K type_db=246K total=5755K`** — **`pool=25,742 K`**, ≤16,384 K (16 MiB) target **NOT reached**; **documented residual gap = 9,358 K (≈9.14 MiB)**. Trajectory: 50,501 K → S-LIR 42,513 K → S-HASH 44,678 K → S-TOKEN 55,038 K (transient) → S-AST 35,973 K → S-RES 25,738 K → GATE 25,742 K (Δ4 K input-growth noise). Closures: **M5** closed-unfeasible, **S-INTERNER** closed-unfeasible (interner text measured 294,744 B ≈ 0.29 MiB, not ~4 MB), **I-COMPACT** no-go (16-B AstNode = byte-identical disk-record shuffle; record delta 0 or +16,384 B/block, +2.2 MiB pool ADD if spans resident; 47 span-read + 45 child_2 site cost, ≤0 effect). 4 MD5 gates byte-identical (repo-root CWD): gol `302df36b…` / lisp `3591bad9…` / json `76056b97…` / mud `4591fef0…` — no re-baseline, the memory refactor is byte-neutral for the 4 gates. 21-example matrix **21/21** dump/gcc/link rc=0 (4 non-`main.zig` entries use their own names: func_ptr_return/mandelbrot/quicksort/sort_strings). **Corpus sweep 404 dirs (330 mi_matrix + 53 top-level repro + 21 z98, slice_matrix skipped): 0 ASYMMETRIC diffs** (zig1 == zig1_5 behavior everywhere) = **333 RUN_OK** (rc+output match ref; emitted C byte-identical modulo the path-derived std-module hash — ref resolves std from `/tmp/fx_subfolder/lib`, self from `/tmp/zig1_5/lib`, so `std_*.c` names differ but content matches except the self-referential `#include` line) + **56 LINK_FAIL** (extern-fn, identical undefined-reference for the reference — not a regression) + **10 DUMP_FAIL** (= the 10 green-guards, both compilers identical) + **2 RUN_FAIL** (known symmetric crashes: intcast_range_check rc=134, voiddecl_xmodtype_xmod rc=139) + **3 RUN_TIMEOUT** (game_of_life / mud_server / rogue_mud, both compilers; gol glider grid truncated-identical, mud boots) + **1 garbage OUT_DIFF** `emission_void_temp_enum_xmod` (uninitialized enum temp, non-deterministic — NOT a bug). W2-1 fixture `emission_global_alias_xmod` RUN_OK output EQ. **Self-compile:** `build_zig1_5.sh` → dump rc=0, **41 `.c`, 0 `error[`, 0 PANIC**; rebuilt `zig1_5_clean` runs hello **byte-equal** to reference. **Warning-clean both builds:** `gcc -m32 -std=c89 -O3 -Wall -Wextra -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I sf/src/include -fsyntax-only` on BOTH `/tmp/fx_subfolder/*.c` (reference) AND `/tmp/zig1_5/gen/*.c` (self-emitted) → **0 warnings / 0 errors** each, with the 1 pre-authorized `-Wbuiltin-declaration-mismatch` fwrite carve-out (`/tmp/fx_subfolder/pal.c:41`; self-emitted `/tmp/zig1_5/gen/pal_388A8A1B.c:700` — same fwrite class, not a defect).
-- **Post-@as + TCO baseline (GATE-FINAL, 2026-08-26, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `dd83723f`, canonical std reinstalled): @as + TCO self-emission PLAN COMPLETE.** Residuals A+B (the `@as` cast builtin — A: missing fn-ptr typedefs, B: `typeRegistryIsAssignable` SEGV, ONE shared root cause) and C (the TCO self-recursion back-edge) ALL CLOSED. **F-AS `50be26f5`** (ONLY `semantic_analyzer.zig` + `lower.zig`, 8 insertions): `@as` name_id interned + `semanticAnalyzerIsTypeValueCast` recognizes it + the lowerer cast branch emits `int_cast (is_checked=0)` (mirrors the F-ASSOC `@intToEnum` precedent) — fixes the `@as(u32,1)`/`@as(u32,0)` flag read at `c89_emit.zig:736` (non-deterministic `_FP_`/`_FN_` cname per `getCTypeName` call → typedef body and var-decl disagree → gcc `unknown type name 'zT_…_FN_…'` in the 4 fn-ptr GCC_FAIL dirs) AND the `@as(u32,fi)` addend at `type_registry.zig:851-852` (no instruction emitted → uninitialized `xt_items` index → READ SEGV). **F-C `dd83723f`** (ONLY `sf/src/lower.zig`, +8): tagged-union `.tag` field_read case in `field_access` lowering (`load_field { field_id = TU_FIELD_TAG (=0) }`, mirrors the `.payload` sibling + store-side tag pattern) — the reserved-but-never-filled `.tag` slot dropped the TCO back-edge. Corpus 329 dirs = **OK=319 / FAIL=0 / ICE=0 / CRASH=0 / GREEN=10** (319+0+0+0+10=329, unchanged). 4 MD5 gates byte-identical (repo-root CWD): gol `eed963e0…` / lisp `c3c58477…` / json `089e4f04…` / mud `a1d0dd55…` (F-AS/F-C byte-neutral for the 4 gates — no re-baseline). 21-example matrix **21/21** dump/gcc/link rc=0. **Runtime sweep (self-compiled `/tmp/zig1_5/zig1_5_clean` vs reference, 403 programs = repro top-level 53 + mi_matrix 329 + z98 21): 333 RUN_OK** (rc+output == ref) **+ 2 non-deterministic-garbage dirs** (`voiddecl_payload_xmod`, `emission_void_temp_enum_xmod` — output unstable by design, NOT a bug) **+ 10 DUMP_FAIL** (the 10 green-guards, both compilers identical) **+ 56 LINK_FAIL** (extern-fn-dependent; reference fails identically — not a regression) **+ 2 RUN_TIMEOUT** (mud_server + rogue_mud, both compilers; mud_server boots) — **NO NEW FAIL/ICE/CRASH**. Expected-change fixtures ALL RUN_OK with output matching ref: the 6 A-fixtures (`emission_void_call_xmod` + control, `func_ptr_return_type` `15`, `inferred_errorset_fnptr`, `quicksort`, `func_ptr_return` `10+5=15`), `fn_ptr_struct_field` (was SEGV, now rc=0), `tco_return_try` rc=0 (`count(100000)=100000`, was 139), `tco_defer` 2 `D` byte-equal ref, `tco_factorial` unchanged. **Self-compile:** `build_zig1_5.sh` → **40 `.c`, 0 `error[`, 0 PANIC**; rebuilt `zig1_5_clean` runs the R-A/R-B/C fixtures green (`func_ptr_return_type` `15`, `fn_ptr_struct_field` rc=0, `tco_return_try` rc=0), all matching reference.
-- **Post-assoc-chain + pending_scope baseline (GATE-FINAL, 2026-08-26, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `0b9c8ef6`, canonical std reinstalled): assoc-chain misparse + pending_scope nest-safety PLAN COMPLETE (AMENDMENT 4).** Residuals R-1 + I-1 BOTH CLOSED: **R-1** (self-compiled zig1_5 reversed left-assoc operator chains) = single-locus `@intToEnum` lowering gap — the cast block at lower.zig:3510-3542 had no `@inttoEnum` branch, so `precFromInt` (parser.zig:1896-1898, the only `@intToEnum` in sf/src) emitted `return zT_1;` (uninitialized temp) → garbage `next_min` in the precedence-climb → right-nesting. F-ASSOC `9574208d` (only `sf/src/lower.zig`, 9 insertions): new `inttoenum_name_id` + `int_cast (is_checked=0)` branch → `zT_1 = (zT_2B10107F_Prec)v;`. Self-compiled `/tmp/zig1_5/zig1_5_clean` now prints the R-ASSOC fixture `emission_assoc_chain_xmod` as **`3 5 0 6 24 55 321`** (was `9 2\0 0 6 2\0 5\0 3\0\0`), matching reference. **I-1** (`pending_scope` single-slot not nest-safe — capture inside a for-range END expr orphaned the loop capture to a `load_local` fallback) = AMENDMENT-4 option (c) reorder: the for-range capture-add (`maybeDisambiguateCapture` + `addLocalDecl` + `decl_local`) moved AFTER the end-expr lower (`lower.zig:4821-4823`), eliminating the pending-scope window entirely (no stack/selector/low-watermark; the patchy LIFO-stack design REJECTED). I-1 repro emits `total + t` direct capture use; the capture-less end-expr shape fixed too. Corpus 329 dirs = **OK=319 / FAIL=0 / ICE=0 / CRASH=0 / GREEN=10** (319+0+0+0+10=329; 328 + this plan's R fixture `emission_assoc_chain_xmod` 40485a1d, classifies OK). 4 MD5 gates byte-identical (repo-root CWD): gol `eed963e0…` / lisp `c3c58477…` / json `089e4f04…` / mud `a1d0dd55…` — the F-PENDSCOPE reorder is byte-neutral (gol/lisp/mud have no for-loops; json uses for-slice only). 21-example matrix **21/21** dump/gcc/link rc=0. Self-compile re-count (`--markers --dump-c89 --output-dir /tmp/gf_sc sf/src/main.zig`) → rc=0, **40 `.c`, 0 `error[`, 0 PANIC**. Self-compiled binary end-to-end: R-ASSOC fixture prints `3 5 0 6 24 55 321` AND std-importing `emission_lower_crash_xmod` rc=0 prints 3.
-- **Post-labeled-break + self-compile-crash baseline (GATE-FINAL, 2026-08-26, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `a7a207f7`, canonical std reinstalled): labeled-block break + self-compiled lowering crash PLAN COMPLETE (AMENDMENTs 1-3).** Corpus 328 dirs = **OK=318 / FAIL=0 / ICE=0 / CRASH=0 / GREEN=10** (318+0+0+0+10=328; 323 + 4 prior-plan fixtures `emission_enum_switch_xmod` b9bc3f1d + `emission_enum_ext_xmod` f83912f6 + `emission_tu_switch_xmod` ba3f0f70 + `emission_labeled_ctrl_xmod` ac0b7e43 + this plan's B1 `emission_lower_crash_xmod` 22e0bc6f — all classify OK). **Phase A — labeled-block break CLOSED (A2 F-LABELBREAK `ee092e3b`):** `break :blk` on a labeled block resolves to a block-exit jump (was silently dropped; LoopInfo `is_loop:u8`, labeled_stmt block body pushes a breakable loop_stack entry, continue skips `is_loop==0`); fixture `emission_labeled_ctrl_xmod` prints `3\n6\n10\n1`; orelse/catch labeled fixtures still RUN (0/7) with an accepted AMENDMENT-1 dead orphan `z_bb_N` block (runtime-identical). **Phase B — self-compiled lowering crash CLOSED:** B3a F-EMITMAP `ea6882ac` (growable `fl_temps`/`fl_name_ids`, caps dropped, name-dedup removed — **F2 crash CLOSED**, self-compiled zig1_5 runs B1 fixture rc=0 prints 3) + B3b F-SCOPERES `a7a207f7` (architectural lexical scope chain replacing the LDS max-scope loop + `findLocalTemp` — **F1 CLOSED**). **gol/lisp MD5 RE-BASELINED (AMENDMENT 3, ruling A, AUTHORITATIVE):** gol `4afb203f…` → `eed963e0640a073ed4eebb292f136e05`, lisp `5f886646…` → `c3c5847798e4553b2e34950e085bb6c6` (dedup-removal changes bytes for re-declared names; runtime-identical verified gol glider + lisp REPL); json `089e4f04…` + mud `a1d0dd55…` UNCHANGED. 4 MD5 gates byte-identical at the new hashes (repo-root CWD). 21-example matrix **21/21** dump/gcc/link rc=0. **Self-compile gcc-CLEAN + binary RUNS std-importing programs rc=0** (build_zig1_5.sh → 40 `.c`, 0 gcc errors; B1 fixture rc=0 prints 3; `days_in_month` output byte-identical to reference). **Recorded residuals (NOT fixed):** (1) self-emission operator-associativity gap — self-compiled zig1_5 mis-parses same-precedence left-assoc chains (`a-b-c` → `a-(b-c)`, `a/b/c` → `a/(b/c)`), breaking `printInt` digit reversal (fibonacci prints `5\0` not `55`, rc=0); pre-existing — self-compile emission byte-identical between `ee092e3b` and `a7a207f7` (all 40 modules diff-clean), same deferred fidelity-gap class as the out-of-scope closeout residual; (2) I-1 `pending_scope` single-slot non-nest-safety (for-range END capture orphaning — runtime correct, no gate/corpus trigger). Forward-pointer: historical gol rows referencing `4afb203f…` / lisp rows referencing `5f886646…` now point to the AMENDMENT-3 re-baselined values.
-- **Out-of-scope residual closeout — Phase 5 progress (2026-08-24, mid-plan; final reconciliation lands at GATE-FINAL):** corpus 323 dirs now `OK=313 FAIL=0 ICE=0 CRASH=0 GREEN=10`. FAIL=9→0: plat_stubs CRASH→OK (F-PLATSTUBS `7d1b512d`), orelse/catch labeled-stmt →OK (F-LABELED `2cbf1fd3`), `emission_opt_fptr_wrap_xmod` added+OK (F-OPTFPTR `53b9f1b6`), `parsergap_specifier_xmod` {x}-hex →OK (F-SPECIFIER `a9ea91f0`), `strictzig_brace_if_xmod`/`parsergap_selfblok_xmod`/`parsergap_strict_comma_xmod`/`parsergap_slice_expr_xmod` → green-guards (reclassified). **`field_store_drop` →OK (operator-directed fixture correction `3ef2e8c8`):** its bare `@import("pal")` masked the fixture with `error[3048]`; corrected to `@import("pal.zig")` + bundled `pal.zig` stub (`@stderrWrite`) + `std.io.printInt` sinks (the `__bootstrap_print_int` extern was F4-removed). Now dump/gcc/link/run all rc=0 (stdout `2030`, stderr `OK`); the emitted `store()` shows direct `t.s=s;t.b=b;t.c=c;` — the documented temp-0 sentinel extra-copy symptom is GONE, superseded by later compiler fixes. **`self_embed_optional_cycle` → GREEN-GUARD (AMENDMENT 6):** the plan's old "real Zig accepts `next: ?X`" oracle was WRONG — real Zig rejects an optional-VALUE self-reference (infinite size) and the canonical self-reference pattern is `?*X` optional POINTER (pointer-sized, null=0; langref linked-list example `prev: ?*Node, next: ?*Node`). Z98's `error[24]` rejection is therefore CORRECT (green-guard). Remaining FAIL=0. 4 MD5 gates byte-identical at json `089e4f04…` (AMENDMENT 4 re-baseline).
-- **Post-R2R1-closeout baseline (GATE gate sweep, 2026-08-24, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `0af060d8`, canonical std reinstalled): MAJOR MILESTONE — self-compile gcc-CLEAN (12→0).** The 12 residuals are ALL closed: **F-R2** `143766e2` (array-`.len`→VOID ×6), **F-ORELSEBLK** `7a7f5928` (orelse-block terminator ×5), **F-R1** `a8ec24f7` (Opt_10 assign ×1), plus **F-ACOPY** `0af060d8` (array-copy direct-assign, the AMENDMENT-1 live RED — `emission_misc_xmod` now GREEN). Re-count: `bash scripts/self_compile/build_zig1_5.sh` → dump rc=0, 40 `.c`, in-script gcc -c clean; independent `cd /tmp/zig1_5/gen && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /workspace/znineeight/sf/src/include -c *.c 2>/tmp/emit_errs_final.txt` → **0 error lines, 40 files** (final link `undefined reference to 'c_exit'` = pre-existing out-of-scope build_zig1_5.sh issue; the gcc -c re-count is the authority). **Corpus 322 dirs: `OK=307 FAIL=9 CRASH=1 ICE=0 GREEN=5`** (307+9+1+5=322; 310 + 10 A-ADD `emission_*_xmod` + the 2 R-task dirs `emission_temp_index_drift_xmod`/`emission_opt10_assign_xmod`). FAIL=9 = documented 7 (`field_store_drop` / `self_embed_optional_cycle` / `parsergap_selfblok_xmod` / `parsergap_slice_expr_xmod` / `parsergap_specifier_xmod` / `parsergap_strict_comma_xmod` / `strictzig_brace_if_xmod` [M1 hard-RED, FAIL by design]) + `emission_orelse_labeled_xmod` + `emission_catch_labeled_xmod` (A-ADD live-RED labeled-stmt classes, out-of-scope live bugs — F-ORELSEBLK Fix A did NOT close them). GREEN=5 = documented 4 (`eu_assign_incompat_payload` / `euvoid_val_catch` / `field_access_optional` / `var_declared_void`) + `emission_pal_xmod` (error[20] reject, pal green-guard per AMENDMENT 1). **CRASH=1 `plat_stubs_missing_xmod` = PRE-EXISTING (mis-recorded previously, now corrected per AMENDMENT 5 `935374d9`):** ASan SEGV `resolveStmtTypes` front_resolution.zig:131, 0 `.c`, dump rc=1; crashes at plan-start HEAD `b9256f2e`, last-known-good ~Aug 18, suspected silent-drop u32-widening `378c71fa`/`50ebbf82` (unverified); prior gate sweeps' "identical rc+stderr" comparisons masked it — no new fix task. 21-example matrix **21/21** dump/gcc/link rc=0. **4 MD5 gates byte-identical (no re-baseline):** gol `4afb203f…` + lisp `5f886646…` (repo-root CWD) + json `d31e43b1…` + mud `a1d0dd55…`. test_analyzer_bin PASS ("5 passed, 4 failed").
-- **Post-silent-drop baseline (GATE gate sweep, 2026-08-19, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `50ebbf82`, canonical std reinstalled): `OK=267 FAIL=6 ICE=0 CRASH=0 GREEN=4` over 277 dirs** (267+6+4=277). Corpus grew 266→277 (+3 signed wrap/sat emission probes `sat_i64_mul`/`sat_signed_battery`/`wrap_signed_battery` [commit `13991817`, post-v40-gate] + the 6 R-ladder fixtures `voiddecl_struct_xmod_r1`..`voiddecl_mimic_r6v2` + the 2 boundary repros `voiddecl_boundary_xmod`/`voiddecl_boundary_xmod_err`), all 11 new dirs OK. FAIL=6 set **unchanged** from v40 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` + `parsergap_specifier_xmod` + `parsergap_strict_comma_xmod` + `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL **by design**). Green-guards unchanged (`eu_assign_incompat_payload` / `euvoid_val_catch` / `field_access_optional` / `var_declared_void`). **I-DROP mechanism isolated + FIXED by F1** (u16→u32 whole-class sweep, commits `378c71fa` + `50ebbf82`, order reversed from plan staging — operator accepted): `AstNode.payload` u64 `(start<<32)|count`; `error[3000]` **213x→9**; modules 1-4 register cleanly (`RN:m1`-`RN:m4` present). R-ladder (6 fixtures) all GREEN (none below the 65,536-entry boundary trips); both boundary repros GREEN (voiddecl_boundary_xmod prints `1 7`; voiddecl_boundary_xmod_err prints `1`). 21-example matrix **21/21** dump/gcc/link OK (game_of_life + mud_server + rogue_mud timeout-gated rc=124 with correct output — counted PASS; json_parser parses test.json rc=0 from its dir). 4 MD5 gates byte-identical: gol `9cf758d9…` [→ `4afb203f…`], lisp `88dcb7f9…` [→ `5f886646…`] (repo-root CWD), json `fc357296…` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55…`. test_analyzer_bin PASS ("5 passed, 4 failed"). **True remaining pre-existing blocker (recorded, out of scope): 9 `error[3000] cannot-declare-variable-of-type-void` sema errors** (VOID-decl family, same class as the `var_declared_void` green-guard: main.zig:588, symbol_registrator:258/:357, lower.zig:4410/:5218/:5275/:5319/:5395/:5403) — next blocker = the VOID-decl family (9 sites).
-- **Post-self-compile-gaps baseline (GATE gate sweep, 2026-08-18, measured with /tmp/fx_subfolder/zig1, HEAD `3079df02`, canonical std reinstalled): `OK=256 FAIL=6 ICE=0 CRASH=0 GREEN=4` over 266 dirs** (256+6+4=266). FAIL=6 set **unchanged** from v39 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` + `parsergap_specifier_xmod` + `parsergap_strict_comma_xmod` + `strictzig_brace_if_xmod` (M1 hard-RED fixture, FAIL **by design**). Green-guards unchanged (`eu_assign_incompat_payload` / `euvoid_val_catch` / `field_access_optional` / `var_declared_void`). Corpus grew 264→266 (R1 `parsergap_wrap_arith_xmod` + R3 `parsergap_switch_comma_xmod`), both RED→OK (F1 wrap/sat operator family, F3 switch-prong value-less return) — OK=254→256, FAIL=6 unmoved, **no regression**. 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits; json_parser parses test.json rc=0 from its dir). 4 MD5 gates byte-identical: gol `9cf758d9…` [→ `4afb203f…`], lisp `88dcb7f9…` [→ `5f886646…`] (repo-root CWD), json `fc357296…` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55…`. test_analyzer_bin PASS ("5 passed, 4 failed"). Self-compile re-check: all 3 plan constructs pass — 0 `util/hash.zig:18` `*%` hits, 0 `c89_emit.zig:1881` hits, 0 `lexer.zig` value-less-return hits. **True remaining pre-existing blocker (recorded, out of scope): 210 `error[3000] cannot-declare-variable-of-type-void` sema errors** (VOID-decl family; the F3-suspected lexer.zig error[3043] ICE is NOT reproduced — 0 ICE-class hits).
-- **Post-strict-zig-if baseline (GATE gate sweep, 2026-08-18, measured with /tmp/fx_subfolder/zig1, rebuilt at HEAD `1585adf2`, canonical std reinstalled): `OK=254 FAIL=6 ICE=0 CRASH=0 GREEN=4` over 264 dirs** (254+6+4=264). Real FAIL=6 = `field_store_drop` (error[3048]) + `self_embed_optional_cycle` (error[24]) + `parsergap_selfblok_xmod` + `parsergap_specifier_xmod` + `parsergap_strict_comma_xmod` (the plan's expected FAIL=5, unchanged) + `strictzig_brace_if_xmod` (the M1 hard-RED fixture, FAIL **by design**). Corpus grew 258→264 (5 followup parsergap dirs + the M1 fixture). 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical: gol `9cf758d9…` [→ `4afb203f…`], lisp `88dcb7f9…` [→ `5f886646…`] (repo-root CWD), json `fc357296…` [→ `9720478c…`, F1 re-baselined 2026-08-19], mud `a1d0dd55…`. test_analyzer_bin PASS. Self-compile re-check passes the M2 blockers (type_resolver.zig:981/:987-990 — 0 hits) AND the M4-fix 4th site (`sf/src/c89_emit.zig:410-412` — 0 hits); a tree-wide `;`-before-`else` scan proves ZERO same-class sites remain in sf/src. **True remaining pre-existing blockers (ALL recorded, ALL out of scope):** (1) `util/hash.zig:18:21` — `*%` saturating-mul, error[2000]; (2) `c89_emit.zig:1881-1882` — unterminated string literal on a line-split string, error[0] (+cascades 1939); (3) `lexer.zig:236-239` — error[2000] expected-expression/unexpected-token report sites. (The v37 "sole next blocker = hash.zig:18" claim was FALSE — the filtered stderr showed all of the above; corrected 2026-08-18 M4-fix.)
-- **Post-parser-gaps baseline (GATE gate sweep, 2026-08-17, measured with /tmp/fx_subfolder/zig1, HEAD `830c5691`): `OK=252 FAIL=2 ICE=0 CRASH=0 GREEN=4` over 258 dirs** (252+2+4=258). FAIL=2 unchanged = `field_store_drop` + `self_embed_optional_cycle`; green-guards unchanged. Corpus grew 252→258 (the 3 parsergap fixtures + `parsergap_value_if_xmod` + `parsergap_value_if_xmod_cross` + `pathnorm_dup_xmod`), all 6 new dirs OK; the 3 previously-deferred parsergap repros (`discard_if` / `array_type` / `trailing_comma`) are now **OK** (A-F1/A-F2/A-F3). 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical (gol `9cf758d9…` [→ `4afb203f…`], lisp `524d2872…`, json `fc357296…` [B-F2 re-baseline; → `9720478c…` F1 re-baselined 2026-08-19], mud `a1d0dd55…`). test_analyzer_bin PASS ("5 passed, 4 failed"). Self-compile re-check passes the pre-fix blockers (cinclude.zig:23 / lower.zig:2283 / main.zig:759) and now hits a NEW pre-existing gap at `type_resolver.zig:981` (const-array-size evaluator) — recorded, out of scope.
-- **Post-fallback-demotion baseline (F-CLOSEOUT fallback-demotion gate sweep, 2026-08-14, measured with /tmp/fx_subfolder/zig1, HEAD `5c1e17e4`): `OK=246 FAIL=2 ICE=0 CRASH=0 GREEN=4` over 252 dirs** (246+2+4=252). FAIL=2 = `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental, `error[24]` circular type). The 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass / control) are the new dirs — 3 RED→GREEN + 1 control, all OK (bare-key/module-0-key collision fixed across 4 sites: type_resolver / symbol_registrator / const_alias_prepass / semantic_analyzer). The 4 green-guards counted separately. 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical (gol `9cf758d9…` [→ `4afb203f…`], lisp `524d2872…`, json `066c9997…` [B-F2 re-baselined 2026-08-17 → `fc357296…`; → `9720478c…` F1 re-baselined 2026-08-19], mud `a1d0dd55…`, unchanged from F3 AMENDMENT B except json). test_analyzer_bin PASS.
-- **Post-closeout baseline (F-CLOSEOUT gate sweep, 2026-08-14, measured with /tmp/fx_subfolder/zig1, HEAD `c5856928`): `OK=242 FAIL=2 ICE=0 CRASH=0 GREEN=4` over 248 dirs** (242+2+4=248). FAIL=2 = `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental, `error[24]` circular type). `arena_multi_inst_xmod` is the 248th dir (new RED→OK — the D2 fix). The 4 green-guards counted separately. 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical (gol `9cf758d9…` [→ `4afb203f…`], lisp `524d2872…`, json `066c9997…` [B-F2 re-baselined 2026-08-17 → `fc357296…`; → `9720478c…` F1 re-baselined 2026-08-19], mud `a1d0dd55…`, F3 AMENDMENT B re-baseline except json). test_analyzer_bin PASS.
-- **Post-search-path baseline (F-MIGRATE/F-GATE gate sweep, 2026-08-14, measured with /tmp/fx_subfolder/zig1, HEAD `51fa4342`): `OK=241 FAIL=2 ICE=0 CRASH=0 GREEN=4` over 247 dirs** (241+2+4=247). FAIL=2 = `field_store_drop` (bare `@import("pal")`, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). `test_stub_0` + `std_import_bare_xmod` moved FAIL→OK (bare `@import("std")` now resolves via the search path). The 4 green-guards counted separately. 21-example matrix **21/21** dump/gcc/link OK (mud_server rc=124 timeout-gated; rogue_mud boots + exits). 4 MD5 gates byte-identical (gol `40749460…`, lisp `b71a0e0c…`, json `b47f9498…`, mud `447c491b…`, runtime-identical per AMENDMENT B). test_analyzer_bin PASS.
-- **Post-lisp-defects-plan baseline (F3 gate sweep / closeout, 2026-08-13, measured with /tmp/fx_subfolder/zig1, HEAD `31de6800`): `OK=239 FAIL=3 ICE=0 CRASH=0 GREEN=4` over 246 dirs** (239+3+4=246). FAIL=3 = `field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). The 4 green-guards counted separately. No new FAIL vs the F7 sweep; the 6 plan repro dirs (`union_literal_nested_xmod`, `global_null_init_xmod`, `nested_field_store_xmod`, `nested_field_store_xmod2`, `sizeof_struct_union_xmod`, `union_emission_layout_xmod`) all classify OK. 21-example matrix **21/21 end-to-end** — lisp_interpreter is now dump/gcc/link/run rc=0 AND functionally correct (evaluates `nil`/`true`/`+`/`(quote 5)`/`cons`; Defects A-E fixed); json_parser_workaround run rc=0 (no SEGFAULT); mud_server boots + responds (server, timeout-gated). 4 MD5 gates byte-identical (gol `ff47d18d…`, lisp `c1cb748b…`, json `376fd681…`, mud `fd0fdaa4…`). test_analyzer_bin PASS.
-- **Post-std-lib-plan baseline (F7 gate sweep, 2026-08-13, measured with /tmp/fx_subfolder/zig1): `OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4` over 240 dirs** (233+3+4=240). FAIL=3 = `field_store_drop` + `test_stub_0` (std-lib-deferred, `error[3048]`) + `self_embed_optional_cycle` (C89 fundamental). The 4 green-guards counted separately. No new FAIL vs the F6 sweep. 21-example matrix **20/21 end-to-end** (lisp_interpreter is the sole gcc-FAIL — pre-existing builtins.zig `zT_N` lowerer defect); mud_server boots (server, timeout-gated). 4 MD5 gates byte-identical (mud `fd0fdaa4…` re-baselined post-F6-review). test_analyzer_bin PASS.
-- **Baseline (2026-08-04, after F-1..F-9, measured with /tmp/zb/zig1): `OK=184 FAIL=8 ICE=0 CRASH=0` over 192 repros.**
-- **Post-Plan-1 baseline (2026-08-04, 5 new repros): `OK=188 FAIL=9 ICE=0 CRASH=0` over 197 repros.**
-- **Post-Plan-2 baseline (2026-08-04, emission-defect fixes): raw `OK=189 FAIL=8 ICE=0 CRASH=0` over 197 repros; 2 green-guards (`var_declared_void`, `euvoid_val_catch`) counted separately → effective `OK=189 / FAIL=6 / green-guards=2`.**
-- **Post-P3-1 baseline (2026-08-05, reclassify 2 correct rejections): raw `OK=189 FAIL=8 ICE=0 CRASH=0` over 197 repros stays 8; 4 green-guards (`eu_assign_incompat_payload`, `field_access_optional`, `var_declared_void`, `euvoid_val_catch`) counted separately → effective `OK=189 / FAIL=4 / green-guards=4` (189+4+4=197).**
-  - 184 fully OK (frontend + emission + gcc all clean).
-  - **8 raw FAIL** (non-ICE) = 5 frontend gaps + 2 emission defects + 1 residual, of which 2 emission
-    defects are now FIXED (P2-2/P2-4), `var_declared_void` reclassified green-guard (P2-3), and
-    `eu_assign_incompat_payload`/`field_access_optional` reclassified green-guards (P3-1) →
-    post-P3-1 breakdown: **4 FAIL = 3 frontend gaps + 1 residual**; the 3 former emission defects all
-    resolved; 4 green-guards counted separately.
-  - **0 ICE** — the F-1..F-8 fixes eliminated the `error[3043]` ("internal: unsupported field-store
-    base") ICEs (all 6 pre-fix ICEs moved to OK; `OK 184 + FAIL 8 + ICE 0 = 192`).
-  - Must stay `189/8/0/0` (raw) / effective `189/4/4` or improve. A repro moving into OK is a fix; a repro moving into FAIL/ICE is a regression; a green-guard moving to OK/FAIL is a regression.
-- **Emission defects — ALL FIXED (Plan 2, 2026-08-04)** [updated: 2026-08-04]:
-  - `array_tagged_union_read`: comptime-fold intcast target typing, lower.zig.
-  - `var_declared_void`: sema `error[3000]` rejection + `euvoid_val_catch` — both green-guards
-    (correct rejections, counted separately).
-  - `ptroint_arena_offset`: ptr±literal resolution + scoped `written_type` override.
-  - NOTE: `module_as_value`, `opteu_err_if_expr`, `opteu_err_switch` were FAIL in the F-1..F-8
-    baseline (undeclared `zT_0` temp / incompatible int→`Opt_` assign) but are now OK — **fixed F-9
-    2026-08-04** (Option B optional-of-EU unwrap + module `TEMP_NONE`) and restored to OK. See
-    EXPECTED_FAIL.md.
-- **The 3 frontend-gap repros** (`dump_rc=2|3`, 0 `.c` emitted):
-  - error[3048] cannot-read/cannot-resolve file: `field_store_drop` (`const pal = @import("pal")` →
-    `error[3048]: could not resolve imported file 'pal'` — pre-existing import-resolver gap; a user
-    program cannot import compiler-internal modules. Will pass when zig1 gains a real std lib),
-    `test_stub_0` (imports nonexistent `"std"` — FAIL via `error[3048]` today; will pass when zig1
-    gains a real std lib — planned).
-  - error[2000] parse: `catch_block_value_producing` — **FIXED (P3-4 + P3-7, 2026-08-05): FAIL→OK**.
-    Value-block catch (P3-4, commit a50e2910) + inline error-set types in type positions (P3-7);
-    see EXPECTED_FAIL.md P3-4/P3-7 section.
-  - The 2 former error[3000] frontend-gap repros — `eu_assign_incompat_payload`,
-    `field_access_optional` — are **correct rejections (green-guards, P3-1)**, not gaps; counted
-    separately from FAIL (see the green-guard classifier note above / EXPECTED_FAIL.md "Green-guards"
-    section).
-  - **std-lib-deferred (P3-2, 2026-08-05):** `field_store_drop` and `test_stub_0` are classified FAIL
-    but tracked as **std-lib-deferred, not compiler defects** — both fail `error[3048]` (a user
-    program cannot import compiler-internal modules / nonexistent std). **Will pass when zig1 gains a
-    real std lib.** Deferral changes no counts: effective `OK=189 / FAIL=4 / green-guards=4`
-    (189+4+4=197; raw FAIL stays 8) — the 4 FAILs = these 2 std-lib-deferred + `catch_block_value_producing`
-    + `self_embed_optional_cycle`.
-- **P3-3 closeout (2026-08-05, docs-only):** `anon_errset_comparison` reclassified **OK (semantically
-  verified)** — the bare-`!` `err == error.Bad` comparison is CORRECT. An anonymous error literal
-  stores the raw **name_id** as its C error code, and name_id is a unique-per-name, program-stable
-  interner code (string_interner.zig:88-122 dedups by content; one interner per program): same name
-  ⟹ same code, distinct names can never collide. Measured RED==GREEN==1 on zig1 and the zig0 oracle.
-  Counts unchanged (already OK since Plan 1 P1-1; effective `OK=189 / FAIL=4 / green-guards=4`
-  stays). **2 adjacent defects tracked as follow-ups, NOT fixed:** P3-5 (switch-on-error:
-  `lower.zig:2919-2934` drops `error_literal` case nodes → empty switch always takes `default`) and
-  I3-5/P3-6 (error-code representation unification: anon name_id vs named ordinal miscompare in
-  oracle-accepted cross-set programs). See EXPECTED_FAIL.md P3-3 section + `.superpowers/sdd/P3-anonerr-report.md`.
-- **P3-7 closeout (2026-08-05, inline error-set types in type positions):** `catch_block_value_producing`
-  is now OK — `helper.zig` `pub fn try_compute() error{Bad}!i32` (an INLINE `error{...}` in a type
-  position) works end-to-end. Parser (parser.zig `kw_error` branch) now handles the postfix `!`
-  after `error_set_decl`; `resolveTypeExprFull` gained an `error_set_decl` case (registers the
-  members via `typeRegistryGetOrCreateErrorSet`); the anonymous error-set type is emitted
-  (c89_emit whitelists). Post-P3-7 effective **`OK=190 / FAIL=3 / green-guards=4` over 197**
-  (190+3+4=197; raw FAIL 8→7). Remaining 3 FAIL: 2 std-lib-deferred (`field_store_drop`,
-  `test_stub_0`) + `self_embed_optional_cycle`. 4 MD5 gates byte-identical.
-- **P3-5 closeout (2026-08-05, switch-on-error exhaustiveness):** `lower.zig` switch-case
-  collection (expr site + stmt twin) now handles `error_literal` case nodes (mirrors the
-  `enum_literal` branch: `enum_value_table` ordinal when present, else raw name_id); companion
-  sema fix resolves error_literal case nodes against the switch cond error set so named sets get
-  ordinals. New repros `switch_on_error_named` + `switch_on_error_anon` print `1` (was `0`,
-  default-branch). Post-P3-5 effective **`OK=192 / FAIL=3 / green-guards=4` over 199**
-  (192+3+4=199; corpus grew 197→199 by 2 new OK repros; raw FAIL stays 7). Remaining 3 FAIL:
-  2 std-lib-deferred (`field_store_drop`, `test_stub_0`) + `self_embed_optional_cycle`.
-  4 MD5 gates byte-identical.
-- **P3-6 closeout (2026-08-05, error-code representation unification):** all error codes are now
-  dense program-global **per-name** registry codes (`error_code_registry: U32ToU32Map` name_id →
-  code on CompilerContext; `getOrAddDense` first-use order) instead of per-set ordinals / raw
-  name_id. Prologue emits `#define ERROR_<name> <code>` (zig_special_types.h for multi-module,
-  inline for single-stream; skipped when empty). Fixes cross-set `e1 == e2` for real-Zig-legal
-  subset→superset coercions (both I3-5 probes → `1`). New repro `errset_cross_set_compare`
-  prints `11` (RED `00`). Post-P3-6 effective **`OK=193 / FAIL=3 / green-guards=4` over 200**
-  (193+3+4=200; corpus grew 199→200 by 1 new OK repro; raw FAIL stays 7). 4 MD5 gates:
-  **mud + gol byte-identical** (`4644ad13…`, `d0d3051d…`); **lisp + json RE-BASELINED** to
-  `dd56cd23…` / `900cb401…` (per-name codes replace named-set ordinals; F-5 AMENDMENT B precedent
-  — "runtime behavior is the gate, not byte-identity"; both compile, link, run correctly).
-  `@enumToInt(err)` prints registry codes (accepted; all ~30 error repros runtime re-verified
-  unchanged).
-- **Runtime-gap repros now FIXED (F-1..F-8, verified by run):** `comptime_neg_int` prints `-5`
-  (was garbage), `module_pub_var_int` prints `43`, `module_pub_var_struct` prints `7`,
-  `module_const_fn_call` prints `42`. All classify OK by the compile-only corpus gate AND run
-  correctly now; no longer runtime-gap tracked.
 
-- **Comptime arithmetic folding feature (plan `.superpowers/plans/2026-08-06-comptime-arithmetic-folding-plan.md`):** all 12 bare binary/unary const ops
-  (`+ - * / % & | ^ << >> ~` and `negate`) now fold to comptime `int_const` at module scope.
-  Tasks F1-F8 (commits `7dc119a6`..`bf5d3636`, 2026-08-06): F1/F2 add the bitwise/shift/bit_not
-  ops to `comptimeEvalBinOp`; F3 folds `const var_decl` binop/unary **inits** in
-  `phase_ComptimeEvaluation` (main.zig:347-360); F4/F5 add `comptime_values` guards to the 10
-  binary + 2 unary lowerer handlers (INT_LIT→I32 remap) so folded values emit `int_const`; F6 adds
-  `mul`/`div`/`mod_op` to the type_resolver array-size handler (type_resolver.zig:888-896); F7
-  types folded u64 consts >2^32 at their declared width (storage-global type no longer clobbered,
-  declared type threaded onto the init node); F8 adds a depth-16-guarded `ident_expr` const-chain
-  branch to `comptimeEvalEvaluateDepth` (comptime_eval.zig:199-218) so `const B = A + 5` folds from
-  `const A`. Guarded by 5 repros (`comptime_binop_not_folded`, `comptime_lower_ignores_fold`,
-  `comptime_array_size_gap`, `comptime_u64_fold_overflow`, `comptime_const_chain` — all now OK,
-  emission/runtime-gap annotations cleared) + `fn_varargs_unsupported` (FAIL, varargs parse gap,
-   out of scope). **Final accounting (F9 gate sweep, 2026-08-06): effective
-   `OK=198 / FAIL=4 / green-guards=4` over 206 repros (198+4+4=206; raw classifier FAIL stays 8);
-   4 MD5 gates byte-identical; test_analyzer_bin PASS.** [updated: 2026-08-06]
-   **Post-F1 (2026-08-06, @intCast range-check): effective `OK=199 / FAIL=4 / green-guards=4`
-   over 207 repros (199+4+4=207; raw classifier FAIL stays 8); corpus grows 206→207 by
-   `intcast_range_check` (OK, runtime-panic gate); all 4 MD5 gates RE-BASELINED (scope b) — see the
-   MD5 re-baseline note; test_analyzer_bin PASS.** [updated: 2026-08-06]
-   **Varargs feature (4-item plan F3-F5/F5b, 2026-08-06):** `...` in fn params (parser.zig:1375-1382
-   sets `flags` bit0 → `FnPayload.flags_packed`; `...` in fn-pointer types rejected), `va_list`
-   primitive (`TYPE_VA_LIST`=21, type_registry.zig:600), LIR `va_start`/`va_arg`/`va_end`
-   (lir.zig:46-48) + C emission (`va_start(vl, last);` / `res = va_arg(vl, T);` / `va_end(vl);`),
-   `#include <stdarg.h>` gated on actual `va_*` insts (moduleHasVaInsts, c89_emit.zig:1938),
-   variadic externs get C prototypes (Option B, `is_extern==0 OR is_variadic!=0`), `@cVaStart` in a
-   non-variadic fn → `error[3012]`. `fn_varargs_unsupported` **FAIL→OK** (runs `printf`),
-   `fn_varargs_body` new OK — `sum(3,10,20,30)` → **`sum=60`**. Commits `4448d187`..`ef529f42`; see
-   EXPECTED_FAIL.md Task F5 section. [updated: 2026-08-06]
-   **Lisp closures (F6, commit `0cb7891c`):** `eval.zig:124` `env_to_value(env.*,…)` →
-   `curr_env.*`; `((make-adder 5) 3)`→8, `((add 10) 1)`→11, `((make-func 42))`→42 (were
-   `UnboundSymbol`). Composition (`((twice square) 3)`, `((compose square square) 3)`) now
-   **SEGFAULTS** — lisp-source env-capture cycle (live `define`-slot pointers back-patched after
-   capture), NOT a compiler defect. `(fact 13)` PANICS (`integer cast overflow in @intCast`, rc=134)
-   — the intended F1 range-check. [updated: 2026-08-06]
-   **Final accounting (F7 gate sweep, 2026-08-06): effective `OK=202 / FAIL=3 / green-guards=4`
-   over 209 repros** (202+3+4=209; raw classifier FAIL = 7 — the 4 green-guards are a sub-bucket);
-   the 3 FAILs = `field_store_drop` + `test_stub_0` (std-lib-deferred) +
-   `self_embed_optional_cycle` (F-8 residual); **4 MD5 gates byte-identical** to the baselines
-   below (no re-baseline); the plan's "210 repros / OK=200" prediction double-counted
-   `fn_varargs_unsupported`. [updated: 2026-08-06]
-   **Labeled statement support (F1, 2026-08-07): effective `OK=203 / FAIL=3 / green-guards=4`
-   over 210 repros** (203+3+4=210; raw classifier FAIL stays 7 — the 4 green-guards are a
-   sub-bucket). `labeled_stmt_unhandled` **FAIL→OK** (labeled statements now supported in
-   parser/sema/lowerer; the labeled `break :game_loop` no longer hangs). The 3 FAILs unchanged =
-   `field_store_drop` + `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle`
-   (C89 fundamental). **4 MD5 gates byte-identical** (no re-baseline). [updated: 2026-08-07]
-    **rogue_mud emission-defects plan closeout (F5 gate sweep, 2026-08-07): effective
-    `OK=208 / FAIL=3 / green-guards=4` over 215 repros** (208+3+4=215; raw classifier FAIL stays
-    7 — the 4 green-guards are a sub-bucket; the classifier counts 216 dirs because
-    `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately). The 5 gap repros
-    (`dup_optptr_field_emit`, `dup_val_field_emit`, `undef_arr_struct_literal`,
-    `xmod_pub_const_global`, `switch_mixed_case_argtype`) all **FAIL→OK** via F1-F4 (commits
-    a5ac4598, ba89a6e0, 317f3a82, b1b3f7e9). The 3 FAILs unchanged = `field_store_drop` +
-    `test_stub_0` (std-lib-deferred) + `self_embed_optional_cycle` (C89 fundamental). **4 MD5
-    gates byte-identical** (no re-baseline in F5; mud was re-baselined in F2 to
-    `906fa59c…` — see the MD5 table). Out-of-scope follow-up: char_literal switch `case` labels
-    dropped (lower.zig:3858-3860/:3121-3123) (refs superseded — actual sites lower.zig:3183 expr / :3920 stmt). [updated: 2026-08-07]
-    **char_literal switch + opt_slice null repro battery (gate sweep, 2026-08-07): effective
-    `OK=223 / FAIL=3 / green-guards=4` over 230 repros** (223+3+4=230; the classifier counts 231
-    dirs because `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately).
-    Corpus grew 216 → 231 dirs by **15 new repros**, ALL classifying **OK** under the gcc-exit
-    gate: **12 char_literal switch-case repros are OK-by-compile / RUNTIME-GAP-TRACKED** — they
-    compile clean but print wrong runtime output (char switch `case` labels dropped at
-    lower.zig:3183 expr / :3920 stmt — every input takes `else`), tracked separately, NOT added
-    to FAIL (mirrors `comptime_neg_int` / `opt_slice_null_return`); **3 opt_slice null-payload
-    repros are OK-by-gate / LATENT** (`catch return null` in a `?[]T` fn emits an `int`-typed
-    null-payload temp — gcc-clean warning-only, breaks only under strict typing). The 3 FAILs and
-    4 green-guards UNCHANGED: `field_store_drop` + `test_stub_0` (std-lib-deferred) +
-    `self_embed_optional_cycle` (C89 fundamental); `eu_assign_incompat_payload`,
-    `field_access_optional`, `var_declared_void`, `euvoid_val_catch`. **4 MD5 gates byte-identical**
-    (mud `906fa59c…`, gol `0d8f0092…`, lisp `605b597e…`, json `b5f56ebd…`). See EXPECTED_FAIL.md
-    "char_literal switch-case repro battery" + "opt_slice null-payload repro battery" sections.
-    Out-of-scope follow-up (updated): the 12 `switch_char_*` repro dirs + the 3 `opt_slice_null_*`
-    dirs gate the two post-plan fixes. [updated: 2026-08-07]
-    **[updated: 2026-08-07 — char_literal switch + opt_slice null fixes]: effective `OK=223 /
-    FAIL=3 / green-guards=4` over 230 repros** (223+3+4=230; classifier counts 231 dirs because
-    `opt_slice_null_return` is OK-by-gate/type-incorrect and tracked separately). The 15 battery
-    repros are now **fully OK** (F4 gate sweep, F1 `e0a4d6d6` + F2 `5c515a7d` landed): the 12
-    `switch_char_*` repros are **no longer runtime-gap-tracked** — F1 emits real `case 'a':`
-    labels (lower.zig:3229 expr / :3968 stmt), all 12 print their expected post-fix output
-    (`120`, `1120`, `19`, `1`, `109`, …; run-verified); the 3 `opt_slice_null*` repros are **no
-    longer latent** — F2 (Option B) drops the dead `int zT_N; zT_N = NULL;` payload temp, 0
-    `-Wint-conversion` warnings (was 2/2/3), 0 `= NULL;` sites, still print `1`. FAIL=3 and
-    green-guards=4 UNCHANGED. **4 MD5 gates: gol byte-identical `0d8f0092…`; mud/lisp/json
-    RE-BASELINED by F2** (mud `6c0a83f1…`, lisp `fad41183…`, json `c403f079…` — full hashes in
-    the MD5 table). test_analyzer_bin PASS.
-- **F4 std-lib deferral (2026-08-08, docs-only):** the D4 platform-stub gap — the **5 `plat_`
-  console/platform-detect stubs** (`plat_is_windows`, `plat_console_gotoxy`,
-  `plat_console_setcolor`, `plat_console_putchar`, `plat_console_clear`, all rogue_mud-only;
-  declared in `examples/z98/rogue_mud/ui.zig`) missing from ALL runtime files — is a
-  **runtime-library gap, NOT a compiler defect** (zig0 fails identically, same undefined-ref
-  link rc=1). **Deferred to the std-zig1 library plan — NOT fixed here.** Counts UNCHANGED:
-  effective `OK=223 / FAIL=3 / green-guards=4` over 230 (raw classifier FAIL stays 7);
-  `plat_stubs_missing_xmod` tracked OK-by-gate/latent like `opt_slice_null_return` /
-  `extern_runtime_symbol_xmod`. **rogue_mud remains blocked at link** on exactly these 5
-  stubs (20 modules emit, gcc compile rc=0, both single- and multi-module recipes). See
-  EXPECTED_FAIL.md F4 section.
-- **Multi-module fixes plan closeout (F7 gate sweep, 2026-08-08): effective `OK=223 / FAIL=3 /
-  green-guards=4 / ICE=0 / CRASH=0` over 230 manifest repros** (223+3+4=230). Full sweep of
-  **all 237 dirs** (230 manifest + 7 tracked-separately: `opt_slice_null_return` + the 6
-  plan-added repros) classifies **OK=229 / FAIL=8 / ICE=0 / CRASH=0** (229+8=237) — the 4
-  green-guards are the difference vs the manifest count, plus `tagged_union_cmp_xmod` counts
-  FAIL on the latent union-`==` emission (was the F3 sweep's ICE=1; F6 SEGV fix → CRASH=0).
-  **No new corpus FAIL introduced by this plan.** Fixes landed: F1 `51bfdb3c` @ptrToInt
-  (`ptr_to_int_void_xmod` OK, lisp_interpreter unblocked at dump), F3 `021ffcfd` cross-module
-  enum member (`zT_missing_fwd_xmod` OK, json_parser_workaround **gcc-clean** — was 6× zT_xx
-  compile FAIL), F5 `462ddee4` arena resize (perm 4M/mod 8M/scr 2M; self-compile scratch OOM
-  documented as future investigation, NOT a corpus regression), F6 `efbf4807` tagged-union
-  member access (SEGV gone, CRASH→0). Deferred (NOT fixed): D2 `arena_alloc_default`
-  (json_parser + json_parser_workaround link blocked, std-lib-deferred), D4 `plat_*` stubs
-  (rogue_mud link blocked, std-lib-deferred). Follow-ups: union `==` emission, TU payload-read
-  lowering, lisp builtins `zT_N` (lisp_interpreter gcc FAIL, pre-existing lowerer defect
-  surfaced post-F1 — **RESOLVED by the lisp_defects plan F1-F6, 2026-08-13**; lisp_interpreter
-  is now dump/gcc/link/run rc=0 and functionally correct), scratch-arena optimization.
-  **4 MD5 gates byte-identical** to the
-  post-F1 baselines at that sweep (mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…`, json
-  `c403f079…`); test_analyzer_bin PASS. Full 21-example matrix: **16/21 end-to-end working**
-  (unchanged vs MEM4) — see EXPECTED_FAIL.md F7 section. **[F3 2026-08-08: D2 arena gap CLOSED
-  via the `std_arena.zig` module (json_parser + json_parser_workaround + extern_runtime_symbol_xmod
-  link+run rc=0 on the standard sf runtime; json MD5 re-baselined to `ff9b880c…`). 21-example
-  matrix now 18/21 end-to-end. See EXPECTED_FAIL.md F3 section.]**
-
-**Known issues exposed by F-1..F-8 (documented 2026-08-04):**
-- **Cross-module global field access gap (F-7 review I-1):** FIXED 2026-08-04 (Plan 1 P1-2) — the module
-  field-access path (lower.zig:1869-1875) gained a `SymbolKind.global` branch emitting `load_global`,
-  and module headers now carry `extern` decls for storage globals (c89_emit.zig:2063-2081). Guard
-  repro `xmod_global_field_access` prints `2` (was 1).
-- **`field_store_drop` blocked on pal-import (F-5 AMENDMENT C):**
-  `repro/mi_matrix/field_store_drop/main.zig` does `const pal = @import("pal")` — fails
-  `error[3048]: could not resolve imported file 'pal'` on pristine AND fixed builds. Pre-existing
-  import-resolver gap (a user program can't import compiler-internal modules). Not an F-5 defect;
-  documented as known issue. Will pass when zig1 gains a real std lib.
-- **Array `load_global` copy-loop (F-7 review I-2):** lisp's 1MB buffers emit dead copy temps +
-  stack arrays; correct but wasteful — follow-up optimization.
-- **MD5 re-baseline note (F-5 AMENDMENT B):** mud+lisp re-baselined because F-5/F-7 emit
-  stores/globals that were previously dropped — runtime behavior is the gate, not byte-identity.
-
-- **Historical note:** the earlier `176/8/0/0` figure (plan + F-S5 + prior QUICK_REF) counted the 12
-  frontend gaps as OK via the empty-DIR-is-OK convention (IM6 C2 Option-1 per-file loop never runs on
-  an empty dir). That convention is DISCONTINUED (2026-08-01, operator): a valid-Z98 repro that fails
-  to emit is a failure, not a pass. The 8 emission defects are identical under both conventions;
-  the correction only re-buckets the 12 frontend gaps from OK to FAIL (6 of them ICE).
-- **F-S7..F-S10 are transparent to the (glob-based) build recipes.** Multi-module filenames are
-  now `DIR/<basename>_<FNV1a8>.c/.h` (unique per path), but every NOTES.md/QUICK_REF recipe uses
-  globs (`*.c`, `*.h`, `gcc -c *.c`), so no recipe changes were needed. `zig1 --dump-c89
-  <missing-or-empty.zig>` now exits **1** with `error: could not read input file` on stderr
-  (was silent exit 0 + boilerplate).
 
 **Analyzer detection paths activated (2026-08-03):** null, lifetime, and doublefree
 detection now route through `visitStatement` for full control-flow-aware analysis.
@@ -350,240 +451,38 @@ statement handler stored in `AnalyzerContext.on_stmt_cb` (`sf/src/analyzer.zig:3
 
 ### Byte-identical gate (mud / gol / lisp / json) — z98-only, self-consistency check
 
-Gate entries (`examples/z98/` paths, NOT `examples/zig0/`):
+Gate entries (`examples/z98/` paths, NOT `examples/zig0/`). The gate compiler is the
+**seed-built `zig1`** — the release path is retired (`sf/build/out_release/zig1` does not exist
+and cannot build current `sf/src`; zig0 aborts), so build the seed first:
 ```bash
-sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_seed
+# <mode> = -fsafe (default) or -ffast; <ENTRY> = the examples/z98 gate program
+/tmp/z9_seed/zig1_5_clean <mode> --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
+/tmp/z9_seed/zig1_5_clean <mode> --dump-c89 <ENTRY> | md5sum   # compare to the 8-pin table below
 ```
+This is the command that reproduces the 8-pin table below (the retired
+`sf/build/out_release/zig1` path is NOT used by any current gate).
 
-| Entry Path | Reference md5 | [updated: 2026-09-02 — spill backend config GATE: table refreshed to the AUTHORITATIVE hashes (established by the memory-refactor plan; re-verified byte-identical at `-s0`..`-s5` by the spill-config GATE, no re-baseline). Historical rows below record the older values and their re-baselines.] |
+**Gate-program runtime outputs** (stable byte-identity reference; runtime behavior is the gate — dump byte-identity alone is not sufficient):
+- `game_of_life` (100 generations) stdout: `fcbf7e7cead5082f0a8caadd5a8f0ff9`
+- `lisp_interpreter_curr` `(+ 1 2)` stdout: `b3d9f8974da24ddbf9d389f3d7d97322`; canonical 12-line feed stdout: `96654b3910a54d8bb7ec3ddfc0f26c6a`
+- `json_parser` stdout: `8bda3d5a1ec07d14a301bc343df32bf8`
+- `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
+- `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
+
+**8-pin table (current; Phase 3.5 Task 12 re-baseline).** Measured with the seed-built compiler from the repo
+root with relative entry paths:
+`<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`. Pin values are
+**compiler-build dependent**; compare only same-build runs.
+
+| Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `846106ac42e770a3bd2bf69afbfcb5db` |
-| `examples/z98/game_of_life/main.zig` | `302df36be57e9876549d6a8b4031bf95` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `3591bad9726ca0947eae3f8a9a6e7273` |
-| `examples/z98/json_parser/main.zig` | `76056b978f6330c8af0c7f23b3244135` |
+| `examples/z98/mud_server/main.zig` | `9691c2878564d61fe4272c3d3b5da253` | `fef5196eec58b82323bac3ce78c0e815` |
+| `examples/z98/game_of_life/main.zig` | `0be513f90937621d47a331211bef9d67` | `b1f536d2905ce51d474d4167b2408f29` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `a2169c2c5b019504eaa9da0a851d8658` | `291a159925a7aa2f622bc1a87536a0e3` |
+| `examples/z98/json_parser/main.zig` | `bbcd375f657d168df504d1f4ae06774e` | `219ddfff7095c84ab1dde2e82e3c50f0` |
 
-- **mud re-baseline (2026-09-03, SWEXPR `6d71b917` + F-STORE-DROP `f014259b` fixes, operator ruling):** the
-  switch-expr capture-placement fix and the store-drop C4-helper fix (global array-element stores —
-  `c89_emit.zig` assign_index base liveness) both legitimately change mud_server emission (mud was a
-  broken sample pre-fix: `initRooms` never populated the world). Runtime verified vs the zig0 oracle: the
-  rebuilt mud_server replies to `north` from start with `A sunny clearing. Exits: south back to forest.`
-  (movement now works). mud old→new: `4591fef0346b42738874ce992c72f4c2` →
-  `53405b3be5bbc5e0f8c9aaba69c8fb6d` (that was the current table value at the time of this record; the table has since been refreshed — the current-baseline row above now carries the netbind S4 value `846106ac42e770a3bd2bf69afbfcb5db`). gol/lisp/json UNCHANGED
-  (byte-identical `302df36b…` / `3591bad9…` / `76056b97…` — no re-baseline).
-
-- **Labeled-break plan B3a gol/lisp re-baseline (2026-08-26, F-EMITMAP fix, operator ruling A):** the
-  growable `fl_temps` map (`c89_emit.zig`, commit ea6882ac) removes the name-dedup so each `decl_local`
-  registers its own temp→name entry (capture shadowing). gol's `main` re-declares `var x` in two sibling
-  while-loops and lisp re-uses capture names, so their emitted bytes change (2nd `x` now resolves to mangled
-  `x` instead of raw `zT_274`). Runtime-identical VERIFIED (gol glider grid + lisp REPL outputs diff-clean
-  pristine-vs-candidate, both rc=0). json/mud UNCHANGED. Operator approved re-baseline (plan AMENDMENT 3,
-  option A). gol old→new: `4afb203fdde7a880ec6e7aed32543691` → `eed963e0640a073ed4eebb292f136e05`;
-  lisp old→new: `5f886646b164a70c52bf042eb54bda78` → `c3c5847798e4553b2e34950e085bb6c6`. This fix also
-  closes the **self-compiled zig1_5 lowering SEGV** (F2): captures beyond the old `[128]` cap no longer
-  strand the value in a temp (self-compiled binary now runs the B1 fixture `emission_lower_crash_xmod`
-  rc=0, prints 3).
-
-- **Out-of-scope residual closeout json re-baseline (2026-08-24, NULLWRAP fix, operator ruling):** the
-  `.call_direct` need_wrap path now emits `result.has_value = result.value != 0` instead of unconditional
-  `1` for optional-wrapped extern-call results (`c89_emit.zig`, commit a6fe169b). json_parser wraps
-  `fopen(...) ?*File` with `orelse return error.OpenFailed` and had the same latent bug (unconditional
-  has_value=1 → NULL file proceeds, latent crash); its emitted C changes. gol/lisp/mud UNCHANGED
-  (byte-identical). Runtime-identity: the change is byte-identical on every program's normal path
-  (fopen succeeds → has_value=1 either way) and repairs the NULL path (orelse now fires). Operator approved
-  the re-baseline (plan AMENDMENT 4). json old→new: `d31e43b19f752e40b9fd4b8885b13600` →
-  `089e4f046464ce3882aa2b2c4e585013`. Self-compiled binary: crash FIXED (runs), but a separate pre-existing
-  self-emission fidelity gap remains (self-compiled compiler misparses basic operators; recorded as residual,
-  deferred).
-
-- **Self-compile residual closeout gol/lisp re-baseline (2026-08-22, runtime-priority override):** the
-  documented gol `9cf758d9…` / lisp `88dcb7f9…` baselines predated the F-attempt emission changes (the
-  residual plan's F tasks); current HEAD emits gol `4afb203f…` / lisp `5f886646…` (repo-root CWD —
-  CWD-sensitive). Runtime-identity justification (operator's runtime-priority rule): gol renders the
-  glider grid rc=0 (md5 `40cfee96…` for 100 gen), lisp REPL evaluates `(+ 1 2)`→3 / `(define x 10)` /
-  `(+ x 5)`→15 / `(car (quote (5 6)))`→5 rc=0 — both runtime-identical to base, corpus classification
-  unchanged. json `9720478c…` + mud `a1d0dd55…` UNCHANGED (byte-identical). Historical
-  `9cf758d9…`/`88dcb7f9…` rows get the `[→ 4afb203f…]`/`[→ 5f886646…]` forward-pointer (2026-08-22).
-
-- **voiddecl-family json re-baseline (2026-08-19, AMENDMENT 3, F1 gate — CURRENT baseline):** the F1
-  front-resolution pass types json_parser's untyped module `var g_arena = std.arena.create(1048576)`,
-  so 5 temp decls in emitted C change `unsigned int` → `Arena*` (void-collapse artifact removal).
-  json old→new: `fc357296537347a0ef58af49b5a40081` → `9720478c937409a29fe23ae0199821cf`. Runtime-identity
-  proof (AMENDMENT B precedent): fixed binary parses `test.json` rc=0, byte-identical stdout, corpus
-  classification unchanged. Prior (stale): json `fc357296…`. Historical rows carrying `fc357296…`/the
-  `066c9997…`→`fc357296…` B-F2 re-baseline get the `→ 9720478c…` forward-pointer.
-
-- **B-F2 re-baseline (2026-08-17, AMENDMENT B runtime-identity):** the for-loop INDEX capture fix
-  (Site A, `sf/src/lower.zig` — index capture now runs through `maybeDisambiguateCapture` like the
-  element capture) changes json_parser's emitted C ONLY: the `.Object` loop counter is now a
-  disambiguated `i_2` decl and the comma condition reads `i_2 < obj.len - 1` (was the stale `.Array`
-  counter `i`). json old→new: `066c99974f6052317636854dc4c2a2d5` → `fc357296537347a0ef58af49b5a40081`.
-  gol/lisp/mud byte-identical (no for-index collision). Runtime-identity proof: fixed binary parses
-  `test.json` rc=0 with object fields comma-separated (`"status": "alpha",` / `"bugs": null`) and NO
-  trailing comma after the last field — the pre-fix output had no object-field commas and a trailing
-  `,` after `"meta"`. Prior (stale): json `066c9997…`.
-
-- **F3 re-baseline (2026-08-14, commit `a55c65e2`, AMENDMENT B runtime-identity):** the `printInt`
-  INT_MIN fix changes the emitted `printInt` body in *every* `std.io` importer (the C89 emitter
-  has no dead-code elimination), so all 4 gate MD5s move. Runtime output is byte-identical —
-  gol glider md5 `fcbf7e7c…` (100 generations, rc=0), lisp evaluates `nil`/`true`/`+`/
-  `(quote 5)`/`cons` correctly (rc=0), json parses `test.json` rc=0, mud "MUD server listening
-  on port 4000" rc=124 (timeout-gated server, NOT a hard gate). Prior values (stale): mud
-  `447c491b…`, gol `40749460…`, lisp `b71a0e0c…`, json `b47f9498…`.
-
-- **F-MIGRATE gate sweep / closeout (2026-08-14): all 4 re-baselined** (bare `@import("std")`
-  resolves through the search path to the canonical `sf/src/std*.zig` installed at
-  `<exe_dir>/lib`; `std_io.zig` `print` is now variadic `(s: [*]const c_char, ...)` so the
-  enhanced print lowering still interpolates `{}`/`{c}`/`{s}`). Runtime-identical per AMENDMENT B:
-  gol glider md5 `fcbf7e7c…` (grid renders, "Generation: N" interpolated), lisp REPL output diff
-  empty, json parse output diff empty, mud "MUD server listening on port 4000" rc=124 — all
-  byte-identical to the pre-migration outputs. Pre-migration values (stale): mud
-  `fd0fdaa4…`, gol `ff47d18d…`, lisp `c1cb748b…`, json `376fd681…`.
-- **F3 gate sweep / closeout (2026-08-13): all 4 re-verified byte-identical** to these values
-  with `/tmp/fx_subfolder/zig1` (HEAD `31de6800`). gol/lisp/json were re-baselined by the
-  lisp_defects plan F2 (operator ruling m0809 — module-scope int-literal coercion now recorded,
-  runtime byte-identical); mud is NOT an MD5 gate per the operator. **21-example matrix 21/21
-  end-to-end** — lisp_interpreter dump/gcc/link/run rc=0 AND functionally correct;
-  json_parser_workaround run rc=0 (no SEGFAULT); test_analyzer_bin PASS; corpus
-  OK=239 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 246 dirs (no new FAIL). [updated: 2026-08-13]
-
-- **Re-baselined 2026-08-13 (F6, networking builtins).** mud re-baselined because F6 replaces
-  mud_server's 12 `plat_*` socket externs + `plat_fd_set` with `std_net` calls (local
-  `std_net.zig` copy); `net_runtime.c` link REMOVED for migrated examples (mud_server +
-  rogue_mud) — the F6 builtin-emitted socket C replaces it. Runtime output byte-identical to
-  pre-F6 (verified by client-interaction diff: welcome + look/north responses identical; the
-  "north → You cannot go that way." quirk is pre-existing). mud_server is NOT an MD5 gate per
-  the operator. gol/lisp/json byte-identical. Pre-F6 mud value: `ecd40869…`. F6 gate:
-  net_builtin_test dump→gcc→run rc=0 prints `1` WITHOUT net_runtime.c; mud_server
-  timeout-gated socket interaction rc=0; rogue_mud dump/gcc/link rc=0 (0 `plat_*`
-  refs); corpus OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 240 dirs (no new FAIL).
-  [updated: 2026-08-13]
-- **Re-baselined 2026-08-13 (F6 REVIEW, null-coalesce optional socket ptr args).** mud
-  re-baselined AGAIN because the F6 review fix (commit `25fb7ce1`, `emitSocketOptPtrValue`)
-  changes the emitted `select` call — optional-typed fd args now emit
-  `(NAME.has_value ? NAME.value : NULL)` instead of a bare `.value` deref (mirrors
-  `.unwrap_optional_abi`; Valgrind-confirmed the pre-fix `.value` read was UB on
-  uninit payloads). New mud value: `fd0fdaa42a419b0e72cfdb3226a54c4a` (the whitespace-stripped
-  diff vs the `3abbcd5c…` baseline is exactly ONE line). Runtime output unchanged (verified by
-  client interaction). gol/lisp/json unaffected (`b246a2fe…`, `141994cc…`, `f50ce1e6…`
-  byte-identical). **F7 gate sweep (2026-08-13): all 4 re-verified byte-identical to these
-  values** with `/tmp/fx_subfolder/zig1`; 21-example matrix 20/21 end-to-end (only
-  lisp_interpreter gcc-FAIL on the pre-existing builtins.zig `zT_N` defect); test_analyzer_bin
-  PASS; corpus re-verified OK=233 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 240 dirs (no new FAIL).
-  **[F3 closeout (2026-08-13): gol/lisp/json RE-BASELINED by the lisp_defects plan F2 (operator
-  ruling m0809) to `ff47d18d…`/`c1cb748b…`/`376fd681…` — see the MD5 table. F3 gate sweep: all 4
-  byte-identical; 21-example matrix 21/21 end-to-end (lisp_interpreter functionally correct);
-  corpus OK=239 FAIL=3 ICE=0 CRASH=0 GREEN=4 over 246 dirs; test_analyzer_bin PASS.]
-  [updated: 2026-08-13]
-- **Re-baselined 2026-08-08 (F4, std.io migration).** ALL 4 re-baselined because F4 replaces every
-  `__bootstrap_print*`/`__bootstrap_write`/`__bootstrap_sleep_ms` extern in the gate entries with
-  `std.io.print`/`printInt`/`write`/`sleepMs` (local `std.zig`/`std_io.zig`/`std_arena.zig` copies;
-  json additionally re-points the arena import `std_arena.zig` → `std.zig`/`std.arena`). Runtime
-  output byte-identical to pre-F4, verified by run diff (mud "MUD server listening on port 4000"
-  rc=124; gol glider md5 `fcbf7e7c…`; lisp byte-identical; json md5 `d90e7828…`) — per the F-5
-  AMENDMENT B precedent. Pre-F4 values: mud `6c0a83f1…`, gol `0d8f0092…`, lisp `a12f2fce…`,
-  json `ff9b880c…` (all stale). [updated: 2026-08-08]
-
-- **Re-baselined 2026-08-08 (F3, std.arena migration).** json re-baselined because F3 replaces
-  the `arena_alloc_default` extern in `json.zig`/`file.zig`/`arena.zig` with the new
-  `std_arena.zig` module (`std.create/alloc`) — json's emitted C changes (new `std_arena_*.c`
-  module, no extern refs). Runtime output byte-identical to pre-fix (old legacy-linked binary vs
-  new standard-linked binary, `diff` empty), per the F-5 AMENDMENT B precedent. mud/gol/lisp
-  byte-identical. Pre-F3 json value: `c403f079…`. New json value: `ff9b880c…`.
-  [updated: 2026-08-08]
-- **Re-baselined 2026-08-08 (F1, @ptrToInt single-arg → usize).** lisp re-baselined because F1
-  (commit `51bfdb3c`) makes single-arg `@ptrToInt(x)` resolve to `TYPE_USIZE` — lisp's
-  sandbox addr/start/end consts are now `unsigned int`. Runtime output byte-identical to
-  pre-fix (verified by stash-revert rebuild; both run rc=0, output md5
-  `1c1f0a417d5e943433755a8ce593542f`). Per the F-5 AMENDMENT B precedent the gate is runtime
-  behavior, not byte-identity. mud/gol/json byte-identical (F1 verified byte-identical for
-  all three). Pre-F1 lisp value: `fad41183…`. New lisp value: `a12f2fce…`. Re-verified
-  byte-identical by the F7 gate sweep (2026-08-08). [updated: 2026-08-08]
-- **Re-baselined 2026-08-07 (F2, opt_slice null-payload Option B).** mud + lisp + json re-baselined
-  because F2 (commit `5c515a7d`) drops the dead `int zT_N; zT_N = NULL;` payload temp in
-  optional-null construction — the `null_literal` branch (lower.zig:1183-1214, Option B) emits
-  `set_optional_null` directly on an `Opt_`-typed temp for null_src coercions instead of a
-  `TYPE_NULL`→`int` temp. `= NULL;` sites: mud 2→0, lisp 3→0, json 1→0; `has_value = 0;` counts
-  unchanged (mud 2, lisp 5, json 1) — only dead stores removed. Runtime-verified identical (F2
-  report §5: mud rc=124 "MUD server listening on port 4000", gol glider rc=0, lisp rc=0, json
-  parses test.json rc=0; output diffs empty). Per the F-5 AMENDMENT B precedent the gate is runtime
-  behavior, not byte-identity. gol byte-identical. Pre-F2 values: mud `906fa59c…`, lisp
-  `605b597e…`, json `b5f56ebd…`. New values: mud `6c0a83f1…`, lisp `fad41183…`, json
-  `c403f079…`. [updated: 2026-08-07]
-
-- **Re-baselined 2026-08-03 (TCO feature, AMENDMENT 9/11 ruling B).** The old baselines (mud
-  `5fb57e70…`, gol `f855c9f9…`, lisp `0ad02040…`, json `11a5db1d…`) are STALE — replaced. Two
-  accepted changes cause the new values: (1) **every** emitted function now carries a `z_bb_0:` label
-  (AMENDMENT 8 — the `.loop_header` arm emits `z_bb_0:\n`; matches `.jump`'s `goto z_bb_0;`), and (2)
-  lisp/json cross-function tails collapse the try-CFG to `zT = f(args); return zT;`. Both are
-  semantically correct and gcc-clean; warnings are tolerated, 0 errors required.
-
-- **Re-baselined 2026-08-04 (F-5/F-7, AMENDMENT F-5-B).** mud + lisp re-baselined again because F-5/F-7
-  now emit `load_global`/`store_global` stores and module-global init that were previously dropped —
-  runtime behavior is the gate, not byte-identity. gol + json unchanged. [updated: 2026-08-04]
-
-- **Re-baselined 2026-08-05 (P3-6, error-code unification).** lisp + json re-baselined again because
-  P3-6 replaced named-set per-set ordinals with a program-global per-name error-code registry
-  (`#define ERROR_<name> <code>` in `zig_special_types.h` + revalued member defines) — runtime
-  behavior is the gate, not byte-identity (F-5 AMENDMENT B precedent). mud + gol byte-identical
-  (they emit no error-name codes). New values: lisp `dd56cd23…`, json `900cb401…`. [updated: 2026-08-05]
-
-- **Re-baselined 2026-08-06 (F8, ident_expr const-chain folding).** gol re-baselined because F8's
-  `ident_expr` comptime fold now resolves `@intCast(i32, WIDTH)`/`@intCast(i32, HEIGHT)`
-  (WIDTH/HEIGHT are `const usize` globals in game_of_life) at comptime — previously emitted as a
-  runtime `(int)` load+cast of the storage global, now emitted as a folded `int_const`. Runtime
-  output is byte-identical (verified by run diff of pristine vs F8 gol binaries); per the F-5
-  AMENDMENT B precedent the gate is runtime behavior, not byte-identity. mud/lisp/json unchanged
-  and byte-identical. New gol value: `e2f4c625…`. [updated: 2026-08-06]
-
-- **Re-baselined 2026-08-06 (F1, @intCast range-check — scope b).** ALL 4 re-baselined: mud/gol/
-  lisp/json each contain explicit runtime `@intCast` sites that now emit the range-checked
-  `__bootstrap_<DST>_from_<SRC>` helper (narrowing + same-width reinterpret) instead of a raw
-  `(int)` cast. Runtime-verified identical for mud (rc=124, "MUD server listening on port 4000"),
-  gol (glider, 100 generations, rc=0), json (parses test.json, rc=0); lisp is identical except
-  `(fact 13)` now PANICS with `integer cast overflow in @intCast` (rc=134) — the intended fix
-  (previously silently wrapped to garbage `1932053504`). Per the F-5 AMENDMENT B precedent the gate
-  is runtime behavior, not byte-identity. New values: mud `0064a081…`, gol `51d6d078…`, lisp
-  `e54be381…`, json `6528f26f…`. Note: the 19 `__bootstrap_*_from_*` helpers are `static` in
-  `sf/src/include/zig_runtime.h` (per-TU, oracle pattern) + extern in `sf/src/include/zig_runtime.c`
-  — the json multi-module link uses the legacy `src/runtime/zig_runtime.c` object and relies on the
-  header `static` copies for `__bootstrap_usize_from_i32`. [updated: 2026-08-06]
-
-- **Re-baselined 2026-08-06 (F5b, mud/gol anytype-print → true `...`).** mud + gol re-baselined
-  because `std_debug.zig` `print(fmt, args: anytype)` became `print(fmt, ...)` (true C variadic
-  via the F3 flag-bit path; the lower.zig marker-param `child_0==0 → is_variadic` branch is now
-  deactivated). Emitted C differs ONLY in the print body's temp numbering (`zT_2`→`zT_1` — the
-  anytype marker param is gone, so params_count drops 2→1; the signature `char* fmt, ...` is
-  unchanged and now comes from the flag bit). Runtime-verified byte-identical vs pristine: mud
-  (rc=124, "MUD server listening on port 4000"), gol (glider, 100 generations, rc=0). lisp + json
-  byte-identical (no print migration). Per the F-5 AMENDMENT B precedent the gate is runtime
-  behavior, not byte-identity. Pre-F5b values: mud `e306b187…`, gol `51d6d078…`. New values: mud
-  `50beb1bf…`, gol `0d8f0092…`; lisp `55044a1f…`, json `b5f56ebd…` unchanged. [updated: 2026-08-06]
-
-- **Re-baselined 2026-08-07 (F2, undefined-array-field init drop).** mud re-baselined because F2
-  (Option A, commit ba89a6e0) skips the `assign_field` for `undefined` array-typed struct-literal
-  fields in the lowerer — dropping the dead `[256]u8` zero-fill at mud main.zig:159 and the
-  `undefined_const` temp (remaining diffs are pure temp renumbering). Runtime-verified identical:
-  new + pristine mud both print "MUD server listening on port 4000" (rc=124 timeout). Per the F-5
-  AMENDMENT B precedent the gate is runtime behavior, not byte-identity. gol/lisp/json
-  byte-identical. Pre-F2 value: mud `50beb1bf…`. New mud value: `906fa59c…`. [updated: 2026-08-07]
-
-- **Re-baselined 2026-08-06 (F6, lisp closures capture current env).** lisp re-baselined because
-  `eval.zig:124` `env_to_value(env.*,…)` → `curr_env.*` (lambda now captures the current dynamic
-  tail-call env, not the stale outer param env). Runtime-verified: `((make-adder 5) 3)` → `8`,
-  `((add 10) 1)` → `11`, `((make-func 42))` → `42` (all were `UnboundSymbol`). mud/gol/json
-  byte-identical. Per the F-5 AMENDMENT B precedent the gate is runtime behavior, not byte-identity.
-  New lisp value: `605b597e…`. NOTE: composition of a closure passed as an argument
-  (`((twice square) 3)`, `((compose square square) 3)`) now SEGFAULTS (was `UnboundSymbol`) — a
-  latent lisp-source env-capture cycle (`env_to_value` stores live `define`-slot pointers that are
-  back-patched after capture) exposed by the fix; tracked for a follow-up lisp-source fix, NOT a
-  compiler defect. Pre-F6 value: lisp `55044a1f…`. [updated: 2026-08-06]
-
-- **F7 gate sweep (2026-08-06, docs-only):** all 4 MD5s re-verified **byte-identical** to the
-  values above (mud `50beb1bf…`, gol `0d8f0092…`, lisp `605b597e…`, json `b5f56ebd…`) with a
-  fresh HEAD /tmp bootstrap — no re-baseline needed. [updated: 2026-08-06]
-
-- **`examples/zig0/*` entries are oracle-only** — compiled with `zig0` for behavioral comparison, never hashed or gated with zig1 (operator ruling 2026-07-31).
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 
@@ -593,31 +492,22 @@ Self-recursion TCO: emitted C must contain a `z_bb_0:` label in the recursive fn
 `goto z_bb_0;` back-edge (NO retained self `call`). Deep recursion (100k) must run with O(1) stack.
 
 ```bash
-# tco_factorial (self-recursion, i32)
-sf/build/out_release/zig1 --dump-c89 examples/z98/tco_factorial/main.zig > /tmp/tf.c ; echo "dump rc=$?"
-grep -n "goto z_bb_0;" /tmp/tf.c            # expect: fact() has rebind assigns + back-edge
-grep -c "zF_.*_fact(" /tmp/tf.c             # fwd-decl + def + main call sites only; NO self-call in fact body
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
-    /tmp/tf.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/tf ; echo "gcc rc=$?"
-/tmp/tf ; echo "run rc=$?"                  # expect: "fact(10) = 3628800" then "deep ok", rc=0
-
-# tco_return_try (self-recursion through E!i32 try)
-sf/build/out_release/zig1 --dump-c89 examples/z98/tco_return_try/main.zig > /tmp/tr.c ; echo "dump rc=$?"
-grep -n "goto z_bb_0;" /tmp/tr.c             # expect: count() back-edge (try-CFG eliminated)
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
-    /tmp/tr.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/tr ; echo "gcc rc=$?"
-/tmp/tr ; echo "run rc=$?"                  # expect: "count(10) = 10" then "count(100000) = 100000", rc=0
-
-# tco_defer (self-recursion with defer — defer fires ONCE at terminal return, not per-iteration)
-# [updated: 2026-08-03]
-sf/build/out_release/zig1 --dump-c89 examples/z98/tco_defer/main.zig > /tmp/td.c ; echo "dump rc=$?"
-grep -n "goto z_bb_0;" /tmp/td.c               # expect: back-edge present
-# Verify defer body NOT in the self-TCO rebind/jump block (nop'd by lower.zig:3641-3645)
-# Verify defer body PRESENT in terminal-return path before the final `return` (emitted at lowerFn:4457)
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
-    /tmp/td.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/td ; echo "gcc rc=$?"
-/tmp/td ; echo "run rc=$?"                     # expect: defer fires exactly once at end, rc=0
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+for ex in tco_factorial tco_return_try tco_defer; do
+  OUT=/tmp/tco_$ex
+  rm -rf "$OUT" && mkdir -p "$OUT"
+  "$ZIG" -fsafe -o "$OUT" examples/z98/$ex/main.zig || exit 1
+  (cd "$OUT" && sh build_target.sh linux prog) || exit 1
+  grep -R -n "goto z_bb_0;" "$OUT"/*.c || exit 1
+  "$OUT/prog" || exit 1
+done
 ```
+
+Expected: each program prints its documented result and exits 0; the recursive
+function has a `z_bb_0:` back-edge and no retained self-call. `tco_defer` fires
+its defer exactly once at terminal return.
+
+
 
 Gate: dump rc=0, gcc rc=0, run rc=0, `goto z_bb_0;` present, no self-call retained in the emitted
 recursive fn. A compiler ICE shows as `dump rc=134` with a `PANIC:` line (may land on stdout).
@@ -638,181 +528,335 @@ Since the TCO feature (F-S2/F-S3), **every** emitted function body contains a `z
 
 Do NOT treat `z_bb_0:` or the unused-label warning as a regression.
 
-### Multi-Module Build
+### Multi-Module Build — self-contained output dir  [updated: 2026-09-10]
+
+`zig1 -o DIR <entry>` emits a **complete self-contained C89 tree** (needed-only module `.c`/`.h`
+plus runtime/platform headers and runtime sources) and a companion `build_target.sh`. Build it:
 
 ```bash
-mkdir -p DIR
-zig1 --dump-c89 --output-dir DIR <entry>
-# produces: DIR/*.c + DIR/*.h + DIR/zig_special_types.h
-
+zig1 -o DIR <entry>            # default emission (no --dump-c89 needed)
 cd DIR
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include -c *.c
-gcc -m32 *.o /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o prog
+gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+    -Wno-implicit-function-declaration -I . -c *.c
+gcc -m32 -O0 *.o -o prog
+# or simply:
+sh DIR/build_target.sh         # (./DIR/build_target.sh after the first run)
 ```
-- `-I /workspace/znineeight/sf/src/include` is REQUIRED — zig1 does not copy `zig_compat.h`/`zig_runtime.h` into DIR (zig0 does; zig1 does not). Use the absolute repo path: the recipe `cd`s into DIR, so relative `sf/...` paths would break.
-- Run `gcc -c` INSIDE DIR — `gcc -c DIR/*.c` from outside writes the `.o` files to the caller's CWD, so the `*.o` link glob fails (`cannot find DIR/*.o`).
-- For **mud_server** (z98, F6-migrated) NO `net_runtime.c` is needed — the standard
-  `zig_runtime.c` + `zig_pal.c` recipe links it (the F6 builtin-emitted socket C replaces
-  net_runtime.c). [updated: 2026-08-13]
-- For **json_parser** NO special runtime is needed post-F3 — the standard `zig_runtime.c` +
-  `zig_pal.c` recipe links it (the `arena_alloc_default` extern was replaced by the
-  `std_arena.zig` module). [updated: 2026-08-08]
+- `-I .` is enough — the emitted dir carries its own runtime/platform headers (`zig_compat.h`,
+  `zig_runtime.h`, and `net_prelude.h` iff `std_net` is emitted). No repo
+  `-I sf/src/include` and no hand-listed `zig_runtime.c`/`zig_pal.c`/`c_exit.c` trio are needed;
+  the emitted support sources are already in `DIR/*.c`.
+- Run `gcc -c` INSIDE DIR — `gcc -c DIR/*.c` from outside writes the `.o` files to the caller's
+  CWD, so the `*.o` link glob fails (`cannot find DIR/*.o`).
+- The emitted `build_target.sh` uses an intentional **modules-then-runtime link order** (the
+  compiler-enumerated module `.o` list first, runtime `.o` last). This deliberately differs from
+  the seed recipe's plain alphabetical `*.o` glob and is not a bug.
+- `--dump-c89` remains a debug alias: single-file to stdout without `-o`, or per-module `.c`/`.h`
+  with `-o`.
 
 ### Editing source
 Use `edit` (exact strings) or `fastedit` (line ranges, see AGENTS.md §X.7 — re-read the region
 immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transforms.
 
+**HARD RULE — destructive git is PROHIBITED (every agent + controller).** Never run `git reset --hard`, `git reset --keep`, `git checkout -- <file>`, `git restore`, `git clean`, `git stash drop/clear`, force-push, or any other history-rewriting / work-discarding command. A 2026-10-08 `git reset --hard` silently destroyed uncommitted edits to two tracked ledger files. If you need to move off the current commit, **STOP and report to the controller — do not reset/clean.** Undo a mistaken commit with a NEW commit (or `git revert`), never by discarding state. `git commit --amend` on your OWN just-created commit is the only rewrite permitted, and only when nothing else is uncommitted. When in doubt: **stop and report, do not act.**
+
 ---
 
 
-### Canonical Examples vs Oracle Examples
+### Canonical Examples vs Legacy Oracle Examples
 
-- **Canonical examples** under `examples/z98/` — use `@cInclude` + `extern fn` (valid Z98 syntax).
-- **Oracle examples** under `examples/zig0/` — use zig0-compatible syntax. Only for oracle comparison against `zig0` output, not as working-example reference.
-- The gcc compile recipe includes `-I sf/src/include` which auto-declares bootstrap functions (`__bootstrap_print` etc.) from `zig_runtime.h`.
+- **Canonical examples** live under `examples/z98/` and use current Z98 syntax
+  (`@cInclude` + `extern fn`).
+- `examples/zig0/` is legacy oracle material only; do not use it as the current
+  build/example reference.
+- **App entries (matrix 29/29):** `examples/z98/z9git` (local/`file://` +
+  smart HTTP(S) clone/log/checkout, shallow/partial/resume; gate
+  `tests/tier_git.sh`) and `examples/z98/z9zstddecomp` (`std_zstd` frame/dict
+  CLI; gate `tests/tier_zstddecomp.sh`). `examples/z98/z9gb` is the Phase 4 P5
+  SM83-dynarec emulator (`--headless`, `--windowed`, `--cgb`, `--dynarec`,
+  `--no-dynarec`, `--dynarec-stats`, `--frames`, `--fb-out`, `--rom`, `--serial`,
+  `--turbo`, `--audio`, `--scale`, `--mooneye`, `--save`, `--rtc-fixed`;
+  DMG/CGB CPU/PPU/timer/serial/APU, CGB palettes, VRAM/WRAM banking,
+  double-speed, HDMA, MBC1/MBC3(+RTC)/MBC5/MBC7, JOYP input, battery saves;
+  MBC7 includes the 93LC56 EEPROM and accelerometer window (tilt latches neutral
+  `0x8000`; no tilt input); MBC5 rumble is decoded/masked with no motor feedback;
+  MBC7 rumble is not implemented; DirectDraw presentation, DirectInput8 keyboard/gamepad with keyboard fallback,
+  QPC pacing, DirectSound with WinMM `waveOut` fallback; Win32/x86 dynarec from a
+  separate 1 MiB executable cache with interpreter fallback; gates
+  `tests/tier_dmg.sh --all`, `tier_cgb`, `tier_dynarec`, `tier_smoke`,
+  `tier_audio --gate`, `tier_win32 --smoke`, `tier_perf`). CGB is opt-in via
+  `--cgb`; a CGB-only cartridge without it prints `z9gb: CgbRequired` and exits
+  2. Runs are unlimited by default (windowed stops on quit/`Esc`; headless needs
+  a finite `--frames N`; `--frames 0` is unlimited and `--fb-out` requires a finite,
+  completed run). On *nix `--dynarec` prints `dynarec=disabled reason=unsupported-host` and
+  runs the interpreter. Example READMEs carry the exact CLI, flags and exit
+  codes.
 
-
-## Bootstrap Build (zig0 → zig1)
-
-
-```bash
-cd /workspace/znineeight
-rm -rf out_release && mkdir -p out_release
-./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
-```
-
-Debug build:
-```bash
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
-```
-
-## LISP refactor testing building zig1 pipeline
-
-How the LISP / sema-refactor work actually builds and tests `zig1` (differential vs `zig0`).
-`zig1` is fully determined by **`sf/src/main.zig` (+ its imports)** and **`sf/build/zig0`** — the
-output directory and gcc *warning* flags do NOT change the resulting compiler.
-
-**1. Build zig1 from the current source (isolated output dir):**
-```bash
-OUT=/tmp/z1
-rm -rf "$OUT" && mkdir -p "$OUT"          # always clean: stale .c/.h cause false Slice_* type errors
-./sf/build/zig0 --header-priority-include -o "$OUT/zig1.c" sf/src/main.zig   # emits 35 per-module .c
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign "$OUT"/*.c sf/src/include/zig_pal.c -o "$OUT/zig1"
-```
-Debug build (for GDB): append `-g -O0 -Wno-implicit-function-declaration` to the gcc line.
-
-- zig0 emits **35 per-module `.c` files** into `$OUT` (gcc globs `"$OUT"/*.c`; there is no single `zig1.c` object).
-- The bootstrap `-Iinclude` above is **stale** (no root `include/` dir exists) — omit it. `-Wno-pointer-sign`
-  only mutes warnings. Gate on the `error:` count, never warnings.
-- Always build from the **repo** `sf/src/main.zig`, never a `/tmp` `git worktree` (those hold older source = a different/older zig1).
-
-**2. Compile + run an example with that zig1:**
-```bash
-"$OUT/zig1" --dump-c89 examples/zig0/lisp_interpreter_curr/main.zig > /tmp/lisp.c
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isf/src/include \
-    /tmp/lisp.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/lisp 2>&1 | grep -c 'error:'
-# use `gcc -c` (no link) for no-main repros; pre-F6 mud_server examples need net_runtime.c (F6-migrated z98 mud_server does not)
-```
-
-**3. Differential / gate (what "passing" means):**
-- `zig0` is the reference oracle: `./sf/build/zig0 -o DIR/out.c repro.zig` (emits per-module `repro.c` in `DIR`).
-- Refactor gate: `man/gol/mud/lisp --dump-c89` **byte-identical** to baselines + `lisp` `error:` count == `12` + self-host gcc `0` errors.
-- Current baselines (HEAD `c3d61919`): `man c379bd194d73d06a9dbac02431a82b2d`, `gol 8aa260ce9d467995f657e46552712fb1`,
-  `mud 35051e34cd0ba883a08ff60569ae262f`, `lisp 74a721caef6f121fe6d744870dbb7c37`; `zig1` ≈ `621772` bytes.
-- Markers: `"$OUT/zig1" --markers --dump-c89 <entry> 2>mk` then `grep -ac '^PREFIX' mk`
-  (watch prefix collisions: `FS:C`/`FS:CK`, `IFST:K`/`IFST:K2` → use the `:N` variant).
-
-## Compile Examples with zig1
+### Compile + run an example with the seed-built compiler
 
 ```bash
-./out_release/zig1 --dump-c89 examples/zig0/mandelbrot/mandelbrot.zig > out.c
-./out_release/zig1 --dump-c89 examples/zig0/game_of_life/main_lin.zig > out.c
-./out_release/zig1 --dump-c89 examples/zig0/mud_server/main.zig > out.c
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+OUT=/tmp/z1ex
+rm -rf "$OUT" && mkdir -p "$OUT"
+"$ZIG" -fsafe -o "$OUT" examples/z98/json_parser/main.zig
+(cd "$OUT" && sh build_target.sh linux prog)
 ```
 
-With markers (diagnostic output to stderr):
+For diagnostics:
 ```bash
-./out_release/zig1 --markers --dump-c89 examples/zig0/mud_server/main.zig > out.c 2>diag.txt
+"$ZIG" --markers --dump-c89 --output-dir /tmp/z1ex \
+  examples/z98/mud_server/main.zig 2> /tmp/z1ex/markers.txt
 ```
 
-## Compile Z98 Examples (@cInclude)
+`--dump-c89` requires a pre-created `--output-dir`. The emitted directory
+contains its own build scripts and runtime support; prefer
+`build_target.sh linux` over hand-assembling a gcc link line.
 
-```bash
-./out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig > out.c
-gcc -m32 -std=c89 -Wno-pointer-sign -Isf/src/include out.c \
-    sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o app
-```
+### Build mud_server
 
-## GCC Compile + Link
+Use the same `-fsafe -o <out>` + `build_target.sh linux` recipe on
+`examples/z98/mud_server/main.zig`. There is no current zig0 build cycle.
 
-```bash
-gcc -m32 -std=c89 -Wno-pointer-sign \
-  -Iout_release -Isf/src/include \
-  out.c \
-  sf/src/include/zig_runtime.c \
-  sf/src/include/zig_pal.c \
-  -o app
-```
-
-## Build mud_server (full cycle)
+### Build z9gb (P5 SM83 dynarec)
 
 ```bash
-cd /workspace/znineeight
-rm -rf out_release && mkdir -p out_release
-./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
-./out_release/zig1 --dump-c89 examples/zig0/mud_server/main.zig > /tmp/mud.c
-gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
-  /tmp/mud.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c \
-  sf/src/include/net_runtime.c -o /tmp/mud
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+OUT=/tmp/z9gb_p5
+rm -rf "$OUT" && mkdir -p "$OUT"
+"$ZIG" -ffast -o "$OUT" examples/z98/z9gb/main.zig
+sh "$OUT/build_target.sh" linux "$OUT/z9gb"
+"$OUT/z9gb" --headless --frames 1 --fb-out /tmp/z9gb_p5.fb
+"$OUT/z9gb" --headless --cgb --frames 1 --fb-out /tmp/z9gb_p5_cgb.fb
+"$OUT/z9gb" --headless --dynarec --frames 1 --fb-out /tmp/z9gb_p5_dyn.fb
+# *nix prints dynarec=disabled reason=unsupported-host; the dynarec is Win32/x86 only.
 ```
 
-Check error count:
+P5 emulates a DMG/CGB CPU, MMU/timer/serial, APU, and scanline PPU with
+MBC1/MBC3(+RTC)/MBC5/MBC7 cartridges, JOYP input, and battery `.sav`/`.rtc`
+saves. The 2026-11-12 compatibility pass adds VBlank/joypad IRQs, dynarec
+overflow rejection (interpreter fallback), `tinstr`/`minstr`/`rejected`/`coverage`
+counters, MBC7 (93LC56 EEPROM + accelerometer window; neutral `0x8000` tilt
+only, no tilt input or CLI), and MBC5 rumble bank masking (motor bit decoded,
+no feedback). MBC7 `.sav` is the raw 256-byte erased-`0xFF` EEPROM view.
+CGB is opt-in with `--cgb`: color BG/OBJ palettes (`BCPS/BCPD`, `OCPS/OCPD`),
+tile attributes, two VRAM banks, eight WRAM banks, double-speed via `KEY1`, and
+general-purpose/HBlank HDMA. A CGB-only cartridge without `--cgb` prints
+`z9gb: CgbRequired` and exits 2; a CGB-compatible cartridge boots in DMG mode
+without the flag. The host headless backend is the default and the authoritative
+performance platform; the Win32 backend adds DirectDraw pixel presentation,
+DirectInput8 keyboard/gamepad with a `GetAsyncKeyState` keyboard fallback, QPC
+pacing, and DirectSound with a WinMM `waveOut` fallback. The startup line reports
+`input=dinput8|fallback` and `audio=dsound|waveout`. Windowed display requires
+the DirectX 6/8 runtimes (`IDirectDraw7` needs DX6+; `dinput8.dll` for gamepad
+needs DX8); without `dinput8.dll` input falls back to keyboard-only. The
+Win32/x86 `--dynarec` executes basic blocks from a separate 1 MiB
+`VirtualAlloc` `PAGE_EXECUTE_READWRITE` mapping, not BSS or stack; it falls back
+to the interpreter for non-ROM PCs, interrupts/DMA, cache-allocation failure,
+overflowing translations, and all *nix hosts. Measured accounting:
+`code_cache_bytes=1048576`, `stack_limit=1048576`, `static_bytes=9801224`,
+dynarec state 262,196 bytes. The authoritative performance gate is host headless
+`2048.gb` (`--headless --frames 600 --audio`) at >=59.0 fps; `--no-dynarec`
+measured 833.333 fps (unpaced interpreter throughput; host `--dynarec` is
+unavailable on *nix, so host runs cannot judge dynarec). CGB peak RSS measured
+10,288 KiB. The primary dynarec throughput metric is Wine headless turbo
+`T-cycles/sec = 42,134,400 / wall` (600 frames × 70,224), using medians of three
+alternating runs after a warmup. The verdict is workload-dependent:
+`2048.gb` at 1.2% coverage is interpreter-dominated and effectively neutral
+(8,102,769 T-cycles/sec with `--dynarec` versus 8,087,217 without, within
+run-to-run noise;
+`dynarec=on blocks=192 executed=45382 fallback=10187028 tinstr=129109
+minstr=10187028 rejected=11322 coverage=12‰`); Pokemon Crystal at 31.7%
+coverage measured 7,773,875 versus 9,321,770 (16.6% slower); Pokemon Pinball at
+97.3% coverage measured 13,591,742 versus 10,721,221 (26.8% faster). The
+original P5 "no measurable gain" verdict came from the 2048-only,
+≤6%-coverage workload, not a universal result. No fixed speedup threshold
+applies. Wine windowed `2048.gb` fps (47.661 with `--no-dynarec`, 47.134 with
+`--dynarec`) is display-bound evidence only, never Win98.
+`--frames` is unlimited by default (`--frames 0` is explicitly unlimited);
+headless needs a finite count to exit, and `--fb-out` is written only by a
+finite, completed run. The framebuffer dump is 92,160 bytes (160×144
+little-endian RGB32). Shipping Win32 builds pass `EXTRA_CFLAGS=-O2` (default
+empty) plus `EXTRA_LIBS="-luser32 -lgdi32 -lwinmm"` through
+`scripts/win32_cross/cross_nocrt.sh`.
+
 ```bash
-gcc ... 2>&1 | grep -c "error:"
+# Inline tiers (fast + safe) and external hard gates; both must PASS:
+bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --all
+bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --gates
+# P4 CGB unit/CLI and the three CGB hard gates; all must be present/passing:
+bash examples/z98/z9gb/tests/tier_cgb.sh "$ZIG"
+bash examples/z98/z9gb/tests/run_cgb_acid2.sh "$ZIG"
+bash examples/z98/z9gb/tests/run_cgb_sound.sh "$ZIG"
+bash examples/z98/z9gb/tests/run_cgb_interrupt_time.sh "$ZIG"
+# Playable/native/audio/dynarec/performance/smoke tiers (PASS/SKIP truthfully):
+bash examples/z98/z9gb/tests/tier_audio.sh --gate "$ZIG"
+bash examples/z98/z9gb/tests/tier_dynarec.sh "$ZIG"
+bash examples/z98/z9gb/tests/tier_win32.sh --smoke "$ZIG"
+bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG"
+bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --cgb
+# P5 primary throughput (Wine headless turbo only; reuses the -O2 exe if built):
+bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --throughput-only
+# P5 compat workload matrix (2048 + user ROMs; missing user ROMs are SKIP):
+bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --compat \
+  --user-roms /path/to/user/roms
+bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG"
+# Memory + three-run framebuffer determinism (CGB pass-through):
+bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG" /tmp/z9gb_p5_rss --cgb
 ```
 
-## Build and Run Tests
+External ROMs are not committed. Gate runners read `Z9GB_ROM_DIR`, else
+`/tmp/z9gb_roms`, else `examples/z98/z9gb/testdata/roms`; populate the tree from
+the pinned sources in `examples/z98/z9gb/testdata/roms/README.md` and verify
+with `sha256sum -c .../testdata/roms/manifest.sha256`. DMG hard gates remain
+Blargg `dmg_sound` (pinned SHA-256) plus `cpu_instrs`/`instr_timing`/`mem_timing`,
+the 15-ROM Mooneye timer/MBC1/PPU/OAM subset, and `dmg-acid2` (golden SHA-256
+`c831675c9cff3289d505364286cfb5322a6807fa074386851744f28cdeb84083`). P4 hard gates
+are `cgb-acid2`, `cgb_sound`, and `interrupt_time`; a SKIP is truthful but cannot
+be claimed as PASS, and any skipped CGB hard gate blocks closeout. The committed
+`cgb-acid2` golden is derived from the official `mattcurrie/cgb-acid2` v1.1
+reference PNG (SHA-256
+`9ea9c262c5383353e77d715d021a0f7c5ccbe438f88082cb225756e50c4fdf01`), not from
+this emulator, and is pinned at SHA-256
+`0fba336ce7d7cb4ef76049a4548ff0e7a5147be79fb34bfd266ce7bb71fcf9fd`. P5 adds
+the `tier_dynarec` unit/parity gate (27 checks) plus dynarec on/off parity in the
+DMG/CGB/audio/Win32 tiers; every `--dynarec` run must report nonzero
+`dynarec=on blocks=N executed=N`. Dynarec throughput is measured with
+`tier_perf.sh --throughput-only` and the `--compat --user-roms` workload matrix
+(Wine headless turbo, warmup + three alternating runs per mode, median
+T-cycles/sec with `--dynarec` coverage); windowed fps is display-bound and host
+headless fps is unpaced interpreter throughput, so neither judges dynarec. The
+host headless `2048.gb` performance gate requires >=59.0 fps (`--no-dynarec`,
+threshold not lowered). Real-hardware
+caveat: Wine cross-build runs are functional evidence only, never Win98
+hardware; no Win98 real-hardware CGB or dynarec run was performed and sign-off
+remains the operator's. A failed `VirtualAlloc` disables dynarec and falls back
+to the interpreter, which is not a dynarec PASS claim.
+
+
+## Run tests
+
+Current coverage is the stdlib fixture/crosscheck harness; `build_test.sh` is a
+legacy, pre-existing broken path and is not the gate.
 
 ```bash
-cd /workspace/znineeight && ./sf/scripts/build_test.sh
+bash scripts/stdlib/verify_stdlib.sh <out_dir>/zig1_5_clean
+bash scripts/stdlib/run_fixtures.sh <out_dir>/zig1_5_clean <fixture-dir>
+bash scripts/stdlib/run_crosscheck.sh <out_dir>/zig1_5_clean <module>
+
+# Phase 3.3 (HTTP/2) gates. Server-backed cases need Node 18+; when Node is
+# absent they print SKIP and never claim PASS. The argless usage goldens are
+# checked before any server starts.
+bash scripts/stdlib/run_tls_alpn.sh <zig1>      # TLS 1.2/1.3 ALPN + prefer_chacha20
+bash scripts/stdlib/run_async_io.sh <zig1> net  # coroutine socket helpers
+bash scripts/stdlib/run_async_io.sh <zig1> tlsio # std_tls_io pumps
+bash scripts/stdlib/run_http2.sh <zig1>         # TLS+ALPN h2 / h2c / flow / GOAWAY / RST
+bash scripts/stdlib/run_phase33_safe.sh <zig1>  # Phase 3.3 fixtures under -fsafe
 ```
 
-Note: `build_test.sh` links `sf/src/include/zig_pal.c` into each test binary (required since
-`pal.zig` gained the `pal_file_*` file-I/O externs; without it every test binary fails to link).
 
+## Std-lib Runtime Gate
 
-## Debug with GDB on zig1
+Runtime-behavior gate for the std-lib fixtures (spec
+`docs/superpowers/specs/2026-09-18-std-lib-test-hardening-design.md` §2). The
+corpus classifier stays compile-only; this gate builds, links, RUNS, and
+golden-diffs each fixture.
 
-### Build with debug symbols
 ```bash
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
+# full discovered std set (repro/mi_matrix/stdlib_*/ + stdlib_test/*/)
+bash scripts/stdlib/run_fixtures.sh <seed-built-zig1_5_clean>
+
+# restrict to explicit dirs (repo-relative or absolute)
+bash scripts/stdlib/run_fixtures.sh <zig1> repro/mi_matrix/stdlib_bits_table_xmod
+
+# re-capture a fixture's goldens from the observed run (writes expected.txt +
+# expected.rc and prints what it wrote; refuses an undeclared nonzero rc).
+# ALWAYS review the observed output against the fixture's documented GREEN
+# contract before committing a capture.
+bash scripts/stdlib/run_fixtures.sh --capture <zig1> repro/mi_matrix/stdlib_bits_table_xmod
+
+# closeout wrapper (full discovered set; nonzero + STDLIB GATE FAILED on any fail)
+bash scripts/stdlib/verify_stdlib.sh <zig1>
 ```
 
-### Find function in generated C
+Per fixture the harness: `zig1 -ffast -o <tmp> <entry>` → gcc every emitted
+`.c` with the binding flag-set (`-m32 -std=c89 -O0 -Wall -Wno-long-long
+-Wno-pointer-sign -Wno-implicit-function-declaration -I .`) → `sh
+<tmp>/build_target.sh linux <prog>` → run 3× under `timeout 120` from a scratch
+CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
+`cmp`-equals `<dir>/expected.txt`, and rc equals `<dir>/expected.rc`
+(whitespace-trimmed).
+
+**Discovery pin + unpinned-dir guard + port guard (binding):**
+- Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
+  `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
+  discovered dir set EQUALS the committed baseline
+  `scripts/stdlib/expected_dirs.txt` (339 dirs today: 329
+  `repro/mi_matrix/stdlib_*` + 10 `stdlib_test/*`), so a dropped/renamed/added
+  fixture FAILS the gate instead of silently shrinking coverage. Update the pin
+  intentionally when a band adds/removes fixtures.
+- Independently of the discovery pin, a guard ALWAYS fails
+  `unpinned-stdlib-dir (<dir>)` if any `repro/mi_matrix/stdlib_*/` or
+  `stdlib_test/*/` dir exists on disk that is not in the pin — even in explicit
+  `<dir>` runs, and even for a dir with no resolvable entry (so a std-looking
+  dir cannot silently escape the gate). Explicit `<dir>` runs skip only the
+  discovery-pin set-equality check (targeted runs), not the guard.
+- A fixture that binds TCP ports ships `<dir>/ports.txt` (one port per line,
+  `#` comments allowed). The harness fails `PORT-IN-USE:<port>` if a LISTEN
+  socket already exists on a declared port before the run.
+
+**Fixture naming contract (binding):**
+- Std fixtures live at `repro/mi_matrix/stdlib_<module>_<name>_xmod/` (the
+  `_xmod` suffix is the corpus convention; discovery matches any `stdlib_*`
+  dir). Workflow-level fixtures live under `stdlib_test/<name>/`.
+- Every discovered fixture MUST have a committed `expected.txt` +
+  `expected.rc` and be listed in `scripts/stdlib/expected_dirs.txt` (no silent
+  skips).
+
+**Golden convention (binding):**
+- `<dir>/expected.txt` = exact stdout bytes; `<dir>/expected.rc` = expected exit code.
+- A missing golden is a FAIL (no silent skips).
+- Goldens are runtime-only (stdout+rc), never emitted-C bytes; captured from a
+  known-good compiler at the plan baseline and re-captured only on an intentional
+  behavior change.
+- `--capture` writes the observed stdout+rc, but REFUSES a nonzero rc that is
+  not already declared in an existing `expected.rc` (a crashing fixture is not
+  silently frozen — a probe declares its `expected.rc` first).
+- Capture only after confirming the observed output matches the fixture's
+  documented GREEN contract in its `main.zig` header (never freeze a wrong output).
+- Expected-failure probes (e.g. `stdlib_debug_defaulttrap_xmod` rc=134,
+  `stdlib_async_waitfor_unregistered_xmod` rc=133) ship an `expected.rc` of the
+  signal code and an empty `expected.txt` — the expected failure is itself asserted.
+- `.gitignore` carries `!expected.txt` so the stdout goldens are committable source.
+
+`scripts/closeout/verify_upgraded.sh` phase C runs this gate, so `CLOSEOUT OK`
+requires it to pass.
+
+
+## Debug with GDB on the seed-built compiler
+
+The current compiler is `<out_dir>/zig1_5_clean` from
+`scripts/seed/build_from_seed.sh`; `sf/build/out_release/zig1` is retired.
+
+### Emit + build with debug symbols
 ```bash
-grep -n "function_name_part" out_release/semantic_analyzer.c | head -5
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+mkdir -p /tmp/z1dbg
+"$ZIG" --dump-c89 --output-dir /tmp/z1dbg <entry.zig>
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Wno-pointer-sign \
+    -I /tmp/z1dbg /tmp/z1dbg/*.c -o /tmp/z1dbg/prog
 ```
 
-### Find line for breakpoint
+### Find a function or line in generated C
 ```bash
-grep -n "keyword" out_release/semantic_analyzer.c | head -20
+grep -n "function_name_part" /tmp/z1dbg/semantic_analyzer_*.c | head
+grep -n "keyword" /tmp/z1dbg/semantic_analyzer_*.c | head
 ```
 
-### GDB with batch script
-```bash
-cat > /tmp/gdb.txt <<'EOF'
-set pagination off
-break out_release/semantic_analyzer.c:LINENO
-run examples/zig0/mud_server/main.zig > /dev/null 2> /dev/null
-print varname
-print another_var
-continue
-quit
-EOF
-gdb -batch -x /tmp/gdb.txt --args ./out_release/zig1 --dump-c89
-```
+Generated C has **no `#line` directives**. Break on `zF_*`/`zT_*` symbols or
+the module file/line; use the debugger sidecar once available. Run
+`gdb --args /tmp/z1dbg/prog ...` with the same arguments as the original
+program.
+
 
 ### Filter output to variable values
 ```bash
@@ -829,51 +873,43 @@ gdb -batch ... 2>&1 | grep "^\$"
 | TYPE_VOID return | ~2267 | `return zC_..._TYPE_VOID;` |
 | Loop exit | ~2275 | `__loop_0_end:` label |
 
-### Verify zig0 C89 variable corruption theory
-Replace suspect scalar variable with `[1]u32` box array. If behavior unchanged → corruption theory disproven. Example:
+
+### Diagnostic markers
+
+Use `pal.markerWrite` / `pal.markerWriteInt` with a named or direct string
+literal (string literals coerce to `[]const u8`; no zig0 workaround needed):
+
 ```zig
-// Before: var unified: u32 = 0;
-// After:  var un_box: [1]u32 = [1]u32{0};   // use un_box[0] everywhere
+var m: []const u8 = "LABEL:n";
+pal.markerWriteInt(m, val);
 ```
 
-### itoa-based diagnostic markers — use palMarkerWriteInt
-```zig
-// BEFORE (15+ local vars, zig0 C89 budget risk):
-var m: []const u8 = "LABEL:n"; pal_mod.markerWrite(m);
-var nb: [10]u8 = undefined; var nl = itoa_mod.itoa(val, nb[0..]);
-var ns: usize = @intCast(usize, 9) - @intCast(usize, nl);
-pal_mod.markerWrite(nb[ns..@intCast(usize, 9)]);
-var e: []const u8 = "\n"; pal_mod.markerWrite(e);
-
-// AFTER (2 local vars, safe everywhere):
-// IMPORTANT: zig0 C89 cannot pass string literal directly as []const u8 argument.
-// Always use named var before markerWriteInt call.
-var m: []const u8 = "LABEL:n"; pal_mod.markerWriteInt(m, val);
-```
-palMarkerWriteInt defined at pal.zig:99-106. Uses internal 12-byte buf + itoa_mod.itoa.
-Output: `LABEL:n<value>\n`.
+`palMarkerWriteInt` writes `LABEL:n<value>\n`.
 
 ### Marker extraction — use `grep -a`, NOT `strings`
 
-**CRITICAL:** `strings` strips null bytes and can silently drop entries.
-Always use `grep -a` (binary-as-text) on the raw stderr file.
+`strings` strips null bytes and can silently drop entries. Capture with the
+seed-built compiler:
 
 ```bash
-# Capture markers to file
-./out_release/zig1 --markers --dump-c89 examples/zig0/mud_server/main.zig > out.c 2>/tmp/markers.bin
-
-# Extract specific markers
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+"$ZIG" --markers --dump-c89 --output-dir /tmp/z1mk \
+  examples/z98/mud_server/main.zig 2> /tmp/markers.bin
 grep -a "^PREFIX:" /tmp/markers.bin
+```
 
-# Count entries (reliable)
+Further filters:
+```bash
 grep -a -c "^PREFIX:" /tmp/markers.bin
-
-# Sort unique numeric values
 grep -a "^PREFIX:" /tmp/markers.bin | sed 's/PREFIX: *//' | sort -n
-
-# Multi-prefix extraction preserving order
 grep -a "^IFST:\|^PBD:\|^EBLK:" /tmp/markers.bin
 ```
+
+Current reference for the `mud_server` capture (seed v147; unchanged from the
+Phase 3.5 Task 12 re-anchor): **4441 lines / 51346 B** (md5
+`3fb045267ad401b112d5d7cd0f4816a2`).
+
+
 
 ### Common marker labels in sema.zig (all use markerWriteInt)
 
@@ -902,34 +938,6 @@ grep -a "^IFST:\|^PBD:\|^EBLK:" /tmp/markers.bin
 | PBD:N | resolveSwitchExpr prong body node | PBD:N   753 |
 | PBD:K | resolveSwitchExpr prong body kind | PBD:K    76 |
 
-## DISPROVEN zig0 C89 Bugs
-
-Theories that were investigated and ruled out. Do NOT re-investigate.
-
-| Theory | Disproof | Date |
-|--------|----------|------|
-| **C89 variable budget / stack slot reuse** — local variables corrupted at depth 3+ | Markers with wrong slice offset (`buf[0..vlen]`) produced garbled output, not codegen corruption. After fixing `palMarkerWriteInt`, all markers reliable at ALL depths. Verified with `[1]u32` box array test. | 2026-06-12 |
-| **Struct-by-value return corruption** — `Slice_u32` returned by value gets corrupted at caller | 1024-element stress test: 510+ consecutive `getSlice()` calls alternating short(2)/long(63), nested outer-survives-inner, same-start-different-count. EXIT=0. zig0 C89 struct return IS correct. | 2026-06-12 |
-| **Parser block truncation** — `parserParseBlock` drops children | Block 829 (.Go prong body) correctly has 8 children (payload start=273, count=8). `extra_children[273..281]` data is correct. Parser creates correct AST. | 2026-06-12 |
-| **`astStoreGetExtraChildren` computation** — start/count wrong | GDB verified: payload=17891336, start=273, count=8, `start+count-start=8` in function. Returns `__make_slice_u32(items+273, 8)` correctly. | 2026-06-12 |
-| **`astStoreAddExtraChildren` corruption** — appends wrong data | GDB verified: `extra_children[273..281]` = [758,771,784,797,810,818,822,828] — correct AST node indices. | 2026-06-12 |
-| **TokenKind value mismatch between zig0 and C header** | C header enum values match Z98 enum order exactly (kw_var=54, kw_const=53, kw_return=68, kw_if=63). Verified via GDB + C define grep. | 2026-06-12 |
-| **`strings` vs `grep -a`** — `strings` silently drops marker entries | Confirmed: `strings` strips null bytes. Use `grep -a "^PREFIX:" /tmp/markers.bin` instead. | 2026-06-12 |
-
-## zig0 C89 Compilation Errors — Import/Missing Module Checklist
-
-**DO NOT blame zig0 C89 limitations first.** When zig0 emits `use of undeclared identifier`, `unable to infer type`, or similar compile errors, follow this checklist IN ORDER before considering zig0 bugs:
-
-1. **Missing `@import`** — `grep "const X = @import" <file>` vs `grep "X\." <file>`. If used but not imported, add the import.
-2. **Wrong module alias** — files use different aliases for the same module: `lower.zig` → `const pal`, `semantic_analyzer.zig` → `const pal_mod`, `type_registry.zig` → `const pal_mod`. Check: `grep "const pal\|@import.*pal" <file>`.
-3. **Stub file (never imported before)** — the file may have pre-existing bugs that were hidden because `main.zig` never imported it. Check: `grep "@import.*<filename>" sf/src/main.zig`.
-4. **THEN consider zig0 limitations** — only after (1)-(3) are exhausted.
-
-**Examples of false zig0-blaming (2026-06-27):**
-- `pal_mod.markerWriteInt()` in `lower.zig` → "undeclared identifier" → blamed on C89 variable budget. Actual: `lower.zig` imports `const pal`, not `pal_mod`.
-- `ast_mod.astStoreGetExtraChildren()` in `comptime_eval.zig` → "undeclared identifier" → blamed on type inference. Actual: `ast_mod` never imported in file (stub, never compiled before).
-
-See AGENTS.md §9.1.1 for full rules. Memory [97cffe29](mnemoria).
 
 ## Non-Issues: Warnings That Are NOT Bugs or Blockers
 
@@ -942,46 +950,17 @@ time chasing them.
 | **game_of_life: literal ANSI / terminal-clear escape codes appear in the output** | `system("clear")` writes terminal escape sequences to stdout. When output is piped or captured (not a live TTY), those sequences show up as literal bytes. **Both zig0 AND zig1 behave this way** — it is terminal behavior, not codegen. | Whether the patterns (glider, blinker, block, beehive, LWSS) and the `Generation: N` lines render correctly. The presence of escape codes is irrelevant. |
 | **gcc *warnings* (as opposed to errors)** | Build commands intentionally suppress noise via `-Wno-long-long`, `-Wno-pointer-sign`, `-Wno-implicit-function-declaration`. Any remaining gcc *warnings* do not affect correctness of the produced binary. | Only the `error:` count matters. Gate builds on `gcc ... 2>&1 \| grep -c "error:"` equal to `0`. |
 
-**Differential rule:** `zig0` is the reference oracle. A `zig1`-compiled
-example is "correct" when its runtime output matches `zig0`'s output, modulo
-the terminal-clear artifact described above.
+**Comparison rule:** do not use zig0 as an oracle. Validate against the frozen
+corpus classification, pinned goldens, and the seed/fixed-point closure; emitted
+C is not byte-compatible with legacy zig0 output.
 
 ## Memory Recall (DEPRECATED — use mnemoria instead)
 
-> **DEPRECATED.** The old logfmt memory system has been migrated to `mnemoria`.
-> See [Memory Recall via Mnemoria](#memory-recall-via-mnemoria) below.
-> Logfmt files are preserved at `.opencode/memory/*.logfmt` for reference but
-> are no longer the primary query mechanism.
-
-Memory files local: `/workspace/znineeight/.opencode/memory/YYYY-MM-DD.logfmt`
-
-### Read specific date:
-```
-Read filePath="/workspace/znineeight/.opencode/memory/2026-06-10.logfmt"
-```
-
-### Search across all dates:
-```bash
-grep -r "keyword" /workspace/znineeight/.opencode/memory/
-```
-
-### File format (logfmt):
-```
-ts=2026-06-10T01:14:11.343Z type=plan scope=project content="the memory text"
-```
-
-Types: decision, learning, preference, blocker, context, pattern
-Scope: project (most common), build, api, database, etc.
-
-### Read recent date files for current session context:
-```bash
-ls /workspace/znineeight/.opencode/memory/*.logfmt | sort -r | head -5
-```
-
+Deprecated memory recall is not functional anymore.
+Use Mnemoria below.
 ## Memory Recall via Mnemoria
 
-Memories have been migrated from logfmt files to the `mnemoria` CLI tool.
-Store at `.opencode/memory/` (managed by mnemoria; do NOT edit manually).
+Memories live in `.opencode/memory/` (managed by mnemoria; do NOT edit manually).
 
 ### Query Commands
 
@@ -1052,22 +1031,16 @@ The **superpowers `writing-plans` skill** produces bite-sized, TDD, task-by-task
 implementation plans. Load it via the `skill` tool when you have a spec/requirements
 for a multi-step task, before touching code.
 
-- **Where plans are saved:** `.opencode/plans/YYYY-MM-DD-<feature-name>.md`
-  (this overrides the skill's default `docs/superpowers/plans/`). This directory is
-  **git-ignored / untracked** — writing a plan there alters nothing in the tracked
-  project; it is a scratch/handoff artifact.
-- **Plan mode is READ-ONLY for CODE/PROJECT/SYSTEM state only.** Per the durable
-  operator decision (mnemoria, 2026-06-26 "m1213", tags `plan-mode,memory-tool,compress,allowed`),
-  the following ARE permitted while in plan mode, on the operator's request:
-  - Writing/updating **plan `.md` files** under `.opencode/plans/` (untracked, benign).
-  - Storing memories via **`mnemoria add`** (a benign collaboration side-channel).
-  - Running **`compress`** (context-management meta-op).
-- **Still forbidden in plan mode:** source/code edits (`edit`/`fastedit`/`write` on
-  tracked project files), shell file-manipulation, `git commit`, `git checkout`,
-  config changes — i.e. any real project/code/system mutation.
-- **Do not re-litigate this.** If unsure whether a specific plan-mode write is allowed,
-  search mnemoria (`--path .opencode/memory search "plan mode memory-tool allowed"`)
-  and follow the operator's standing authorization rather than looping.
+- **Where plans are saved:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`.
+  Current plans are **tracked**; write them in build mode.
+- `.opencode/plans/` is a legacy/untracked scratch area, not the current plan
+  location.
+- **Plan mode is READ-ONLY for tracked project/code state.** Memory writes via
+  `mnemoria add` and `compress` are permitted; editing tracked files, committing,
+  or other project/system mutations are not.
+- **Do not re-litigate this.** If unsure, search
+  `mnemoria --path .opencode/memory search "plan mode memory-tool allowed"`.
+
 
 ## Code Review via Superpowers Skill
 
@@ -1094,92 +1067,6 @@ Trigger the requesting-code-review skill when auditing completed changes.
 
 **Full policy:** `docs/sf/AGENTS.md` §2.5 (post-incident, 2026-07-17).
 
-## zig0 Runtime h/c Architecture
-
-The zig0 bootstrap compiler has a two-tier runtime that supports **both**
-the compilation of zig1 itself (zig0 → C89 → gcc link) and the programs
-compiled *by* zig1 (zig1 → C89 → gcc link). Understanding this split is
-critical when adding new runtime functions or debugging linker errors.
-
-### File Layout
-
-| Path | Role | Used by |
-|------|------|---------|
-| `src/include/zig_compat.h` | C89 type definitions (`i64`, `u64`, `ZIG_INLINE`, `ZIG_UNUSED`) | All C89 output |
-| `src/include/zig_runtime.h` | **Inline** bootstrap helpers (`__bootstrap_X_from_Y` casts, panic, print) | All generated `.c` files |
-| `src/runtime/zig_runtime.c` | **Non-inline** runtime (arena alloc, sleep, platform console) | Linked at build |
-| `$OUT/zig_runtime.h` | **Copy** of `src/include/zig_runtime.h`, emitted by zig0 via `--header-priority-include` | gcc `#include` resolution |
-| `$OUT/zig_runtime.c` | **Generated** runtime .c by zig0 (includes the header) | Linked into zig1 binary |
-
-### How zig0 Copies Headers
-
-zig0 `--header-priority-include` copies key headers from `src/include/`
-into the output directory alongside the generated `.c` files. This is why
-the gcc link command (`gcc $OUT/*.c`) works without `-I` — each `.c` can
-`#include "zig_runtime.h"` relative to its own directory.
-
-To make a new header available, place it in `src/include/` — zig0 copies
-all `.h` files from that directory.
-
-### `__bootstrap_X_from_Y` Cast Helpers (Inlines)
-
-Zig0's `@intCast(u32, i64_expr)`, `@intCast(u8, usize_expr)`, etc.
-emit calls to `__bootstrap_DSTTYPE_from_SRCTYPE(source)`. These are
-**inline** functions defined in `src/include/zig_runtime.h` (lines 99–180).
-They use `ZIG_INLINE ZIG_UNUSED` → `static` in C89, so each generated
-`.c` file gets its own copy — **no linker symbol needed**.
-
-**Pattern** (all helpers follow this):
-```c
-ZIG_INLINE ZIG_UNUSED u32 __bootstrap_u32_from_i64(i64 x) {
-    if (x < 0 || x > (i64)4294967295U) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
-    return (u32)x;
-}
-```
-
-**Win9x safety:** These functions are **pure arithmetic + panic call**.
-They use no C standard library (no `stdio.h`, `string.h`, `stdlib.h`,
-`malloc`, etc.). The types (`i64`, `u64`, `u32`, etc.) are defined
-per-compiler in `zig_compat.h`:
-- **MSC (win9x):** `typedef unsigned __int64 u64`
-- **Watcom:** `typedef unsigned long long u64`
-- **gcc:** `typedef unsigned long long u64`
-
-The `ZIG_INLINE` macro expands to `static __inline` (MSC), `static __inline__`
-(gcc), or `static` (other). The `ZIG_UNUSED` macro suppresses
-`-Wunused-function`.
-
-### `src/runtime/zig_runtime.c` (Non-Inline Symbols)
-
-For functions that **cannot** be inline (arena alloc, sleep, platform I/O),
-implementations live in `src/runtime/zig_runtime.c` as regular linkable symbols.
-This file is compiled separately and linked into the final binary. Note that
-**not** all bootstrap helpers need a non-inline version — the inline helpers
-in the header are sufficient for most casts.
-
-Some helpers exist in BOTH places (inline header + .c definition) as a
-safety fallback — see `__bootstrap_u16_from_usize` (line 286 of the .c).
-
-### Adding a New Runtime Definition
-
-**For a new `@intCast` target pair (inline)**:
-1. Add to `src/include/zig_runtime.h` following the pattern:
-```c
-ZIG_INLINE ZIG_UNUSED DST_T __bootstrap_DST_from_SRC(SRC_T x) {
-    if (<range check>) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
-    return (DST_T)x;
-}
-```
-2. Rebuild zig1 — zig0 copies the updated header to `$OUT`.
-
-**For a non-inline function (linkable symbol)**:
-1. Declare in `src/include/zig_runtime.h` (as `extern` or `ZIG_INLINE`).
-2. Define in `src/runtime/zig_runtime.c` as a regular C function.
-3. Ensure the zig1 build or zig0 runtime emission includes the `.c`.
-
-**Common link error:** `undefined reference to '__bootstrap_U64_from_I64'`
-→ This exact helper is **missing** from `src/include/zig_runtime.h`.
-Add it per the inline pattern above. (Added 2026-06-29 for enum(u8) support.)
 
 ### Tech Docs (as-built pipeline reference)
 Location: sf/docs/tech_docs/

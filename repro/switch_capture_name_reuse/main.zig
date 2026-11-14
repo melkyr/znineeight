@@ -13,6 +13,7 @@ pub fn main() void {
         .Int => |v| ra = @intCast(i32, v),
         .Flag => |f| ra = f,
         .Nil => ra = @intCast(i32, 0),
+        else => {},
     }
 
     var b: Value = Value{ .Int = @intCast(i64, 5) };
@@ -21,6 +22,7 @@ pub fn main() void {
         .Int => |v| rb = @intCast(i32, v),
         .Flag => |f| rb = f,
         .Nil => rb = @intCast(i32, 0),
+        else => {},
     }
 
     __bootstrap_print_int(ra + rb);

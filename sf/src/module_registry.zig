@@ -243,6 +243,9 @@ pub const ModuleRegistry = struct {
     path_to_id_spill: HashMapSpillMeta,
     content_to_id_spill: HashMapSpillMeta,
     import_queue: ImportQueue,
+    // C1b (Amendment 2): CLI target flag for the parser's untaken-arm import
+    // gate (`@isWindows()` polarity at parse time — true Zig laziness).
+    target_is_windows: bool,
 };
 
 fn importEdgesEnsureCapacity(items: *[*]u32, len: *usize, cap: *usize, alloc: *Sand, new_cap: usize) void {
@@ -297,11 +300,17 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .path_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
         .content_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
         .import_queue = importQueueInit(alloc, diag),
+        .target_is_windows = false,
     };
 }
 
 pub fn moduleRegistrySetSourceMan(self: *ModuleRegistry, sm: *SourceManager) void {
     self.source_man = sm;
+}
+
+// C1b (Amendment 2): target polarity for the parser's untaken-arm import gate.
+pub fn moduleRegistrySetTargetIsWindows(self: *ModuleRegistry, is_windows: bool) void {
+    self.target_is_windows = is_windows;
 }
 
 pub fn moduleRegistryAddModule(self: *ModuleRegistry, path_id: u32) u32 {
@@ -356,6 +365,13 @@ pub fn moduleRegistryAddImport(self: *ModuleRegistry, importer_id: u32, imported
 pub fn moduleRegistryResolveImport(self: *ModuleRegistry, path_id: u32, importer_id: u32, scratch: *Sand) ?u32 {
     moduleRegistryAssertPathToIdResident(self);
     var path_s = interner_mod.stringInternerGet(self.interner, path_id);
+    if (path_mod.isReservedDosDeviceName(path_s)) {
+        var p1: []const u8 = "reserved DOS device name in import path: ";
+        var parts: [2][]const u8 = [2][]const u8{ p1, path_s };
+        var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 2));
+        diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3048_CANNOT_READ_FILE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+        return null;
+    }
     var importer_path = interner_mod.stringInternerGet(self.interner, self.modules.items[importer_id].path_id);
     var resolved_path_id = moduleResolverResolve(&self.resolver, importer_path, path_s, scratch) orelse {
         var p1: []const u8 = "could not resolve imported file '";
@@ -724,12 +740,14 @@ pub fn moduleRegistryVerifyOrder(reg: *ModuleRegistry) void {
     }
 }
 
-pub fn moduleRegistryCollectIncludes(store: *AstStore, decls: []u32, c_includes: *U32ArrayList) void {
+pub fn moduleRegistryCollectIncludes(store: *AstStore, root_idx: u32, c_includes: *U32ArrayList) void {
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(store, root_idx);
     var di: usize = @intCast(usize, 0);
-    while (di < decls.len) : (di += @intCast(usize, 1)) {
-        var decl = ast_mod.astStoreNodeAt(store, decls[di]);
+    while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+        var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, root_idx, @intCast(u32, di));
+        var decl = ast_mod.astStoreNodeAt(store, decl_idx);
         if (decl.kind == AstKind.c_include) {
-            ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decls[di]));
+            ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decl_idx));
         } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
             var init = ast_mod.astStoreNodeAt(store, decl.child_1);
             if (init.kind == AstKind.c_include) {

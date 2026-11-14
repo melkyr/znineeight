@@ -34,13 +34,16 @@ pub const ErrorCode = enum(u16) {
     ERR_3004_SWITCH_NOT_EXHAUSTIVE,
     ERR_3005_CIRCULAR_TYPE_DEPENDENCY,
     ERR_3006_INVALID_COERCION,
-    ERR_3007_VISIBILITY_VIOLATION,
+    ERR_3007_VISIBILITY_VIOLATION = 3007,
     ERR_3008_ENUM_LITERAL_REQUIRES_PAYLOAD = 3008,
     ERR_3009_UNKNOWN_ENUM_LITERAL_MEMBER = 3009,
     ERR_3010_CANNOT_INFER_ENUM_LITERAL_TYPE = 3010,
     ERR_3011_ERROR_LITERAL_NOT_IN_SET = 3011,
     ERR_3012_VARARGS_INVALID = 3012,
     ERR_3013_INVALID_PRINT_SPECIFIER = 3013,
+    ERR_3014_USE_OF_UNDEFINED_VARIABLE = 3014,
+    ERR_3015_ERROR_IGNORED = 3015,
+    ERR_3016_ORELSE_REQUIRES_OPTIONAL = 3016,
     ERR_3020_UNHANDLED_NODE_KIND = 3020,
     WARN_3010_UNUSED_VARIABLE,
     WARN_3011_UNREACHABLE_CODE,
@@ -67,6 +70,227 @@ pub const ErrorCode = enum(u16) {
     ERR_9001_ICE,
     ERR_9999_TOO_MANY_ERRORS,
     ERR_3048_CANNOT_READ_FILE = 3048,
+    ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045,
+    ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017,
+    // ASYNCTRACK2 - explicit numeric values; never bare auto-increment members.
+    // ERR_3017=3017 and ERR_3045=3045 already exist (Track 1); only absent members below.
+    ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018,
+    ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019,
+    ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046,
+    WARN_3047_ASYNC_FRAME_LARGE = 3047,
+    ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049,
+    // Task 2c-F: an array-size expression that cannot be const-folded (hard
+    // error; never silently emit invalid C for an unresolved array size).
+    ERR_3050_ARRAY_SIZE_NOT_CONSTANT = 3050,
+    // Task 10D: outward control flow inside a `defer`/`errdefer` body, matching
+    // official Zig (AstGen.zig). A transfer that targets a loop/labeled block
+    // declared INSIDE the body is allowed; only escapes are rejected. Dedicated
+    // codes (3011/3012/3013/3019 already taken).
+    ERR_3051_RETURN_INSIDE_DEFER = 3051,
+    ERR_3052_BREAK_OUT_OF_DEFER = 3052,
+    ERR_3053_CONTINUE_OUT_OF_DEFER = 3053,
+    ERR_3054_TRY_INSIDE_DEFER = 3054,
+    // Task 11J: an enum member's explicit initializer is not a comptime-known
+    // integer expression (a function call, a bool/float builtin, `~`, an
+    // enum-member reference), or two members share a tag value. Never a silent
+    // auto-increment fallback.
+    ERR_3055_ENUM_VALUE_NOT_CONSTANT = 3055,
+    // Task 6D: a call whose callee is not a function (neither a `fn` value nor a
+    // pointer to one). Emitted by the lowering generic call path when the lowered
+    // callee temp's type is not callable; the program rejects with 0 `.c`.
+    ERR_3056_CALL_TARGET_NOT_CALLABLE = 3056,
+    // Task 7D: a function-local declaration (local const/var, parameter, if/while/
+    // for capture, switch-prong capture, catch payload, or function-local named
+    // type) reuses an identifier already declared in a strictly-enclosing or the
+    // same scope, or shadows a container-level declaration (global/function/type
+    // alias/import) in the current module. Matches official Zig 0.15.2
+    // ("never allowed to shadow identifiers from an outer scope"). Level 0, span
+    // on the shadowing declaration; rejects with 0 `.c`.
+    ERR_3057_LOCAL_SHADOW = 3057,
+    // Task 9B: an invalid condition. Either an `if`/`while` condition with no
+    // capture whose type is not `bool` (matching official Zig 0.15.2's
+    // "expected type 'bool', found ..."), or a capture condition that is not an
+    // optional/error-union type ("expected optional type, found ..."). Level 0,
+    // span on the condition; rejects with 0 `.c`.
+    ERR_3058_CONDITION_NOT_BOOL = 3058,
+    // Task 9B: a value `if` expression without an `else` branch whose
+    // then-branch is not `void`/`noreturn` and whose condition is not
+    // comptime-known-true. Zig types a no-`else` `if` as `void`, so it cannot
+    // produce a value ("incompatible types: '...' and 'void'"). Level 0, span
+    // on the `if` expression; rejects with 0 `.c`.
+    ERR_3059_IF_WITHOUT_ELSE = 3059,
+    // Task 13 (S1): a field access naming a non-existent member of a
+    // struct/union/tagged-union value. Z98 aggregate types cannot contain
+    // function declarations, so the spec-forbidden method syntax
+    // `value.func()` is always this shape. Matches official Zig 0.15.2's
+    // "no field or member function named '...'" rejection. Level 0, span on
+    // the field access; rejects with 0 `.c`.
+    ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED = 3060,
+    // Task 14 (S2): a call whose argument count does not match the callee's
+    // parameter count (too few for a fixed list, too many for a non-variadic
+    // one). Matches official Zig 0.15.2's "expected N argument(s), found M"
+    // (variadic too-few: "expected at least N argument(s), found M"). Level 0,
+    // span on the call expression; rejects with 0 `.c`.
+    ERR_3061_WRONG_ARGUMENT_COUNT = 3061,
+    // Task 17 (F): a comptime-known array index or constant slice-range bound
+    // that is out of bounds for a fixed-size array. Official Zig 0.15.2 rejects
+    // the same shapes at compile time ("index N outside array of length L",
+    // "end index N out of bounds for array of length L", "start index S is
+    // larger than end index E", "type 'usize' cannot represent integer value
+    // '-N'"). Level 0, span on the offending index/bound; rejects with 0 `.c`.
+    // A runtime index keeps its `-fsafe` `check_trap{kind=5}` guard unchanged.
+    ERR_3062_INDEX_OUT_OF_BOUNDS = 3062,
+    // Task 3 (z98-print-formatting): a `print` argument whose static type has
+    // no `std.fmt` printer (after Option B), or an operator-ruled Option-B
+    // bounded residual that Zig accepts but the plan deliberately does not
+    // implement (Q3: void/null/type, byte-view arrays/pointers, `[]const u8`
+    // `{x}`). Level 0, span on the argument node; rejects with 0 `.c`.
+    // Operator ruling Q1 (2026-09-24): 3063, because 3058 is live
+    // `ERR_3058_CONDITION_NOT_BOOL`.
+    ERR_3063_PRINT_TYPE_NOT_SUPPORTED = 3063,
+    // Task 9 fix round 3 / operator ruling Q7: a cycle in the global-initializer
+    // dependency graph. `__module_init` now emits globals in a stable
+    // dependency order (same module and across modules), so a forward-
+    // referenced global's value is always materialized before use; the only
+    // shape that cannot be ordered is a cycle (`var a = .{ b, 1 }; var b = .{ a,
+    // 2 };`), which official Zig 0.15.2 likewise rejects at comptime
+    // ("dependency loop detected"). Level 0, span on one global declaration of
+    // the cycle; rejects with 0 `.c`. (Renamed from
+    // `ERR_3064_FORWARD_REF_TUPLE_GLOBAL`; the number is unchanged.)
+    ERR_3064_CYCLIC_GLOBAL_INIT = 3064,
+    // FD1 (Volume II D7/D13): the last `print` call argument is not a tuple
+    // literal. The print special case passes that node to `lowerPrintFmt` as
+    // the argument container; before this gate the node's payload was read as
+    // an `extra_ranges` index (silent argument drop, misattributed validation
+    // diagnostics, silently wrong values), and when the accidental child was
+    // the print call itself the print arm re-entered `lowerPrintFmt`
+    // unboundedly (SIGSEGV). Level 0, span on the container (last argument)
+    // node, deduped per node; rejects with 0 `.c`. A tuple VARIABLE is
+    // spec-legal (Language Spec §4) but stays an interim reject until FD2
+    // implements its element reads.
+    ERR_3065_PRINT_CONTAINER_NOT_TUPLE = 3065,
+    // FH (Volume II D10): indexing a single-item pointer whose pointee is not
+    // a fixed-size array (`p[0]`, `p[1]`, a runtime `p[i]`, `p[0] = v` on
+    // `*T`/`*const T`/`*volatile T`/`**T`/`*Point`). Official Zig 0.15.2
+    // rejects the shape (`type '*T' does not support indexing` + the note
+    // `operand must be an array, slice, tuple, or vector`); before the gate
+    // Z98 silently emitted `p[i]` C with no bounds information. A `type` base
+    // (`(*p)[i]`, the pointer-type syntax, not deref) is the same wrong-code
+    // family: Zig reports `unable to resolve comptime value` + the note
+    // `types must be comptime-known`. Level 0, span on the index expression;
+    // rejects with 0 `.c`. `*[N]T` (Zig's auto-deref indexing) and `[*]T` are
+    // unaffected.
+    ERR_3066_SINGLE_PTR_INDEX = 3066,
+    // FH (Volume II D10): slicing a single-item pointer whose pointee is not a
+    // fixed-size array. Zig 0.15.2 accepts only the comptime-known bounds
+    // `[0..0]`, `[0..1]`, `[1..1]` (yielding `*[0]T`/`*[1]T`); every other
+    // form rejects: an open end with `slice of single-item pointer must be
+    // bounded`, a runtime bound with `unable to resolve comptime value` +
+    // `slice of single-item pointer must have comptime-known bounds`, an
+    // illegal comptime pair with `slice of single-item pointer must have
+    // bounds [0..0], [0..1], or [1..1]`. This also replaces the former
+    // `error[3043]` ICE on `p[0..]`. Level 0, span on the offending bound;
+    // rejects with 0 `.c`. `*[N]T` slices keep their existing path.
+    ERR_3067_SINGLE_PTR_SLICE_BOUNDS = 3067,
+    // FA-a (D3): a `switch` without an `else` prong. Language Spec §3.1 makes
+    // the `else` prong mandatory in all switch expressions (value AND statement
+    // position); this replaces the tombstone at
+    // `semantic_analyzer.zig:semanticAnalyzerResolveSwitchExpr` and makes the
+    // D3 uninitialized-result-temp path unreachable. Level 0, span on the
+    // `switch` expression; rejects with 0 `.c`. An unreachable/redundant `else`
+    // arm on an exhaustive switch is a tolerated Z98 divergence from Zig
+    // (Zig 0.15.2 rejects "unreachable else prong"; Z98 accepts it).
+    ERR_3068_SWITCH_WITHOUT_ELSE = 3068,
+    // FB (Volume II D4): a `t[i]` tuple index that is not comptime-known. The
+    // index is folded in sema (`semanticAnalyzerComptimeIntValue`, which covers
+    // local consts); a runtime value rejects with Zig 0.15.2's note wording
+    // ("tuple field index must be comptime-known"). Level 0, span on the index
+    // expression; rejects with 0 `.c`.
+    ERR_3069_TUPLE_INDEX_NOT_COMPTIME = 3069,
+    // FB (Volume II D4): a tuple index outside `0..arity` — `t[N]` with a
+    // comptime-known N past the end, and `.N`/`._N` likewise. Zig 0.15.2
+    // wording "index N outside tuple of length L". Level 0, span on the index
+    // expression; rejects with 0 `.c`.
+    ERR_3070_TUPLE_INDEX_OUT_OF_RANGE = 3070,
+    // FX4 (Volume II D11 extras): an invalid switch case item. Two shapes:
+    // (a) a qualified prong whose qualifier does not denote the switch
+    // condition's enum/tagged-union type (`B.x` on an `A` switch; Zig 0.15.2
+    // `expected type ... found ...`), which before this gate was silently
+    // name-matched and dispatched as the condition's member; (b) a qualified
+    // or shorthand prong whose member name does not exist on the condition
+    // type (`Shape.bogus`, `.bogus`; Zig `has no member named` /
+    // `no field named`), which before this gate was silently accepted and
+    // emitted no `case` label (dead prong). Level 0, span on the offending
+    // qualifier (foreign) or member (unknown), deduped per case-item node;
+    // related span `union declared here` / `enum declared here`; rc 2 /
+    // 0 `.c`. A qualifier whose type identity cannot be established is NOT
+    // treated as foreign (conservative fallback), and the pre-existing
+    // unbound-capture `error[20]` cascade on a rejected captured prong stays
+    // visible (no suppression).
+    ERR_3071_SWITCH_CASE_QUALIFIER = 3071,
+    // FF (Volume II D9): `@offsetOf`/`@bitOffsetOf` target is not a struct.
+    // Zig 0.15.2 parity: every union kind (bare/packed/tagged), scalar,
+    // pointer, enum, array, slice reject ("expected struct type, found 'X'").
+    // Replaces the `error[3043]` ICE net; the packed-union offset fold is
+    // deleted with it. Level 0, span on the builtin call; rejects with 0 `.c`.
+    ERR_3072_OFFSET_TARGET_NOT_STRUCT = 3072,
+    // FF (Volume II D9): `@offsetOf`/`@bitOffsetOf` on a struct names a field
+    // that does not exist, or the field name is not a string literal. The
+    // unknown-field wording matches Zig ("no field named 'x' in struct 'S'").
+    // A resolvable string `const` name is a documented Z98 divergence clean-
+    // reject (Zig folds it; Z98 has no string-const resolver). Level 0, span on
+    // the builtin call; rejects with 0 `.c`.
+    ERR_3073_OFFSET_UNKNOWN_FIELD = 3073,
+    // FF (Volume II D9): an introspection builtin (`@sizeOf`/`@alignOf`/
+    // `@bitSizeOf`/`@offsetOf`/`@bitOffsetOf`) whose target type does not
+    // resolve (or is not complete), or whose argument list does not match the
+    // builtin's arity (`@sizeOf`/`@alignOf`/`@bitSizeOf` exactly 1,
+    // `@offsetOf`/`@bitOffsetOf` exactly 2; Zig's "expected N argument(s),
+    // found M" wording). Replaces the `error[3043]` ICE net. Level 0, span on
+    // the builtin call; rejects with 0 `.c`.
+    ERR_3074_COMPTIME_BUILTIN_UNRESOLVED = 3074,
+    // FX12 (Volume II ch12): `try` must run in a function whose declared
+    // return type is an error union and whose error set contains the
+    // operand's; the operand itself must be an error union. Three Zig-shaped
+    // level-0 messages -- non-error-union enclosing return ("expected type
+    // 'X', found error set" + note "function cannot return an error"),
+    // incompatible sets ("try error set may not be compatible with the
+    // enclosing function's return type") and a non-error-union operand
+    // ("expected error union type, found 'X'" + note "consider omitting
+    // 'try'") -- plus Zig's "'try' outside function scope" for a
+    // container-level `try`. Span on the `try`; rejects with 0 `.c`.
+    // Anonymous/opaque operand sets (error_set 0) are a documented bounded
+    // divergence: the non-error-union-enclosing reject is unconditional.
+    ERR_3075_TRY_ENCLOSING_RETURN = 3075,
+    // FX16-F (Volume II ch7): a bare enum literal compared against a numeric
+    // operand with no expected enum context (the copied-tag case
+    // `const t = s.tag; t == .m`) previously typed the comparison `void` and
+    // lowered the literal to its name-id (silently false). Level-0 message
+    // "unable to infer type of enum literal in comparison with a numeric
+    // operand"; span on the enum literal; rejects with 0 `.c`.
+    ERR_3076_ENUM_LITERAL_NUMERIC_COMPARE = 3076,
+    // D9 refinement (Phase 2.5 Task 2): the semantic analyzer's expression
+    // depth guard tripped. A resource LIMIT, not an internal compiler error:
+    // `semanticAnalyzerResolveExpr` is still recursive and the 1 MB C-stack
+    // wall is ~139 AST levels, so above `SEMA_GUARD_MAX` the resolver reports
+    // this clean limit diagnostic and stops instead of overflowing the C
+    // stack. Explicit `= 3077` keeps every existing member's number stable.
+    // The rendered code (`error[3077]`) is deliberately outside the corpus
+    // `ICE_RE` (`error\[(48|9001|3043)\]`), so a guard trip buckets as an
+    // ordinary FAIL rather than an ICE. `ERR_9001_ICE` keeps its genuine
+    // users (emitter nesting cap, lowering temp/index invariants).
+    ERR_3077_EXPR_NESTING_LIMIT = 3077,
+    // Task 3 (Phase 2.5): a mutable for-item capture (`|*item|`) over an
+    // iterable with no writable addressable element: a range (its item is a
+    // value, not storage) or an array value that lowering would copy. The item
+    // is not registered; the optional index capture is still registered.
+    ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED = 3078,
+    // Task 7 (Phase 3.1): use-after-free of a same-block allocation. A free
+    // followed by a dereference/index/field use of the same identifier is
+    // reported; a bare pointer copy is not a use. Explicit `= 3079` at the
+    // enum tail keeps every earlier auto-increment member (notably bare
+    // `ERR_2005_DOUBLE_FREE`, real value 3035) and the explicit 3045 stable.
+    ERR_2006_USE_AFTER_FREE = 3079,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;
@@ -77,6 +301,8 @@ pub const ERR_1004_BARE_AT_SIGN: u16 = 4;
 pub const ERR_1005_UNRECOGNIZED_CHAR: u16 = 5;
 pub const WARN_1010_UNRECOGNIZED_ESCAPE: u16 = 6;
 pub const WARN_1011_INTEGER_OVERFLOW: u16 = 7;
+pub const ERR_3045_UNKNOWN_CALLING_CONVENTION: u16 = 3045;
+pub const ERR_3017_SUSPENDING_FUNCTION_POINTER: u16 = 3017;
 
 pub const MAX_DIAGNOSTICS: usize = 256;
 
@@ -237,6 +463,13 @@ pub const DiagnosticCollector = struct {
     error_count: usize,
     warning_count: usize,
     max_diagnostics: usize,
+    // Task 2c-F: per-node "already diagnosed" set. The same array-size node can
+    // be resolved by more than one pass (front_resolution then sema, or
+    // typeResolverResolveNames then a later pass), so emission must be
+    // deduped per node to avoid duplicate diagnostics.
+    diag_seen_items: [*]u32,
+    diag_seen_len: usize,
+    diag_seen_cap: usize,
 };
 
 pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager, interner: *StringInterner) DiagnosticCollector {
@@ -254,6 +487,9 @@ pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager,
         .error_count = @intCast(usize, 0),
         .warning_count = @intCast(usize, 0),
         .max_diagnostics = MAX_DIAGNOSTICS,
+        .diag_seen_items = undefined,
+        .diag_seen_len = @intCast(usize, 0),
+        .diag_seen_cap = @intCast(usize, 0),
     };
 }
 
@@ -305,6 +541,25 @@ pub fn diagnosticCollectorErrorCount(self: *DiagnosticCollector) u32 {
     return @intCast(u32, self.error_count);
 }
 
+pub fn diagnosticCollectorMarkNodeOnce(self: *DiagnosticCollector, node_idx: u32) bool {
+    var i: usize = 0;
+    while (i < self.diag_seen_len) : (i += 1) {
+        if (self.diag_seen_items[i] == node_idx) return false;
+    }
+    if (self.diag_seen_len >= self.diag_seen_cap) {
+        var new_cap: usize = if (self.diag_seen_cap < @intCast(usize, 16)) @intCast(usize, 16) else self.diag_seen_cap * 2;
+        var raw = alloc_mod.sandAlloc(self.allocator, new_cap * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+        var items = @ptrCast([*]u32, raw);
+        var ci: usize = 0;
+        while (ci < self.diag_seen_len) : (ci += 1) { items[ci] = self.diag_seen_items[ci]; }
+        self.diag_seen_items = items;
+        self.diag_seen_cap = new_cap;
+    }
+    self.diag_seen_items[self.diag_seen_len] = node_idx;
+    self.diag_seen_len += 1;
+    return true;
+}
+
 pub fn diagnosticCollectorWarningCount(self: *DiagnosticCollector) u32 {
     return @intCast(u32, self.warning_count);
 }
@@ -322,6 +577,24 @@ pub fn diagnosticCollectorAddRelatedSpan(self: *DiagnosticCollector, diag_idx: u
     file_id: u32, span_start: u32, span_end: u32, msg: []const u8) void {
     if (diag_idx >= @intCast(u32, self.diagnostics.len)) return;
     var msg_id = interner_mod.stringInternerIntern(self.interner, msg);
+    // Task 18: `related_span_idx == 0` is the "no related span" sentinel in
+    // Diagnostic and the renderer only prints entries with an index > 0, so the
+    // FIRST real span must land at index 1. Reserve slot 0 with an empty entry
+    // before the first emission.
+    if (self.related_span_len == 0) {
+        var seed_cap: usize = @intCast(usize, 8);
+        var seed_raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16) * seed_cap, @intCast(usize, 4)) catch unreachable;
+        var seed_items = @ptrCast([*]RelatedSpan, seed_raw);
+        seed_items[0] = RelatedSpan{
+            .span_file_id = @intCast(u32, 0),
+            .span_start = @intCast(u32, 0),
+            .span_end = @intCast(u32, 0),
+            .message_id = @intCast(u32, 0),
+        };
+        self.related_span_items = seed_items;
+        self.related_span_cap = seed_cap;
+        self.related_span_len = @intCast(usize, 1);
+    }
     var new_len: usize = self.related_span_len + @intCast(usize, 1);
     if (new_len >= self.related_span_cap) {
         var new_cap = self.related_span_cap * 2;
@@ -371,6 +644,80 @@ pub fn diagnosticCollectorFlushAndExit(self: *DiagnosticCollector, exit_code: u3
     pal.exit(@intCast(u8, exit_code));
 }
 
+// Task 7D: source scanners used to locate a declaration's name-token span for a
+// precise diagnostic when the AST node carries its name only as a payload
+// (var_decl, `for` captures). Comments are skipped; scanning is bounded by
+// `to` so a missing token cannot run away into the rest of the file.
+
+fn isIdentStartByte(c: u8) bool {
+    if (c >= 'a' and c <= 'z') return true;
+    if (c >= 'A' and c <= 'Z') return true;
+    if (c == '_') return true;
+    return false;
+}
+
+fn isIdentByte(c: u8) bool {
+    if (isIdentStartByte(c)) return true;
+    if (c >= '0' and c <= '9') return true;
+    return false;
+}
+
+pub fn diagnosticCollectorScanIdentSpan(self: *DiagnosticCollector, file_id: u32, from: u32, to: u32, out_start: *u32, out_end: *u32) bool {
+    var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, file_id);
+    var limit: usize = content.len;
+    if (@intCast(usize, to) < limit) limit = @intCast(usize, to);
+    var i: usize = @intCast(usize, from);
+    while (i < limit) {
+        var c = content[i];
+        if (c == '/' and i + 1 < limit and content[i + 1] == '/') {
+            while (i < limit and content[i] != '\n') { i += 1; }
+            continue;
+        }
+        if (c == '/' and i + 1 < limit and content[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < limit and !(content[i] == '*' and content[i + 1] == '/')) { i += 1; }
+            if (i + 1 < limit) { i += 2; } else { i = limit; }
+            continue;
+        }
+        if (isIdentStartByte(c)) {
+            var s = i;
+            while (i < limit and isIdentByte(content[i])) { i += 1; }
+            out_start.* = @intCast(u32, s);
+            out_end.* = @intCast(u32, i);
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+// Returns the byte offset of the LAST occurrence of `byte` in [from, to), or
+// 0xFFFFFFFF if absent (used to find the `)` that closes a `for` iterable).
+pub fn diagnosticCollectorFindLastByte(self: *DiagnosticCollector, file_id: u32, from: u32, to: u32, byte: u8) u32 {
+    var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, file_id);
+    var limit: usize = content.len;
+    if (@intCast(usize, to) < limit) limit = @intCast(usize, to);
+    var i: usize = @intCast(usize, from);
+    var found: u32 = @intCast(u32, 4294967295);
+    while (i < limit) : (i += 1) {
+        if (content[i] == byte) found = @intCast(u32, i);
+    }
+    return found;
+}
+
+// Returns the byte offset of the FIRST occurrence of `byte` in [from, to), or
+// 0xFFFFFFFF if absent (used to find the `>` of a switch prong's `=>`).
+pub fn diagnosticCollectorFindFirstByte(self: *DiagnosticCollector, file_id: u32, from: u32, to: u32, byte: u8) u32 {
+    var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, file_id);
+    var limit: usize = content.len;
+    if (@intCast(usize, to) < limit) limit = @intCast(usize, to);
+    var i: usize = @intCast(usize, from);
+    while (i < limit) : (i += 1) {
+        if (content[i] == byte) return @intCast(u32, i);
+    }
+    return @intCast(u32, 4294967295);
+}
+
 pub fn diagnosticBuilderMakeMsg(interner: *StringInterner, parts: [*]const []const u8, count: u32) []const u8 {
     var total: usize = 0;
     var ci: u32 = 0;
@@ -393,6 +740,7 @@ pub fn diagnosticBuilderMakeMsg(interner: *StringInterner, parts: [*]const []con
 pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
     if (self.diagnostics.len == 0) return;
 
+    sm_mod.sourceManagerResetFaults(self.source_manager);
     var diags = diagnosticArrayListGetSlice(self.diagnostics);
     sortDiagnostics(diags);
     var i: usize = 0;
@@ -452,7 +800,6 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, d.file_id);
         var offsets = sm_mod.sourceManagerGetLineOffsets(self.source_manager, d.file_id);
         var line_idx = mem_mod.binary_search(offsets, d.span_start);
-        if (line_idx > 0) line_idx -= 1;
         var line_start = @intCast(usize, offsets[@intCast(usize, line_idx)]);
         var line_end = content.len;
         var next_line = line_idx + 1;

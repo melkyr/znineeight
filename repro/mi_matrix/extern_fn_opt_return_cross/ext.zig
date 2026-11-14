@@ -1,1 +1,1 @@
-extern fn getp() *u32;
+pub extern fn getp() *u32;

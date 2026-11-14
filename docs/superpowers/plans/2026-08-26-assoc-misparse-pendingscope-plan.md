@@ -4,7 +4,7 @@
 
 **Goal:** (A) find and fix the self-emission defect that makes the self-compiled `zig1_5` mis-parse left-associative operator chains (`a-b-c` → `a-(b-c)`); (B) make the B3b scope-chain `pending_scope` slot nest-safe.
 
-**Architecture:** Phase A reproduces the reversal with a runtime fixture, diffs the self-emitted parser against the reference emission, pins the single mis-emitted construct, and fixes it. Phase B pins and applies a nest-safe pending-scope design without disturbing MD5 temp-ordering.
+**Architecture:** Phase A reproduces the reversal with a runtime fixture, diffs the self-emitted parser against the reference emission, pins the single mis-emitted construct, and fixes it. Phase B pins and applies a nest-safe pending-scope design. **AMENDMENT 4 (operator-ruled 2026-08-26):** Phase B fix = **option (c) — reorder the for-range lowering** (move the capture-add + `decl_local` to AFTER the end-expr lower, eliminating the pending-scope window entirely). The LIFO-stack + fresh/reuse + boundary-low-watermark design was REJECTED as patchy (operator: "this again just bloats with a patch"). Correctness governs; byte-identity is not required for Phase B (though the reorder is in fact MD5-neutral for the 4 gates — gol/lisp/mud have no for-loops and json uses only for-slice, so no gate program hits the reordered for-range path).
 
 **Tech Stack:** Zig (sf/src), C89 (emitted code), gcc -m32, bash (build scripts).
 
@@ -119,43 +119,43 @@ Commit verbatim. Report (append to task-ASSOC-report.md): fix summary, gate evid
 
 **Interfaces:**
 - Consumes: I-1 finding (single `pending_scope` slot, for-range-end capture orphaning); B3b scope-chain code (lower.zig:316-339, :416, :555, :798, :824, :4189).
-- Produces: pinned nest-safe design preserving MD5 temp-ordering.
+- Produces: pinned nest-safe design (**AMENDMENT 4: option (c) reorder**).
 
 - [ ] **Step 1: Verify the hole**
 
-Reproduce the I-1 shape if feasible: `for (0..if (rt) |x| x else 0) |t|` — a capture inside the range-end expr consuming the loop capture's pending scope. If no clean repro compiles, trace the code path in lower.zig (for-range lowering ~:4800-4830: capture add → end-expr lower → body scope push) and confirm the single-slot reuse.
+Reproduce the I-1 shape if feasible: `for (0..if (rt) |x| x else 0) |t|` — a capture inside the range-end expr consuming the loop capture's pending scope. If no clean repro compiles, trace the code path in lower.zig (for-range lowering ~:4800-4830: capture add → end-expr lower → body scope push) and confirm the single-slot reuse. **AMENDMENT 4 note:** the I-1 verification (done 2026-08-26) confirmed the hole empirically — the end-expr capture (`x`) and loop capture (`t`) are at the SAME depth `D+1`; a depth-keyed map (option b) collapses them exactly like the single slot, so option (b) does NOT fix the hole. Only a mechanism that distinguishes sibling scopes at equal depth works.
 
 - [ ] **Step 2: Design the fix**
 
-Options: (a) make `pending_scope` a stack (append/pop child scopes per depth level); (b) create a child scope on demand per `at_depth` value (map depth→scope node) so nested pending scopes coexist; (c) restructure the for-range lowering ordering (capture after end-expr) — BUT the B3b reviewer warned a naive reorder risks MD5 temp-ordering. Pick the design that is byte-identity-preserving; evaluate each against the 4 MD5 gates.
+**AMENDMENT 4 (operator-ruled): option (c) — reorder the for-range lowering.** The for-range is the ONLY site with a pending-scope window: `sf/src/lower.zig:4821` (capture-add + `decl_local t = start`) → `:4823` (`end_temp = lowerExpr(pattern.child_1)`) → body push via `lowerStmtBody` (`:4838`). Every other capture site (if/while `:1585/:1587`, switch prongs `:4168/:4172`, for-slice `:4891/:4892`) adds its capture immediately before its own `pushScopeDepth` — no window. Move the `:4821` capture-add block (maybeDisambiguateCapture + addLocalDecl + decl_local) to AFTER `end_temp = lowerExpr(self, pattern.child_1)` (`:4823`). This eliminates the pending-scope window entirely — NO stack, NO fresh/reuse selector, NO boundary low-watermark. It fixes BOTH the capture-in-end-expr case AND the capture-less end-expr case (`for (0..if (rt) 1 else 0) |t|`), which the stack design still orphaned. Semantically transparent: `t = start` is a pure prologue binding; the end-expr computation does not touch `t` or `start`. Only the emitted byte ORDER of the `decl_local` changes (moved after the end-expr's instructions) — allowed, correctness governs (AMENDMENT 4).
 
-- [ ] **Step 3: Byte-identity evaluation**
+- [ ] **Step 3: Correctness + gate evaluation**
 
-For the chosen design, verify (by reasoning + spot measurement) that no GREEN program's emitted bytes change (the hole has no gate/corpus trigger; the fix must not introduce any either). Pin the exact F locus.
+For the chosen reorder, verify by reasoning + spot measurement: (1) the I-1 repro now emits `total + t` (direct capture use, not `zT = t` load_local fallback); (2) the capture-less end-expr shape is fixed too; (3) gate impact — the 4 MD5 programs are unaffected (gol/lisp/mud: no for-loops; json: for-slice only, which is untouched) so the 4 gates stay byte-identical; matrix 21/21; self-compile re-count 0 errors. Pin the exact F locus: `sf/src/lower.zig:4821-4823` reorder.
 
 - [ ] **Step 4: Report + ledger + memory**
 
-Report: hole verification, design options with trade-offs, pinned F locus + MD5 impact. Ledger + mnemoria (discovery/decision).
+Report: hole verification, option (c) design + rationale (vs rejected (a)/(b)/stack+watermark), pinned F locus + gate impact. Ledger + mnemoria (discovery/decision).
 
 ---
 
 ### Task F-PENDSCOPE: apply the nest-safe fix
 
 **Files:**
-- Modify: `sf/src/lower.zig` (pinned locus)
-- Commit: `fix: pending_scope nest-safe (nested for-range captures keep their scope)`
+- Modify: `sf/src/lower.zig` (for-range reorder, ~:4821-4823)
+- Commit: `fix: pending_scope nest-safe (for-range capture after end-expr)`
 
 **Interfaces:**
-- Consumes: I-PENDSCOPE pinned design.
-- Produces: pending_scope nest-safe; 4 MD5s byte-identical; matrix 21/21.
+- Consumes: I-PENDSCOPE pinned design (AMENDMENT 4: option (c) reorder).
+- Produces: pending_scope nest-safe (reorder); 4 MD5s byte-identical (gate programs have no for-range, so the reorder is byte-neutral for them); matrix 21/21.
 
 - [ ] **Step 1: Apply the fix**
 
-Per I-PENDSCOPE's pinned design, modify `sf/src/lower.zig`. Z98-clean; preserve temp-ordering.
+Per I-PENDSCOPE's pinned design (AMENDMENT 4), modify `sf/src/lower.zig`: in the for-range branch, move the capture-add block (`maybeDisambiguateCapture` + `addLocalDecl` + `decl_local`) from its current position at `:4821` (before `end_temp = lowerExpr(self, pattern.child_1)`) to AFTER the end-expr lower at `:4823`. Do NOT touch the for-slice captures (`:4891/:4892`) or any other scope-chain code. Z98-clean; `edit`/`fastedit` only.
 
 - [ ] **Step 2: Gate verification**
 
-Rebuild zig1 (repo root, reinstall std). 4 MD5s byte-identical (gol `eed963e0…`, lisp `c3c58477…` repo-root CWD, json `089e4f04…`, mud `a1d0dd55…`). Matrix 21/21. Self-compile re-count 0 errors. Re-run the R-ASSOC fixture + B1 `emission_lower_crash_xmod` (reference + self-compiled rc=0) to confirm no regression from B3a/B3b.
+Rebuild zig1 (repo root, reinstall std). The I-1 repro `for (0..if (rt) |x| x else 0) |t|` must now emit direct capture use (`total + t`, not `zT = t` load_local fallback). 4 MD5s byte-identical (gol `eed963e0…`, lisp `c3c58477…` repo-root CWD, json `089e4f04…`, mud `a1d0dd55…`). Matrix 21/21. Self-compile re-count 0 errors. Re-run the R-ASSOC fixture + B1 `emission_lower_crash_xmod` (reference + self-compiled rc=0) to confirm no regression from B3a/B3b.
 
 - [ ] **Step 3: Commit + report + ledger + memory**
 

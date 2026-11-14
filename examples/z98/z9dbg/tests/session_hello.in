@@ -1,0 +1,16 @@
+break main.zig:15
+break main.zig:2
+break main.zig:4
+break main.zig:16
+break main.zig:16
+break main.zig:9
+break main.zig
+break
+run
+continue
+step
+notacommand
+backtrace
+dump variables /tmp/z9dbg_core_snap.txt
+dump variables /tmp/z9dbg_core_snap2.txt
+quit
