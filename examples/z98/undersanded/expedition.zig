@@ -38,9 +38,10 @@ pub const EXP_SURFACE: i32 = 12;
 const SEED_MASK: u32 = 0x00FFFFFF;
 
 // Both fields are parked here whenever no fight is in progress. A fresh
-// GameState is then never mistaken for an ongoing fight. A pending Subdue
-// keeps `def_index` live until resolveSubdueChoice clears it; settled
-// KILL/OVERKILL/CREATURE_FLED keep it so the node screen can render Secured.
+// GameState is then never mistaken for an ongoing fight. `def_index` is also
+// the single settled/pending marker: a pending Subdue keeps it live until
+// resolveSubdueChoice clears it; every settled outcome clears it and leaves the
+// Secured line to the CLS_SECURED log entry.
 pub const NO_FIGHT: i32 = -1;
 
 const REST_HEAL: i32 = 30;
@@ -151,7 +152,7 @@ fn addLoot(g: *def.GameState, cdef: *const def.CreatureDef, outcome: i32) void {
 // ---- Fight state ----------------------------------------------------------
 
 pub fn isInFight(g: *def.GameState) bool {
-    return g.fight.outcome == def.OUT_ONGOING;
+    return g.fight.def_index != NO_FIGHT and g.fight.outcome == def.OUT_ONGOING;
 }
 
 pub fn returnToDock(g: *def.GameState) void {
@@ -171,24 +172,18 @@ fn endAscent(g: *def.GameState) void {
     g.fight.def_index = NO_FIGHT;
 }
 
-// Marks a settled fight so the retained def_index (needed by the Secured line)
-// cannot make a repeated postFight award the same loot twice. startFightDef
-// overwrites flags from the creature def, clearing this bit for the next fight.
-const SETTLED_FLAG: u32 = 0x80000000;
-
-fn fightSettled(g: *const def.GameState) bool {
-    return (g.fight.flags & SETTLED_FLAG) != 0;
-}
-
-fn markFightSettled(g: *def.GameState) void {
-    g.fight.flags = g.fight.flags | SETTLED_FLAG;
+// Record the settled outcome once. The log lives until startFightDef resets it
+// for the next fight, and securedLine reads it back rather than fight state.
+fn logSecured(g: *def.GameState, idx: i32, outcome: i32) void {
+    fight.log(g, def.CLS_SECURED, def.MSG_SECURED, idx, outcome);
 }
 
 // Settle a fight once its outcome is resolved, or immediately when Hull hits 0
 // while the fight is still technically ongoing (creatureAct leaves it that
 // way). Returns true when the expedition ended (player flee or Hull-0 ascent).
+// def_index == NO_FIGHT is the settled marker, so a second call is a no-op.
 fn postFight(g: *def.GameState) bool {
-    if (g.fight.def_index < 0) return false;
+    if (g.fight.def_index == NO_FIGHT) return false;
     const idx = g.fight.def_index;
     const outcome = g.fight.outcome;
     const zone = g.exp.zone;
@@ -215,12 +210,12 @@ fn postFight(g: *def.GameState) bool {
     }
 
     if (outcome == def.OUT_CREATURE_FLED) {
-        // No loot; subdue-length renewal; stay at the node. Keep def_index so
-        // the Secured line can report `Secured: nothing`.
-        if (fightSettled(g)) return false;
+        // No loot; subdue-length renewal; stay at the node. The log entry drives
+        // the explicit `Secured: nothing` line.
         g.world.hull = g.fight.hull;
+        logSecured(g, idx, outcome);
         world.markTaken(&g.world, zone, idx, def.OUT_CREATURE_FLED);
-        markFightSettled(g);
+        g.fight.def_index = NO_FIGHT;
         return false;
     }
 
@@ -228,20 +223,20 @@ fn postFight(g: *def.GameState) bool {
         // §7: loot is awarded as the fight ends, before Release/Sell. Keep the
         // def_index and outcome live as the pending-choice marker; renewal and
         // the choice settle in resolveSubdueChoice.
-        if (fightSettled(g)) return false;
         var subdef = creatures.defAt(idx);
         addLoot(g, &subdef, outcome);
+        logSecured(g, idx, outcome);
         g.world.hull = g.fight.hull;
-        markFightSettled(g);
         return false;
     }
 
-    if (fightSettled(g)) return false;
+    // Kill / Overkill: corpse or ruined table, renewal, then clear the marker.
     var cdef = creatures.defAt(idx);
     addLoot(g, &cdef, outcome);
+    logSecured(g, idx, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
     g.world.hull = g.fight.hull;
-    markFightSettled(g);
+    g.fight.def_index = NO_FIGHT;
     return false;
 }
 
@@ -253,8 +248,8 @@ fn postFight(g: *def.GameState) bool {
 //
 // Valid only while `fight.outcome == OUT_SUBDUE` and the pending marker
 // (`def_index != NO_FIGHT`) is still live. The first valid call renews and
-// resolves the choice; it then clears def_index, so a second call no-ops.
-// `outcome` deliberately stays OUT_SUBDUE for the node screen's Secured line.
+// resolves the choice; it then clears def_index, so a second call no-ops. The
+// CLS_SECURED log entry written by postFight drives the node Secured line.
 
 pub const SUB_RELEASE: i32 = 1;
 pub const SUB_SELL: i32 = 2;
@@ -298,7 +293,7 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     }
 
     g.fight.def_index = NO_FIGHT;
-    g.fight.outcome = NO_FIGHT;
+    g.fight.outcome = def.OUT_ONGOING;
     g.pending_cond = def.COND_NONE;
 
     // Depart = 1 dock action + travel cost, advanced instantly (§6).

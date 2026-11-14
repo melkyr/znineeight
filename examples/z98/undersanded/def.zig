@@ -125,6 +125,8 @@ pub const BAR_RESTRAIN: i32 = 2;
 
 pub const LOG_NORMAL: i32 = 0;
 pub const LOG_WARN: i32 = 1;
+// Internal settlement record: entry.a = fight.def_index, entry.b = outcome.
+pub const CLS_SECURED: i32 = 2;
 
 pub const COND_NONE: i32 = 0;
 pub const COND_DROWSY: i32 = 1;
@@ -151,6 +153,8 @@ pub const MSG_LAST_SURGE: i32 = 1;
 // Decline copy used when no coupling regen is active (fight.MSG_DECLINE keeps
 // the active-regen wording). Next free id after fight.zig's MSG_* table.
 pub const MSG_DECLINE_PLAIN: i32 = 15;
+// Settlement record for the Secured line; no message-table text.
+pub const MSG_SECURED: i32 = 16;
 
 pub const MsgRow = struct { id: i32, text: []const u8 };
 

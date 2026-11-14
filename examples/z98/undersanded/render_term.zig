@@ -505,22 +505,27 @@ fn addSecuredLines(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: i
     }
 }
 
-// Recompute the last fight's secured parts from its outcome row. Settled
-// KILL/OVERKILL and CREATURE_FLED fights retain def_index for this line;
-// pending Subdue still carries it until the Release/Sell choice. Anything else
-// (ongoing, no fight, player flee/ascent) has no secured line.
+// Recompute the last fight's secured parts from the most recent CLS_SECURED
+// settlement entry: `a` is the def index and `b` the outcome. No entry means no
+// secured line; a CREATURE_FLED entry renders the explicit empty line.
 pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
+    var last: i32 = -1;
+    var i: i32 = 0;
+    while (i < g.log_n) : (i += 1) {
+        if (g.log[@intCast(usize, i)].class == def.CLS_SECURED) last = i;
+    }
+    if (last < 0) return "";
+
     var h: [def.MAX_PARTS]i32 = undefined;
-    var i: usize = 0;
-    while (i < def.MAX_PARTS) : (i += 1) {
-        h[i] = 0;
+    var k: usize = 0;
+    while (k < def.MAX_PARTS) : (k += 1) {
+        h[k] = 0;
     }
 
-    const idx = g.fight.def_index;
-    const outcome = g.fight.outcome;
-    if (outcome == def.OUT_CREATURE_FLED) {
-        // The fled creature left nothing; render the explicit empty line.
-    } else if (idx >= 0 and idx < creatures.defCount()) {
+    const e = g.log[@intCast(usize, last)];
+    const idx = e.a;
+    const outcome = e.b;
+    if (idx >= 0 and idx < creatures.defCount()) {
         const cargo = world.cargoMax(&g.world);
         var cdef = creatures.defAt(idx);
         if (outcome == def.OUT_SUBDUE) {
@@ -529,24 +534,20 @@ pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
             addSecuredLines(&h, cdef.kill[0..], cargo);
         } else if (outcome == def.OUT_OVERKILL) {
             addSecuredLines(&h, cdef.over[0..], cargo);
-        } else {
-            return "";
         }
-    } else {
-        return "";
     }
 
     var p: usize = 0;
     p = copyInto(out, p, "Secured: ");
     var any = false;
-    i = 0;
-    while (i < def.MAX_PARTS) : (i += 1) {
-        if (h[i] <= 0) continue;
+    k = 0;
+    while (k < def.MAX_PARTS) : (k += 1) {
+        if (h[k] <= 0) continue;
         if (any) p = copyInto(out, p, ", ");
         any = true;
-        p = copyInto(out, p, partName(@intCast(i32, i)));
+        p = copyInto(out, p, partName(@intCast(i32, k)));
         p = copyInto(out, p, " x");
-        p = intInto(out, p, h[i]);
+        p = intInto(out, p, h[k]);
     }
     if (!any) {
         p = copyInto(out, p, "nothing");

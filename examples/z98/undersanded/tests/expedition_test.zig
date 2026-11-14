@@ -251,6 +251,15 @@ fn startsWith(text: []const u8, prefix: []const u8) bool {
     return true;
 }
 
+fn countSecured(s: *const def.GameState) i32 {
+    var n: i32 = 0;
+    var i: i32 = 0;
+    while (i < s.log_n) : (i += 1) {
+        if (s.log[@intCast(usize, i)].class == def.CLS_SECURED) n += 1;
+    }
+    return n;
+}
+
 // ---- Cases ----------------------------------------------------------------
 
 fn tZ2PhaseLedger() bool {
@@ -307,8 +316,8 @@ fn tHullZeroKeepsHold() bool {
     killCurrent(&g);
     if (g.fight.outcome == def.OUT_ONGOING) return false;
     expedition.expeditionStep(&g, expedition.EXP_REST);
-    // Settled kill retains def_index for the Secured line.
-    if (g.fight.def_index < 0) return false;
+    // A settled kill clears def_index; the CLS_SECURED log owns the line.
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
 
     var snap: [def.MAX_PARTS]i32 = undefined;
     copyHold(&snap, &g.exp.hold);
@@ -411,9 +420,9 @@ fn tMaxFightsBlocksHunt() bool {
     // Settles fight 4, then refuses to hunt.
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
     if (g.exp.fight_index != 4) return false;
-    // Settled creature flee retains def_index for the Secured line.
+    // A settled creature flee clears def_index; the log owns the line.
     if (g.fight.outcome != def.OUT_CREATURE_FLED) return false;
-    if (g.fight.def_index < 0) return false;
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
     if (g.exp.active != 1) return false;
     return true;
 }
@@ -674,7 +683,7 @@ fn tLootTablesExact() bool {
     if (kill.fight.outcome != def.OUT_KILL) return false;
     expectedDropHold(&want, kill_def.kill[0..], 0);
     if (!holdEqual(&kill.exp.hold, &want)) return false;
-    if (kill.fight.def_index != kill_idx) return false;
+    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
     const kri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, kill_idx);
     if (kill.world.ready[kri] != kill_cycle + kill_def.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
 
@@ -687,7 +696,7 @@ fn tLootTablesExact() bool {
     if (over.fight.outcome != def.OUT_OVERKILL) return false;
     expectedDropHold(&want, over_def.over[0..], 0);
     if (!holdEqual(&over.exp.hold, &want)) return false;
-    if (over.fight.def_index != over_idx) return false;
+    if (over.fight.def_index != expedition.NO_FIGHT) return false;
     return true;
 }
 
@@ -718,23 +727,40 @@ fn tFleeAddsNothing() bool {
     return true;
 }
 
-// §7: settled Kill/Overkill keep def_index so the node Secured line renders the
-// real §14.4 drops; creature flee renders the explicit empty line.
+// §7: settled KILL/OVERKILL log the exact §14.4 drops (including the Cargo
+// primary-line bonus); creature flee logs the explicit empty line. No outcome
+// may ever set fight.flags bit 31.
 fn tSecuredLineForSettledFights() bool {
+    var line_buf: [256]u8 = undefined;
+    var ck_buf: [256]u8 = undefined;
+    var want_buf: [256]u8 = undefined;
+
     var kill = startReal(REAL_SEED, 0);
     const kill_idx = kill.fight.def_index;
     if (kill_idx < 0) return false;
     const kill_def = creatures.defAt(kill_idx);
     driveReal(&kill, def.ACT_STRIKE);
     if (kill.fight.outcome != def.OUT_KILL) return false;
-    if (kill.fight.def_index != kill_idx) return false;
+    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
+    if (kill.fight.flags != kill_def.flags) return false;
+    if ((kill.fight.flags & 0x80000000) != 0) return false;
+    if (countSecured(&kill) != 1) return false;
 
-    var line_buf: [256]u8 = undefined;
-    var want_buf: [256]u8 = undefined;
     const kill_line = render.securedLine(&kill, line_buf[0..]);
     const kill_want = expectedSecured(want_buf[0..], kill_def.kill[0..], 0);
     if (!textEqual(kill_line, kill_want)) return false;
     if (startsWith(kill_line, "Secured: nothing")) return false;
+
+    // Cargo 2 adds +2 to the primary (non-keystone, first non-empty) line.
+    var cargo_kill = startReal(REAL_SEED, 2);
+    const ck_idx = cargo_kill.fight.def_index;
+    if (ck_idx != kill_idx) return false;
+    driveReal(&cargo_kill, def.ACT_STRIKE);
+    if (cargo_kill.fight.outcome != def.OUT_KILL) return false;
+    const ck_line = render.securedLine(&cargo_kill, ck_buf[0..]);
+    const ck_want = expectedSecured(want_buf[0..], kill_def.kill[0..], 2);
+    if (!textEqual(ck_line, ck_want)) return false;
+    if (textEqual(ck_line, kill_line)) return false;
 
     var over = startReal(OVERKILL_SEED, 0);
     const over_idx = over.fight.def_index;
@@ -742,7 +768,9 @@ fn tSecuredLineForSettledFights() bool {
     const over_def = creatures.defAt(over_idx);
     driveReal(&over, def.ACT_STRIKE);
     if (over.fight.outcome != def.OUT_OVERKILL) return false;
-    if (over.fight.def_index != over_idx) return false;
+    if (over.fight.def_index != expedition.NO_FIGHT) return false;
+    if (over.fight.flags != over_def.flags) return false;
+    if ((over.fight.flags & 0x80000000) != 0) return false;
 
     const over_line = render.securedLine(&over, line_buf[0..]);
     const over_want = expectedSecured(want_buf[0..], over_def.over[0..], 0);
@@ -750,9 +778,15 @@ fn tSecuredLineForSettledFights() bool {
     if (startsWith(over_line, "Secured: nothing")) return false;
 
     var fled = startReal(REAL_SEED, 0);
+    const fled_idx = fled.fight.def_index;
+    if (fled_idx < 0) return false;
+    const fled_def = creatures.defAt(fled_idx);
     fleeCreature(&fled);
     if (fled.fight.outcome != def.OUT_CREATURE_FLED) return false;
     expedition.expeditionStep(&fled, expedition.EXP_SURFACE);
+    if (fled.fight.def_index != expedition.NO_FIGHT) return false;
+    if (fled.fight.flags != fled_def.flags) return false;
+    if ((fled.fight.flags & 0x80000000) != 0) return false;
     const fled_line = render.securedLine(&fled, line_buf[0..]);
     if (!textEqual(fled_line, "Secured: nothing")) return false;
     return true;
@@ -810,7 +844,9 @@ fn tKillAwardsAndRenews() bool {
     var want: [def.MAX_PARTS]i32 = undefined;
     expectedDropHold(&want, cdef.kill[0..], 0);
     if (!holdEqual(&g.exp.hold, &want)) return false;
-    if (g.fight.def_index != idx) return false;
+
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.flags != cdef.flags) return false;
 
     const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
@@ -836,10 +872,56 @@ fn tRoughSleepCarriesIntoFight() bool {
 fn tDepartParksNoFight() bool {
     var g = newGame();
     if (expedition.isInFight(&g)) return false;
+
+    // Stale settled/pending markers from an earlier expedition must not survive.
+    g.fight.def_index = 0;
+    g.fight.outcome = def.OUT_KILL;
     _ = expedition.depart(&g, 1);
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.outcome != def.OUT_ONGOING) return false;
     if (expedition.isInFight(&g)) return false;
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
     if (!expedition.isInFight(&g)) return false;
+    return true;
+}
+
+fn tSecuredNoEntryEmpty() bool {
+    var g = newGame();
+    var buf: [256]u8 = undefined;
+    if (render.securedLine(&g, buf[0..]).len != 0) return false;
+
+    // A normal fight-log row is not a settlement record.
+    g.log_n = 1;
+    g.log[0] = def.LogEntry{ .class = def.LOG_NORMAL, .msg_id = fight.MSG_STRIKE, .a = 1, .b = 2 };
+    if (render.securedLine(&g, buf[0..]).len != 0) return false;
+    return true;
+}
+
+fn tSecuredExactlyOnce() bool {
+    var g = startReal(REAL_SEED, 0);
+    const idx = g.fight.def_index;
+    if (idx < 0) return false;
+    const cdef = creatures.defAt(idx);
+
+    // Resolve directly so no postFight has run yet.
+    g.fight.hp = 1;
+    game.gameStep(&g, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 });
+    if (g.fight.outcome != def.OUT_KILL and g.fight.outcome != def.OUT_OVERKILL) return false;
+    if (countSecured(&g) != 0) return false;
+
+    expedition.expeditionStep(&g, expedition.EXP_REST);
+    if (countSecured(&g) != 1) return false;
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.flags != cdef.flags) return false;
+
+    var snap: [def.MAX_PARTS]i32 = undefined;
+    copyHold(&snap, &g.exp.hold);
+
+    // Second settle attempt is a no-op: marker clear, no extra log or loot.
+    expedition.expeditionStep(&g, expedition.EXP_REST);
+    if (countSecured(&g) != 1) return false;
+    if (!holdEqual(&snap, &g.exp.hold)) return false;
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
     return true;
 }
 
@@ -865,6 +947,8 @@ pub fn main() void {
     report("kill_awards_drops_and_renews", tKillAwardsAndRenews());
     report("rough_sleep_carries_into_next_fight", tRoughSleepCarriesIntoFight());
     report("depart_parks_no_fight_state", tDepartParksNoFight());
+    report("secured_line_no_entry_empty", tSecuredNoEntryEmpty());
+    report("secured_awards_exactly_once", tSecuredExactlyOnce());
 
     if (fails != 0) os.exit(1);
     io.write("expedition_test PASS\n");
