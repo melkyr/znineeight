@@ -95,6 +95,10 @@ in sf/docs/tech_docs/:
   `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`.
   zig0 is retired and is not a current build path.
 - **Version Control**: Git
+- **Branch policy**: milestone/example work integrates into **`zig1_start`**
+  (merge `--no-ff` at milestone finish). `zig1_improvements` is the historical
+  integration branch (merged into `zig1_start` as PR #791) — do not target it.
+  Never push from a milestone session.
 - **Testing**: seed/fixed-point closure, corpus classification, goldens,
   stdlib fixtures/crosscheck, and targeted fixtures.
 
