@@ -2,9 +2,9 @@
 //
 // Pure: no I/O. Travel phases are advanced instantly at depart (1 dock action
 // + travel cost) and on return (travel cost only, no arrival action). There is
-// no persistent in-transit state. Fights are driven through game.gameStep;
-// expeditionStep settles a finished fight at entry, then applies the requested
-// field action.
+// no persistent in-transit state. expeditionStep is the single entry: ongoing
+// fights forward ACT_* verbs to game.gameStep and immediately run postFight
+// (so a Hull-0 creature hit ascends at once); field actions use EXP_* values.
 //
 // Fight seeds use the §25.5 formula `exp.seed + fight_index*77`. startFightDef
 // computes that from the *current* exp.fight_index, so the first fight is
@@ -21,12 +21,21 @@ const encounter = @import("encounter.zig");
 const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
 const fight = @import("fight.zig");
+const game = @import("game.zig");
 
 // ---- Field actions --------------------------------------------------------
+//
+// Values 10..12 keep field actions disjoint from def.ACT_* (1..6), so a single
+// expeditionStep entry can dispatch fight actions verbatim.
 
-pub const EXP_HUNT: i32 = 1;
-pub const EXP_REST: i32 = 2;
-pub const EXP_SURFACE: i32 = 3;
+pub const EXP_HUNT: i32 = 10;
+pub const EXP_REST: i32 = 11;
+pub const EXP_SURFACE: i32 = 12;
+
+// Bound on the expedition seed. fight.zig adds `fight_index*77` in u32; keeping
+// the start seed under 2^24 leaves ample headroom for the whole 3..6 fight
+// expedition and never traps under -fsafe.
+const SEED_MASK: u32 = 0x00FFFFFF;
 
 // Both fields are parked here whenever no fight is in progress. A fresh
 // GameState is then never mistaken for an ongoing fight.
@@ -82,16 +91,34 @@ fn poolEmpty(g: *def.GameState) bool {
 
 // ---- Loot hold ------------------------------------------------------------
 
-fn addDropLines(g: *def.GameState, lines: []const def.DropLine) void {
+// Keystones are drop-only, used as-is, and never receive the Cargo bonus.
+fn isKeystone(part: i32) bool {
+    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
+}
+
+fn addDropLines(g: *def.GameState, lines: []const def.DropLine, cargo: i32) void {
     // Z98 lowers `g.exp.hold[i]` through a struct copy; go via a pointer so
     // the write reaches the real hold array.
     const ep = &g.exp;
+
+    // Primary = first non-empty, non-keystone line. §7 Cargo adds to that line
+    // only, not to every line.
+    var primary: i32 = -1;
+    var p: usize = 0;
+    while (p < def.MAX_DROP_LINES and p < lines.len) : (p += 1) {
+        if (lines[p].part <= 0 or lines[p].count <= 0) continue;
+        if (isKeystone(lines[p].part)) continue;
+        primary = @intCast(i32, p);
+        break;
+    }
+
     var i: usize = 0;
-    while (i < def.MAX_DROP_LINES) : (i += 1) {
+    while (i < def.MAX_DROP_LINES and i < lines.len) : (i += 1) {
         const part = lines[i].part;
-        const count = lines[i].count;
+        var count = lines[i].count;
         if (part <= 0 or count <= 0) continue;
         if (@intCast(usize, part) >= def.MAX_PARTS) continue;
+        if (@intCast(i32, i) == primary) count += cargo;
         ep.hold[@intCast(usize, part)] += count;
     }
 }
@@ -107,12 +134,13 @@ fn recountHold(g: *def.GameState) void {
 }
 
 // §7: Subdue/Kill/Overkill drop immediately into the hold. Flee/ascent add
-// nothing. Cargo's primary-line bonus is a later (M5) concern.
+// nothing. Cargo adds its current-tier count to the primary drop line only.
 fn addLoot(g: *def.GameState, cdef: *const def.CreatureDef, outcome: i32) void {
+    const cargo = world.cargoMax(&g.world);
     switch (outcome) {
-        def.OUT_SUBDUE => addDropLines(g, cdef.sub[0..]),
-        def.OUT_KILL => addDropLines(g, cdef.kill[0..]),
-        def.OUT_OVERKILL => addDropLines(g, cdef.over[0..]),
+        def.OUT_SUBDUE => addDropLines(g, cdef.sub[0..], cargo),
+        def.OUT_KILL => addDropLines(g, cdef.kill[0..], cargo),
+        def.OUT_OVERKILL => addDropLines(g, cdef.over[0..], cargo),
         else => return,
     }
     recountHold(g);
@@ -134,36 +162,55 @@ pub fn returnToDock(g: *def.GameState) void {
     g.exp.active = 0;
 }
 
-fn hasPendingFight(g: *def.GameState) bool {
-    if (g.exp.active != 1) return false;
-    if (g.fight.def_index < 0) return false;
-    if (g.fight.outcome == def.OUT_ONGOING and g.fight.hull > 0) return false;
-    return true;
+// Escape a fight without recording a flee. Emergency Ascent is not a player
+// flee, so its outcome must not drive renewal.
+fn endAscent(g: *def.GameState) void {
+    g.fight.outcome = NO_FIGHT;
+    g.fight.def_index = NO_FIGHT;
 }
 
-// Settle one finished fight. Returns true when the expedition ended (player
-// flee or Hull-0 ascent); false when play continues at the node.
-fn settleFight(g: *def.GameState) bool {
+// Settle a fight once its outcome is resolved, or immediately when Hull hits 0
+// while the fight is still technically ongoing (creatureAct leaves it that
+// way). Returns true when the expedition ended (player flee or Hull-0 ascent).
+fn postFight(g: *def.GameState) bool {
+    if (g.fight.def_index < 0) return false;
     const idx = g.fight.def_index;
     const outcome = g.fight.outcome;
     const zone = g.exp.zone;
-    var cdef = creatures.defAt(idx);
 
-    // Hull persists across fights; copy the per-fight value back first so the
-    // ascent check sees the real damage.
-    g.world.hull = g.fight.hull;
-
-    if (outcome == def.OUT_PLAYER_FLED or g.world.hull <= 0) {
-        // Player flee / Emergency Ascent: nothing from the current fight,
-        // secured hold kept, +1 phase, then normal return travel.
+    // Hull 0 is checked before outcome: M2's creatureAct zeroes Hull but leaves
+    // the fight OUT_ONGOING, and ascent must end it immediately.
+    if (g.fight.hull <= 0) {
+        endAscent(g);
+        g.world.hull = 0;
         world.advancePhase(&g.world);
-        g.fight.def_index = NO_FIGHT;
         returnToDock(g);
         return true;
     }
 
+    if (outcome == def.OUT_ONGOING) return false;
+
+    if (outcome == def.OUT_PLAYER_FLED) {
+        // Nothing from this fight; secured hold kept, +1 phase, return travel.
+        g.world.hull = g.fight.hull;
+        g.fight.def_index = NO_FIGHT;
+        world.advancePhase(&g.world);
+        returnToDock(g);
+        return true;
+    }
+
+    if (outcome == def.OUT_CREATURE_FLED) {
+        // No loot; subdue-length renewal; stay at the node.
+        g.world.hull = g.fight.hull;
+        world.markTaken(&g.world, zone, idx, def.OUT_CREATURE_FLED);
+        g.fight.def_index = NO_FIGHT;
+        return false;
+    }
+
+    var cdef = creatures.defAt(idx);
     addLoot(g, &cdef, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
+    g.world.hull = g.fight.hull;
     g.fight.def_index = NO_FIGHT;
     return false;
 }
@@ -175,7 +222,9 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     ep.active = 1;
     ep.zone = zone;
     ep.fight_index = 0;
-    ep.seed = rng.rngNext(&g.world.rng_state);
+    // Bound the drawn seed (see SEED_MASK): fight.zig adds `fight_index*77`
+    // in u32, and a full-range seed would trap under -fsafe.
+    ep.seed = rng.rngNext(&g.world.rng_state) & SEED_MASK;
     ep.hold_n = 0;
     var i: usize = 0;
     while (i < def.MAX_PARTS) : (i += 1) {
@@ -200,11 +249,7 @@ fn hunt(g: *def.GameState) void {
     if (g.exp.fight_index >= world.maxFights(&g.world)) return;
 
     var idx: i32 = NO_FIGHT;
-    if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) {
-        // Empty pool -> safe Rest: heal, no rough-sleep, no extra phase.
-        healNode(g);
-        return;
-    }
+    if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) return;
     if (idx < 0) return;
 
     world.markSeen(&g.world, idx);
@@ -230,11 +275,15 @@ fn hunt(g: *def.GameState) void {
 
 fn restAtNode(g: *def.GameState) void {
     if (isInFight(g)) return;
+
+    // Availability depends on cycle/phase, so decide before advancing: the
+    // Rest's own phase step must not turn a non-empty pool into a safe Rest.
+    const empty = poolEmpty(g);
     healNode(g);
     world.advancePhase(&g.world);
 
     // Node Rest is penalised; empty-pool Rest is safe (§5).
-    if (!poolEmpty(g)) {
+    if (!empty) {
         const roll = rng.rngRange(&g.world.rng_state, COND_ROLL_LO, COND_ROLL_HI);
         g.pending_cond = def.COND_DROWSY + roll;
     }
@@ -243,13 +292,22 @@ fn restAtNode(g: *def.GameState) void {
 pub fn expeditionStep(g: *def.GameState, action: i32) void {
     if (g.exp.active == 0) return;
 
-    if (hasPendingFight(g)) {
-        const ended = settleFight(g);
-        if (ended) return;
+    // Single entry: while a fight is ongoing, actions 1..6 are def.ACT_*
+    // verbs routed straight to game.gameStep. Run postFight immediately even
+    // when the creature's attack just zeroed Hull mid-fight.
+    if (isInFight(g)) {
+        if (action >= def.ACT_STRIKE and action <= def.ACT_DECLINE) {
+            game.gameStep(g, def.Action{ .kind = action, .arg = 0 });
+        }
+        _ = postFight(g);
+        return;
     }
 
-    // Ongoing fights are driven by game.gameStep; field actions wait.
-    if (isInFight(g)) return;
+    // A resolved fight may be waiting (e.g. an external gameStep or a test);
+    // settle it before applying a field action.
+    if (g.fight.def_index >= 0) {
+        if (postFight(g)) return;
+    }
 
     switch (action) {
         EXP_HUNT => hunt(g),
