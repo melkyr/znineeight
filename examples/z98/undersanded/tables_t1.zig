@@ -5,10 +5,20 @@
 // M4 rows at 5..17). Z1-Z3 carry the §13 tables; Z4..Z11 are empty stubs
 // until M13. Base weights sum to 100 per zone/phase (commons + rares).
 
+const def = @import("def.zig");
+
 pub const EncounterRow = struct { def_index: i32, weight: i32 };
 
 pub const PHASE_DAY: i32 = 0;
 pub const PHASE_NIGHT: i32 = 1;
+
+// ---- §12 travel-cost ladder ----------------------------------------------
+//
+// Travel phases each way per zone. Z1..Z8 then the boss route D at index 8;
+// unused slots are 0. Boss detection is a flag column so callers never spell
+// the dense index.
+pub const ZONE_COST: [def.MAX_ZONES]i32 = .{ 1, 2, 3, 3, 4, 4, 5, 5, 5, 0, 0, 0 };
+pub const ZONE_IS_BOSS: [def.MAX_ZONES]i32 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 };
 
 pub const EMPTY = [0]EncounterRow{};
 
