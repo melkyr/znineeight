@@ -14,7 +14,9 @@ const world = @import("../world.zig");
 const rng = @import("../rng.zig");
 const game = @import("../game.zig");
 const creatures = @import("../creatures_t1.zig");
+const fight = @import("../fight.zig");
 const expedition = @import("../expedition.zig");
+const render = @import("../render_term.zig");
 
 var fails: usize = 0;
 
@@ -119,14 +121,6 @@ fn expectedSeed(seed: u32, index: i32) u32 {
     return s;
 }
 
-fn findDefIndex(id: i32) i32 {
-    var i: i32 = 0;
-    while (i < creatures.defCount()) : (i += 1) {
-        if (creatures.defAt(i).id == id) return i;
-    }
-    return -1;
-}
-
 fn isKeystone(part: i32) bool {
     return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
 }
@@ -155,17 +149,46 @@ fn expectedDropHold(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: 
     }
 }
 
-// Start a real expedition fight, then retarget its def index so drop-table
-// assertions land on a known creature.
-fn startedGame(idx: i32) def.GameState {
+// Real Z2 (night on arrival) drive. Seed 0 hunts a Kelp Crab: Restrain
+// reaches the auto-subdue gate, Strike lands a plain Kill, and seed 9 Strike
+// overkills. Modal prompts (rare rows) take the Attempt action.
+const REAL_SEED: u32 = 0;
+const OVERKILL_SEED: u32 = 9;
+
+fn startReal(seed: u32, cargo: i32) def.GameState {
     var g = newGame();
-    _ = expedition.depart(&g, 0);
+    const gw = &g.world;
+    gw.rng_state = seed;
+    gw.boat[world.BOAT_CARGO] = cargo;
+    _ = expedition.depart(&g, 1);
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
-    if (g.fight.def_index >= 0) {
-        g.fight.def_index = idx;
-        g.fight.hull = g.world.hull;
-    }
     return g;
+}
+
+fn driveReal(g: *def.GameState, act: i32) void {
+    var guard: i32 = 0;
+    while (expedition.isInFight(g) and guard < 80) : (guard += 1) {
+        if (g.screen == fight.SCREEN_FIGHT) {
+            expedition.expeditionStep(g, act);
+        } else {
+            expedition.expeditionStep(g, def.ACT_ATTEMPT);
+        }
+    }
+}
+
+fn realSubdue(seed: u32) def.GameState {
+    var g = startReal(seed, 0);
+    driveReal(&g, def.ACT_RESTRAIN);
+    return g;
+}
+
+fn startsWith(text: []const u8, prefix: []const u8) bool {
+    if (prefix.len > text.len) return false;
+    var i: usize = 0;
+    while (i < prefix.len) : (i += 1) {
+        if (text[i] != prefix[i]) return false;
+    }
+    return true;
 }
 
 // ---- Cases ----------------------------------------------------------------
@@ -520,75 +543,174 @@ fn tSeedBounded() bool {
 }
 
 fn tCargoBonusPrimaryOnly() bool {
-    const idx = findDefIndex(16); // Ironclad Wrasse: three subdue lines
+    var probe = realSubdue(REAL_SEED);
+    if (probe.fight.outcome != def.OUT_SUBDUE) return false;
+    const idx = probe.fight.def_index;
     if (idx < 0) return false;
     const cdef = creatures.defAt(idx);
-    if (cdef.sub[0].part <= 0 or cdef.sub[1].part <= 0 or cdef.sub[2].part <= 0) return false;
-    if (isKeystone(cdef.sub[0].part) or isKeystone(cdef.sub[1].part) or isKeystone(cdef.sub[2].part)) return false;
+
+    var nonempty: i32 = 0;
+    var i: usize = 0;
+    while (i < def.MAX_DROP_LINES) : (i += 1) {
+        if (cdef.sub[i].part > 0 and cdef.sub[i].count > 0) nonempty += 1;
+    }
+    if (nonempty < 2) return false;
+
+    var primary: i32 = -1;
+    i = 0;
+    while (i < def.MAX_DROP_LINES) : (i += 1) {
+        if (cdef.sub[i].part <= 0 or cdef.sub[i].count <= 0) continue;
+        if (isKeystone(cdef.sub[i].part)) continue;
+        primary = @intCast(i32, i);
+        break;
+    }
+    if (primary < 0) return false;
 
     var tier: i32 = 0;
     while (tier <= 3) : (tier += 1) {
-        var g = startedGame(idx);
-        const gw = &g.world;
-        gw.boat[world.BOAT_CARGO] = tier;
-        g.fight.outcome = def.OUT_SUBDUE;
-        g.fight.hull = g.world.hull;
-        expedition.expeditionStep(&g, expedition.EXP_SURFACE);
+        var g = startReal(REAL_SEED, tier);
+        if (g.fight.def_index != idx) return false;
+        driveReal(&g, def.ACT_RESTRAIN);
+        if (g.fight.outcome != def.OUT_SUBDUE) return false;
 
         var want: [def.MAX_PARTS]i32 = undefined;
         expectedDropHold(&want, cdef.sub[0..], tier);
         if (!holdEqual(&g.exp.hold, &want)) return false;
-        const p0: usize = @intCast(usize, cdef.sub[0].part);
-        const p1: usize = @intCast(usize, cdef.sub[1].part);
-        const p2: usize = @intCast(usize, cdef.sub[2].part);
-        if (g.exp.hold[p0] != cdef.sub[0].count + tier) return false;
-        if (g.exp.hold[p1] != cdef.sub[1].count) return false;
-        if (g.exp.hold[p2] != cdef.sub[2].count) return false;
+
+        i = 0;
+        while (i < def.MAX_DROP_LINES) : (i += 1) {
+            if (cdef.sub[i].part <= 0 or cdef.sub[i].count <= 0) continue;
+            var add: i32 = 0;
+            if (@intCast(i32, i) == primary) add = tier;
+            const p: usize = @intCast(usize, cdef.sub[i].part);
+            if (g.exp.hold[p] != cdef.sub[i].count + add) return false;
+        }
     }
     return true;
 }
 
 fn tLootTablesExact() bool {
-    const idx = findDefIndex(16); // Ironclad Wrasse: distinct sub/kill/over lines
-    if (idx < 0) return false;
-    const cdef = creatures.defAt(idx);
+    // Subdue: real drive, drops already in the hold while the choice is pending.
+    var sub = realSubdue(REAL_SEED);
+    if (sub.fight.outcome != def.OUT_SUBDUE) return false;
+    const sub_idx = sub.fight.def_index;
+    if (sub_idx < 0) return false;
+    const sub_def = creatures.defAt(sub_idx);
 
-    const outcomes = [3]i32{ def.OUT_SUBDUE, def.OUT_KILL, def.OUT_OVERKILL };
-    var k: usize = 0;
-    while (k < outcomes.len) : (k += 1) {
-        var g = startedGame(idx);
-        g.fight.outcome = outcomes[k];
-        g.fight.hull = g.world.hull;
-        expedition.expeditionStep(&g, expedition.EXP_SURFACE);
+    var want: [def.MAX_PARTS]i32 = undefined;
+    expectedDropHold(&want, sub_def.sub[0..], 0);
+    if (!holdEqual(&sub.exp.hold, &want)) return false;
 
-        var want: [def.MAX_PARTS]i32 = undefined;
-        if (outcomes[k] == def.OUT_SUBDUE) {
-            expectedDropHold(&want, cdef.sub[0..], 0);
-        } else if (outcomes[k] == def.OUT_KILL) {
-            expectedDropHold(&want, cdef.kill[0..], 0);
-        } else {
-            expectedDropHold(&want, cdef.over[0..], 0);
-        }
-        if (!holdEqual(&g.exp.hold, &want)) return false;
-    }
+    // Kill: real Strike drive, corpse table + kill-index renewal.
+    var kill = startReal(REAL_SEED, 0);
+    const kill_idx = kill.fight.def_index;
+    if (kill_idx < 0) return false;
+    const kill_def = creatures.defAt(kill_idx);
+    const kill_cycle = kill.world.cycle;
+    driveReal(&kill, def.ACT_STRIKE);
+    if (kill.fight.outcome != def.OUT_KILL) return false;
+    expectedDropHold(&want, kill_def.kill[0..], 0);
+    if (!holdEqual(&kill.exp.hold, &want)) return false;
+    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
+    const kri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, kill_idx);
+    if (kill.world.ready[kri] != kill_cycle + kill_def.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
+
+    // Overkill: real Strike drive on a seed that overshoots.
+    var over = startReal(OVERKILL_SEED, 0);
+    const over_idx = over.fight.def_index;
+    if (over_idx < 0) return false;
+    const over_def = creatures.defAt(over_idx);
+    driveReal(&over, def.ACT_STRIKE);
+    if (over.fight.outcome != def.OUT_OVERKILL) return false;
+    expectedDropHold(&want, over_def.over[0..], 0);
+    if (!holdEqual(&over.exp.hold, &want)) return false;
+    if (over.fight.def_index != expedition.NO_FIGHT) return false;
     return true;
 }
 
 fn tFleeAddsNothing() bool {
-    const idx = findDefIndex(16);
+    var g = startReal(REAL_SEED, 0);
+    const idx = g.fight.def_index;
     if (idx < 0) return false;
+    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
 
-    var g = startedGame(idx);
-    game.gameStep(&g, def.Action{ .kind = def.ACT_FLEE, .arg = 0 });
+    expedition.expeditionStep(&g, def.ACT_FLEE);
     if (g.fight.outcome != def.OUT_PLAYER_FLED) return false;
-    expedition.expeditionStep(&g, expedition.EXP_SURFACE);
+    if (g.exp.active != 0) return false;
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
     if (!holdAllZero(&g.exp.hold)) return false;
+    if (g.world.ready[ri] != 0) return false;
 
-    var c = startedGame(idx);
+    var c = startReal(REAL_SEED, 0);
+    const c_idx = c.fight.def_index;
+    if (c_idx < 0) return false;
+    const c_def = creatures.defAt(c_idx);
+    const c_cycle = c.world.cycle;
+    const cri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, c_idx);
     fleeCreature(&c);
     if (c.fight.outcome != def.OUT_CREATURE_FLED) return false;
     expedition.expeditionStep(&c, expedition.EXP_SURFACE);
     if (!holdAllZero(&c.exp.hold)) return false;
+    if (c.world.ready[cri] != c_cycle + c_def.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
+    return true;
+}
+
+// §7: Subdue loot lands before the Release/Sell choice; the pending marker
+// blocks fields until the choice, and securedLine can already show the haul.
+fn tSubdueSettlesBeforeChoice() bool {
+    var g = realSubdue(REAL_SEED);
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    const idx = g.fight.def_index;
+    if (idx < 0) return false;
+
+    var want: [def.MAX_PARTS]i32 = undefined;
+    expectedDropHold(&want, creatures.defAt(idx).sub[0..], 0);
+    if (!holdEqual(&g.exp.hold, &want)) return false;
+
+    var sbuf: [256]u8 = undefined;
+    const line = render.securedLine(&g, sbuf[0..]);
+    if (!startsWith(line, "Secured: ")) return false;
+    if (line.len <= "Secured: ".len) return false;
+    if (startsWith(line, "Secured: nothing")) return false;
+
+    // No renewal yet: the Release/Sell choice still owns markTaken.
+    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
+    if (g.world.ready[ri] != 0) return false;
+
+    // HUNT is refused with no phase, rng, fight-index or hold change.
+    var hold_snap: [def.MAX_PARTS]i32 = undefined;
+    copyHold(&hold_snap, &g.exp.hold);
+    const phases = g.world.field_phases;
+    const rng_state = g.world.rng_state;
+    const fight_index = g.exp.fight_index;
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+    if (g.world.field_phases != phases) return false;
+    if (g.world.rng_state != rng_state) return false;
+    if (g.exp.fight_index != fight_index) return false;
+    if (g.fight.def_index != idx) return false;
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    if (!holdEqual(&g.exp.hold, &hold_snap)) return false;
+    return true;
+}
+
+// (g) Kill path: corpse drops, the kill respawn index, and NO_FIGHT settle.
+fn tKillAwardsAndRenews() bool {
+    var g = startReal(REAL_SEED, 0);
+    const idx = g.fight.def_index;
+    if (idx < 0) return false;
+    const cdef = creatures.defAt(idx);
+    const cycle = g.world.cycle;
+
+    driveReal(&g, def.ACT_STRIKE);
+    if (g.fight.outcome != def.OUT_KILL) return false;
+
+    var want: [def.MAX_PARTS]i32 = undefined;
+    expectedDropHold(&want, cdef.kill[0..], 0);
+    if (!holdEqual(&g.exp.hold, &want)) return false;
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+
+    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
+    if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
     return true;
 }
 
@@ -635,6 +757,8 @@ pub fn main() void {
     report("cargo_bonus_primary_line_only", tCargoBonusPrimaryOnly());
     report("loot_tables_sub_kill_over_exact", tLootTablesExact());
     report("flee_adds_no_loot", tFleeAddsNothing());
+    report("subdue_loot_before_choice_pending_guard", tSubdueSettlesBeforeChoice());
+    report("kill_awards_drops_and_renews", tKillAwardsAndRenews());
     report("rough_sleep_carries_into_next_fight", tRoughSleepCarriesIntoFight());
     report("depart_parks_no_fight_state", tDepartParksNoFight());
 

@@ -16,6 +16,7 @@ const world = @import("../world.zig");
 const game = @import("../game.zig");
 const sim = @import("../sim.zig");
 const creatures = @import("../creatures_t1.zig");
+const fight = @import("../fight.zig");
 const expedition = @import("../expedition.zig");
 const render = @import("../render_term.zig");
 const undtool = @import("../undtool.zig");
@@ -80,15 +81,23 @@ fn holdNonZero(h: *const [def.MAX_PARTS]i32) bool {
     return false;
 }
 
-fn startSubdue(zone: i32, idx: i32) def.GameState {
+// Real end-to-end drive: depart Z2 (seed 0), roll a fight, Restrain to the
+// subdue gate (Attempt if a rare opens the prompt) and stop with the choice
+// pending. The last expeditionStep already awarded the hold.
+fn realSubdue() def.GameState {
     var g = newGame();
-    _ = expedition.depart(&g, zone);
+    g.world.rng_state = 0;
+    _ = expedition.depart(&g, 1);
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
-    if (g.fight.def_index >= 0) {
-        g.fight.def_index = idx;
-        g.fight.hull = g.world.hull;
+
+    var guard: i32 = 0;
+    while (expedition.isInFight(&g) and guard < 60) : (guard += 1) {
+        if (g.screen == fight.SCREEN_FIGHT) {
+            expedition.expeditionStep(&g, def.ACT_RESTRAIN);
+        } else {
+            expedition.expeditionStep(&g, def.ACT_ATTEMPT);
+        }
     }
-    g.fight.outcome = def.OUT_SUBDUE;
     return g;
 }
 
@@ -163,46 +172,65 @@ fn tGolden(screen_id: []const u8, path: []const u8) bool {
 // ---- Release / sell -------------------------------------------------------
 
 fn tRelease() bool {
-    const idx: i32 = 16; // Ironclad Wrasse
-    var g = startSubdue(1, idx);
+    var g = realSubdue();
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    const idx = g.fight.def_index;
+    if (idx < 0) return false;
+    if (!holdNonZero(&g.exp.hold)) return false;
+
     const cdef = creatures.defAt(idx);
     const cycle = g.world.cycle;
+    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
 
     expedition.resolveSubdueChoice(&g, expedition.SUB_RELEASE);
 
     if (g.world.release_bonus[1] != world.RELEASE_BONUS_STEP) return false;
     if (g.world.money != 0) return false;
     if (world.consumeWariness(&g.world, idx) != world.WARY_RESOLVE_BONUS) return false;
-
-    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+
+    // Idempotency: the cleared pending marker makes a second call a no-op.
+    const bonus = g.world.release_bonus[1];
+    const ready = g.world.ready[ri];
+    expedition.resolveSubdueChoice(&g, expedition.SUB_RELEASE);
+    if (g.world.release_bonus[1] != bonus) return false;
+    if (g.world.ready[ri] != ready) return false;
 
     expedition.expeditionStep(&g, expedition.EXP_SURFACE);
     return holdNonZero(&g.exp.hold);
 }
 
 fn tSell() bool {
-    const idx: i32 = 16; // Ironclad Wrasse, sale 70
-    var g = startSubdue(1, idx);
+    var g = realSubdue();
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    const idx = g.fight.def_index;
+    if (idx < 0) return false;
+    if (!holdNonZero(&g.exp.hold)) return false;
+
     const cdef = creatures.defAt(idx);
     const cycle = g.world.cycle;
+    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
 
     expedition.resolveSubdueChoice(&g, expedition.SUB_SELL);
 
     if (g.world.money != cdef.sale) return false;
     if (g.world.release_bonus[1] != 0) return false;
     if (world.consumeWariness(&g.world, idx) != 0) return false;
-
-    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
+    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+
+    const money = g.world.money;
+    expedition.resolveSubdueChoice(&g, expedition.SUB_SELL);
+    if (g.world.money != money) return false;
 
     expedition.expeditionStep(&g, expedition.EXP_SURFACE);
     return holdNonZero(&g.exp.hold);
 }
 
 fn tResolveGuards() bool {
-    const idx: i32 = 16;
-    var g = startSubdue(1, idx);
+    var g = realSubdue();
+    if (g.fight.def_index < 0) return false;
     g.fight.outcome = def.OUT_KILL;
     const money = g.world.money;
     const bonus = g.world.release_bonus[1];
@@ -210,23 +238,29 @@ fn tResolveGuards() bool {
     if (g.world.money != money) return false;
     if (g.world.release_bonus[1] != bonus) return false;
 
-    var h = startSubdue(1, idx);
+    var h = realSubdue();
+    if (h.fight.def_index < 0) return false;
+    const h_idx = h.fight.def_index;
     h.exp.active = 0;
     const h_money = h.world.money;
     expedition.resolveSubdueChoice(&h, expedition.SUB_SELL);
     if (h.world.money != h_money) return false;
+    if (h.fight.def_index != h_idx) return false;
     return true;
 }
 
 fn tUnresolvedRenewsBoth() bool {
-    var r = startSubdue(1, 16);
-    var s = startSubdue(1, 16);
-    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, 16);
+    var r = realSubdue();
+    var s = realSubdue();
+    if (r.fight.def_index < 0 or s.fight.def_index < 0) return false;
+    const idx = r.fight.def_index;
+    if (s.fight.def_index != idx) return false;
+    const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
     const cycle = r.world.cycle;
 
     expedition.resolveSubdueChoice(&r, expedition.SUB_RELEASE);
     expedition.resolveSubdueChoice(&s, expedition.SUB_SELL);
-    const want = cycle + creatures.defAt(16).respawn[0];
+    const want = cycle + creatures.defAt(idx).respawn[0];
     if (r.world.ready[ri] != want) return false;
     if (s.world.ready[ri] != want) return false;
     return true;

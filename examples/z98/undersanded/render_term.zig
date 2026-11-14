@@ -461,6 +461,101 @@ pub fn renderMap(s: *const def.GameState, sc: *Screen) void {
     _ = putInt(sc, x, 13, BOSS_SEEN_GATE);
 }
 
+// ---- Secured line (§7) ----------------------------------------------------
+
+fn isKeystonePart(part: i32) bool {
+    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
+}
+
+fn partName(part: i32) []const u8 {
+    switch (part) {
+        1 => return "Shell Chip",
+        2 => return "Plate Scrap",
+        3 => return "Gland Sac",
+        4 => return "Brine Vial",
+        5 => return "Coral Bud",
+        6 => return "Glow Polyp",
+        7 => return "Glass Pane",
+        8 => return "Hooked Barbel",
+        9 => return "Steel Fins",
+        else => return "Unknown Part",
+    }
+}
+
+// Same primary-line Cargo rule as expedition.addLoot (§7): only the first
+// non-empty, non-keystone line receives the Cargo total.
+fn addSecuredLines(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: i32) void {
+    var primary: i32 = -1;
+    var p: usize = 0;
+    while (p < def.MAX_DROP_LINES and p < lines.len) : (p += 1) {
+        if (lines[p].part <= 0 or lines[p].count <= 0) continue;
+        if (isKeystonePart(lines[p].part)) continue;
+        primary = @intCast(i32, p);
+        break;
+    }
+
+    var i: usize = 0;
+    while (i < def.MAX_DROP_LINES and i < lines.len) : (i += 1) {
+        const part = lines[i].part;
+        var count = lines[i].count;
+        if (part <= 0 or count <= 0) continue;
+        if (@intCast(usize, part) >= def.MAX_PARTS) continue;
+        if (@intCast(i32, i) == primary) count += cargo;
+        h[@intCast(usize, part)] += count;
+    }
+}
+
+// Recompute the last fight's secured parts from its outcome row. A pending
+// Subdue still carries a live def_index; settled fights clear it, so this
+// falls back to `Secured: nothing` when there is no pickable def.
+pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
+    var h: [def.MAX_PARTS]i32 = undefined;
+    var i: usize = 0;
+    while (i < def.MAX_PARTS) : (i += 1) {
+        h[i] = 0;
+    }
+
+    const idx = g.fight.def_index;
+    const outcome = g.fight.outcome;
+    if (idx >= 0 and idx < creatures.defCount()) {
+        const cargo = world.cargoMax(&g.world);
+        var cdef = creatures.defAt(idx);
+        if (outcome == def.OUT_SUBDUE) {
+            addSecuredLines(&h, cdef.sub[0..], cargo);
+        } else if (outcome == def.OUT_KILL) {
+            addSecuredLines(&h, cdef.kill[0..], cargo);
+        } else if (outcome == def.OUT_OVERKILL) {
+            addSecuredLines(&h, cdef.over[0..], cargo);
+        }
+    }
+
+    var p: usize = 0;
+    p = copyInto(out, p, "Secured: ");
+    var any = false;
+    i = 0;
+    while (i < def.MAX_PARTS) : (i += 1) {
+        if (h[i] <= 0) continue;
+        if (any) p = copyInto(out, p, ", ");
+        any = true;
+        p = copyInto(out, p, partName(@intCast(i32, i)));
+        p = copyInto(out, p, " x");
+        p = intInto(out, p, h[i]);
+    }
+    if (!any) {
+        p = copyInto(out, p, "nothing");
+    }
+    return out[0..p];
+}
+
+// Deterministic display gate: outcome survives settlement; the fight counter
+// proves at least one fight started. Pending and settled Subdue/Kill/Overkill
+// all satisfy it (node fixture has no fights, so its golden is unchanged).
+fn showSecured(s: *const def.GameState) bool {
+    if (s.exp.fight_index <= 0) return false;
+    const o = s.fight.outcome;
+    return o == def.OUT_SUBDUE or o == def.OUT_KILL or o == def.OUT_OVERKILL;
+}
+
 pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  NODE");
@@ -473,6 +568,11 @@ pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
     x = putInt(sc, x, 5, s.world.hull);
     x = put(sc, x, 5, "/");
     _ = putInt(sc, x, 5, world.hullMax(&s.world));
+
+    if (showSecured(s)) {
+        var sbuf: [128]u8 = undefined;
+        _ = put(sc, 0, 6, securedLine(s, sbuf[0..]));
+    }
 
     _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
     _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");

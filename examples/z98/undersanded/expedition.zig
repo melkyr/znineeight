@@ -38,8 +38,9 @@ pub const EXP_SURFACE: i32 = 12;
 const SEED_MASK: u32 = 0x00FFFFFF;
 
 // Both fields are parked here whenever no fight is in progress. A fresh
-// GameState is then never mistaken for an ongoing fight.
-const NO_FIGHT: i32 = -1;
+// GameState is then never mistaken for an ongoing fight. A pending Subdue
+// keeps `def_index` live until resolveSubdueChoice clears it.
+pub const NO_FIGHT: i32 = -1;
 
 const REST_HEAL: i32 = 30;
 const HEAVY_MIN_COST: i32 = 3;
@@ -207,6 +208,16 @@ fn postFight(g: *def.GameState) bool {
         return false;
     }
 
+    if (outcome == def.OUT_SUBDUE) {
+        // §7: loot is awarded as the fight ends, before Release/Sell. Keep the
+        // def_index and outcome live as the pending-choice marker; renewal and
+        // the choice settle in resolveSubdueChoice.
+        var subdef = creatures.defAt(idx);
+        addLoot(g, &subdef, outcome);
+        g.world.hull = g.fight.hull;
+        return false;
+    }
+
     var cdef = creatures.defAt(idx);
     addLoot(g, &cdef, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
@@ -221,9 +232,10 @@ fn postFight(g: *def.GameState) bool {
 // adds the node rare-chance bonus (+8 pp, cap +40) and marks the creature wary;
 // Sell adds the creature's sale price in coins.
 //
-// Call this exactly once per Subdue, while `fight.outcome == OUT_SUBDUE` and
-// the fight has not been settled (postFight clears def_index). No idempotency
-// marker is stored: the UI owns the one-call discipline (Task 4 decision).
+// Valid only while `fight.outcome == OUT_SUBDUE` and the pending marker
+// (`def_index != NO_FIGHT`) is still live. The first valid call renews and
+// resolves the choice; it then clears def_index, so a second call no-ops.
+// `outcome` deliberately stays OUT_SUBDUE for the node screen's Secured line.
 
 pub const SUB_RELEASE: i32 = 1;
 pub const SUB_SELL: i32 = 2;
@@ -232,6 +244,7 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
     if (g.exp.active == 0) return;
     if (g.fight.outcome != def.OUT_SUBDUE) return;
     const idx = g.fight.def_index;
+    if (idx == NO_FIGHT) return;
     if (idx < 0 or idx >= creatures.defCount()) return;
 
     const zone = g.exp.zone;
@@ -244,8 +257,9 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
             world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
             g.world.money += creatures.defAt(idx).sale;
         },
-        else => {},
+        else => return,
     }
+    g.fight.def_index = NO_FIGHT;
 }
 
 // ---- Actions --------------------------------------------------------------
@@ -324,6 +338,17 @@ fn restAtNode(g: *def.GameState) void {
 
 pub fn expeditionStep(g: *def.GameState, action: i32) void {
     if (g.exp.active == 0) return;
+
+    // Pending Subdue choice (§7/§9.7): loot is already in the hold, so only
+    // Release/Sell may settle. Every field and fight action is refused here
+    // before any phase or rng draw.
+    if (g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != NO_FIGHT) {
+        switch (action) {
+            SUB_RELEASE, SUB_SELL => resolveSubdueChoice(g, action),
+            else => {},
+        }
+        return;
+    }
 
     // Single entry: while a fight is ongoing, actions 1..6 are def.ACT_*
     // verbs routed straight to game.gameStep. Run postFight immediately even
