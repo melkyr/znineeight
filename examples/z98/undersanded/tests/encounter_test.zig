@@ -166,7 +166,8 @@ fn tZ1RareChanceZero() bool {
     w.cycle = 1;
     if (world.rareChance(&w, 0) != 0) return false;
 
-    // Releases accrue nothing in a base-zero zone, even past the cap.
+    // Z1 base rare is zero, so releases still accrue (capped at 40) while
+    // rareChance stays 0.
     var k: i32 = 0;
     while (k < 6) : (k += 1) {
         world.applyRelease(&w, 0, 0);
@@ -322,6 +323,31 @@ fn tReleaseResetOnRare() bool {
     return true;
 }
 
+// Mirror of the rare-clear test: a common or named pick must leave the release
+// bonus intact. Locking the node zeroes rare weight, so the pool only yields
+// common/named rows and the test is guaranteed to exercise both roles.
+fn tReleaseSurvivesCommonAndNamed() bool {
+    var w = dayWorld();
+    w.release_bonus[1] = 40;
+    w.lockout_until[1] = w.cycle + 5;
+    w.rng_state = 0x9abcdef0;
+    if (world.rareChance(&w, 1) != 0) return false;
+
+    var saw_common = false;
+    var saw_named = false;
+    var iter: i32 = 0;
+    while (iter < 4096 and (!saw_common or !saw_named)) : (iter += 1) {
+        var out: i32 = -1;
+        if (!encounter.rollEncounter(&w, 1, &out)) return false;
+        const role = creatures.defAt(out).role;
+        if (role == creatures.ROLE_RARE) return false;
+        if (w.release_bonus[1] != 40) return false;
+        if (role == creatures.ROLE_COMMON) saw_common = true;
+        if (role == creatures.ROLE_NAMED) saw_named = true;
+    }
+    return saw_common and saw_named;
+}
+
 fn tDenseIndexMapping() bool {
     const z1d = [5]i32{ 1, 4, 5, 7, 10 };
     const z1n = [5]i32{ 2, 1, 5, 7, 10 };
@@ -360,6 +386,7 @@ pub fn main() void {
     report("locked_node_rare_share_zero", tLockedNodeRareZero());
     report("empty_pool_returns_false", tEmptyPoolFalse());
     report("rare_roll_clears_release_bonus", tReleaseResetOnRare());
+    report("common_and_named_picks_keep_release_bonus", tReleaseSurvivesCommonAndNamed());
     report("table_rows_resolve_intended_roster_id", tDenseIndexMapping());
 
     if (fails != 0) os.exit(1);

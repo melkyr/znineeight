@@ -351,7 +351,7 @@ fn sparkAnemone() def.CreatureDef {
     d.flags = def.F_STATIONARY;
     d.subdue_chance = 95;
     d.discharge_stat = STAT_HP;
-    d.discharge_th = 50;
+    d.discharge_th = 45;
     d.discharge_dmg = 10;
     d.sale = 20;
     d.respawn[0] = 3;
@@ -674,7 +674,7 @@ pub const RULES = [_]behavior.Rule{
     },
     behavior.Rule{
         .cond_op = behavior.HP_BELOW,
-        .cond_a = 30,
+        .cond_a = 24,
         .cond_b = 0,
         .effect_op = behavior.SET_FLEE,
         .effect_a = 1,
@@ -683,7 +683,7 @@ pub const RULES = [_]behavior.Rule{
     },
     behavior.Rule{
         .cond_op = behavior.HP_BELOW,
-        .cond_a = 50,
+        .cond_a = 45,
         .cond_b = 0,
         .effect_op = behavior.HULL_DMG,
         .effect_a = 10,

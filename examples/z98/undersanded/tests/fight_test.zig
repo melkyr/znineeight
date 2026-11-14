@@ -496,6 +496,47 @@ fn tDischargeAnemoniacus() bool {
     return true;
 }
 
+// T1 rule thresholds are percent-of-max, not the percentage number: Rust Tuna
+// (max 80, 30%) crosses below 24 and Spark Anemone (max 90, 50%) below 45.
+// Drive behavior.ruleFire directly with the appended rows so a regression back
+// to the raw percentage (30/50) fails both the literal and the crossing checks.
+fn tT1RuleThresholdsPercentOfMax() bool {
+    const flee = creatures.RULES[2];
+    const discharge = creatures.RULES[3];
+    if (flee.cond_a != 24) return false;
+    if (discharge.cond_a != 45) return false;
+    if (creatures.defAt(5).hp != 80) return false;
+    if (creatures.defAt(9).hp != 90) return false;
+
+    const spark = creatures.defAt(9);
+    if (spark.discharge_stat != discharge.cond_op) return false;
+    if (spark.discharge_th != discharge.cond_a) return false;
+    if (spark.discharge_dmg != discharge.effect_a) return false;
+
+    var c_flee: u32 = 0;
+    // Not yet below 24 (including the old 30 boundary) -> no fire.
+    if (behavior.ruleFire(flee, 31, 30, 100, 100, 1, &c_flee, 0) != null) return false;
+    if (behavior.ruleFire(flee, 30, 29, 100, 100, 1, &c_flee, 0) != null) return false;
+    if (behavior.ruleFire(flee, 26, 25, 100, 100, 1, &c_flee, 0) != null) return false;
+    if (behavior.ruleFire(flee, 25, 24, 100, 100, 1, &c_flee, 0) != null) return false;
+    const f = behavior.ruleFire(flee, 24, 23, 100, 100, 1, &c_flee, 0) orelse return false;
+    if (f.op != behavior.SET_FLEE) return false;
+    if (f.a != 1) return false;
+    if (behavior.ruleFire(flee, 24, 23, 100, 100, 1, &c_flee, 0) != null) return false;
+
+    var c_dis: u32 = 0;
+    // Not yet below 45 (including the old 50 boundary) -> no fire.
+    if (behavior.ruleFire(discharge, 51, 50, 100, 100, 1, &c_dis, 1) != null) return false;
+    if (behavior.ruleFire(discharge, 50, 49, 100, 100, 1, &c_dis, 1) != null) return false;
+    if (behavior.ruleFire(discharge, 47, 46, 100, 100, 1, &c_dis, 1) != null) return false;
+    if (behavior.ruleFire(discharge, 46, 45, 100, 100, 1, &c_dis, 1) != null) return false;
+    const d = behavior.ruleFire(discharge, 45, 44, 100, 100, 1, &c_dis, 1) orelse return false;
+    if (d.op != behavior.HULL_DMG) return false;
+    if (d.a != 10) return false;
+    if (behavior.ruleFire(discharge, 45, 44, 100, 100, 1, &c_dis, 1) != null) return false;
+    return true;
+}
+
 // Freezing Perch: >20% of 105 is 21 (21 does not trigger); flee next turn.
 fn tFreezingPerchFlee() bool {
     if (fight.hitExceedsPct(21, 105, 20)) return false;
@@ -1167,6 +1208,7 @@ pub fn main() void {
     report("bar_switches_strike_restrain_only", tBarSwitches());
     report("discharge_mystic_electric_eel", tDischargeMysticElectricEel());
     report("discharge_anemoniacus", tDischargeAnemoniacus());
+    report("t1_rule_thresholds_percent_of_max", tT1RuleThresholdsPercentOfMax());
     report("freezing_perch_flee_boundary", tFreezingPerchFlee());
     report("creature_defs_and_fields", tCreatureDefsAndFields());
     report("start_fight_world_zeroed", tStartFightWorldZeroed());
