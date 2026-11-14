@@ -39,7 +39,8 @@ const SEED_MASK: u32 = 0x00FFFFFF;
 
 // Both fields are parked here whenever no fight is in progress. A fresh
 // GameState is then never mistaken for an ongoing fight. A pending Subdue
-// keeps `def_index` live until resolveSubdueChoice clears it.
+// keeps `def_index` live until resolveSubdueChoice clears it; settled
+// KILL/OVERKILL/CREATURE_FLED keep it so the node screen can render Secured.
 pub const NO_FIGHT: i32 = -1;
 
 const REST_HEAL: i32 = 30;
@@ -170,6 +171,19 @@ fn endAscent(g: *def.GameState) void {
     g.fight.def_index = NO_FIGHT;
 }
 
+// Marks a settled fight so the retained def_index (needed by the Secured line)
+// cannot make a repeated postFight award the same loot twice. startFightDef
+// overwrites flags from the creature def, clearing this bit for the next fight.
+const SETTLED_FLAG: u32 = 0x80000000;
+
+fn fightSettled(g: *const def.GameState) bool {
+    return (g.fight.flags & SETTLED_FLAG) != 0;
+}
+
+fn markFightSettled(g: *def.GameState) void {
+    g.fight.flags = g.fight.flags | SETTLED_FLAG;
+}
+
 // Settle a fight once its outcome is resolved, or immediately when Hull hits 0
 // while the fight is still technically ongoing (creatureAct leaves it that
 // way). Returns true when the expedition ended (player flee or Hull-0 ascent).
@@ -201,10 +215,12 @@ fn postFight(g: *def.GameState) bool {
     }
 
     if (outcome == def.OUT_CREATURE_FLED) {
-        // No loot; subdue-length renewal; stay at the node.
+        // No loot; subdue-length renewal; stay at the node. Keep def_index so
+        // the Secured line can report `Secured: nothing`.
+        if (fightSettled(g)) return false;
         g.world.hull = g.fight.hull;
         world.markTaken(&g.world, zone, idx, def.OUT_CREATURE_FLED);
-        g.fight.def_index = NO_FIGHT;
+        markFightSettled(g);
         return false;
     }
 
@@ -212,17 +228,20 @@ fn postFight(g: *def.GameState) bool {
         // §7: loot is awarded as the fight ends, before Release/Sell. Keep the
         // def_index and outcome live as the pending-choice marker; renewal and
         // the choice settle in resolveSubdueChoice.
+        if (fightSettled(g)) return false;
         var subdef = creatures.defAt(idx);
         addLoot(g, &subdef, outcome);
         g.world.hull = g.fight.hull;
+        markFightSettled(g);
         return false;
     }
 
+    if (fightSettled(g)) return false;
     var cdef = creatures.defAt(idx);
     addLoot(g, &cdef, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
     g.world.hull = g.fight.hull;
-    g.fight.def_index = NO_FIGHT;
+    markFightSettled(g);
     return false;
 }
 

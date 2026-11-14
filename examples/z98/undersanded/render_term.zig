@@ -467,7 +467,7 @@ fn isKeystonePart(part: i32) bool {
     return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
 }
 
-fn partName(part: i32) []const u8 {
+pub fn partName(part: i32) []const u8 {
     switch (part) {
         1 => return "Shell Chip",
         2 => return "Plate Scrap",
@@ -505,9 +505,10 @@ fn addSecuredLines(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: i
     }
 }
 
-// Recompute the last fight's secured parts from its outcome row. A pending
-// Subdue still carries a live def_index; settled fights clear it, so this
-// falls back to `Secured: nothing` when there is no pickable def.
+// Recompute the last fight's secured parts from its outcome row. Settled
+// KILL/OVERKILL and CREATURE_FLED fights retain def_index for this line;
+// pending Subdue still carries it until the Release/Sell choice. Anything else
+// (ongoing, no fight, player flee/ascent) has no secured line.
 pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
     var h: [def.MAX_PARTS]i32 = undefined;
     var i: usize = 0;
@@ -517,7 +518,9 @@ pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
 
     const idx = g.fight.def_index;
     const outcome = g.fight.outcome;
-    if (idx >= 0 and idx < creatures.defCount()) {
+    if (outcome == def.OUT_CREATURE_FLED) {
+        // The fled creature left nothing; render the explicit empty line.
+    } else if (idx >= 0 and idx < creatures.defCount()) {
         const cargo = world.cargoMax(&g.world);
         var cdef = creatures.defAt(idx);
         if (outcome == def.OUT_SUBDUE) {
@@ -526,7 +529,11 @@ pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
             addSecuredLines(&h, cdef.kill[0..], cargo);
         } else if (outcome == def.OUT_OVERKILL) {
             addSecuredLines(&h, cdef.over[0..], cargo);
+        } else {
+            return "";
         }
+    } else {
+        return "";
     }
 
     var p: usize = 0;
@@ -547,15 +554,6 @@ pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
     return out[0..p];
 }
 
-// Deterministic display gate: outcome survives settlement; the fight counter
-// proves at least one fight started. Pending and settled Subdue/Kill/Overkill
-// all satisfy it (node fixture has no fights, so its golden is unchanged).
-fn showSecured(s: *const def.GameState) bool {
-    if (s.exp.fight_index <= 0) return false;
-    const o = s.fight.outcome;
-    return o == def.OUT_SUBDUE or o == def.OUT_KILL or o == def.OUT_OVERKILL;
-}
-
 pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  NODE");
@@ -569,9 +567,10 @@ pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
     x = put(sc, x, 5, "/");
     _ = putInt(sc, x, 5, world.hullMax(&s.world));
 
-    if (showSecured(s)) {
-        var sbuf: [128]u8 = undefined;
-        _ = put(sc, 0, 6, securedLine(s, sbuf[0..]));
+    var sbuf: [128]u8 = undefined;
+    const secured = securedLine(s, sbuf[0..]);
+    if (secured.len > 0) {
+        _ = put(sc, 0, 6, secured);
     }
 
     _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");

@@ -149,6 +149,66 @@ fn expectedDropHold(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: 
     }
 }
 
+fn appendText(out: []u8, p: usize, text: []const u8) usize {
+    var pos = p;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        out[pos] = text[i];
+        pos += 1;
+    }
+    return pos;
+}
+
+fn appendInt(out: []u8, p: usize, v: i32) usize {
+    var pos = p;
+    if (v == 0) {
+        out[pos] = '0';
+        return pos + 1;
+    }
+    var tmp: [16]u8 = undefined;
+    var n: usize = 0;
+    var x = v;
+    while (x > 0) : (x = x / 10) {
+        tmp[n] = @intCast(u8, '0' + @intCast(i32, x % 10));
+        n += 1;
+    }
+    var i = n;
+    while (i > 0) {
+        i -= 1;
+        out[pos] = tmp[i];
+        pos += 1;
+    }
+    return pos;
+}
+
+fn textEqual(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+fn expectedSecured(out: []u8, lines: []const def.DropLine, cargo: i32) []const u8 {
+    var h: [def.MAX_PARTS]i32 = undefined;
+    expectedDropHold(&h, lines, cargo);
+
+    var p = appendText(out, 0, "Secured: ");
+    var any = false;
+    var i: usize = 0;
+    while (i < def.MAX_PARTS) : (i += 1) {
+        if (h[i] <= 0) continue;
+        if (any) p = appendText(out, p, ", ");
+        any = true;
+        p = appendText(out, p, render.partName(@intCast(i32, i)));
+        p = appendText(out, p, " x");
+        p = appendInt(out, p, h[i]);
+    }
+    if (!any) p = appendText(out, p, "nothing");
+    return out[0..p];
+}
+
 // Real Z2 (night on arrival) drive. Seed 0 hunts a Kelp Crab: Restrain
 // reaches the auto-subdue gate, Strike lands a plain Kill, and seed 9 Strike
 // overkills. Modal prompts (rare rows) take the Attempt action.
@@ -247,7 +307,8 @@ fn tHullZeroKeepsHold() bool {
     killCurrent(&g);
     if (g.fight.outcome == def.OUT_ONGOING) return false;
     expedition.expeditionStep(&g, expedition.EXP_REST);
-    if (g.fight.def_index >= 0) return false;
+    // Settled kill retains def_index for the Secured line.
+    if (g.fight.def_index < 0) return false;
 
     var snap: [def.MAX_PARTS]i32 = undefined;
     copyHold(&snap, &g.exp.hold);
@@ -350,7 +411,9 @@ fn tMaxFightsBlocksHunt() bool {
     // Settles fight 4, then refuses to hunt.
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
     if (g.exp.fight_index != 4) return false;
-    if (g.fight.def_index >= 0) return false;
+    // Settled creature flee retains def_index for the Secured line.
+    if (g.fight.outcome != def.OUT_CREATURE_FLED) return false;
+    if (g.fight.def_index < 0) return false;
     if (g.exp.active != 1) return false;
     return true;
 }
@@ -611,7 +674,7 @@ fn tLootTablesExact() bool {
     if (kill.fight.outcome != def.OUT_KILL) return false;
     expectedDropHold(&want, kill_def.kill[0..], 0);
     if (!holdEqual(&kill.exp.hold, &want)) return false;
-    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
+    if (kill.fight.def_index != kill_idx) return false;
     const kri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, kill_idx);
     if (kill.world.ready[kri] != kill_cycle + kill_def.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
 
@@ -624,7 +687,7 @@ fn tLootTablesExact() bool {
     if (over.fight.outcome != def.OUT_OVERKILL) return false;
     expectedDropHold(&want, over_def.over[0..], 0);
     if (!holdEqual(&over.exp.hold, &want)) return false;
-    if (over.fight.def_index != expedition.NO_FIGHT) return false;
+    if (over.fight.def_index != over_idx) return false;
     return true;
 }
 
@@ -652,6 +715,46 @@ fn tFleeAddsNothing() bool {
     expedition.expeditionStep(&c, expedition.EXP_SURFACE);
     if (!holdAllZero(&c.exp.hold)) return false;
     if (c.world.ready[cri] != c_cycle + c_def.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
+    return true;
+}
+
+// §7: settled Kill/Overkill keep def_index so the node Secured line renders the
+// real §14.4 drops; creature flee renders the explicit empty line.
+fn tSecuredLineForSettledFights() bool {
+    var kill = startReal(REAL_SEED, 0);
+    const kill_idx = kill.fight.def_index;
+    if (kill_idx < 0) return false;
+    const kill_def = creatures.defAt(kill_idx);
+    driveReal(&kill, def.ACT_STRIKE);
+    if (kill.fight.outcome != def.OUT_KILL) return false;
+    if (kill.fight.def_index != kill_idx) return false;
+
+    var line_buf: [256]u8 = undefined;
+    var want_buf: [256]u8 = undefined;
+    const kill_line = render.securedLine(&kill, line_buf[0..]);
+    const kill_want = expectedSecured(want_buf[0..], kill_def.kill[0..], 0);
+    if (!textEqual(kill_line, kill_want)) return false;
+    if (startsWith(kill_line, "Secured: nothing")) return false;
+
+    var over = startReal(OVERKILL_SEED, 0);
+    const over_idx = over.fight.def_index;
+    if (over_idx < 0) return false;
+    const over_def = creatures.defAt(over_idx);
+    driveReal(&over, def.ACT_STRIKE);
+    if (over.fight.outcome != def.OUT_OVERKILL) return false;
+    if (over.fight.def_index != over_idx) return false;
+
+    const over_line = render.securedLine(&over, line_buf[0..]);
+    const over_want = expectedSecured(want_buf[0..], over_def.over[0..], 0);
+    if (!textEqual(over_line, over_want)) return false;
+    if (startsWith(over_line, "Secured: nothing")) return false;
+
+    var fled = startReal(REAL_SEED, 0);
+    fleeCreature(&fled);
+    if (fled.fight.outcome != def.OUT_CREATURE_FLED) return false;
+    expedition.expeditionStep(&fled, expedition.EXP_SURFACE);
+    const fled_line = render.securedLine(&fled, line_buf[0..]);
+    if (!textEqual(fled_line, "Secured: nothing")) return false;
     return true;
 }
 
@@ -707,7 +810,7 @@ fn tKillAwardsAndRenews() bool {
     var want: [def.MAX_PARTS]i32 = undefined;
     expectedDropHold(&want, cdef.kill[0..], 0);
     if (!holdEqual(&g.exp.hold, &want)) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != idx) return false;
 
     const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
@@ -757,6 +860,7 @@ pub fn main() void {
     report("cargo_bonus_primary_line_only", tCargoBonusPrimaryOnly());
     report("loot_tables_sub_kill_over_exact", tLootTablesExact());
     report("flee_adds_no_loot", tFleeAddsNothing());
+    report("secured_line_settled_kill_over_flee", tSecuredLineForSettledFights());
     report("subdue_loot_before_choice_pending_guard", tSubdueSettlesBeforeChoice());
     report("kill_awards_drops_and_renews", tKillAwardsAndRenews());
     report("rough_sleep_carries_into_next_fight", tRoughSleepCarriesIntoFight());
