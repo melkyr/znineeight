@@ -124,7 +124,85 @@ Established by inspection during Task 3b: case 5's 8 pins are correct for the se
 
 **Gate:** case 5 green via the seed lib; corruption check red; no other case changes.
 
-### Task 3: Rotate the committed seed to v150
+### Task 3b-H: Guard the Windows console prelude macros (OWC `E1100`)
+
+**Files:** `sf/src/c89_emit.zig` (`emitBuiltinIncludes`, console arm), plus a fixture and gate.
+
+Hardware finding (operator, v150-built compiler): `rogue_mud_upgraded` fails under OpenWatcom with
+`ui_<hash>.c(10): Error! E1100: Definition of macro 'NTDDI_VERSION' not identical to previous definition`.
+Cause: `emitBuiltinIncludes` (`sf/src/c89_emit.zig:2619`) emits `WINVER`, `_WIN32_WINDOWS`, `_WIN32_WINNT`,
+`NTDDI_VERSION`, `WIN32_LEAN_AND_MEAN` **unguarded**; a module that also pulls `std_net` includes
+`net_prelude.h`, which already includes `<windows.h>` (OWC's headers define `NTDDI_VERSION`). Latent since
+`b91bf296`; exposed once the `main()` declaration-order fix let the build reach `ui_*.c`.
+
+- [ ] Wrap each of the five `#define`s in the console-builtin prelude with `#ifndef <NAME>` / `#endif`
+  (values unchanged). Keep the `#ifdef _WIN32` / `#else stdio` structure and the trailing
+  `extern void std_print_len(...)` declaration unchanged.
+- [ ] Fixture: `repro/mi_matrix/win_prelude_guard_xmod/` — a module that uses a console builtin
+  (`@consoleClear()`) **and** imports `std_net` so the emitted TU includes `net_prelude.h` +
+  `<windows.h>` before the console block. Register it so `scripts/corpus/list_corpus_dirs.sh` lists it.
+- [ ] Gate `scripts/compiler/gate_win_prelude_guard.sh`: emit the fixture with `-osw --dump-c89`, then
+  assert every one of the five macros is guarded (`#ifndef` immediately before each `#define`), and
+  compile the emitted C with `i686-w64-mingw32-gcc -m32 -std=c89 -c` if that reproduces the unguarded
+  failure (otherwise rely on the textual guard assertions and record why). Gate must FAIL on the
+  pre-change build (use `/tmp/seed150_build/zig1_5_clean` or the current HEAD build).
+- [ ] Confirm no other program's emission changed: compare `--dump-c89` md5 for the 4 pinned programs
+  and z9gb before/after with the same lib (expect identical — they do not use console builtins with
+  windows headers).
+- [ ] Rebuild (hop1==hop2, record the new fixed point), rerun `gate_warn_clean.sh`, `gate_strict_c89.sh`,
+  `tier_edit.sh` (38/0, lexer md5 unchanged), and the new gate.
+- [ ] Commit `fix(c89_emit): guard Windows console prelude macros`.
+
+**Gate:** new gate non-vacuous and green; rogue-style TU (console + std_net) emits compilable C;
+no pin movement; fixed point closes.
+
+### Task 3b-I: Rotate seed v151 (supersedes v150)
+
+**Files:** `release/seed/zig1-seed.tgz`, `release/seed/zig1_seed_w9.zip`, `release/seed/CHANGELOG.md`, `README.md`, `docs/sf/QUICK_REF.md`, `scripts/compiler/gate_lower_depth.sh`.
+
+v150 shipped the compiler **before** the Task 3b-H prelude-guard fix, so it still fails OWC on
+console+std_net modules. Repeat the Task 3 procedure at the new fixed point and supersede v150.
+
+- [ ] `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/seed151_build`; hop1==hop2 ==
+  the Task 3b-H fixed point; `lib/std_dinput*.zig` still current.
+- [ ] `bash scripts/seed/archive_seed.sh /tmp/seed151_build/zig1_5_clean /tmp/seed151_build/gen release/seed/zig1-seed.tgz --update-changelog --win9x-zip release/seed/zig1_seed_w9.zip`; record printed md5s.
+- [ ] Verify the archive from scratch (binary md5, `gen/` counts/bytes, 65-file lib manifest) and the
+  Win9x zip (four `.bat`s, current lib, mingw cross-compile of `win/*.c` rc 0).
+- [ ] Re-measure the 8 pins with the v151 seed-built compiler; update `gate_lower_depth.sh` literals +
+  pin-pair comment, the README table and the QUICK_REF table; record old→new (v149→v150→v151) and the
+  reason in the CHANGELOG v151 entry. STOP only if two builds of the same seed/lib disagree.
+- [ ] Update README/QUICK_REF current-seed claims (fixed point, seed v151, archive/zip/manifest md5s,
+  the prelude-guard fix) and mark v150 superseded in the CHANGELOG (do not delete its entry).
+- [ ] End-to-end: z9gb `-osw` from the v151 lib emits `.c`; `tier_win32.sh --smoke` green.
+- [ ] Commit `chore(seed): rotate v151 (Windows console prelude guards)`.
+
+**Gate:** v151 at the 3b-H fixed point; md5s consistent across CHANGELOG/README/QUICK_REF; all pins
+re-measured and updated; z9gb `-osw` emits `.c`; `tier_win32.sh --smoke` green.
+
+### Task 3b-J: Document dynarec + interpreter performance findings in z9gb `KNOWN_GAPS.md`
+
+**Files:** `examples/z98/z9gb/KNOWN_GAPS.md` (only).
+
+Operator findings (Win9x/P4, v150-built OWC nocrt build): `--dynarec` faults immediately on every ROM
+(no console output; IPF at `EIP=011c0004`, `module <unknown>`; reproduced with Kirby Dream Land); the
+interpreter path runs but is slow (~98% CPU) — code-bound, matching the documented cost model.
+
+- [ ] Attempt a Wine reproduction with the operator's binary (`lin_bin/z9gb/z9gb.exe`, v150 lib) on the
+  repo's own `testdata/synth/minimal.gb` with `--dynarec` (and `--dynarec-stats`). Record command,
+  output and rc. Use a fresh `WINEPREFIX` under `/tmp`.
+- [ ] Add a `KNOWN_GAPS` subsection recording: the crash signature, that it reproduces on real Win9x
+  (or the exact Wine repro status if it also fails there), that dynarec was previously only Wine-proven,
+  and the next diagnostic steps (CRT vs nocrt build, VirtualAlloc base/flush probe, cache-entry
+  inspection). Do not claim a fix.
+- [ ] Add the interpreter-performance note: ~98% CPU on a P4/Win98 with the plain interpreter; code-bound
+  (host-fast), cross-reference §3's cost model and the operator's z9play observation.
+- [ ] If Wine reproduces the fault, STOP-present with the evidence **before** writing any fix; do not
+  change emulator code in this task.
+- [ ] Commit `docs(z9gb): record Win9x dynarec fault + P4 interpreter cost`.
+
+**Gate:** KNOWN_GAPS states what was reproduced where, with no unsupported claims; no emulator source changes.
+
+### Task 3: Rotate the committed seed to v150 (completed; superseded by Task 3b-I)
 
 **Files:** `release/seed/zig1-seed.tgz`, `release/seed/zig1_seed_w9.zip`, `release/seed/CHANGELOG.md`, `README.md`, `docs/sf/QUICK_REF.md`.
 
@@ -151,6 +229,6 @@ None of these is a compile/emit failure for accepted code, so they do not belong
 
 ### Task 4: Verification + close
 
-- [ ] Full evidence set: Task 1 repro commands, Task 2/3b-R/3b-C/3b-D/3b-G/3 gates, strict-C89 scans, seed fixed point, `tier_edit.sh`, `tier_win32.sh --smoke`, and (if cheap) `tier_m1_std.sh` on the rebuilt compiler.
+- [ ] Full evidence set: Task 1 repro commands, Task 2/3b-R/3b-C/3b-D/3b-G/3b-H/3b-I/3b-J/3 gates, strict-C89 scans, seed fixed point, `tier_edit.sh`, `tier_win32.sh --smoke`, and (if cheap) `tier_m1_std.sh` on the rebuilt compiler.
 - [ ] Write a short `KNOWN_GAPS`/notes entry only if a residual limitation remains (e.g. OWC-only syntax classes not gated).
 - [ ] Commit final evidence notes; STOP for review/merge decision (target `zig1_start`, no push).
