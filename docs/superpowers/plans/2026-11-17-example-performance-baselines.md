@@ -407,3 +407,140 @@ before/after work-count metric for Tasks 7-8.
   stable before/after comparison.
 - All compiler/example builds and dumps were run sequentially from the repo
   root (`.zig1_*.tmp` collision rule).
+
+## 8. z9play shipping-config proxy (`-ffast` emit + `-O2` link)
+
+Measured 2026-11-17. The Phase 0 rows above use `-fsafe` emit plus the
+emitted `-O0` link. This section is the host proxy for the shipping `-osw`
+build (OWC `/ox` + `-ffast`): Z98 emit at `-ffast`, emitted C linked at
+`-O2`. Measurement only; no source changes.
+
+Trees are read-only `git archive` extracts; the main worktree is untouched:
+
+```bash
+git archive 4e91d9d1 | tar -x -C /tmp/t16_pre
+git archive HEAD    | tar -x -C /tmp/t16_post
+```
+
+Emit with each tree as CWD (separate `.zig1_*.tmp`):
+
+```bash
+cd /tmp/t16_pre  && /tmp/perf_seed/zig1_5_clean -ffast -o /tmp/t16_pre/build  examples/z98/z9play/main.zig
+cd /tmp/t16_post && /tmp/perf_seed/zig1_5_clean -ffast -o /tmp/t16_post/build examples/z98/z9play/main.zig
+```
+
+Link at `-O2` by copying the emitted script in place, the same substitution
+`examples/z98/z9gb/tests/tier_perf.sh:560` uses; the repo script is not
+edited:
+
+```bash
+sed 's/-O0/-O2/g' build_target.sh > build_target.sh.tmp && mv build_target.sh.tmp build_target.sh
+sh build_target.sh linux /tmp/t16_pre/prog    # and /tmp/t16_post/prog
+```
+
+Exact change in both `/tmp` build dirs:
+
+```text
+CFLAGS   ... -m32 -std=c89 -O0 ...  ->  ... -m32 -std=c89 -O2 ...
+LDFLAGS  -m32 -O0                   ->  -m32 -O2
+```
+
+Fixtures: committed `examples/z98/z9play/testdata/sine_stereo_44100.ogg`
+(2 ch / 44100 Hz / `duration_s=2.000`) and the §2 generated FLAC
+`/tmp/perf_z9play/sine_stereo_44100.flac` (sha1
+`14be24c914ff796daf478393931761d575d76fa5`, 74017 B).
+
+Parity first, both `-O2` binaries:
+
+| Fixture | pre | post | Required |
+|---|---|---|---|
+| OGG | `max_delta=1 rms_milli=36`, 352800/352800 B | `max_delta=1 rms_milli=36`, 352800/352800 B | `max_delta=1 rms_milli=36` |
+| FLAC | sha1 `0e31277f…`, `cmp` identical | sha1 `0e31277f…`, `cmp` identical | byte-exact `0e31277f…` |
+
+Parity holds for both trees; `-O2` does not change PCM.
+
+Rates: one decode is ~8–14 ms, below the 10 ms `/usr/bin/time` resolution,
+so each of the 5 samples is a batch of 200 sequential single-fixture
+invocations (`prog --wav <fixture> <out.wav>`); per-decode wall = sample
+wall / 200 and decode rate = `2.000 s / per-decode wall`.
+
+### OGG (pre = `4e91d9d1`, post = HEAD)
+
+| Tree | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Median | Rate | User |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| pre  | 3.28 s\* | 2.70 | 2.71 | 2.70 | 2.69 | 2.70 s (min 2.69, max 3.28) | **148.1x** | 1.78 s |
+| post | 2.68 | 2.68 | 2.70 | 2.69 | 2.69 | 2.69 s (min 2.68, max 2.70) | **148.7x** | 1.75 s |
+
+\* first-run cold-cache outlier. Median per-decode wall: pre 13.50 ms,
+post 13.45 ms. CPU 63–74% pre, 74% post (short-lived process; startup and
+WAV I/O are a large share). **+0.4% rate, inside noise**; post user CPU is
+1.7% lower.
+
+### FLAC
+
+| Tree | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Median | Rate | User |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| pre  | 1.62 | 1.63 | 1.63 | 1.62 | 1.63 | 1.63 s (min 1.62, max 1.63) | **245.4x** | 0.74 s |
+| post | 1.75 | 1.73 | 1.74 | 1.74 | 1.74 | 1.74 s (min 1.73, max 1.75) | **229.9x** | 0.85 s |
+
+Median per-decode wall: pre 8.15 ms, post 8.70 ms; CPU 58% pre, 61% post.
+**-6.3% rate**, repeatable (ranges do not overlap). For scale, the same
+fixture in the original `-fsafe`/`-O0` table was 15.4x, so the shipping
+proxy is ~14–16x faster in absolute terms.
+
+### Callgrind attribution (`-ffast` emit, default `-O0` link)
+
+One run per tree per fixture (`valgrind --tool=callgrind`), self cost. The
+2.000 s fixtures needed no shortening (0.6–0.9 s under callgrind).
+
+| Profile | Total Ir | vs pre |
+|---|---:|---:|
+| pre OGG | 338,492,630 | — |
+| post OGG | 323,160,625 | **-4.5%** |
+| pre FLAC | 202,357,505 | — |
+| post FLAC | 209,233,651 | **+3.4%** |
+
+| Group (self Ir) | OGG pre | OGG post | FLAC pre | FLAC post |
+|---|---:|---:|---:|---:|
+| Vorbis readers `brRead`/`brBitZero`/`decodeScalar`/`decodeScalarEop` | 14,819,886 (4.38%) | 10,404,024 (3.22%) | — | — |
+| FLAC readers `sReadBit`/`sReadBits`/`sReadUnary`/`sFill`/`sConsume` | — | — | 71,859,426 (35.51%) | 92,438,692 (44.18%) |
+| FLAC reader helpers `sLoadByte`/`sLowMask`/`bufferedFileReadByt` | — | — | 8,546,073 (4.22%) | 2,473,470 (1.18%) |
+| DSP `imdctFft` + `fftRun` | 119,764,710 (35.38%) | 119,764,710 (37.06%) | — | — |
+| DSP window/overlap (`window`, `windowSlope`, `applyWindow`, `overlapAdd`, `buildWindow*`, `imdct*`) | 392,734 (0.12%) | 392,734 (0.12%) | — | — |
+| Container/CRC (`oggCrcPage`, `crcOk`, `crc8`, `oggStream*`) | 4,678,423 (1.38%) | 4,678,423 (1.45%) | 36,432 (0.02%) | 36,432 (0.02%) |
+| Copies (`copyU8`) | 0 | 8,115,984 (2.51%) | 0 | 8,114,814 (3.88%) |
+| Player/UI (`player*`, `renderLine`, `renderPoint`) | 28,470,517 (8.41%) | 9,430,926 (2.92%) | 19,062,050 (9.42%) | 13,814 (0.01%) |
+| Sink/format (`toS16`, `write*`) | 27,064,327 (8.00%) | 27,064,327 (8.37%) | 12,527,618 (6.19%) | 12,527,618 (5.99%) |
+
+Reader detail (self Ir): OGG `brRead` 9,306,760 -> 1,716,400, new
+`brBitZero` 3,796,152, `decodeScalar` 1,550,790 -> 1,364,736,
+`decodeScalarEop` 3,962,336 -> 3,526,736 (net **-4.4 M**, -30% of the
+Vorbis reader path). FLAC `sReadBit` 40,605,328 -> 13,118 (folded into
+`sConsume`), `sReadBits` 14,576,197 -> 18,853,026, `sReadUnary`
+16,677,901 -> 42,199,988, new `sFill` 9,020,765 and `sConsume` 22,351,795;
+helpers `sLoadByte` 4,340,418 -> 0, new `sLowMask` 2,473,470,
+`bufferedFileReadByt` 4,205,655 -> 0 (net **+14.5 M**, +18% of the FLAC
+read path). `imdctFft` (42,411,568) and `fftRun` (77,353,142) are identical
+in both trees, as are sink/format and OGG CRC. Unrelated `07cc7d24` copy
+batching replaced the 19.05 M-Ir manual `playerRingAppend` loop with
+`copyU8` (8.12 M) in both formats, saving 10.9 M Ir.
+
+### Verdict
+
+- **Vorbis reader rewrite (Task 1):** yes for instruction count: -4.4 M Ir,
+  -30% of its read path, -1.3 pp of total. Not measurable in `-O2` wall
+  throughput (+0.4%, inside noise); OGG is DSP-bound (`imdctFft` +
+  `fftRun` = 35% of all Ir, `decodePacket` self cost another 24%).
+- **FLAC reader rewrite (Task 2):** no in the shipping proxy. The
+  word-accumulator path is +14.5 M Ir (+18% of the read path; `sReadUnary`
+  and `sConsume` grow more than `sReadBit`/`sLoadByte` disappear) and
+  overall FLAC is ~6% slower at `-O2` (245.4x -> 229.9x). It paid off only
+  against the `-fsafe` checker overhead, not against `-ffast`/`-O2`.
+- **Net pre-program vs HEAD:** OGG -4.5% Ir / wall flat; FLAC +3.4% Ir and
+  ~-6% wall.
+- Limits: host gcc 12.2 `-m32 -O2` is not OWC `/ox`; callgrind runs the
+  `-ffast` binaries at the default `-O0` link (per task brief), so the Ir
+  ratios are not `-O2` machine code; host is a Ryzen 7 7700X, not the P4
+  1.6 GHz target; per-invocation wall includes process start and WAV I/O
+  (~4–5 ms over 8–14 ms decode). The operator `-osw` run on period
+  hardware remains authoritative.
