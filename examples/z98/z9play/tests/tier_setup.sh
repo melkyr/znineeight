@@ -8,7 +8,9 @@
 #      missing --dump-setup argument / no arguments / a conflicting or duplicate
 #      request = 1);
 #   3. NON-VACUOUS open/decoder negatives: a missing file exits 2; a non-OGG
-#      file, a truncated file, and a bad capture pattern each exit 3.
+#      file, a truncated file, and a bad capture pattern each exit 3;
+#   4. compiles and runs tests/bitreader_test.zig, whose differential checks pin
+#      brRead/brSkip/brBitZero against a naive LSB-first reader.
 # Exits non-zero on any failure and prints a PASS/FAIL summary.
 # POSIX sh + coreutils. Run from anywhere (paths resolved from this script).
 #
@@ -56,6 +58,31 @@ PROG="$OUT/prog"
 if [ ! -x "$PROG" ]; then
     echo "FAIL: $PROG not built"
     exit 1
+fi
+
+echo "== bitreader differential test =="
+BROUT="$OUT/bitreader"
+mkdir -p "$BROUT"
+if ! timeout 120 "$ZIG" -fsafe -o "$BROUT" examples/z98/z9play/tests/bitreader_test.zig >"$BROUT/zig.log" 2>&1; then
+    fail_case "bitreader_test: zig compile"
+    tail -20 "$BROUT/zig.log" | sed 's/^/       /'
+elif ! sh "$BROUT/build_target.sh" linux "$BROUT/prog" >"$BROUT/build.log" 2>&1; then
+    fail_case "bitreader_test: target link"
+    tail -20 "$BROUT/build.log" | sed 's/^/       /'
+elif [ ! -x "$BROUT/prog" ]; then
+    fail_case "bitreader_test: program not built"
+else
+    if timeout 120 "$BROUT/prog" >"$BROUT/run.out" 2>&1; then
+        if grep -q "bitreader_test: PASS" "$BROUT/run.out"; then
+            pass_case "bitreader_test: differential reads/skips/bitzero"
+        else
+            fail_case "bitreader_test: missing PASS line"
+            tail -20 "$BROUT/run.out" | sed 's/^/       /'
+        fi
+    else
+        fail_case "bitreader_test: run failed"
+        tail -20 "$BROUT/run.out" | sed 's/^/       /'
+    fi
 fi
 
 echo "== --dump-setup summary vs goldens =="

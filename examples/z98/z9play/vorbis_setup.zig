@@ -153,10 +153,13 @@ pub const BitReader = struct {
     data: []const u8,
     nbits: usize,
     pos: usize,
+    acc: u64,
+    acc_bits: u32,
+    next_byte: usize,
 };
 
 pub fn brInit(data: []const u8) BitReader {
-    return BitReader{ .data = data, .nbits = data.len * 8, .pos = 0 };
+    return BitReader{ .data = data, .nbits = data.len * 8, .pos = 0, .acc = 0, .acc_bits = 0, .next_byte = 0 };
 }
 
 
@@ -164,23 +167,59 @@ pub fn brInit(data: []const u8) BitReader {
 pub fn brRead(br: *BitReader, n: u32) ogg.OggError!u32 {
 
     if (br.pos + @intCast(usize, n) > br.nbits) return error.Truncated;
-    var v: u32 = 0;
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
-        var byte32: u32 = @intCast(u32, br.data[br.pos >> 3]);
-        var shift: u32 = @intCast(u32, br.pos & 7);
-        var bit: u32 = (byte32 >> shift) & 1;
-        var sh2: u32 = i;
-        v |= bit << sh2;
-        br.pos += 1;
+    while (br.acc_bits < n) {
+        var b: u64 = @intCast(u64, br.data[br.next_byte]);
+        var sh: u64 = @intCast(u64, br.acc_bits);
+        br.acc = br.acc | (b << sh);
+        br.acc_bits += 8;
+        br.next_byte += 1;
     }
+    var mask: u64 = (@intCast(u64, 1) << @intCast(u64, n)) - 1;
+    var v: u32 = @intCast(u32, br.acc & mask);
+    br.acc = br.acc >> @intCast(u64, n);
+    br.acc_bits -= n;
+    br.pos += @intCast(usize, n);
     return v;
 }
 
 // Advance `n` bits without materializing them. Truncated on a short packet.
 pub fn brSkip(br: *BitReader, n: u32) ogg.OggError!void {
     if (br.pos + @intCast(usize, n) > br.nbits) return error.Truncated;
-    br.pos += @intCast(usize, n);
+    var target: usize = br.pos + @intCast(usize, n);
+    if (target <= br.next_byte * 8) {
+        br.acc = br.acc >> @intCast(u64, n);
+        br.acc_bits -= n;
+        br.pos = target;
+        return;
+    }
+    br.acc = 0;
+    br.acc_bits = 0;
+    var bi: usize = target >> 3;
+    var off: u32 = @intCast(u32, target & 7);
+    if (off != 0) {
+        br.acc = @intCast(u64, br.data[bi]) >> @intCast(u64, off);
+        br.acc_bits = 8 - off;
+        br.next_byte = bi + 1;
+    } else {
+        br.next_byte = bi;
+    }
+    br.pos = target;
+}
+
+// Return the next bit (0/1) without an error union. Past `nbits` this yields 0
+// and leaves `pos` clamped at `nbits`, matching `brRead(br, 1) catch 0`.
+pub fn brBitZero(br: *BitReader) u32 {
+    if (br.pos >= br.nbits) return 0;
+    if (br.acc_bits == 0) {
+        br.acc = @intCast(u64, br.data[br.next_byte]);
+        br.acc_bits = 8;
+        br.next_byte += 1;
+    }
+    var bit: u32 = @intCast(u32, br.acc & 1);
+    br.acc = br.acc >> 1;
+    br.acc_bits -= 1;
+    br.pos += 1;
+    return bit;
 }
 
 

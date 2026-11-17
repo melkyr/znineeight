@@ -63,14 +63,14 @@ pub const ResidueError = error{ BadVersion, OutOfMemory };
 fn decodeScalarEop(dt: *const cbk.DecodeTable, bits: *vs.BitReader) i32 {
     if (dt.used == 1) {
         if (bits.pos >= bits.nbits) return -1;
-        _ = vs.brRead(bits, 1) catch 0;
+        _ = vs.brBitZero(bits);
         return dt.single_sym;
     }
     var node: u32 = 0;
     var steps: u32 = 0;
     while (steps <= dt.max_len) : (steps += 1) {
         if (bits.pos >= bits.nbits) return -1;
-        var bit: u32 = vs.brRead(bits, 1) catch 0;
+        var bit: u32 = vs.brBitZero(bits);
         var nxt: i32 = 0;
         if (bit == 0) {
             nxt = dt.left[@intCast(usize, node)];
