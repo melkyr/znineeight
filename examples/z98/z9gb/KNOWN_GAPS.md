@@ -2,8 +2,9 @@
 
 Technical companion to `README.md`. Everything here is stated only to the extent
 it has been measured or verified; unverified items are marked as such. Status:
-2026-11-12, after the commercial-ROM compatibility pass (Tasks 1–8B) and the
-partial dynarec-boundary study (Task 8).
+2026-11-17, after the commercial-ROM compatibility pass (Tasks 1–8B), the
+partial dynarec-boundary study (Task 8), and the real-Win9x dynarec fault
+reproduction (see §3.1).
 
 ## 1. Scope
 
@@ -44,8 +45,9 @@ Frames complete, 92,160-byte framebuffer each mode; coverage is the dynarec's
 | Kirby's Dream Land | `0f6dba94fae248d419083001c42c02a78be6bd3dff679c895517559e72c98d58` | DMG | 962‰ (matrix 600f), 961‰ (operator run) | title + playable |
 | Kirby Tilt 'n' Tumble | `6cf412aeb1ec60da1a401019d95dee1e76f0297154a7f06b55fb1657a71ed44f` | `--cgb` | 743‰ | MBC7 calibration prompt only |
 
-Crystal, Pinball and KDL are playable with the interpreter and with the
-dynarec; the dynarec is faster on Pinball and slower on Crystal/KDL (see §3).
+Under Wine, Crystal, Pinball and KDL are playable with the interpreter and with
+the dynarec; the dynarec is faster on Pinball and slower on Crystal/KDL (see
+§3). On real Win9x the dynarec faults immediately instead (§3.1).
 
 ### 2.3 Input path (verified by the operator on real runs)
 
@@ -63,8 +65,9 @@ dynarec; the dynarec is faster on Pinball and slower on Crystal/KDL (see §3).
 
 ## 3. Dynarec: measured reality (not a general-purpose speedup)
 
-The dynarec is correct (all gates and ROM runs pass), but its cost model is
-dominated by per-block overhead, not by translation quality.
+The dynarec is mechanically correct on the tested Wine/host surface (all gates
+and ROM runs pass); on real Win9x it faults immediately (§3.1). Its cost model
+is dominated by per-block overhead, not by translation quality.
 
 Measured on Wine, headless, 600 frames, turbo, medians (Task 4 and Task 8
 workspace):
@@ -105,6 +108,78 @@ only dirty PPU registers; distinguishing IO/ROM indirect stores from WRAM/VRAM
 stores to lengthen blocks; a negative cache for rejected PC/bank pairs. Each is
 an emulator-performance project of its own, not a Z98-spec testing concern.
 
+### 3.1 Win9x dynarec fault (open; reproduced under Wine)
+
+On 2026-11-17 the operator ran the OpenWatcom **nocrt** Win32 build (v150 lib,
+the crashing baseline) with `--dynarec` on real Win9x (Pentium 4, Win98). Every
+ROM faults immediately, before any console output, with an invalid page fault in
+`module <unknown>` at `EIP=011c0004`; `errordynarec.txt` records `EAX=0`,
+`EDX=011c010c`, `EBP=00d3bfe8`, and faulting bytes `8b 10 8b 48 04`. The
+interpreter (`--no-dynarec`) still runs. The operator reports this as the first
+real-Win9x execution of the dynarec; before this run the dynarec was
+Wine-proven only.
+
+Reproduced under Wine 8.0 with the operator's binary
+`lin_bin/z9gb/z9gb.exe` (1,035,776 B, sha256
+`073c8add6e0839bf93b1439085f13566ea5a4a30770577dcc09f56675694d435`,
+OpenWatcom nocrt, v150 lib) and the repo's `testdata/synth/minimal.gb` (sha256
+`6e110337c4e336d0a4740d987fb3a3020c7a06b441536b575850f66889b04dc6`), fresh
+`WINEPREFIX` under `$HOME`:
+
+```
+cd /workspace/znineeight/lin_bin/z9gb
+WINEPREFIX="$HOME/.wine-z9gb-dyn-3bJ" WINEDEBUG=-all timeout 240 wine ./z9gb.exe \
+    --headless --frames 60 --turbo --rom testdata/synth/minimal.gb --dynarec --dynarec-stats </dev/null
+```
+
+Result: rc 5, `Unhandled exception: page fault on read access to 0x00000000 in
+32-bit code (0x023d0004)`, `EIP:023d0004 EAX:00000000 EBX:00000000
+ECX:00000009 EDX:023d00e0 ESI:0107fc34 EDI:00000040 EBP:00d3bfe8`, stack top
+`023d0105`; the faulting instruction is `movl 0x0(%eax),%edx` (`8b 10`). The
+Win98 dump is **not** identical modulo the cache base (`011c0000` vs
+`023d0000`); compare by relative offset. Matching: EIP at `base + 4`, `EAX=0`,
+`EBX=0`, `ECX=9`, `EDI=0x40`, `EBP=00d3bfe8`, and faulting bytes `8b 10 8b 48
+04`. Differing: Win98 `EDX=011c010c` (`base + 0x10c`) vs Wine `EDX=023d00e0`
+(`base + 0xe0`), a 0x2c relative-offset gap, plus `ESI` and stack contents.
+`--no-dynarec` with the same command exits rc 0 and prints
+`dynarec=disabled reason=not-requested`. The fault is confirmed on the headless
+path under Wine and on the operator's Win9x run (whose display mode is not
+stated); the windowed path is untested here (DirectDraw will not open under this
+Wine/Xvfb).
+
+Observations to test (hypotheses, not a diagnosis): the glue buffer starts at
+`glue_off` with the body at `GLUE_BODY_OFF = 9`
+(`dynarec/dynarec.zig:27`); the dispatcher calls `d.mem + e.glue_off`
+(`dynarec/dynarec.zig:554`), while chained entries jump to
+`glue_off + GLUE_BODY_OFF` (`dynarec/dynarec.zig:305`); `GLUE_MAX = 224` and
+`EDX = glue_off + 0xe0` in the Wine dump. The fault at `base + 4`, before the
+glue body at `glue_off + 9`, suggests execution entered the glue preamble rather
+than the body; that is an inference from the offsets, not an instrumented fact.
+Whether the two entry conventions pick different bytes, or the generated/cache
+state is invalid on Win9x, is unproven.
+
+Next diagnostic steps, with no fix in this task:
+
+- First, A/B the OpenWatcom CRT and nocrt builds of the same source with the
+  same ROM, to separate runtime/library effects from code-cache effects.
+- Probe the `VirtualAlloc` result (base, size, protection) and the
+  `FlushInstructionCache` call on Win9x; log `d.mem`, `glue_off`, and the
+  bytes at `glue_off` and `glue_off + 9` at first dispatch.
+- Capture `--dynarec-stats` or a pre-dispatch log to confirm whether
+  translation, linking, or the first glue call fails; compare the Win98 and
+  Wine dumps at the same offsets.
+- Keep windowed and DirectDraw out of the comparison until a host can open
+  them.
+
+### 3.2 Interpreter cost on P4/Win98
+
+On the same P4/Win98 run the plain interpreter (no `--dynarec`) runs but is
+slow and saturates the CPU (~98%), matching the code-bound cost model above;
+the same binary is fast on a modern host. The operator also observes z9play at
+~49% CPU, likewise code-bound. This is an operator observation, not a benchmark
+against §3's Wine medians: it says the interpreter path is viable on Win9x but
+host-speed-limited, not that the interpreter is defective.
+
 ## 4. Functional gaps and debt
 
 | Area | Gap | Effect / workaround |
@@ -121,7 +196,7 @@ an emulator-performance project of its own, not a Z98-spec testing concern.
 | Serial | Link-mode log is capped at 4096 bytes; the transfer model is a fixed latency, not link-cable timing | Debug/verdict harnesses only; no link cable. |
 | Paths | Save/ROM path handling truncates around the Win9x `MAX_PATH` (260) boundary; `.sav`/`.rtc` write uses a temp/backup rename window | A crash between renames can leave `.bak`/`.tmp` files; load-side validation prevents corrupt state. |
 | RTC | Without `--rtc-fixed`, the MBC3 clock follows host wall time; `.rtc` v1 stores a u64 LE anchor at bytes 16–23, reserved bytes 24–31 zero | Deterministic tests must pass `--rtc-fixed`. |
-| Backends | Win32 paths are verified under Wine/cross-build only, never on Win98/Pentium II hardware; gamepad axes/dead-zone/focus-loss are untested on hardware | Real-hardware sign-off is explicitly operator-owned. `--windowed` needs DirectX 6+ (`IDirectDraw7`); gamepad needs DX8 (`dinput8.dll`), keyboard falls back to `GetAsyncKeyState`. |
+| Backends | Win32 headless paths are verified under Wine/cross-build and, since 2026-11-17, run on Win98/P4 (interpreter OK; `--dynarec` faults immediately, see §3.1); windowed and gamepad paths are still Wine-only, and gamepad axes/dead-zone/focus-loss are untested on hardware | `--windowed` needs DirectX 6+ (`IDirectDraw7`); gamepad needs DX8 (`dinput8.dll`), keyboard falls back to `GetAsyncKeyState`. Real-hardware sign-off is explicitly operator-owned. |
 
 ## 5. Test-harness caveats
 

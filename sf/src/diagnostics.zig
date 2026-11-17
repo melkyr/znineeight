@@ -560,6 +560,18 @@ pub fn diagnosticCollectorMarkNodeOnce(self: *DiagnosticCollector, node_idx: u32
     return true;
 }
 
+// Task 3b-C: read-only query over the `diagnosticCollectorMarkNodeOnce` mark
+// set. True when this node already had a level-0 diagnostic (or another deduped
+// report) attributed to it, so dependent diagnostics on the same root cause can
+// be suppressed.
+pub fn diagnosticCollectorNodeWasMarked(self: *DiagnosticCollector, node_idx: u32) bool {
+    var i: usize = 0;
+    while (i < self.diag_seen_len) : (i += 1) {
+        if (self.diag_seen_items[i] == node_idx) return true;
+    }
+    return false;
+}
+
 pub fn diagnosticCollectorWarningCount(self: *DiagnosticCollector) u32 {
     return @intCast(u32, self.warning_count);
 }

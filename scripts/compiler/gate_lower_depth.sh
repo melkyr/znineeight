@@ -20,13 +20,13 @@ set -euo pipefail
 #      safety net (EXPR_GUARD_MAX) that must not fire on legal input; when it
 #      does not trip this case passes with a note;
 #   5. the four 8-pin entries still emit and their `-fsafe`/`-ffast`
-#      `--dump-c89` md5s match the authoritative 8-pin table (Phase 3.5
-#      Task 12 defect-closure re-baseline; both modes moved with the
-#      D3/D8/D14/D15 emission changes):
-#        mud  9691c2878564d61fe4272c3d3b5da253 / fef5196eec58b82323bac3ce78c0e815
-#        gol  0be513f90937621d47a331211bef9d67 / b1f536d2905ce51d474d4167b2408f29
-#        lisp a2169c2c5b019504eaa9da0a851d8658 / 291a159925a7aa2f622bc1a87536a0e3
-#        json bbcd375f657d168df504d1f4ae06774e / 219ddfff7095c84ab1dde2e82e3c50f0
+#      `--dump-c89` md5s match the authoritative 8-pin table (seed v151
+#      rotation re-baseline; lib/ is unchanged since v150 and 3b-H is
+#      emission-neutral for non-console modules, so all pins are unchanged):
+#        mud  948f50001c6ee7ece790eb5c0355d77a / 595002172e9ae517a5d0380f6748fa87
+#        gol  67faec5d617ad62f077f54642fdbd9a4 / 906dbec2ff71ea10b8429c2e3a55f8f8
+#        lisp 080f1a36b27e38958ccec50de8d96bf9 / 8e80d33918b2e9304394caa906e5691c
+#        json 82a960f713d5fa81d3253bc877edbb82 / c0192d5e73ef104fe425cf065cc0c6f0
 #      (left = `-fsafe`, right = `-ffast`);
 #   6. a generated 120-term RUNTIME-VALUED (not literal-folded) left-deep `+`
 #      chain compiles rc=0 under `ulimit -s 1024` (Task 2 trampoline) and its
@@ -250,6 +250,34 @@ else
 fi
 
 # ---- 5. four 8-pin entries: emit + --dump-c89 md5 pins (safe+fast) ----
+# The 8 pins are authoritative for the COMMITTED seed lib. The tested
+# compiler's sibling lib/ is mutable dev state (tooling may sync it from the
+# current tree), so pin every dump to an unpacked copy of the seed archive.
+# Never fall back to the sibling lib: a missing archive/lib/manifest fails the
+# case explicitly.
+SEED_ARCHIVE="$ROOT/release/seed/zig1-seed.tgz"
+SEED_UNPACK="$WORK/seed_lib"
+SEED_LIB="$SEED_UNPACK/zig1-seed/lib"
+seed_ok=1
+if [ ! -f "$SEED_ARCHIVE" ]; then
+    bad "case 5: seed archive missing: $SEED_ARCHIVE"
+    seed_ok=0
+elif ! mkdir -p "$SEED_UNPACK"; then
+    bad "case 5: cannot create seed unpack dir: $SEED_UNPACK"
+    seed_ok=0
+elif ! tar -xzf "$SEED_ARCHIVE" -C "$SEED_UNPACK"; then
+    bad "case 5: cannot unpack seed archive: $SEED_ARCHIVE"
+    seed_ok=0
+elif [ ! -f "$SEED_LIB/manifest.md5" ]; then
+    bad "case 5: seed lib manifest missing: $SEED_LIB/manifest.md5"
+    seed_ok=0
+fi
+if [ "$seed_ok" -eq 1 ]; then
+    note "case 5: seed lib: $SEED_LIB"
+else
+    echo "case 5: FAIL (seed lib unavailable; refusing to fall back to the tested compiler's sibling lib)"
+fi
+
 pin_check() {
     local entry="$1" want_safe="$2" want_fast="$3" name="$4"
     mkdir -p "$WORK/pin_$name"
@@ -265,7 +293,7 @@ pin_check() {
     fi
     local got_safe got_fast rcd
     set +e
-    got_safe="$( cd "$ROOT" && timeout 120 "$ZIG1" -fsafe --dump-c89 "$entry" 2>"$WORK/pin_$name.dumperr" | md5sum | cut -d' ' -f1 )"
+    got_safe="$( cd "$ROOT" && timeout 120 "$ZIG1" -fsafe --dump-c89 --lib-dir "$SEED_LIB" "$entry" 2>"$WORK/pin_$name.dumperr" | md5sum | cut -d' ' -f1 )"
     rcd=$?
     set -e
     if [ "$rcd" -ne 0 ]; then
@@ -274,7 +302,7 @@ pin_check() {
         return
     fi
     set +e
-    got_fast="$( cd "$ROOT" && timeout 120 "$ZIG1" -ffast --dump-c89 "$entry" 2>>"$WORK/pin_$name.dumperr" | md5sum | cut -d' ' -f1 )"
+    got_fast="$( cd "$ROOT" && timeout 120 "$ZIG1" -ffast --dump-c89 --lib-dir "$SEED_LIB" "$entry" 2>>"$WORK/pin_$name.dumperr" | md5sum | cut -d' ' -f1 )"
     rcd=$?
     set -e
     if [ "$rcd" -ne 0 ]; then
@@ -298,14 +326,16 @@ pin_check() {
     fi
 }
 
-pin_check "examples/z98/mud_server/main.zig" \
-    "9691c2878564d61fe4272c3d3b5da253" "fef5196eec58b82323bac3ce78c0e815" mud_server
-pin_check "examples/z98/game_of_life/main.zig" \
-    "0be513f90937621d47a331211bef9d67" "b1f536d2905ce51d474d4167b2408f29" game_of_life
-pin_check "examples/z98/lisp_interpreter_curr/main.zig" \
-    "a2169c2c5b019504eaa9da0a851d8658" "291a159925a7aa2f622bc1a87536a0e3" lisp_interpreter_curr
-pin_check "examples/z98/json_parser/main.zig" \
-    "bbcd375f657d168df504d1f4ae06774e" "219ddfff7095c84ab1dde2e82e3c50f0" json_parser
+if [ "$seed_ok" -eq 1 ]; then
+    pin_check "examples/z98/mud_server/main.zig" \
+        "948f50001c6ee7ece790eb5c0355d77a" "595002172e9ae517a5d0380f6748fa87" mud_server
+    pin_check "examples/z98/game_of_life/main.zig" \
+        "67faec5d617ad62f077f54642fdbd9a4" "906dbec2ff71ea10b8429c2e3a55f8f8" game_of_life
+    pin_check "examples/z98/lisp_interpreter_curr/main.zig" \
+        "080f1a36b27e38958ccec50de8d96bf9" "8e80d33918b2e9304394caa906e5691c" lisp_interpreter_curr
+    pin_check "examples/z98/json_parser/main.zig" \
+        "82a960f713d5fa81d3253bc877edbb82" "c0192d5e73ef104fe425cf065cc0c6f0" json_parser
+fi
 
 # ---- 6. 120-term runtime-valued left-deep `+` chain (Task 2 RED->GREEN) ----
 # Fixture (validated shape): each term is a u32 local seeded through

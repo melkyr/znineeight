@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+set -uo pipefail
+# scripts/compiler/gate_module_member_diag.sh [path/to/zig1]
+#
+# Task 3b-R: a missing member on a module alias is diagnosed at the
+# semantic-analyzer stage as a level-0 error[3060] with Zig's wording
+# ("no field or member function named '...' in module"), NOT at lowering as
+# error[3042] ("non-value base expression in field access") plus
+# warning[3023] ("module used as value expression"). A level-0 sema error trips
+# the post-sema gate, so the compile exits rc 2 with 0 `.c` and lowering never
+# runs.
+#
+# reject fixture: --dump-c89 rc 2, zero `.c`, exactly five error[3060] lines
+#                 (one per read/call/store/address/chain site) carrying
+#                 "in module", and no error[3000] (Task 3b-C cascade
+#                 suppression) / error[3042] / warning[3023].
+# combined probe: a marked missing-member error plus a genuine void initializer
+#                 in the same function still reports both the 3060 and the
+#                 `error[3000] cannot declare variable of type void` (guards
+#                 false suppression through the initializer mark walk).
+# ok fixture:     --dump-c89 rc 0, at least one `.c` (real member read + call).
+#
+# Exits 1 on any mismatch.
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ZIG1="${1:-}"
+if [ -z "$ZIG1" ]; then
+    if [ -x "$ROOT/zig1" ]; then
+        ZIG1="$ROOT/zig1"
+    else
+        echo "error: no zig1 given and $ROOT/zig1 not executable" >&2
+        echo "usage: scripts/compiler/gate_module_member_diag.sh [path/to/zig1]" >&2
+        exit 2
+    fi
+fi
+[ -x "$ZIG1" ] || { echo "error: zig1 '$ZIG1' is not executable" >&2; exit 2; }
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/gate_module_member_diag.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+
+fail=0
+note() { echo "[gate_module_member_diag] $*"; }
+bad()  { echo "[gate_module_member_diag] FAIL: $*" >&2; fail=1; }
+
+note "zig1: $ZIG1"
+
+REJECT="$ROOT/repro/mi_matrix/module_member_missing_reject_xmod/main.zig"
+OK="$ROOT/repro/mi_matrix/module_member_ok_xmod/main.zig"
+
+# ---- reject: missing module member ----
+mkdir -p "$WORK/reject"
+( cd "$ROOT" && timeout 120 "$ZIG1" --dump-c89 --output-dir "$WORK/reject" "$REJECT" ) \
+    >"$WORK/reject.out" 2>"$WORK/reject.err"
+rrc=$?
+
+if [ "$rrc" -ne 2 ]; then
+    bad "reject rc=$rrc want 2"
+fi
+
+c_count=0
+while IFS= read -r _c; do
+    [ -n "$_c" ] && c_count=$((c_count + 1))
+done < <(find "$WORK/reject" -maxdepth 1 -type f -name '*.c' -print 2>/dev/null)
+if [ "$c_count" -ne 0 ]; then
+    bad "reject emitted $c_count .c want 0"
+fi
+
+err3060="$(grep -c 'error\[3060\]' "$WORK/reject.err" 2>/dev/null)"
+err3060="${err3060:-0}"
+if [ "$err3060" -ne 5 ]; then
+    bad "reject has $err3060 error[3060] lines want exactly 5 (one per site)"
+fi
+if ! grep -qF "error[3060]: no field or member function named 'nope' in module" "$WORK/reject.err"; then
+    bad "reject stderr lacks \"error[3060]: no field or member function named 'nope' in module\""
+fi
+if grep -q 'error\[3042\]' "$WORK/reject.err"; then
+    bad "reject stderr still has error[3042]"
+fi
+if grep -q 'warning\[3023\]' "$WORK/reject.err"; then
+    bad "reject stderr still has warning[3023]"
+fi
+if grep -q 'error\[3000\]' "$WORK/reject.err"; then
+    bad "reject stderr has error[3000] (dependent void-var diagnostic after initializer error)"
+fi
+
+if [ "$fail" -eq 0 ]; then
+    note "reject: rc=2, 0 .c, five error[3060] 'in module', no error[3000], no 3042/3023"
+else
+    note "reject stderr:"
+    sed -n '1,40p' "$WORK/reject.err" >&2
+fi
+
+# ---- combined non-vacuity: marked error + genuine void initializer ----
+# Task 3b-C fix round 1: the suppression must only drop the DEPENDENT 3000.
+# A marked missing-member error elsewhere in the function must not hide a
+# genuine void-typed `const` initializer in the same function.
+mkdir -p "$WORK/combined/out"
+cat >"$WORK/combined/helper.zig" <<'ZIGEOF'
+pub const answer: i32 = 42;
+pub fn vf() void {}
+ZIGEOF
+cat >"$WORK/combined/main.zig" <<'ZIGEOF'
+const h = @import("helper.zig");
+pub fn main() void {
+    _ = h.nope;
+    const x = h.vf();
+    _ = x;
+}
+ZIGEOF
+( cd "$ROOT" && timeout 120 "$ZIG1" --dump-c89 --output-dir "$WORK/combined/out" "$WORK/combined/main.zig" ) \
+    >"$WORK/combined.out" 2>"$WORK/combined.err"
+crc=$?
+if [ "$crc" -ne 2 ]; then
+    bad "combined rc=$crc want 2"
+fi
+comb3060="$(grep -c 'error\[3060\]' "$WORK/combined.err" 2>/dev/null)"
+comb3060="${comb3060:-0}"
+if [ "$comb3060" -ne 1 ]; then
+    bad "combined has $comb3060 error[3060] lines want exactly 1"
+fi
+if ! grep -qF 'error[3000]: cannot declare variable of type void' "$WORK/combined.err"; then
+    bad "combined lost the genuine error[3000] cannot declare variable of type void (false suppression)"
+fi
+if [ "$fail" -eq 0 ]; then
+    note "combined: rc=2, one 3060 + genuine error[3000] retained"
+else
+    note "combined stderr:"
+    sed -n '1,40p' "$WORK/combined.err" >&2
+fi
+
+# ---- ok: real module member ----
+mkdir -p "$WORK/ok"
+( cd "$ROOT" && timeout 120 "$ZIG1" --dump-c89 --output-dir "$WORK/ok" "$OK" ) \
+    >"$WORK/ok.out" 2>"$WORK/ok.err"
+orc=$?
+
+if [ "$orc" -ne 0 ]; then
+    bad "ok rc=$orc want 0"
+    sed -n '1,40p' "$WORK/ok.err" >&2
+fi
+
+ok_c_count=0
+while IFS= read -r _c; do
+    [ -n "$_c" ] && ok_c_count=$((ok_c_count + 1))
+done < <(find "$WORK/ok" -maxdepth 1 -type f -name '*.c' -print 2>/dev/null)
+if [ "$ok_c_count" -lt 1 ]; then
+    bad "ok emitted no .c"
+fi
+
+if [ "$fail" -eq 0 ]; then
+    note "ok: rc=0, $ok_c_count .c"
+    note "PASS"
+    exit 0
+fi
+note "FAILED"
+exit 1

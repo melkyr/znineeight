@@ -2616,7 +2616,7 @@ fn emitBuiltinIncludes(emitter: *C89Emitter) void {
         bufferedWriterWrite(&emitter.writer, swin);
     }
     if (moduleHasConsoleBuiltin(emitter) != @intCast(u8, 0)) {
-        var cwin: []const u8 = "#ifdef _WIN32\n#define WINVER 0x0410\n#define _WIN32_WINDOWS 0x0410\n#define _WIN32_WINNT 0x0400\n#define NTDDI_VERSION 0x04000000\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void std_print_len(const char* s, unsigned int len);\n";
+        var cwin: []const u8 = "#ifdef _WIN32\n#ifndef WINVER\n#define WINVER 0x0410\n#endif\n#ifndef _WIN32_WINDOWS\n#define _WIN32_WINDOWS 0x0410\n#endif\n#ifndef _WIN32_WINNT\n#define _WIN32_WINNT 0x0400\n#endif\n#ifndef NTDDI_VERSION\n#define NTDDI_VERSION 0x04000000\n#endif\n#ifndef WIN32_LEAN_AND_MEAN\n#define WIN32_LEAN_AND_MEAN\n#endif\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void std_print_len(const char* s, unsigned int len);\n";
         bufferedWriterWrite(&emitter.writer, cwin);
     }
 
@@ -3344,6 +3344,16 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
             wcall = wcall1;
         }
         bufferedWriterWrite(&emitter.writer, wsig);
+        // Strict C89: block declarations must precede statements. The
+        // error-union wrapper's result local therefore has to be declared
+        // before the module-init calls; the assignment and return stay after
+        // them. The void/int branches declare no local (unchanged).
+        if (wrty.kind == type_mod.TypeKind.error_union_type) {
+            var weu_c = getCTypeName(emitter.registry, emitter.mangler, func.return_type);
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            bufferedWriterWrite(&emitter.writer, weu_c);
+            var we1: []const u8 = " zT_main_result;\n"; bufferedWriterWrite(&emitter.writer, we1);
+        }
         emitModuleInitCalls(emitter);
         if (wrty.kind == type_mod.TypeKind.void_type) {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
@@ -3352,12 +3362,8 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var wv2: []const u8 = "return 0;\n"; bufferedWriterWrite(&emitter.writer, wv2);
         } else if (wrty.kind == type_mod.TypeKind.error_union_type) {
-            var weu_c = getCTypeName(emitter.registry, emitter.mangler, func.return_type);
             var wep = emitter.registry.eu_items[@intCast(usize, wrty.payload_idx)];
             var wpay = emitter.registry.types_items[@intCast(usize, wep.payload)];
-            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-            bufferedWriterWrite(&emitter.writer, weu_c);
-            var we1: []const u8 = " zT_main_result;\n"; bufferedWriterWrite(&emitter.writer, we1);
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var we2: []const u8 = "zT_main_result = "; bufferedWriterWrite(&emitter.writer, we2);
             bufferedWriterWrite(&emitter.writer, wfn_name);
