@@ -44,6 +44,12 @@ pub const Emu = struct {
     // addresses of Dynarec fields, so this must never be a temporary/copy.
     dynarec: dynarecmod.Dynarec,
     ppu: ppumod.Ppu,
+    // Last value pushed from `bus.io` into the PPU by `ppuSyncIn`, one entry per
+    // synced register: 0=0x40, 1=0x41, 2=0x42, 3=0x43, 4=0x46, 5=0x47,
+    // 6=0x48, 7=0x49, 8=0x4A, 9=0x4B, 10=0x45 (LYC). Invalidated whenever the
+    // bus/PPU register state is rebuilt.
+    ppu_io_shadow: [11]u8,
+    ppu_shadow_valid: bool,
     mooneye: bool,
     mooneye_stopped: bool,
     mooneye_sig: [6]u8,
@@ -66,6 +72,7 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     mmumod.busInit(&e.bus, &e.cart);
     cpumod.cpuInit(&e.cpu);
     ppumod.ppuReset(&e.ppu);
+    e.ppu_shadow_valid = false;
     e.dynarec.mapped = false;
     e.dynarec.stats = dynarecmod.Stats{ .blocks = 0, .executed = 0, .chained = 0, .fallback = 0, .resets = 0, .collisions = 0, .tinstr = 0, .minstr = 0, .rejected = 0 };
     dynarecmod.dynarecFlush(&e.dynarec);
@@ -164,6 +171,7 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
     }
     e.rom_path_len = rp;
     mmumod.busInit(&e.bus, &e.cart);
+    e.ppu_shadow_valid = false;
     if (dynarecmod.dynarecEnabled(&e.dynarec)) dynarecmod.dynarecFlush(&e.dynarec);
     applyCgbMode(e);
 }
@@ -174,6 +182,7 @@ pub fn emuReset(e: *Emu) void {
     applyCgbMode(e);
     cpumod.cpuInit(&e.cpu);
     ppumod.ppuReset(&e.ppu);
+    e.ppu_shadow_valid = false;
     e.ppu.ly = 0x91;
     e.ppu.line = 0x91;
     e.ppu.dot = 0;
@@ -214,20 +223,34 @@ pub fn emuSelfTestPattern(e: *Emu) void {
 
 fn ppuSyncIn(e: *Emu) void {
     const b: *mmumod.Bus = &e.bus;
+    // LCDC/STAT are always pushed. LCDC is cheap and a same-value write is a
+    // no-op, but STAT cannot be compared byte-for-byte: ppuSyncOut stores the
+    // full read value (mode/coincidence bits included) in io[0x41], so a CPU
+    // write of e.g. 0x82 while the read value is also 0x82 must still run
+    // ppuWrite(0xFF41) to install the new 0x78 select bits and re-evaluate
+    // STAT. Keeping the unconditional push preserves that exactly.
     ppumod.ppuWrite(&e.ppu, 0xFF40, b.io[0x40], b);
+    e.ppu_io_shadow[0] = b.io[0x40];
     ppumod.ppuWrite(&e.ppu, 0xFF41, b.io[0x41], b);
-    ppumod.ppuWrite(&e.ppu, 0xFF42, b.io[0x42], b);
-    ppumod.ppuWrite(&e.ppu, 0xFF43, b.io[0x43], b);
+    e.ppu_io_shadow[1] = b.io[0x41];
+    const dirty_addrs: [8]u16 = [8]u16{ 0xFF42, 0xFF43, 0xFF46, 0xFF47, 0xFF48, 0xFF49, 0xFF4A, 0xFF4B };
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        const addr: u16 = dirty_addrs[i];
+        const v: u8 = b.io[@intCast(usize, addr & 0x7F)];
+        if (!e.ppu_shadow_valid or e.ppu_io_shadow[i + 2] != v) {
+            ppumod.ppuWrite(&e.ppu, addr, v, b);
+            e.ppu_io_shadow[i + 2] = v;
+        }
+    }
+    // LYC keeps its original dirty/explicit-compare path; a same-value write
+    // must still raise the coincidence IRQ, so it is never shadow-skipped.
     if (b.lyc_dirty or b.io[0x45] != e.ppu.lyc) {
         b.lyc_dirty = false;
         ppumod.ppuWrite(&e.ppu, 0xFF45, b.io[0x45], b);
     }
-    ppumod.ppuWrite(&e.ppu, 0xFF46, b.io[0x46], b);
-    ppumod.ppuWrite(&e.ppu, 0xFF47, b.io[0x47], b);
-    ppumod.ppuWrite(&e.ppu, 0xFF48, b.io[0x48], b);
-    ppumod.ppuWrite(&e.ppu, 0xFF49, b.io[0x49], b);
-    ppumod.ppuWrite(&e.ppu, 0xFF4A, b.io[0x4A], b);
-    ppumod.ppuWrite(&e.ppu, 0xFF4B, b.io[0x4B], b);
+    e.ppu_io_shadow[10] = b.io[0x45];
+    e.ppu_shadow_valid = true;
 }
 
 fn ppuSyncOut(e: *Emu) void {
