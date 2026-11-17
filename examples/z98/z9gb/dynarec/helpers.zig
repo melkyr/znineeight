@@ -1,10 +1,14 @@
-// helpers.zig — cdecl memory helpers for the z9gb dynarec.
+// helpers.zig — machine-callable memory helpers for the z9gb dynarec.
 //
-// Generated blocks embed these addresses with @ptrToInt. Before any helper
-// observes bus state it charges the cycles accumulated since the previous
-// sync through busTick and zeroes DynCtx.cycles, so IO/timer/PPU/serial/RTC
-// state is current at the helper boundary. Bus.read8/write8 keep the
-// interpreter's RTC, cart-RAM stub, OAM/VRAM lockout, and OAM-DMA semantics.
+// The helper entries are `extern "stdcall"` definitions: the emitted C carries
+// Z98_STDCALL (empty on Linux, so the host build stays cdecl). On Win32 the
+// helpers are callee-clean (`ret $N`), matching the generated block machine
+// code, which is also callee-clean there. Generated blocks embed these
+// addresses with @ptrToInt. Before any helper observes bus state it charges
+// the cycles accumulated since the previous sync through busTick and zeroes
+// DynCtx.cycles, so IO/timer/PPU/serial/RTC state is current at the helper
+// boundary. Bus.read8/write8 keep the interpreter's RTC, cart-RAM stub,
+// OAM/VRAM lockout, and OAM-DMA semantics.
 
 const ctxmod = @import("ctx.zig");
 const mmumod = @import("../mmu.zig");
@@ -60,26 +64,26 @@ fn syncCtxPpu(ctx: *DynCtx) void {
     ctx.ppu_pending = ctx.instr_cycles;
 }
 
-pub extern "c" fn helperRead8(ctx: *DynCtx, addr: u16) u8 {
+pub extern "stdcall" fn helperRead8(ctx: *DynCtx, addr: u16) u8 {
     syncCtxPpu(ctx);
     return mmumod.read8(ctx.bus, addr);
 }
 
-pub extern "c" fn helperWrite8(ctx: *DynCtx, addr: u16, value: u8) void {
+pub extern "stdcall" fn helperWrite8(ctx: *DynCtx, addr: u16, value: u8) void {
     syncCtxPpu(ctx);
     mmumod.write8(ctx.bus, addr, value);
 }
 
-pub extern "c" fn helperIoRead(ctx: *DynCtx, addr: u16) u8 {
+pub extern "stdcall" fn helperIoRead(ctx: *DynCtx, addr: u16) u8 {
     syncCtxPpu(ctx);
     return mmumod.read8(ctx.bus, addr);
 }
 
-pub extern "c" fn helperIoWrite(ctx: *DynCtx, addr: u16, value: u8) void {
+pub extern "stdcall" fn helperIoWrite(ctx: *DynCtx, addr: u16, value: u8) void {
     syncCtxPpu(ctx);
     mmumod.write8(ctx.bus, addr, value);
 }
 
-pub extern "c" fn helperSync(ctx: *DynCtx) void {
+pub extern "stdcall" fn helperSync(ctx: *DynCtx) void {
     syncCtx(ctx);
 }

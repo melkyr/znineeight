@@ -553,9 +553,11 @@ fn emitHelperRead(e: *Emit, io: bool) void {
     emitImm32(e, target);
     _ = emitByte(e, 0xFF);
     _ = emitByte(e, 0xD0);
-    _ = emitByte(e, 0x83);
-    _ = emitByte(e, 0xC4);
-    _ = emitByte(e, 0x08);
+    if (!@isWindows()) {
+        _ = emitByte(e, 0x83);
+        _ = emitByte(e, 0xC4);
+        _ = emitByte(e, 0x08);
+    }
 }
 
 fn emitHelperWrite(e: *Emit, io: bool) void {
@@ -572,9 +574,11 @@ fn emitHelperWrite(e: *Emit, io: bool) void {
     emitImm32(e, target);
     _ = emitByte(e, 0xFF);
     _ = emitByte(e, 0xD0);
-    _ = emitByte(e, 0x83);
-    _ = emitByte(e, 0xC4);
-    _ = emitByte(e, 0x0C);
+    if (!@isWindows()) {
+        _ = emitByte(e, 0x83);
+        _ = emitByte(e, 0xC4);
+        _ = emitByte(e, 0x0C);
+    }
 }
 
 fn emitMemReadAl(e: *Emit) void {
@@ -1513,9 +1517,11 @@ fn emitChargeResidual(e: *Emit) void {
     emitImm32(e, HELPER_SYNC_ADDR);
     _ = emitByte(e, 0xFF);
     _ = emitByte(e, 0xD0);
-    _ = emitByte(e, 0x83);
-    _ = emitByte(e, 0xC4);
-    _ = emitByte(e, 0x04);
+    if (!@isWindows()) {
+        _ = emitByte(e, 0x83);
+        _ = emitByte(e, 0xC4);
+        _ = emitByte(e, 0x04);
+    }
 }
 
 fn emitEpilogue(e: *Emit) void {
@@ -1557,7 +1563,13 @@ fn emitEpilogue(e: *Emit) void {
     _ = emitByte(e, 0x5F);
     _ = emitByte(e, 0x5E);
     _ = emitByte(e, 0x5B);
-    _ = emitByte(e, 0xC3);
+    if (@isWindows()) {
+        _ = emitByte(e, 0xC2);
+        _ = emitByte(e, 0x04);
+        _ = emitByte(e, 0x00);
+    } else {
+        _ = emitByte(e, 0xC3);
+    }
 }
 
 pub fn emitBlock(e: *Emit, block: *const Block) bool {

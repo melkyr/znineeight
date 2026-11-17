@@ -18,6 +18,8 @@ pub const Block = blockmod.Block;
 pub const BlockInsn = blockmod.BlockInsn;
 pub const BlockOp = blockmod.BlockOp;
 
+const GlueFn = extern "stdcall" fn (*DynCtx) u32;
+
 pub const CODE_CACHE_BYTES: usize = cachemod.CODE_CACHE_BYTES;
 pub const BLOCK_MAX_BYTES: usize = cachemod.BLOCK_MAX_BYTES;
 pub const ENTRY_COUNT: usize = cachemod.ENTRY_COUNT;
@@ -114,9 +116,11 @@ fn buildGlue(d: *Dynarec, entry_idx: u32, block_addr: u32, insn_count: u32, glue
     put32(&buf, block_addr);
     put8(&buf, 0xFF);
     put8(&buf, 0xD0);
-    put8(&buf, 0x83);
-    put8(&buf, 0xC4);
-    put8(&buf, 0x04);
+    if (!@isWindows()) {
+        put8(&buf, 0x83);
+        put8(&buf, 0xC4);
+        put8(&buf, 0x04);
+    }
     put8(&buf, 0x01);
     put8(&buf, 0xC3);
     put8(&buf, 0x4F);
@@ -242,7 +246,13 @@ fn buildGlue(d: *Dynarec, entry_idx: u32, block_addr: u32, insn_count: u32, glue
     put8(&buf, 0xD8);
     put8(&buf, 0x5F);
     put8(&buf, 0x5B);
-    put8(&buf, 0xC3);
+    if (@isWindows()) {
+        put8(&buf, 0xC2);
+        put8(&buf, 0x04);
+        put8(&buf, 0x00);
+    } else {
+        put8(&buf, 0xC3);
+    }
 
     patchRelTo(&buf, jz_at, exit_off);
     patchRelTo(&buf, jne_pc_at, exit_off);
@@ -315,7 +325,8 @@ fn linkEntry(d: *Dynarec, e: *Entry) void {
     e.link_bank = w.bank;
     e.link_pc = w.pc;
     e.link_target_off = target32;
-    cachemod.flushRange(d, @intCast(usize, e.glue_off), @intCast(usize, e.exit_off) + 5);
+    const exit_len: usize = if (@isWindows()) 7 else 5;
+    cachemod.flushRange(d, @intCast(usize, e.glue_off), @intCast(usize, e.exit_off) + exit_len);
 }
 
 fn linkPredecessors(d: *Dynarec, bank: u16, pc: u16) void {
@@ -551,7 +562,7 @@ pub fn dynarecRunBlock(d: *Dynarec, cpu: *Cpu, bus: *Bus, ppu: *Ppu) u32 {
     linkEntry(d, e);
     const chain0: u32 = d.stats.chained;
 
-    const f = @ptrCast(fn (*DynCtx) u32, d.mem + @intCast(usize, e.glue_off));
+    const f = @ptrCast(GlueFn, d.mem + @intCast(usize, e.glue_off));
     var ctx = DynCtx{ .cpu = cpu, .bus = bus, .ppu = ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     const cycles: u32 = f(&ctx);
     d.stats.executed +%= 1 +% (d.stats.chained -% chain0);

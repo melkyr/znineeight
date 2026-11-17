@@ -47,7 +47,8 @@ Frames complete, 92,160-byte framebuffer each mode; coverage is the dynarec's
 
 Under Wine, Crystal, Pinball and KDL are playable with the interpreter and with
 the dynarec; the dynarec is faster on Pinball and slower on Crystal/KDL (see
-§3). On real Win9x the dynarec faults immediately instead (§3.1).
+§3). On real Win9x the pre-fix dynarec faulted immediately; the fault is now
+root-caused and fixed in §3.1, with the Win9x re-run pending.
 
 ### 2.3 Input path (verified by the operator on real runs)
 
@@ -66,7 +67,8 @@ the dynarec; the dynarec is faster on Pinball and slower on Crystal/KDL (see
 ## 3. Dynarec: measured reality (not a general-purpose speedup)
 
 The dynarec is mechanically correct on the tested Wine/host surface (all gates
-and ROM runs pass); on real Win9x it faults immediately (§3.1). Its cost model
+and ROM runs pass); the pre-fix dynarec faulted immediately on real Win9x, now
+root-caused and fixed with the Win9x re-run pending (§3.1). Its cost model
 is dominated by per-block overhead, not by translation quality.
 
 Measured on Wine, headless, 600 frames, turbo, medians (Task 4 and Task 8
@@ -108,7 +110,7 @@ only dirty PPU registers; distinguishing IO/ROM indirect stores from WRAM/VRAM
 stores to lengthen blocks; a negative cache for rejected PC/bank pairs. Each is
 an emulator-performance project of its own, not a Z98-spec testing concern.
 
-### 3.1 Win9x dynarec fault (open; reproduced under Wine)
+### 3.1 Win9x dynarec fault (root-caused; mingw/Wine fix verified, OWC/Win9x re-run pending)
 
 On 2026-11-17 the operator ran the OpenWatcom **nocrt** Win32 build (v150 lib,
 the crashing baseline) with `--dynarec` on real Win9x (Pentium 4, Win98). Every
@@ -147,29 +149,59 @@ path under Wine and on the operator's Win9x run (whose display mode is not
 stated); the windowed path is untested here (DirectDraw will not open under this
 Wine/Xvfb).
 
-Observations to test (hypotheses, not a diagnosis): the glue buffer starts at
-`glue_off` with the body at `GLUE_BODY_OFF = 9`
-(`dynarec/dynarec.zig:27`); the dispatcher calls `d.mem + e.glue_off`
-(`dynarec/dynarec.zig:554`), while chained entries jump to
-`glue_off + GLUE_BODY_OFF` (`dynarec/dynarec.zig:305`); `GLUE_MAX = 224` and
-`EDX = glue_off + 0xe0` in the Wine dump. The fault at `base + 4`, before the
-glue body at `glue_off + 9`, suggests execution entered the glue preamble rather
-than the body; that is an inference from the offsets, not an instrumented fact.
-Whether the two entry conventions pick different bytes, or the generated/cache
-state is invalid on Win9x, is unproven.
+**Root cause (established).** The dispatcher cast the code-cache entry to a bare
+`fn (*DynCtx) u32`. The emitted C typedef carries **no** convention attribute
+(generated `zig_special_types.h`), so it means the C compiler default. gcc/mingw
+default to cdecl (stack arguments), which is why the host and Wine-mingw runs
+passed. OpenWatcom `wcc386` defaults to `__watcall` (register arguments), so the
+emitted entry expected `&ctx` in EAX; `buildGlue`'s `push [esp+0xC]` instead
+pushed stack garbage (0). The block-body prologue is `8B 44 24 04; 8B 10; 8B 48
+04` (`mov eax,[esp+4]; mov edx,[eax]; mov ecx,[eax+4]`,
+`dynarec/x86.zig:1470-1479`), so with EAX=0 it faults at body+4 with exactly the
+recorded `EIP=cache+4`, `EAX=0`, bytes `8b 10 8b 48 04`. The helpers were plain
+C too (the file header said cdecl), so an entry-only fix would still mismatch
+the helper ABI.
 
-Next diagnostic steps, with no fix in this task:
+**Fix (operator-approved stdcall workaround; D22 stays deferred).**
 
-- First, A/B the OpenWatcom CRT and nocrt builds of the same source with the
-  same ROM, to separate runtime/library effects from code-cache effects.
-- Probe the `VirtualAlloc` result (base, size, protection) and the
-  `FlushInstructionCache` call on Win9x; log `d.mem`, `glue_off`, and the
-  bytes at `glue_off` and `glue_off + 9` at first dispatch.
-- Capture `--dynarec-stats` or a pre-dispatch log to confirm whether
-  translation, linking, or the first glue call fails; compare the Win98 and
-  Wine dumps at the same offsets.
-- Keep windowed and DirectDraw out of the comparison until a host can open
-  them.
+- `dynarec/helpers.zig`: the five machine-callable entries (`helperRead8`,
+  `helperWrite8`, `helperIoRead`, `helperIoWrite`, `helperSync`) are now
+  `extern "stdcall"` definitions. The emitted C carries `Z98_STDCALL` (empty on
+  non-Windows, so Linux emission is unchanged).
+- `dynarec/dynarec.zig`: `GlueFn = extern "stdcall" fn (*DynCtx) u32`, and the
+  dispatcher casts to it (`@ptrCast(GlueFn, d.mem + e.glue_off)`), emitted as a
+  use-site cast through the `Z98_STDCALL` fn-pointer typedef.
+- On Win32 only (`@isWindows()`) the hand-emitted machine code is callee-clean:
+  the block epilogue and the glue outer exit use `ret 4` (`C2 04 00`), the glue
+  no longer runs `add esp,4` after the internal body call, and the helper-call
+  cleanups (`add esp,4/8/0xC`) are removed because the stdcall helpers pop their
+  arguments. Argument layout is unchanged (`[esp+4]`, `mov 4(%esp),%eax`, glue's
+  `push [esp+0xC]`). Linux keeps the cdecl sequence (plain `ret`, `add esp`),
+  because `Z98_STDCALL` is empty off-Windows.
+
+**Verification (exact toolchains).**
+
+- Linux host: `tier_dynarec.sh`, `tier_smoke.sh`, `tier_dmg.sh`, `tier_cgb.sh`
+  all PASS with the Z98 seed compiler (`/tmp/z9gb_p2_seed/zig1_5_clean`) and the
+  host gcc. Interpreter behavior is byte-identical; the dynarec is Win32-only,
+  and the block-IR/lowering path stays green.
+- Win32 cross: mingw `i686-w64-mingw32-gcc` no-CRT build through
+  `scripts/win32_cross/cross_nocrt.sh` with `-osw`. The emitted C shows
+  `Z98_STDCALL` on all five helper definitions and on the dispatcher
+  fn-pointer typedef (`typedef unsigned int (Z98_STDCALL *...)(DynCtx*)`).
+  `objdump -d helpers_*.o` shows `ret $0x8` (Read8/IoRead), `ret $0xc`
+  (Write8/IoWrite), and `ret $0x4` (Sync), i.e. callee-clean. The
+  `tier_dynarec.sh` Win32/Wine supplemental gates (`cov`, `mbc`, `wram`) and the
+  2048 on/off framebuffer, serial, save, and audio parity PASS.
+- Wine run of the mingw `-osw` `z9gb.exe` on `testdata/synth/minimal.gb`
+  (`--headless --frames 60 --turbo --dynarec --dynarec-stats --fb-out`) exits 0
+  with `dynarec=on blocks=2 executed=88321 ... coverage=1000‰`, no fault, and a
+  framebuffer byte-identical to the `--no-dynarec` run.
+- **OpenWatcom (`wcc386`/OWC) is not installed on this host.** The OWC no-CRT
+  build, the OWC-on-Wine check, and the real-Win9x re-run are operator-side and
+  **pending**; no OWC or Win98 PASS is claimed. D22 (bare/cdecl fn types are not
+  cdecl on OpenWatcom) remains a deferred doc-only defect, not edited here.
+
 
 ### 3.2 Interpreter cost on P4/Win98
 
@@ -196,7 +228,7 @@ host-speed-limited, not that the interpreter is defective.
 | Serial | Link-mode log is capped at 4096 bytes; the transfer model is a fixed latency, not link-cable timing | Debug/verdict harnesses only; no link cable. |
 | Paths | Save/ROM path handling truncates around the Win9x `MAX_PATH` (260) boundary; `.sav`/`.rtc` write uses a temp/backup rename window | A crash between renames can leave `.bak`/`.tmp` files; load-side validation prevents corrupt state. |
 | RTC | Without `--rtc-fixed`, the MBC3 clock follows host wall time; `.rtc` v1 stores a u64 LE anchor at bytes 16–23, reserved bytes 24–31 zero | Deterministic tests must pass `--rtc-fixed`. |
-| Backends | Win32 headless paths are verified under Wine/cross-build and, since 2026-11-17, run on Win98/P4 (interpreter OK; `--dynarec` faults immediately, see §3.1); windowed and gamepad paths are still Wine-only, and gamepad axes/dead-zone/focus-loss are untested on hardware | `--windowed` needs DirectX 6+ (`IDirectDraw7`); gamepad needs DX8 (`dinput8.dll`), keyboard falls back to `GetAsyncKeyState`. Real-hardware sign-off is explicitly operator-owned. |
+| Backends | Win32 headless paths are verified under Wine/cross-build and, since 2026-11-17, run on Win98/P4 (interpreter OK; pre-fix `--dynarec` faulted immediately, root-caused/fixed in §3.1 with re-run pending); windowed and gamepad paths are still Wine-only, and gamepad axes/dead-zone/focus-loss are untested on hardware | `--windowed` needs DirectX 6+ (`IDirectDraw7`); gamepad needs DX8 (`dinput8.dll`), keyboard falls back to `GetAsyncKeyState`. Real-hardware sign-off is explicitly operator-owned. |
 
 ## 5. Test-harness caveats
 
