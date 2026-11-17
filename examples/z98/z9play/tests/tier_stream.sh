@@ -24,7 +24,7 @@
 #   4. optionally, when Z9PLAY_LARGE_OGG names the operator's real track, runs
 #      the same `--info` check on it under the same limit. The operator file is
 #      never copied into the repo or committed;
-#   5. re-runs the existing tiers tier_info (20/0), tier_setup (21/0),
+#   5. re-runs the existing tiers tier_info (20/0), tier_setup (22/0),
 #      tier_cli (27/0), tier_tui (39/0), tier_audio (27/0), tier_flac (58/0).
 #
 # Non-vacuous: the generator verifies its own output (CRCs, sequence, EOS,
@@ -324,7 +324,7 @@ run_tier() {
 }
 
 run_tier info 20
-run_tier setup 21
+run_tier setup 22
 run_tier cli 27
 run_tier tui 39
 run_tier audio 27
