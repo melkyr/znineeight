@@ -11,12 +11,14 @@ const file_mod = @import("std_file.zig");
 const io = @import("std_io");
 const os = @import("std_os");
 const buffer = @import("../buffer.zig");
+const undo = @import("../undo.zig");
 
 var arena_buf: [1024 * 1024]u8 = undefined;
 var arena: arena_mod.Arena = undefined;
 var fails: usize = 0;
 
 var P_CRLF_IN: []const u8 = "/tmp/z9edit_buffer_crlf_in.txt";
+var P_DIFF: []const u8 = "/tmp/z9edit_buffer_diff.txt";
 var P_CRLF_OUT: []const u8 = "/tmp/z9edit_buffer_crlf_out.txt";
 var P_LF_IN: []const u8 = "/tmp/z9edit_buffer_lf_in.txt";
 var P_LF_OUT: []const u8 = "/tmp/z9edit_buffer_lf_out.txt";
@@ -220,6 +222,225 @@ fn tAtomicSaveFailure() bool {
     return eq(after, "ORIGINAL\n");
 }
 
+// --- cached-vs-naive line map differential --------------------------------
+//
+// Every check compares the cached accessors against the naive ones. The naive
+// start for any line is bufOffsetOf(line, 0): it returns the line start for
+// in-range lines and bufLen for lines past the end, exactly like lineStartOf.
+// MAX_LINE_CACHE is 131072 lines; this synthetic file has 131081 lines.
+
+var g_many: [131080]u8 = undefined;
+
+fn rnd(seed: *u32, mod: usize) usize {
+    seed.* = (seed.* * 25173 + 13849) % 65521;
+    const m: u32 = @intCast(u32, mod);
+    return @intCast(usize, (seed.* >> 4) % m);
+}
+
+fn sameAt(b: *buffer.GapBuffer, line: usize) bool {
+    const ns = buffer.bufOffsetOf(b, line, 0);
+    const cs = buffer.bufLineStartCached(b, line);
+    if (ns != cs) return false;
+    var nstart: usize = 0;
+    var nlen: usize = 0;
+    var cstart: usize = 0;
+    var clen: usize = 0;
+    buffer.bufLineRange(b, line, &nstart, &nlen);
+    buffer.bufLineRangeCached(b, line, &cstart, &clen);
+    if (nstart != cstart or nlen != clen) return false;
+    return true;
+}
+
+fn sameAll(b: *buffer.GapBuffer) bool {
+    const nc = buffer.bufLineCount(b);
+    if (buffer.bufLineCountCached(b) != nc) return false;
+    var line: usize = 0;
+    while (line <= nc + 1) : (line += 1) {
+        if (!sameAt(b, line)) return false;
+    }
+    return true;
+}
+
+fn tCachedDiffEdits() bool {
+    const b = buffer.bufInit(&arena, 16) catch {
+        return false;
+    };
+    // Empty buffer is one line starting at 0.
+    if (!sameAll(b)) return false;
+    var seed: u32 = 4660;
+    var step: usize = 0;
+    while (step < 300) : (step += 1) {
+        const before = buffer.bufEditGen(b);
+        const len = buffer.bufLen(b);
+        if (rnd(&seed, 100) < 55) {
+            const at = rnd(&seed, len + 1);
+            const which = rnd(&seed, 6);
+            if (which == 0) {
+                buffer.bufInsert(b, at, "a") catch {
+                    return false;
+                };
+            } else if (which == 1) {
+                buffer.bufInsert(b, at, "\n") catch {
+                    return false;
+                };
+            } else if (which == 2) {
+                buffer.bufInsert(b, at, "\r\n") catch {
+                    return false;
+                };
+            } else if (which == 3) {
+                buffer.bufInsert(b, at, "line\n") catch {
+                    return false;
+                };
+            } else if (which == 4) {
+                buffer.bufInsert(b, at, "q\r\nw") catch {
+                    return false;
+                };
+            } else {
+                buffer.bufInsert(b, at, "xyz") catch {
+                    return false;
+                };
+            }
+        } else if (len == 0) {
+            buffer.bufInsert(b, 0, "seed") catch {
+                return false;
+            };
+        } else {
+            const at = rnd(&seed, len);
+            var n = 1 + rnd(&seed, 8);
+            if (n > len - at) n = len - at;
+            buffer.bufDelete(b, at, n) catch {
+                return false;
+            };
+        }
+        if (buffer.bufEditGen(b) <= before) return false;
+        if (!sameAll(b)) return false;
+    }
+    return true;
+}
+
+fn tCachedDiffUndo() bool {
+    const b = buffer.bufInit(&arena, 16) catch {
+        return false;
+    };
+    const u = undo.undoInit(&arena);
+    var seed: u32 = 90210;
+    var step: usize = 0;
+    while (step < 120) : (step += 1) {
+        const at = rnd(&seed, buffer.bufLen(b) + 1);
+        const which = rnd(&seed, 4);
+        var chunk: []const u8 = "k";
+        if (which == 1) {
+            chunk = "\n";
+        } else if (which == 2) {
+            chunk = "p\r\nq";
+        } else if (which == 3) {
+            chunk = "tail\n";
+        }
+        const before = buffer.bufEditGen(b);
+        buffer.bufInsert(b, at, chunk) catch {
+            return false;
+        };
+        undo.undoRecordInsert(u, at, chunk) catch {
+            return false;
+        };
+        if (buffer.bufEditGen(b) <= before) return false;
+        if (!sameAll(b)) return false;
+
+        if (buffer.bufLen(b) > 0 and (step % 2) == 1) {
+            const dpos = rnd(&seed, buffer.bufLen(b));
+            var dc = 1 + rnd(&seed, 5);
+            const max = buffer.bufLen(b) - dpos;
+            if (dc > max) dc = max;
+            var tmp: [8]u8 = undefined;
+            const got = buffer.bufCopy(b, dpos, dc, tmp[0..]);
+            const dbefore = buffer.bufEditGen(b);
+            buffer.bufDelete(b, dpos, dc) catch {
+                return false;
+            };
+            undo.undoRecordDelete(u, dpos, tmp[0..got]) catch {
+                return false;
+            };
+            if (buffer.bufEditGen(b) <= dbefore) return false;
+            if (!sameAll(b)) return false;
+        }
+
+        if ((step % 3) == 0) {
+            const ubefore = buffer.bufEditGen(b);
+            if (undo.undoApply(u, b)) {
+                if (buffer.bufEditGen(b) <= ubefore) return false;
+            }
+            if (!sameAll(b)) return false;
+        }
+    }
+    return true;
+}
+
+fn tCachedDiffLoadNoTrailing() bool {
+    // No trailing newline; mixed LF and CRLF input is folded to canonical LF.
+    if (!writeFile(P_DIFF, "alpha\nbeta\r\ngamma")) return false;
+    const b = buffer.bufLoad(&arena, P_DIFF) catch {
+        return false;
+    };
+    if (buffer.bufEditGen(b) == 0) return false;
+    if (buffer.bufLineCount(b) != 3) return false;
+    if (!sameAll(b)) return false;
+    const before = buffer.bufEditGen(b);
+    buffer.bufInsert(b, 0, "x\r\n") catch {
+        return false;
+    };
+    if (buffer.bufEditGen(b) <= before) return false;
+    if (!sameAll(b)) return false;
+    const dbefore = buffer.bufEditGen(b);
+    buffer.bufDelete(b, 0, 1) catch {
+        return false;
+    };
+    if (buffer.bufEditGen(b) <= dbefore) return false;
+    return sameAll(b);
+}
+
+fn tCachedDiffEndsNewline() bool {
+    const b = buffer.bufInit(&arena, 8) catch {
+        return false;
+    };
+    buffer.bufInsert(b, 0, "a\nb\n") catch {
+        return false;
+    };
+    if (buffer.bufLineCount(b) != 3) return false;
+    if (!sameAll(b)) return false;
+    const before = buffer.bufEditGen(b);
+    buffer.bufDelete(b, 3, 1) catch {
+        return false;
+    };
+    if (buffer.bufEditGen(b) <= before) return false;
+    if (buffer.bufLineCount(b) != 2) return false;
+    return sameAll(b);
+}
+
+fn tCachedFallback() bool {
+    var i: usize = 0;
+    while (i < g_many.len) : (i += 1) g_many[i] = '\n';
+    if (!writeFile(P_DIFF, g_many[0..])) return false;
+    const b = buffer.bufLoad(&arena, P_DIFF) catch {
+        return false;
+    };
+    const nc = buffer.bufLineCount(b);
+    if (nc != 131081) return false;
+    if (buffer.bufLineCountCached(b) != nc) return false;
+    if (!sameAt(b, 0)) return false;
+    if (!sameAt(b, 1)) return false;
+    if (!sameAt(b, 65536)) return false;
+    if (!sameAt(b, nc - 1)) return false;
+    if (!sameAt(b, nc)) return false;
+    const before = buffer.bufEditGen(b);
+    buffer.bufInsert(b, 0, "z") catch {
+        return false;
+    };
+    if (buffer.bufEditGen(b) <= before) return false;
+    if (buffer.bufLineCountCached(b) != buffer.bufLineCount(b)) return false;
+    if (!sameAt(b, nc)) return false;
+    return sameAt(b, 65536);
+}
+
 pub fn main() void {
     arena = arena_mod.init(arena_buf[0..]);
 
@@ -241,6 +462,16 @@ pub fn main() void {
     report("load_missing_error", tLoadMissing());
     arena_mod.reset(&arena);
     report("save_failure_preserves_original", tAtomicSaveFailure());
+    arena_mod.reset(&arena);
+    report("cached_vs_naive_random_edits", tCachedDiffEdits());
+    arena_mod.reset(&arena);
+    report("cached_vs_naive_undo", tCachedDiffUndo());
+    arena_mod.reset(&arena);
+    report("cached_vs_naive_load_no_trailing", tCachedDiffLoadNoTrailing());
+    arena_mod.reset(&arena);
+    report("cached_vs_naive_ends_newline", tCachedDiffEndsNewline());
+    arena_mod.reset(&arena);
+    report("cached_vs_naive_fallback_over_cache", tCachedFallback());
 
     if (fails != 0) os.exit(1);
 }

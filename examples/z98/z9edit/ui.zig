@@ -857,7 +857,7 @@ pub fn uiPaint(stw: *UiState) UiError!void {
     st.cols = bw / cw;
     st.rows = bh / ch;
     if (st.cols == 0 or st.rows == 0) return;
-    st.gutter = gutterWidth(buffer.bufLineCount(st.b));
+    st.gutter = gutterWidth(buffer.bufLineCountCached(st.b));
     if (st.gutter >= st.cols) st.gutter = 1;
     clampScroll(st);
 
@@ -891,7 +891,7 @@ pub fn uiPaint(stw: *UiState) UiError!void {
 
     var content_rows: u32 = 0;
     if (st.rows > 1) content_rows = st.rows - 1;
-    const lc = buffer.bufLineCount(st.b);
+    const lc = buffer.bufLineCountCached(st.b);
     syncLex(st, st.scroll);
     var ls = st.lex;
     var n: u32 = 0;
@@ -901,7 +901,7 @@ pub fn uiPaint(stw: *UiState) UiError!void {
         const line_no = st.scroll + @intCast(usize, n);
         var lstart: usize = 0;
         var llen: usize = 0;
-        buffer.bufLineRange(st.b, line_no, &lstart, &llen);
+        buffer.bufLineRangeCached(st.b, line_no, &lstart, &llen);
         var cp = llen;
         if (cp > LINE_MAX) cp = LINE_MAX;
         if (cp > 0) _ = buffer.bufCopy(st.b, lstart, cp, lb[0..cp]);

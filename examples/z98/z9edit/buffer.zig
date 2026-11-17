@@ -18,12 +18,28 @@
 
 const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
+const mem_mod = @import("std_mem.zig");
 
 pub const BufError = error{ ReadFailed, WriteFailed, OutOfMemory, TooLarge };
 
 const MAX_BUF: usize = 16 * 1024 * 1024;
 const MIN_CAP: usize = 64;
 const MIN_GAP: usize = 64;
+const MAX_LINE_CACHE: usize = 131072;
+
+// The line-start map is keyed by `edit_gen`; it is rebuilt lazily on the first
+// cached access after a mutation. `starts` is allocated at most once from the
+// buffer arena and reused for every rebuild. Files with more than
+// MAX_LINE_CACHE lines (or an allocation failure) set `fallback` and every
+// cached accessor uses the naive scan instead.
+const LineMap = struct {
+    starts: [*]u32,
+    count: usize,
+    edit_gen: u64,
+    valid: bool,
+    fallback: bool,
+    allocated: bool,
+};
 
 const BufState = struct {
     arena: *arena_mod.Arena,
@@ -34,7 +50,11 @@ const BufState = struct {
     len: usize,
     uses_crlf: bool,
     dirty: bool,
+    edit_gen: u64,
+    map: LineMap,
 };
+
+var g_dummy_u32: [1]u32 = undefined;
 
 // Opaque to callers: only a pointer to the private state is exposed.
 pub const GapBuffer = struct { opaque: *BufState };
@@ -63,6 +83,13 @@ fn newState(arena: *arena_mod.Arena, cap: usize) BufError!*BufState {
     st.len = 0;
     st.uses_crlf = false;
     st.dirty = false;
+    st.edit_gen = 0;
+    st.map.starts = @ptrCast([*]u32, &g_dummy_u32[0]);
+    st.map.count = 0;
+    st.map.edit_gen = 0;
+    st.map.valid = false;
+    st.map.fallback = false;
+    st.map.allocated = false;
     return st;
 }
 
@@ -178,6 +205,45 @@ fn lineContentEnd(st: *BufState, start: usize) usize {
     return e;
 }
 
+fn buildLineMap(st: *BufState) void {
+    st.map.fallback = false;
+    if (!st.map.allocated) {
+        const raw = arena_mod.alloc(st.arena, MAX_LINE_CACHE * @sizeOf(u32)) catch {
+            st.map.fallback = true;
+            st.map.count = 0;
+            st.map.edit_gen = st.edit_gen;
+            st.map.valid = true;
+            return;
+        };
+        st.map.starts = @ptrCast([*]u32, raw);
+        st.map.allocated = true;
+    }
+    st.map.starts[0] = 0;
+    var idx: usize = 1;
+    var i: usize = 0;
+    while (i < st.len) : (i += 1) {
+        if (bufByteAtState(st, i) == '\n') {
+            if (idx >= MAX_LINE_CACHE) {
+                st.map.fallback = true;
+                st.map.count = 0;
+                st.map.edit_gen = st.edit_gen;
+                st.map.valid = true;
+                return;
+            }
+            st.map.starts[idx] = @intCast(u32, i + 1);
+            idx += 1;
+        }
+    }
+    st.map.count = idx;
+    st.map.edit_gen = st.edit_gen;
+    st.map.valid = true;
+}
+
+fn ensureLineMap(st: *BufState) void {
+    if (st.map.valid and st.map.edit_gen == st.edit_gen) return;
+    buildLineMap(st);
+}
+
 // --- public buffer API ------------------------------------------------------
 
 pub fn bufInit(arena: *arena_mod.Arena, cap: usize) BufError!*GapBuffer {
@@ -211,6 +277,7 @@ pub fn bufLoad(arena: *arena_mod.Arena, path: []const u8) BufError!*GapBuffer {
     st.gap_end = cap;
     st.uses_crlf = hasCrlf(data);
     st.dirty = false;
+    st.edit_gen += 1;
     return wrap;
 }
 
@@ -335,6 +402,10 @@ pub fn bufDirty(b: *GapBuffer) bool {
     return state(b).dirty;
 }
 
+pub fn bufEditGen(b: *GapBuffer) u64 {
+    return state(b).edit_gen;
+}
+
 fn insertCanonical(st: *BufState, at: usize, bytes: []const u8) BufError!void {
     try ensureGap(st, bytes.len);
     moveGapTo(st, at);
@@ -345,6 +416,7 @@ fn insertCanonical(st: *BufState, at: usize, bytes: []const u8) BufError!void {
     st.gap_start += bytes.len;
     st.len += bytes.len;
     st.dirty = true;
+    st.edit_gen += 1;
 }
 
 pub fn bufInsert(b: *GapBuffer, pos: usize, bytes: []const u8) BufError!void {
@@ -385,6 +457,7 @@ pub fn bufDelete(b: *GapBuffer, pos: usize, count: usize) BufError!void {
     st.gap_end += n;
     st.len -= n;
     st.dirty = true;
+    st.edit_gen += 1;
 }
 
 pub fn bufByteAt(b: *GapBuffer, pos: usize) u8 {
@@ -398,20 +471,13 @@ pub fn bufCopy(b: *GapBuffer, pos: usize, count: usize, out: []u8) usize {
     if (n > st.len - pos) n = st.len - pos;
     if (n > out.len) n = out.len;
     const gs = gapSize(st);
-    var i: usize = 0;
     if (pos < st.gap_start) {
         var take = n;
         if (take > st.gap_start - pos) take = st.gap_start - pos;
-        while (i < take) : (i += 1) {
-            out[i] = st.buf[pos + i];
-        }
-        while (i < n) : (i += 1) {
-            out[i] = st.buf[pos + i + gs];
-        }
+        if (take > 0) mem_mod.copyU8(out.ptr, st.buf + pos, take);
+        if (n > take) mem_mod.copyU8(out.ptr + take, st.buf + pos + take + gs, n - take);
     } else {
-        while (i < n) : (i += 1) {
-            out[i] = st.buf[pos + i + gs];
-        }
+        mem_mod.copyU8(out.ptr, st.buf + pos + gs, n);
     }
     return n;
 }
@@ -430,6 +496,39 @@ pub fn bufLineRange(b: *GapBuffer, line: usize, start: *usize, len: *usize) void
         return;
     }
     const s = lineStartOf(st, ln);
+    const e = lineContentEnd(st, s);
+    start.* = s;
+    len.* = e - s;
+}
+
+pub fn bufLineCountCached(b: *GapBuffer) usize {
+    const st = state(b);
+    ensureLineMap(st);
+    if (st.map.fallback) return lineCountOf(st);
+    return st.map.count;
+}
+
+pub fn bufLineStartCached(b: *GapBuffer, line: usize) usize {
+    const st = state(b);
+    ensureLineMap(st);
+    if (st.map.fallback) return lineStartOf(st, line);
+    if (line >= st.map.count) return st.len;
+    return @intCast(usize, st.map.starts[line]);
+}
+
+pub fn bufLineRangeCached(b: *GapBuffer, line: usize, start: *usize, len: *usize) void {
+    const st = state(b);
+    ensureLineMap(st);
+    if (st.map.fallback) {
+        bufLineRange(b, line, start, len);
+        return;
+    }
+    if (line >= st.map.count) {
+        start.* = st.len;
+        len.* = 0;
+        return;
+    }
+    const s = @intCast(usize, st.map.starts[line]);
     const e = lineContentEnd(st, s);
     start.* = s;
     len.* = e - s;
