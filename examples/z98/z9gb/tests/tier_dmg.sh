@@ -760,6 +760,145 @@ fn testIrqRouting() void {
     checkByte("timer routing irq", g_bus.io[0x0F] & 0x04, 0x04);
 }
 
+var g_rand: u32 = 0x9E3779B9;
+
+fn nextRand() u32 {
+    g_rand = g_rand *% 1664525 +% 1013904223;
+    return g_rand;
+}
+
+fn naiveSelectedMask(tac: u8) u16 {
+    const sel: u8 = tac & 0x03;
+    if (sel == 0) return 0x0200;
+    if (sel == 1) return 0x0008;
+    if (sel == 2) return 0x0020;
+    return 0x0080;
+}
+
+fn naiveBumpTima(t: *timermod.Timer) void {
+    if (t.reload != 0) return;
+    if (t.tima == 0xFF) {
+        t.tima = 0;
+        t.reload = 4;
+        return;
+    }
+    t.tima = @intCast(u8, (@as(u16, t.tima) + 1) & 0xFF);
+}
+
+fn naiveTimerTick(t: *timermod.Timer, cycles: u32, bus: *mmumod.Bus) void {
+    const mask: u16 = naiveSelectedMask(t.tac);
+    var i: u32 = 0;
+    while (i < cycles) : (i += 1) {
+        t.divider = @intCast(u16, (@as(u32, t.divider) + 1) & 0xFFFF);
+        if (t.reload != 0) {
+            t.reload -= 1;
+            if (t.reload == 0) {
+                t.tima = t.tma;
+                mmumod.busRaiseIrq(bus, 0x04);
+            }
+        } else {
+            const selected: bool = (t.divider & mask) != 0;
+            const previous: bool = ((t.divider -% 1) & mask) != 0;
+            if ((t.tac & 0x04) != 0 and previous and !selected) {
+                naiveBumpTima(t);
+            }
+        }
+    }
+}
+
+fn diffTimer(divider: u16, tima: u8, tma: u8, tac: u8, reload: u8, cycles: u32) void {
+    const seedTimer: timermod.Timer = timermod.Timer{
+        .divider = divider,
+        .tima = tima,
+        .tma = tma,
+        .tac = tac,
+        .reload = reload,
+    };
+    var actual: timermod.Timer = seedTimer;
+    var naive: timermod.Timer = seedTimer;
+
+    g_bus.io[0x0F] = 0;
+    timermod.timerTick(&actual, cycles, &g_bus);
+    const actualFlag: bool = (g_bus.io[0x0F] & 0x04) != 0;
+    g_bus.io[0x0F] = 0;
+    naiveTimerTick(&naive, cycles, &g_bus);
+    const naiveFlag: bool = (g_bus.io[0x0F] & 0x04) != 0;
+
+    checkWord("diff divider", actual.divider, naive.divider);
+    checkByte("diff tima", actual.tima, naive.tima);
+    checkByte("diff tma", actual.tma, naive.tma);
+    checkByte("diff tac", actual.tac, naive.tac);
+    checkByte("diff reload", actual.reload, naive.reload);
+    checkBool("diff irq flag", actualFlag, naiveFlag);
+
+    var stepActual: timermod.Timer = seedTimer;
+    var stepNaive: timermod.Timer = seedTimer;
+    var actualCount: u32 = 0;
+    var naiveCount: u32 = 0;
+    var i: u32 = 0;
+    while (i < cycles) : (i += 1) {
+        g_bus.io[0x0F] = 0;
+        timermod.timerTick(&stepActual, 1, &g_bus);
+        if ((g_bus.io[0x0F] & 0x04) != 0) actualCount += 1;
+        g_bus.io[0x0F] = 0;
+        naiveTimerTick(&stepNaive, 1, &g_bus);
+        if ((g_bus.io[0x0F] & 0x04) != 0) naiveCount += 1;
+    }
+    checkWord("diff irq count", @intCast(u16, actualCount), @intCast(u16, naiveCount));
+    checkWord("diff step divider", stepActual.divider, stepNaive.divider);
+    checkByte("diff step tima", stepActual.tima, stepNaive.tima);
+    checkByte("diff step reload", stepActual.reload, stepNaive.reload);
+}
+
+fn testDifferential() void {
+    reset();
+    g_rand = 0x9E3779B9;
+
+    var di: u16 = 0;
+    while (di < 16) : (di += 1) {
+        const div: u16 = @intCast(u16, 0xFFF0 + @as(u32, di));
+        var mode: u8 = 0;
+        while (mode < 8) : (mode += 1) {
+            var rel: u8 = 0;
+            while (rel < 5) : (rel += 1) {
+                diffTimer(div, 0xFF, 0x00, mode, rel, 32);
+                diffTimer(div, 0xFE, 0xFF, mode, rel, 64);
+            }
+        }
+    }
+
+    const divs: [3]u16 = [3]u16{ 0x0000, 0x03FF, 0xFFFF };
+    const cycs: [6]u32 = [6]u32{ 0, 1, 3, 4, 1024, 4096 };
+    var di2: usize = 0;
+    while (di2 < divs.len) : (di2 += 1) {
+        var mode2: u8 = 0;
+        while (mode2 < 8) : (mode2 += 1) {
+            var rel2: u8 = 0;
+            while (rel2 < 5) : (rel2 += 1) {
+                var ci: usize = 0;
+                while (ci < cycs.len) : (ci += 1) {
+                    diffTimer(divs[di2], 0xFF, 0x42, mode2, rel2, cycs[ci]);
+                }
+            }
+        }
+    }
+
+    var r: usize = 0;
+    while (r < 240) : (r += 1) {
+        const d: u16 = @intCast(u16, nextRand() & 0xFFFF);
+        var tima: u8 = @intCast(u8, nextRand() & 0xFF);
+        const tma: u8 = @intCast(u8, nextRand() & 0xFF);
+        const tac: u8 = @intCast(u8, nextRand() & 0x07);
+        const rel: u8 = @intCast(u8, nextRand() % 5);
+        const cycles: u32 = nextRand() % 4097;
+        if ((nextRand() & 7) == 0) tima = 0xFF;
+        if ((nextRand() & 7) == 0) tima = 0xFE;
+        var dd: u16 = d;
+        if ((nextRand() & 7) == 0) dd = @intCast(u16, 0xFFF0 + (nextRand() & 0x0F));
+        diffTimer(dd, tima, tma, tac, rel, cycles);
+    }
+}
+
 fn testPostBoot() void {
     emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
     emumod.emuReset(&g_emu);
@@ -801,6 +940,7 @@ pub fn main() void {
     testHaltWake();
     testSerial();
     testIrqRouting();
+    testDifferential();
     testPostBoot();
 
     std.io.write("timer ");

@@ -27,22 +27,43 @@ fn bumpTima(t: *Timer) void {
 }
 
 pub fn timerTick(t: *Timer, cycles: u32, bus: *mmumod.Bus) void {
-    const mask: u16 = selectedMask(t.tac);
-    var i: u32 = 0;
-    while (i < cycles) : (i += 1) {
-        t.divider = @intCast(u16, (@as(u32, t.divider) + 1) & 0xFFFF);
+    var remaining: u32 = cycles;
+    while (remaining > 0) {
         if (t.reload != 0) {
-            t.reload -= 1;
-            if (t.reload == 0) {
+            const n: u32 = @as(u32, t.reload);
+            if (n >= remaining) {
+                t.reload = @intCast(u8, n - remaining);
+                t.divider = @intCast(u16, (@as(u32, t.divider) + (remaining & 0xFFFF)) & 0xFFFF);
+                if (t.reload == 0) {
+                    t.tima = t.tma;
+                    mmumod.busRaiseIrq(bus, 0x04);
+                }
+                remaining = 0;
+            } else {
+                t.reload = 0;
+                t.divider = @intCast(u16, (@as(u32, t.divider) + n) & 0xFFFF);
                 t.tima = t.tma;
                 mmumod.busRaiseIrq(bus, 0x04);
+                remaining -= n;
             }
+            continue;
+        }
+        if ((t.tac & 0x04) == 0) {
+            t.divider = @intCast(u16, (@as(u32, t.divider) + (remaining & 0xFFFF)) & 0xFFFF);
+            remaining = 0;
+            continue;
+        }
+        const mask: u16 = selectedMask(t.tac);
+        const period: u32 = @as(u32, mask) * 2;
+        const phase: u32 = @as(u32, t.divider) % period;
+        const to_edge: u32 = period - phase;
+        if (to_edge <= remaining) {
+            t.divider = @intCast(u16, (@as(u32, t.divider) + to_edge) & 0xFFFF);
+            bumpTima(t);
+            remaining -= to_edge;
         } else {
-            const selected: bool = (t.divider & mask) != 0;
-            const previous: bool = ((t.divider -% 1) & mask) != 0;
-            if ((t.tac & 0x04) != 0 and previous and !selected) {
-                bumpTima(t);
-            }
+            t.divider = @intCast(u16, (@as(u32, t.divider) + (remaining & 0xFFFF)) & 0xFFFF);
+            remaining = 0;
         }
     }
 }
