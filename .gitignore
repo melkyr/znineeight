@@ -107,3 +107,6 @@ out_*/
 release/staging/
 docs/sf/manuals/dist/
 .worktrees/
+
+# Agent/operator handoff directory (builds, seeds, scratch copies)
+/lin_bin/
