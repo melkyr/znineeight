@@ -55,6 +55,7 @@ New/modified files (all existing paths except the new plan/test files):
 | `examples/z98/z9git/httpgit.zig`, `packhash.zig` (new), `delta.zig`, `pack.zig` | Batched SHA-1 tail window, bulk copies |
 | `examples/z98/z9play/tests/bitreader_test.zig` (new, wired into `tier_setup.sh`), `z9gb/tests/tier_dmg.sh` (inline `timer_test.zig` heredoc), `z9edit/tests/buffer_test.zig` (extended), `z9git/tests/packhash_test.zig` (new, wired into `unit_store.sh`) | Differential/unit tests for the refactors |
 | `diagnostic-tier-flac-report.md` (scratch, under `.superpowers/sdd/…`) | per-failure ownership verdict for the z9play tier_flac/tier_tui failures (no source change) |
+| `examples/z98/z9play/tests/tier_flac.sh`, `tier_tui.sh` | frame-aware mixed-completion/playlist waits (no program change) |
 
 ---
 
@@ -218,6 +219,31 @@ git commit -m "perf(z9play): word-accumulator FLAC bit reader"
 - [ ] **Step 6: `tier_tui` 38/1.** Identify the failing case per run and whether it is a race/timeout/port/temp-file issue or a real behavior bug; report repeat counts.
 - [ ] **Step 7: Verdicts.** For each failure: owner (compiler / tier / example / environment), file:line evidence, and the candidate fix scope, risk and cost. If compiler is suspected, include a minimal repro (command, rc, emitted C excerpt, expected vs actual).
 - [ ] **Step 8: STOP.** Write the report to the scratch path above and return; do not implement any fix and do not commit.
+---
+### Task 13: Fix z9play tier-harness framing races (tier fixes only)
+
+> **Why:** Task 12 proved the `tier_flac` 55/3 and `tier_tui` 38/1 failures are pty frame-timing defects in the tier drivers, identical at baseline `c6028b11`; FLAC/OGG/UI behavior is correct. This task makes the gates honest; it does not change the program.
+
+**Files:**
+- Modify: `examples/z98/z9play/tests/tier_flac.sh` (`mixed` driver heredoc)
+- Modify: `examples/z98/z9play/tests/tier_tui.sh` (playlist-add checks)
+- Read: `diagnostic-tier-flac-report.md` (`task-12` report path)
+
+**Interfaces:**
+- Consumes: Task 12's evidence: `tier_flac.sh:450-471` (stale pre-Enter `State: Ended` after the play mark), `tier_flac.sh:174-181,530-547` (empty-payload `999999` sentinel), `tier_tui.sh:330-334` plus `:204-210` (non-frame-aware `wait_bytes`).
+- Produces: same checks and thresholds, frame-aware waits; `tier_flac.sh` 59/0 and `tier_tui.sh` 39/0 on repeated runs. No app, compiler, std, plan, or fixture changes.
+
+- [ ] **Step 1: Read the Task 12 report.** Confirm the exact failing offsets/checks before editing.
+- [ ] **Step 2: Fix `tier_flac.sh` mixed completion.** After the `b.ogg` play marker, wait for a *new* `State: Ended` occurrence (compare occurrence counts vs at-mark), or poll the WAV sink until `44 + OGG_DATA` before asserting, copying, and sending `q`. Replace the stale-text match; do not delete `mixed-ogg-ended`, `mixed-ogg-wav-complete`, or the bound checks.
+- [ ] **Step 3: Fix the empty-payload sentinel.** In the payload comparator (`tier_flac.sh:174-181`), treat `n == 0` as an explicit empty/stale-payload failure with a descriptive line; keep the numeric tolerance path and `MAX_DELTA_BOUND`/`RMS_MILLI_BOUND` unchanged.
+- [ ] **Step 4: Fix `tier_tui.sh` add checks (`:330-334`).** Set `add_mark` at a frame boundary (e.g. drain a short quiet period before pressing `a`), wait for `added to playlist` with `wait_bytes(..., add_mark)`, and replace `b"Playlist: 0" not in buf[add_mark:]` with an assertion on the last complete post-add frame's `Playlist:` value. Keep `playlist-add-counts-one` and all other checks.
+- [ ] **Step 5: Verify.** Run `tier_tui.sh` 5× expecting 39/0; run `tier_flac.sh` 3× expecting 59/0 (all FLAC checks still exact); run `tier_decode.sh` once expecting 25/0. Record every run in the report.
+- [ ] **Step 6: Commit** only the two tier scripts:
+```bash
+git add examples/z98/z9play/tests/tier_flac.sh examples/z98/z9play/tests/tier_tui.sh
+git commit -m "test(z9play): fix tier_flac/tier_tui pty framing races"
+```
+
 ---
 
 ### Task 3: z9play audio wait + copy/mix micro-fixes
@@ -432,6 +458,7 @@ sh examples/z98/z9git/tests/tier_git.sh; sh examples/z98/z9git/tests/unit_store.
 
 - **Ordering:** z9play (Task 1-3) → z9gb dynarec (Task 4) → z9gb perf (5-6) → z9edit (7-8) → z9torr/z9git (9-10). Adjust only if the operator rules differently.
 - Task 12 (diagnostic) runs after Task 2; Task 3+ are blocked until the operator rules on its report. It is investigation-only and commits nothing.
+- Task 13 (tier-harness fix) runs after Task 12 and before Task 3; it unblocks Task 2's `tier_flac` 59/0 gate evidence. Tier scripts only.
 - **Not in scope:** compiler/emitter codegen changes (e.g. automatic slice→`memcpy` lowering) — that would move `--dump-c89` pins. `std_mem.copyU8` already exists; the example tasks adopt it.
 - **z9gb perf depth:** top-3 structural wins only (timer batching, dirty PPU sync, single-pass line render). KNOWN_GAPS §3.2 future work (dynarec block lengthening, negative cache, PPU-read block enders) stays out.
 - **z9gb dynarec fallback:** if Task 4 cannot establish a safe fix within this program, the acceptable closeout is fail-closed dynarec on Win9x with a clear diagnostic and the interpreter as the default — documented in KNOWN_GAPS, with a follow-up defect for the ABI fix.
