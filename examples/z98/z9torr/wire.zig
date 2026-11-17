@@ -31,6 +31,7 @@ const std_net = @import("std_net");
 const std_stream = @import("std_stream.zig");
 const logmod = @import("log.zig");
 const std_crypto = @import("std_crypto");
+const std_mem = @import("std_mem");
 
 pub const MsgReader = std_stream.MsgReader;
 
@@ -624,10 +625,7 @@ pub fn writeExtendedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, ext_id: u8, 
     while (off < payload.len) {
         var n: usize = payload.len - off;
         if (n > scratch.len) n = scratch.len;
-        var i: usize = 0;
-        while (i < n) : (i += 1) {
-            scratch[i] = payload[off + i];
-        }
+        std_mem.copyU8(scratch[0..].ptr, payload[off..].ptr, n);
         std_crypto.rc4Apply(enc, scratch[0..n]);
         try sendAll(sock, scratch[0..n]);
         off += n;

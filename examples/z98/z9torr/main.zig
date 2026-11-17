@@ -540,6 +540,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // Global buckets refill on a 100 ms cadence (spec §9); the per-send path
     // only charges, so a low rate is not lost to per-call integer truncation.
     var last_refill_ms: u32 = now0;
+    // Last observed task state per slot, so an iteration that changes any
+    // task's state is treated as progress (and never sleeps).
+    var prev_states: [MAX_RUNTIME_PEERS]std.async.TaskState = undefined;
+    for (0..g_sched.peers.len) |psi| {
+        prev_states[psi] = g_tasks[psi].state;
+    }
 
     while (true) {
         var nowr: u32 = std.time.ticksMs();
@@ -549,6 +555,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             last_refill_ms = nowr;
         }
         std.async.tick(&sched) catch {};
+
+        var progressed: bool = false;
 
         // Operator ruling #3: retire every peer whose task has finished so its
         // availability bits stop inflating `piece_rarest` and the stats peer
@@ -561,6 +569,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             if (rts == std.async.TaskState.done or rts == std.async.TaskState.cancelled) {
                 schedmod.removePeer(&g_sched, &g_sched.peers[rj]);
                 g_started[rj] = false;
+                progressed = true;
             }
         }
 
@@ -578,35 +587,41 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 logmod.s(" port=");
                 logmod.u32v(@intCast(u32, g_sched.peers[ds].addr.port));
                 logmod.nl();
+                progressed = true;
             }
         }
 
-        if (g_pctx.verified_count != last_verified) {
-            last_verified = g_pctx.verified_count;
-            last_progress_ms = std.time.ticksMs();
-        }
+        // One pass for the progress sum, liveness, and task-state changes.
         // Fix 2: a slow/throttled run that is still receiving bytes must not
         // trip the stall detector. Sum received payload across every slot (idle
         // slots are zero; a PEX-reused slot restarts at zero, so the sum can
         // drop) and treat any change as progress. The `!=` test keeps the u64
         // math underflow-safe.
         var dnow: u64 = 0;
-        for (0..g_sched.peers.len) |dj| {
-            dnow += g_sched.peers[dj].down_bytes;
+        var live: bool = false;
+        for (0..g_sched.peers.len) |lj| {
+            if (g_tasks[lj].state != prev_states[lj]) progressed = true;
+            dnow += g_sched.peers[lj].down_bytes;
+            if (g_started[lj]) {
+                var ts = g_tasks[lj].state;
+                if (ts != std.async.TaskState.done and ts != std.async.TaskState.cancelled) live = true;
+            }
+            prev_states[lj] = g_tasks[lj].state;
         }
+
+        if (g_pctx.verified_count != last_verified) {
+            last_verified = g_pctx.verified_count;
+            last_progress_ms = std.time.ticksMs();
+            progressed = true;
+        }
+        // The `!=` test keeps the u64 math underflow-safe.
         if (dnow != last_progress_bytes) {
             last_progress_bytes = dnow;
             last_progress_ms = std.time.ticksMs();
+            progressed = true;
         }
         if (g_pctx.verified_count >= n_pieces) break;
         if (std.time.ticksMs() - last_progress_ms > STALL_MS) break;
-
-        var live: bool = false;
-        for (0..g_sched.peers.len) |lt| {
-            if (!g_started[lt]) continue;
-            var ts = g_tasks[lt].state;
-            if (ts != std.async.TaskState.done and ts != std.async.TaskState.cancelled) live = true;
-        }
         if (!live) break;
 
         var nowm: u32 = std.time.ticksMs();
@@ -660,6 +675,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             }
             last_sample_ms = nowm;
         }
+        // Idle path: nothing changed this iteration (no bytes, no verified
+        // piece, no retire/spawn, no task-state change), so yield the CPU for
+        // 1 ms instead of spinning. Stall/fallback timing still uses the wall
+        // clock, so detection is only delayed by this single millisecond tick.
+        if (!progressed) std.time.sleepMs(1);
     }
 
     filemod.close(&out);
