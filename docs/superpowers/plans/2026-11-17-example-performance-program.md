@@ -56,6 +56,8 @@ New/modified files (all existing paths except the new plan/test files):
 | `examples/z98/z9play/tests/bitreader_test.zig` (new, wired into `tier_setup.sh`), `z9gb/tests/tier_dmg.sh` (inline `timer_test.zig` heredoc), `z9edit/tests/buffer_test.zig` (extended), `z9git/tests/packhash_test.zig` (new, wired into `unit_store.sh`) | Differential/unit tests for the refactors |
 | `diagnostic-tier-flac-report.md` (scratch, under `.superpowers/sdd/…`) | per-failure ownership verdict for the z9play tier_flac/tier_tui failures (no source change) |
 | `examples/z98/z9play/tests/tier_flac.sh`, `tier_tui.sh` | frame-aware mixed-completion/playlist waits (no program change) |
+| `examples/z98/z9play/tests/tier_stream.sh` | sync the expected `tier_setup` count (22) after Task 1 |
+| `z9play-profile-report.md` (scratch, under `.superpowers/sdd/…`) | decode-cost attribution for Vorbis/FLAC (no source change) |
 
 ---
 
@@ -431,7 +433,50 @@ git commit -m "test(z9play): fix tier_flac/tier_tui pty framing races"
 
 ## Phase 6 — Closeout
 
+---
+### Task 14: Sync `tier_stream` setup count (tier-only)
+
+**Why:** Task 1 added the bitreader entry to `tier_setup` (21 → 22 checks); `tier_stream.sh:327` still expects `run_tier setup 21`, so Task 11's sweep fails deterministically. This is the same class as Task 13.
+
+**Files:**
+- Modify: `examples/z98/z9play/tests/tier_stream.sh` (`run_tier setup 21` → `22`; update any header/comment that names 21)
+- Read: `examples/z98/z9play/tests/tier_setup.sh` (the new bitreader entry)
+
+**Interfaces:**
+- Consumes: Task 1's added `bitreader_test` entry (setup now reports `22 passed, 0 failed`).
+- Produces: `tier_stream.sh` green (`19/0`) against the current `tier_setup` inventory. No program/compiler/test-content change.
+
+- [ ] **Step 1: Reproduce.** `ZIG=/tmp/perf_seed/zig1_5_clean OUT=/tmp/t14_stream sh examples/z98/z9play/tests/tier_stream.sh`; capture the `setup ... 22 passed, 0 failed` line and the stale-check failure.
+- [ ] **Step 2: Update** the expected setup count to `22` and any comment that states `21`. Keep every other check and count unchanged.
+- [ ] **Step 3: Verify.** Run `tier_stream.sh` 2× (expect `19/0`; rerun once if the unrelated nested `tier_tui` first-frame flake appears, and record it) and `tier_setup.sh` once (`22/0`).
+- [ ] **Step 4: Commit** `test(z9play): sync tier_stream setup count`.
+---
+
+---
+### Task 15: z9play decode-cost attribution (investigation only)
+
+> **Why:** Tasks 1-2 rewrote both bit readers correctly, but the `-fsafe/-O0` decode rate did not move (Vorbis 10.5x, FLAC 15.4x before and after). This task finds where the decode time actually goes so the operator can decide whether another change is justified. Verdicts only — no fixes, no source/plan edits, no commits.
+
+**Files:**
+- Read: `examples/z98/z9play/decode.zig`, `dsp.zig`, `vorbis_setup.zig`, `codebook.zig`, `residue.zig`, `flac.zig`, `stream.zig`, `ogg_stream.zig`, `player.zig`, `main.zig`, and the emitted C
+- Create (scratch, **not committed**): `.superpowers/sdd/2026-11-17-example-performance-program/z9play-profile-report.md`
+- Modify: none
+
+**Interfaces:**
+- Consumes: baseline §2 recipe and fixtures (`sine_stereo_44100.ogg`, generated `sine_stereo_44100.flac` sha1 `14be24c9…`), compiler `/tmp/perf_seed/zig1_5_clean`.
+- Produces: wall/CPU attribution for both formats at `-fsafe/-O0` (and a `-ffast` comparison), a dominant-cost verdict, a statement whether the Task 1-2 reader changes can move the metric, and a recommended next experiment (or "not worth it"). No code change.
+
+- [ ] **Step 1: Build current source** as baseline §2 into a scratch dir (`-fsafe -O0`); confirm 3× decode rates for both fixtures (2.000 s each).
+- [ ] **Step 2: Profile both fixtures with `valgrind --tool=callgrind`** (available; output files in /tmp). Extract self/inclusive costs for: Vorbis reader (`brRead`, `brBitZero`, `decodeScalar`, `decodeScalarEop`), FLAC reader (`sReadBit`, `sReadBits`, `sReadUnary`, `sFill`, `sConsume`), DSP (`imdctFft`, window, overlapAdd, FFT), container (`oggCrcPage`, reassembly/copies), player/sink (`playerRingAppend`, `playerFlush`, `mixWrite`, `wav.write`), arena. Report percentages of total.
+- [ ] **Step 3: Quantify bounds-check cost:** emit/build a `-ffast` variant into a scratch dir (same emitted link), measure 3× each and compare with `-fsafe`.
+- [ ] **Step 4: If callgrind is inconclusive,** cross-check with `gprof` using a scratch copy of the emitted `build_target.sh` (never the repo); state any deviation. If neither tool can run, STOP with NEEDS_CONTEXT — do not guess.
+- [ ] **Step 5: Verdict:** dominant cost, whether the reader change can plausibly move the decode rate, and one concrete recommended next experiment/change (or "not worth it"). Do not implement anything.
+- [ ] **Step 6: STOP.** Write the report to the scratch path; no commit.
+---
+
 ### Task 11: Verification sweep + evidence log
+
+> **Blocked:** do not run this sweep until Task 14 and Task 15 have both run and the operator has reviewed the Task 15 profiling report.
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-11-17-example-performance-baselines.md` (after column)
@@ -459,6 +504,7 @@ sh examples/z98/z9git/tests/tier_git.sh; sh examples/z98/z9git/tests/unit_store.
 - **Ordering:** z9play (Task 1-3) → z9gb dynarec (Task 4) → z9gb perf (5-6) → z9edit (7-8) → z9torr/z9git (9-10). Adjust only if the operator rules differently.
 - Task 12 (diagnostic) runs after Task 2; Task 3+ are blocked until the operator rules on its report. It is investigation-only and commits nothing.
 - Task 13 (tier-harness fix) runs after Task 12 and before Task 3; it unblocks Task 2's `tier_flac` green gate evidence (58/0 current inventory). Tier scripts only.
+- Task 14 (tier_stream count) and Task 15 (z9play profiling, investigation-only) run before Task 11. Task 11 is blocked until both complete and the operator reviews the profiling report; Task 15 commits nothing.
 - **Not in scope:** compiler/emitter codegen changes (e.g. automatic slice→`memcpy` lowering) — that would move `--dump-c89` pins. `std_mem.copyU8` already exists; the example tasks adopt it.
 - **z9gb perf depth:** top-3 structural wins only (timer batching, dirty PPU sync, single-pass line render). KNOWN_GAPS §3.2 future work (dynarec block lengthening, negative cache, PPU-read block enders) stays out.
 - **z9gb dynarec fallback:** if Task 4 cannot establish a safe fix within this program, the acceptable closeout is fail-closed dynarec on Win9x with a clear diagnostic and the interpreter as the default — documented in KNOWN_GAPS, with a follow-up defect for the ABI fix.
