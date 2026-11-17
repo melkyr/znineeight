@@ -820,8 +820,11 @@ The fn list is `emitter.fn_slots` (spill-backed `LirSlot`s), not a direct parame
 
 When a public function named `main` is found, an additional `int main(void)` wrapper is emitted.
 If `main` takes parameters, the wrapper signature becomes `int main(int argc, char** argv)` and
-the call forwards `(argc, <argv-cast>)`. The wrapper first emits `__module_init()` calls for every
-reachable module with runtime-initialized globals (`emitModuleInitCalls`), then:
+the call forwards `(argc, <argv-cast>)`. For an error-union `main`, the local `zT_main_result`
+declaration is emitted first, immediately after the `int main(...) {` signature (C89 requires
+declarations before statements); then the wrapper emits `__module_init()` calls for every reachable
+module with runtime-initialized globals (`emitModuleInitCalls`), then the call/assignment and return.
+`void`/`int` mains declare no local, so their init calls come directly after `{`:
 
 | Return Type | Wrapper |
 |------------|---------|
