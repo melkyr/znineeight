@@ -23,7 +23,6 @@
 const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
 const os = @import("std_os.zig");
-const crypto = @import("std_crypto.zig");
 const http = @import("std_http.zig");
 const net = @import("std_net.zig");
 const tls = @import("std_tls.zig");
@@ -32,6 +31,7 @@ const rand = @import("std_rand.zig");
 const time = @import("std_time.zig");
 const pkt = @import("pkt.zig");
 const pack_mod = @import("pack.zig");
+const packhash = @import("packhash.zig");
 const repo = @import("repo.zig");
 
 const CONNECT_TIMEOUT_MS: u32 = 15000;
@@ -797,10 +797,7 @@ const Phase = enum { len, payload, pack };
 
 const PackSink = struct {
     file: file_mod.File,
-    hasher: crypto.Sha1,
-    hold: [20]u8,
-    hold_pos: usize,
-    hold_len: usize,
+    hash: packhash.PackHash,
     phase: Phase,
     len_buf: [4]u8,
     len_pos: usize,
@@ -858,19 +855,7 @@ fn guardDownloadSpace(s: *PackSink) http.HttpError!void {
 
 fn packWriteBytes(s: *PackSink, data: []const u8) http.HttpError!void {
     if (!writeFileAll(&s.file, data)) return sinkFail(s, KIND_IO);
-    var i: usize = 0;
-    while (i < data.len) : (i += 1) {
-        if (s.hold_len < 20) {
-            s.hold[s.hold_len] = data[i];
-            s.hold_len += 1;
-        } else {
-            var one: [1]u8 = undefined;
-            one[0] = s.hold[s.hold_pos];
-            crypto.sha1Update(&s.hasher, one[0..1]);
-            s.hold[s.hold_pos] = data[i];
-            s.hold_pos = (s.hold_pos + 1) % 20;
-        }
-    }
+    packhash.packHashFeed(&s.hash, data);
     s.pack_started = true;
     s.pack_bytes += @intCast(u64, data.len);
     try guardDownloadSpace(s);
@@ -1059,7 +1044,7 @@ fn packSinkWrite(state: *void, data: []const u8) http.HttpError!void {
 
 fn trailerOrder(s: *PackSink, out: *[20]u8) void {
     var i: usize = 0;
-    while (i < 20) : (i += 1) out[i] = s.hold[(s.hold_pos + i) % 20];
+    while (i < 20) : (i += 1) out[i] = s.hash.tail[(s.hash.tail_pos + i) % 20];
 }
 
 fn removeIfExists(path: []const u8) void {
@@ -1723,9 +1708,7 @@ fn postPack(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url:
     var head = http.Response{ .status = 0, .headers = no_headers[0..0], .body = no_body[0..0] };
     var ps: PackSink = undefined;
     ps.file = pack_file;
-    ps.hasher = crypto.sha1Init();
-    ps.hold_pos = 0;
-    ps.hold_len = 0;
+    ps.hash = packhash.packHashInit();
     ps.phase = .len;
     ps.len_pos = 0;
     ps.pkt_remain = 0;
@@ -1783,10 +1766,10 @@ fn postPack(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url:
         return;
     }
     if (head.status != 200) return;
-    if (!ps.pack_started or ps.hold_len != 20) return;
+    if (!ps.pack_started) return;
 
     var digest: [20]u8 = undefined;
-    crypto.sha1Final(&ps.hasher, &digest);
+    if (!packhash.packHashFinal(&ps.hash, &digest)) return;
     var trailer: [20]u8 = undefined;
     trailerOrder(&ps, &trailer);
     if (!idEql(digest, trailer)) return;

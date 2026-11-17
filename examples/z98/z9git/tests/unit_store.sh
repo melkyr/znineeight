@@ -54,4 +54,26 @@ if [ "$RC" -ne 0 ]; then
     echo "UNIT_STORE FAIL"
     exit 1
 fi
+
+echo "== build z9git packhash_test with the seed compiler =="
+if ! "$ZIG" -osl --output-dir "$OUT/build" \
+    examples/z98/z9git/tests/packhash_test.zig >"$OUT/packhash_zig.log" 2>&1; then
+    echo "FAIL: zig compile packhash_test (see $OUT/packhash_zig.log)"
+    tail -40 "$OUT/packhash_zig.log" | sed 's/^/       /'
+    exit 1
+fi
+if ! sh "$OUT/build/build_target.sh" linux "$OUT/build/packhash_test" >"$OUT/packhash_build.log" 2>&1; then
+    echo "FAIL: target link packhash_test (see $OUT/packhash_build.log)"
+    tail -40 "$OUT/packhash_build.log" | sed 's/^/       /'
+    exit 1
+fi
+
+echo "== run packhash_test =="
+"$OUT/build/packhash_test" >"$OUT/packhash_run.log" 2>&1
+RC=$?
+sed 's/^/       /' "$OUT/packhash_run.log"
+if [ "$RC" -ne 0 ]; then
+    echo "UNIT_STORE FAIL"
+    exit 1
+fi
 echo "UNIT_STORE PASS"

@@ -18,6 +18,7 @@
 const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
 const crypto = @import("std_crypto.zig");
+const mem_mod = @import("std_mem.zig");
 const deflate = @import("std_deflate.zig");
 const delta_mod = @import("delta.zig");
 
@@ -500,8 +501,7 @@ fn readAt(p: *Pack, off: u64, dst: []u8) !void {
         const avail = p.win_len - rel;
         if (n > avail) n = avail;
         if (n == 0) return error.Corrupt;
-        var i: usize = 0;
-        while (i < n) : (i += 1) dst[done + i] = p.win[rel + i];
+        mem_mod.copyU8(dst.ptr + done, p.win.ptr + rel, n);
         done += n;
     }
 }

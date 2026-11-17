@@ -10,6 +10,8 @@
 // There is no delete op.  Every offset/size addition is checked so a hostile
 // or truncated stream yields error.Corrupt instead of a 32-bit wrap.
 
+const mem_mod = @import("std_mem.zig");
+
 const MAX_U64: u64 = 0xFFFFFFFFFFFFFFFF;
 
 fn readVarint(delta: []const u8, pos: *usize) !u64 {
@@ -103,19 +105,13 @@ pub fn deltaApply(base: []const u8, delta: []const u8, out: []u8) !void {
 
             const off: usize = @intCast(usize, off64);
             const size: usize = @intCast(usize, size64);
-            var i: usize = 0;
-            while (i < size) : (i += 1) {
-                out[op + i] = base[off + i];
-            }
+            mem_mod.copyU8(out.ptr + op, base.ptr + off, size);
             op += size;
         } else if (cmd != 0) {
             const n: usize = @intCast(usize, cmd);
             if (pos > delta.len or n > delta.len - pos) return error.Corrupt;
             if (op > out.len or n > out.len - op) return error.Corrupt;
-            var i: usize = 0;
-            while (i < n) : (i += 1) {
-                out[op + i] = delta[pos + i];
-            }
+            mem_mod.copyU8(out.ptr + op, delta.ptr + pos, n);
             pos += n;
             op += n;
         } else {
