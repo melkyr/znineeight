@@ -177,8 +177,9 @@ a = open(sys.argv[1], 'rb').read()
 b = open(sys.argv[2], 'rb').read()
 n = min(len(a), len(b)) // 2
 if n == 0:
-    print("max_delta=999999 rms_milli=999999")
-    sys.exit(0)
+    print("empty payload: no complete 16-bit samples (a=%d bytes, b=%d bytes)"
+          % (len(a), len(b)))
+    sys.exit(2)
 A = struct.unpack('<%dh' % n, a[:2 * n])
 B = struct.unpack('<%dh' % n, b[:2 * n])
 md = 0
@@ -387,6 +388,49 @@ def wait_bytes(needle, timeout, start=0):
     return needle in buf[start:]
 
 
+ROW_MARKERS = [("\x1b[%d;1H" % (r + 1)).encode() for r in range(25)]
+
+
+def complete_frames(start):
+    data = bytes(buf)
+    p = start
+    while True:
+        k = data.find(ROW_MARKERS[0], p)
+        if k < 0:
+            return
+        q = k
+        rows = []
+        ok = True
+        for r in range(25):
+            if r > 0:
+                m = data.find(ROW_MARKERS[r], q)
+                if m < 0:
+                    ok = False
+                    break
+                q = m
+            q += len(ROW_MARKERS[r])
+            if q + 80 > len(data):
+                ok = False
+                break
+            rows.append(data[q:q + 80])
+            q += 80
+        if not ok:
+            return
+        yield rows
+        p = q
+
+
+def wait_frame(needles, timeout, start=0):
+    end = time.time() + timeout
+    while True:
+        for rows in complete_frames(start):
+            if all(n in b"".join(rows) for n in needles):
+                return rows
+        if time.time() >= end:
+            return None
+        pump(min(0.2, max(0.0, end - time.time())))
+
+
 def wait_child(timeout):
     end = time.time() + timeout
     st = None
@@ -455,7 +499,8 @@ try:
     os.write(master, b"\r")
     check("mixed-opens-ogg", wait_bytes(b"Now: b.ogg", 90, play))
     check("mixed-ogg-playing", wait_bytes(b"State: Playing", 90, play))
-    check("mixed-ogg-ended", wait_bytes(b"State: Ended", 240, play))
+    ogg_ended_frame = wait_frame([b"Now: b.ogg", b"State: Ended"], 240, play)
+    check("mixed-ogg-ended", ogg_ended_frame is not None)
     try:
         ogg_size = os.path.getsize(WAV)
     except OSError:
@@ -537,9 +582,12 @@ else
     fail_case "mixed TUI FLAC payload differs from flac -d golden"
 fi
 tol="$(tolerance "$MIXOGG" "$OGG_GOLD")"
+tol_rc=$?
 md="$(printf '%s\n' "$tol" | sed -n 's/.*max_delta=\([0-9][0-9]*\).*/\1/p')"
 rmsm="$(printf '%s\n' "$tol" | sed -n 's/.*rms_milli=\([0-9][0-9]*\).*/\1/p')"
-if [ -n "$md" ] && [ -n "$rmsm" ] && [ "$md" -le "$MAX_DELTA_BOUND" ] \
+if [ "$tol_rc" -eq 2 ]; then
+    fail_case "mixed TUI OGG payload empty/stale (no samples to compare: $tol)"
+elif [ -n "$md" ] && [ -n "$rmsm" ] && [ "$md" -le "$MAX_DELTA_BOUND" ] \
     && [ "$rmsm" -le "$RMS_MILLI_BOUND" ]; then
     pass_case "mixed TUI OGG payload tolerance max_delta=$md rms_milli=$rmsm (<= $MAX_DELTA_BOUND / $RMS_MILLI_BOUND)"
 else

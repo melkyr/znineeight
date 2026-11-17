@@ -210,6 +210,88 @@ def wait_bytes(needle, timeout, start=0):
     return needle in buf[start:]
 
 
+ROW_MARKERS = [("\x1b[%d;1H" % (r + 1)).encode() for r in range(25)]
+
+
+def complete_frames(start):
+    data = bytes(buf)
+    p = start
+    while True:
+        k = data.find(ROW_MARKERS[0], p)
+        if k < 0:
+            return
+        q = k
+        rows = []
+        ok = True
+        for r in range(25):
+            if r > 0:
+                m = data.find(ROW_MARKERS[r], q)
+                if m < 0:
+                    ok = False
+                    break
+                q = m
+            q += len(ROW_MARKERS[r])
+            if q + 80 > len(data):
+                ok = False
+                break
+            rows.append(data[q:q + 80])
+            q += 80
+        if not ok:
+            return
+        yield rows
+        p = q
+
+
+def wait_frame(needles, timeout, start=0):
+    end = time.time() + timeout
+    while True:
+        for rows in complete_frames(start):
+            if all(n in b"".join(rows) for n in needles):
+                return rows
+        if time.time() >= end:
+            return None
+        pump(min(0.2, max(0.0, end - time.time())))
+
+
+def last_frame_end():
+    data = bytes(buf)
+    p = 0
+    last = -1
+    while True:
+        k = data.find(ROW_MARKERS[0], p)
+        if k < 0:
+            return last
+        q = k
+        ok = True
+        for r in range(25):
+            if r > 0:
+                m = data.find(ROW_MARKERS[r], q)
+                if m < 0:
+                    ok = False
+                    break
+                q = m
+            q += len(ROW_MARKERS[r])
+            if q + 80 > len(data):
+                ok = False
+                break
+            q += 80
+        if not ok:
+            return last
+        last = q
+        p = q
+
+
+def wait_frame_boundary(timeout, quiet=0.05):
+    end = time.time() + timeout
+    while time.time() < end:
+        if last_frame_end() == len(buf):
+            if not pump(quiet):
+                return last_frame_end() == len(buf)
+        else:
+            pump(0.05)
+    return last_frame_end() == len(buf)
+
+
 def parse_first_frame():
     data = bytes(buf)
     rows = []
@@ -327,11 +409,15 @@ try:
     check("playlist-empty-before-add",
           b"Playlist: 0" in buf[play_mark:] and b"Playlist: 1" not in buf[play_mark:])
 
+    wait_frame_boundary(5)
     add_mark = len(buf)
     os.write(master, b"a")
     check("playlist-add-counts-one", wait_bytes(b"Playlist: 1", 15, add_mark))
-    check("playlist-add-status", b"added to playlist" in buf[add_mark:])
-    check("playlist-add-no-stale-zero", b"Playlist: 0" not in buf[add_mark:])
+    add_frame = wait_frame([b"added to playlist", b"Playlist: 1"], 15, add_mark)
+    check("playlist-add-status", add_frame is not None)
+    check("playlist-add-no-stale-zero",
+          add_frame is not None and b"Playlist: 0" not in add_frame[9]
+          and b"Playlist: 1" in add_frame[9])
 
     rm_mark = len(buf)
     os.write(master, b"d")
