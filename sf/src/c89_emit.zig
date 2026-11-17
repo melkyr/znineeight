@@ -2616,7 +2616,7 @@ fn emitBuiltinIncludes(emitter: *C89Emitter) void {
         bufferedWriterWrite(&emitter.writer, swin);
     }
     if (moduleHasConsoleBuiltin(emitter) != @intCast(u8, 0)) {
-        var cwin: []const u8 = "#ifdef _WIN32\n#define WINVER 0x0410\n#define _WIN32_WINDOWS 0x0410\n#define _WIN32_WINNT 0x0400\n#define NTDDI_VERSION 0x04000000\n#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void std_print_len(const char* s, unsigned int len);\n";
+        var cwin: []const u8 = "#ifdef _WIN32\n#ifndef WINVER\n#define WINVER 0x0410\n#endif\n#ifndef _WIN32_WINDOWS\n#define _WIN32_WINDOWS 0x0410\n#endif\n#ifndef _WIN32_WINNT\n#define _WIN32_WINNT 0x0400\n#endif\n#ifndef NTDDI_VERSION\n#define NTDDI_VERSION 0x04000000\n#endif\n#ifndef WIN32_LEAN_AND_MEAN\n#define WIN32_LEAN_AND_MEAN\n#endif\n#include <windows.h>\n#else\n#include <stdio.h>\n#endif\nextern void std_print_len(const char* s, unsigned int len);\n";
         bufferedWriterWrite(&emitter.writer, cwin);
     }
 
