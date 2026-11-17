@@ -198,7 +198,7 @@ with a companion `build_target.sh`.
 
 **Common**
 - A seed-built `zig1_5_clean` with its sibling `lib/` directory (current seed
-  is v149, lib 65).
+  is v151, lib 65).
 - `bash`, `timeout`, `sha256sum`, `cmp`, and `/usr/bin/time` for the test tiers.
 - Optional external ROM tree via `Z9GB_ROM_DIR`; omit it and gate runs report
   truthful `SKIP`, never PASS.
