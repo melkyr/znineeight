@@ -15,6 +15,78 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-17 — seed v150 (HEAD 935fe1b5)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12953522 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+Win9x `-osw` emission-restore rotation. This publishes the current compiler and
+a current `lib/`: the v149 archive's `lib/std_dinput.zig` / `std_dinput_pal.zig`
+predated `dinputPollRaw`/`pollRaw`, so z9gb `-osw` failed from any Windows-hosted
+compiler built with that seed. v150 carries the `c89_emit` error-union
+main-wrapper declaration-order fix (strict C89), the sema module-member
+`error[3060]` diagnostic, and the current std payload. The self-emission fixed
+point moves from v149 `73c75a65…` to `0f72ce60…`, and all 8 emission pins were
+re-measured against the new seed's `lib/` (the pins moved because the seed
+default std payload changed, not because of a per-program compiler change).
+
+| field | value |
+|---|---|
+| date | 2026-11-17 |
+| HEAD | `935fe1b5` |
+| seed binary md5 | `0f72ce60ae90f426696b47a6826a3061` |
+| self-emission C | 48 `.c` + 49 `.h` (12953522 bytes) |
+| fixed point | `0f72ce60ae90f426696b47a6826a3061` |
+| lib manifest | `lib/manifest.md5` (65 std files; md5 `efe0f81fd65bba16c6d343cdfa20123f`) |
+| archive md5 | `8b3bffbfca7eb04b7f3dfd56c57583cd` |
+
+### 8 emission pins (old → new)
+
+Measured with the v150 seed-built compiler from the repo root with relative
+entry paths (`<zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`); repeated with
+`--lib-dir <v150 seed>/lib` (identical) and reproduced by two independent builds
+of the v150 archive.
+
+| Program | mode | v149 | v150 |
+|---|---|---|---|
+| `mud_server` | `-fsafe` | `9691c2878564d61fe4272c3d3b5da253` | `948f50001c6ee7ece790eb5c0355d77a` |
+| `mud_server` | `-ffast` | `fef5196eec58b82323bac3ce78c0e815` | `595002172e9ae517a5d0380f6748fa87` |
+| `game_of_life` | `-fsafe` | `0be513f90937621d47a331211bef9d67` | `67faec5d617ad62f077f54642fdbd9a4` |
+| `game_of_life` | `-ffast` | `b1f536d2905ce51d474d4167b2408f29` | `906dbec2ff71ea10b8429c2e3a55f8f8` |
+| `lisp_interpreter_curr` | `-fsafe` | `a2169c2c5b019504eaa9da0a851d8658` | `080f1a36b27e38958ccec50de8d96bf9` |
+| `lisp_interpreter_curr` | `-ffast` | `291a159925a7aa2f622bc1a87536a0e3` | `8e80d33918b2e9304394caa906e5691c` |
+| `json_parser` | `-fsafe` | `bbcd375f657d168df504d1f4ae06774e` | `82a960f713d5fa81d3253bc877edbb82` |
+| `json_parser` | `-ffast` | `219ddfff7095c84ab1dde2e82e3c50f0` | `c0192d5e73ef104fe425cf065cc0c6f0` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `ecb03e1f44a61a5858001547fef2cd6d` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 65 std `.zig` + `manifest.md5` |
+| HEAD/date | `935fe1b5` / 2026-11-17 |
+
+Provenance note: the archived binary (md5 0f72ce60ae90f426696b47a6826a3061) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+935fe1b5; gcc of the archive's self-emission C reproduces the fixed point
+`0f72ce60ae90f426696b47a6826a3061` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-11 — seed v149 (HEAD 50190ea4)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
