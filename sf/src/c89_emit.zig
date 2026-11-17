@@ -3344,6 +3344,16 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
             wcall = wcall1;
         }
         bufferedWriterWrite(&emitter.writer, wsig);
+        // Strict C89: block declarations must precede statements. The
+        // error-union wrapper's result local therefore has to be declared
+        // before the module-init calls; the assignment and return stay after
+        // them. The void/int branches declare no local (unchanged).
+        if (wrty.kind == type_mod.TypeKind.error_union_type) {
+            var weu_c = getCTypeName(emitter.registry, emitter.mangler, func.return_type);
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+            bufferedWriterWrite(&emitter.writer, weu_c);
+            var we1: []const u8 = " zT_main_result;\n"; bufferedWriterWrite(&emitter.writer, we1);
+        }
         emitModuleInitCalls(emitter);
         if (wrty.kind == type_mod.TypeKind.void_type) {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
@@ -3352,12 +3362,8 @@ fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var wv2: []const u8 = "return 0;\n"; bufferedWriterWrite(&emitter.writer, wv2);
         } else if (wrty.kind == type_mod.TypeKind.error_union_type) {
-            var weu_c = getCTypeName(emitter.registry, emitter.mangler, func.return_type);
             var wep = emitter.registry.eu_items[@intCast(usize, wrty.payload_idx)];
             var wpay = emitter.registry.types_items[@intCast(usize, wep.payload)];
-            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
-            bufferedWriterWrite(&emitter.writer, weu_c);
-            var we1: []const u8 = " zT_main_result;\n"; bufferedWriterWrite(&emitter.writer, we1);
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var we2: []const u8 = "zT_main_result = "; bufferedWriterWrite(&emitter.writer, we2);
             bufferedWriterWrite(&emitter.writer, wfn_name);

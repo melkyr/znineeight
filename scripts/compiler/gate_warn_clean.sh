@@ -133,8 +133,17 @@ else
 fi
 rm -f "$WORK/$page_label"/.zig1_*.tmp
 
+# (d) strict-C89 declaration order: error-union main wrapper + module init ---
+# Fails if the `zT_main_result` local is emitted after the module-init calls
+# (mixed declaration, rejected by OpenWatcom). Native gcc only, no Wine.
+if ! bash "$ROOT/scripts/compiler/gate_strict_c89.sh" "$ZIG1" \
+    "$ROOT/repro/mi_matrix/main_errunion_init_xmod/main.zig"; then
+    echo "[warn-clean] strict-C89 declaration-order gate FAILED" >&2
+    fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "[warn-clean] FAILED (gcc -m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long)" >&2
     exit 1
 fi
-echo "[warn-clean] OK: self-emission + shipped runtime + hello + lisp_interpreter_curr + wide enum macros + stdlib_page_xmod"
+echo "[warn-clean] OK: self-emission + shipped runtime + hello + lisp_interpreter_curr + wide enum macros + stdlib_page_xmod + strict-C89 main-wrapper decl order"
