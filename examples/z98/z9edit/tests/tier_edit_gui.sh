@@ -670,6 +670,69 @@ else
             fail_case "save-byte golden changed in at least one theme"
         fi
 
+        # Idle repaint: after an edit, the 2 s declared-ident rebuild is itself
+        # a visual change. The mode types a new "const zzidle" line while the
+        # ident cache still predates it, paints, then holds the real loop past
+        # IDLE_MS. The name is fg (000000) before the rebuild and decl green
+        # (008000) only if a repaint happened after it; a frozen frame stays
+        # black, so this cannot pass without a paint.
+        IDLE_DIR="$OUT/idle_repaint"
+        mkdir -p "$IDLE_DIR"
+        rm -f "$IDLE_DIR/z9edit.ini" "$IDLE_DIR/z9edit.cfg"
+        cp "$FIXTURE" "$IDLE_DIR/edit_smoke.z98"
+        ( cd "$IDLE_DIR" && timeout 60 wine "$CONSOLE_EXE" --idle-test edit_smoke.z98 ) \
+            >"$IDLE_DIR/app.log" 2>&1 &
+        WINE_PID=$!
+        READY_I=0
+        i=0
+        while [ "$i" -lt 200 ]; do
+            if grep -q '^READY$' "$IDLE_DIR/app.log" 2>/dev/null; then
+                READY_I=1
+                break
+            fi
+            sleep 0.1
+            i=$((i + 1))
+        done
+        sleep 0.5
+        IDLE_ORIGIN="$(theme_origin "$IDLE_DIR/app.log")"
+        IX=${IDLE_ORIGIN%% *}
+        IY=${IDLE_ORIGIN##* }
+        # Row 1 is "const zzidle = 1"; gutter is 2 cells, first z is display col 6.
+        IZX=$((IX + 8 * 8))
+        IZY=$((IY + 0 * 16))
+        if [ "$READY_I" -eq 1 ] \
+            && timeout 30 import -window root "$IDLE_DIR/before.png" >"$IDLE_DIR/import_before.log" 2>&1 \
+            && [ -s "$IDLE_DIR/before.png" ]; then
+            if cell_has_hex "$IDLE_DIR/before.png" "$IZX" "$IZY" 000000 \
+                && ! cell_has_hex "$IDLE_DIR/before.png" "$IZX" "$IZY" 008000; then
+                pass_case "idle before 2 s: pending identifier is fg 000000"
+            else
+                fail_case "idle before 2 s: pending identifier color unexpected"
+            fi
+        else
+            fail_case "idle before screenshot failed (see $IDLE_DIR/import_before.log)"
+        fi
+        # Stay live well past the 2 s rebuild, then sample the same cell.
+        sleep 3
+        if timeout 30 import -window root "$IDLE_DIR/after.png" >"$IDLE_DIR/import_after.log" 2>&1 \
+            && [ -s "$IDLE_DIR/after.png" ]; then
+            if cell_has_hex "$IDLE_DIR/after.png" "$IZX" "$IZY" 008000; then
+                pass_case "idle repaint: 2 s ident rebuild turns declared name green"
+            else
+                fail_case "idle repaint: no decl-color pixel after 2 s (frame not repainted)"
+            fi
+        else
+            fail_case "idle after screenshot failed (see $IDLE_DIR/import_after.log)"
+        fi
+        wait "$WINE_PID" 2>/dev/null
+        IDLE_RC=$?
+        WINE_PID=""
+        if [ "$IDLE_RC" -eq 0 ]; then
+            pass_case "idle repaint run exited 0"
+        else
+            fail_case "idle repaint run exited $IDLE_RC (see $IDLE_DIR/app.log)"
+        fi
+
         sed 's/^/       /' "$RUN1/app.log" | tail -8
 
         wineserver -k >/dev/null 2>&1 || true

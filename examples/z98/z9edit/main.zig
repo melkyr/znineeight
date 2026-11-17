@@ -226,10 +226,14 @@ fn evBase(kind: gfx.EventKind) gfx.Event {
 
 fn paintFrame(g: *gfx.Gfx, st: *ui.UiState) bool {
     if (!gfx.gfxBeginFrame(g)) return false;
-    ui.uiPaint(st) catch {
-        return false;
-    };
+    if (ui.uiNeedsPaint(st)) {
+        ui.uiPaint(st) catch {
+            _ = gfx.gfxEndFrame(g);
+            return false;
+        };
+    }
     if (!gfx.gfxEndFrame(g)) return false;
+    ui.uiPaintDone(st);
     return true;
 }
 
@@ -431,6 +435,7 @@ fn loop(g: *gfx.Gfx, st: *ui.UiState, live: bool) void {
             }
         }
         if (quit) break;
+        ui.uiIdleTick(st);
         if (!paintFrame(g, st)) {
             // Minimize/0x0 and transient present failures are retried; the
             // session and unsaved text survive.
@@ -664,6 +669,52 @@ fn runThemePaint(in_path: []const u8) void {
     gfx.gfxClose(g);
 }
 
+// Idle-repaint evidence: type a new declaration, paint it while the ident cache
+// still lacks the name, then run the real event loop for long enough that the
+// 2 s idle rebuild fires. The tier screenshots line 1 before and after; only a
+// repaint after the rebuild changes the new name from fg to the decl color.
+fn runIdleTest(in_path: []const u8) void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const b = buffer.bufLoad(&arena, in_path) catch {
+        fail("z9edit: cannot read idle-test input");
+        return;
+    };
+    var tb: [TITLE_MAX]u8 = undefined;
+    const title = buildTitle(tb[0..], in_path);
+    const g = gfx.gfxOpen(title, COLS, ROWS) catch {
+        fail("z9edit: idle-test gfxOpen failed");
+        return;
+    };
+    applyConfigTheme(g, &arena);
+    const st = ui.uiInit(&arena, g, b, in_path) catch {
+        gfx.gfxClose(g);
+        fail("z9edit: idle-test uiInit failed");
+        return;
+    };
+    if (!paintFrame(g, st)) {
+        gfx.gfxClose(g);
+        fail("z9edit: idle-test initial paint failed");
+        return;
+    }
+    if (!feedText(g, st, "const zzidle = 1\n")) return;
+    if (!paintFrame(g, st)) return;
+    io.write("READY\n");
+    var hold: u32 = 0;
+    while (hold < 70) : (hold += 1) {
+        var ev: gfx.Event = undefined;
+        while (gfx.gfxPollEvent(g, &ev)) {
+            if (!ui.uiStep(st, &ev)) {
+                gfx.gfxClose(g);
+                return;
+            }
+        }
+        ui.uiIdleTick(st);
+        if (!paintFrame(g, st)) return;
+        io.sleepMs(100);
+    }
+    gfx.gfxClose(g);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc >= 4 and strEq(argAt(argv, 1), "--smoke")) {
         runSmoke(argAt(argv, 2), argAt(argv, 3));
@@ -693,8 +744,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         runThemePaint(argAt(argv, 2));
         return;
     }
+    if (argc >= 3 and strEq(argAt(argv, 1), "--idle-test")) {
+        runIdleTest(argAt(argv, 2));
+        return;
+    }
     if (argc < 2) {
-        io.write("usage: z9edit <path> | z9edit --smoke <in> <out> | z9edit --live-smoke <in> | z9edit --wheel-test | --keytest | --clip-test | --theme-test | --theme-paint <in>\n");
+        io.write("usage: z9edit <path> | z9edit --smoke <in> <out> | z9edit --live-smoke <in> | z9edit --wheel-test | --keytest | --clip-test | --theme-test | --theme-paint <in> | --idle-test <in>\n");
         os.exit(2);
         return;
     }

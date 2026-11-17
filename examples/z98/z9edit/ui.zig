@@ -21,6 +21,7 @@ const TAB_W: u32 = 8;
 const TITLE_MAX: usize = 200;
 const LINE_MAX: usize = 256;
 const TOK_MAX: usize = 256;
+const RUN_MAX: usize = 512;
 const STATUS_MAX: usize = 220;
 const IDLE_MS: u32 = 2000;
 
@@ -64,6 +65,11 @@ const UiImpl = struct {
     title_len: usize,
     err: u8, // 0 none, 1 OutOfMemory (unrecoverable frame state)
     save_failed: bool,
+    dirty: bool,
+    ub_gen: u64,
+    ub_valid: bool,
+    ub_ch: u8,
+    ub_line: usize,
 };
 
 // Opaque to main.zig: one pointer to the private state.
@@ -192,6 +198,7 @@ fn refreshTitle(st: *UiImpl) void {
 fn markEdited(st: *UiImpl) void {
     st.last_edit_ms = time_mod.ticksMs();
     st.edit_pending = true;
+    st.dirty = true;
     refreshTitle(st);
 }
 
@@ -202,6 +209,14 @@ fn rebuildIdents(st: *UiImpl) void {
         return;
     };
     st.edit_pending = false;
+}
+
+fn maybeIdleRebuild(st: *UiImpl) bool {
+    if (!st.edit_pending) return false;
+    const now = time_mod.ticksMs();
+    if (now - st.last_edit_ms < IDLE_MS) return false;
+    rebuildIdents(st);
+    return true;
 }
 
 fn lineText(st: *UiImpl, line: usize, out: []u8) []const u8 {
@@ -429,11 +444,13 @@ fn doSave(st: *UiImpl) void {
         // is not fatal: keep the buffer dirty and tell the status bar. The
         // next Ctrl+S retries; a successful save clears the message.
         st.save_failed = true;
+        st.dirty = true;
         return;
     };
     st.save_failed = false;
     rebuildIdents(st);
     refreshTitle(st);
+    st.dirty = true;
 }
 
 fn handleCommand(st: *UiImpl, c_in: u8) bool {
@@ -483,6 +500,7 @@ fn cycleTheme(st: *UiImpl) void {
         next = .white;
     }
     _ = gfx.gfxSetTheme(st.g, next);
+    st.dirty = true;
 }
 
 fn handleKey(st: *UiImpl, ev: *const gfx.Event) bool {
@@ -633,6 +651,11 @@ pub fn uiInit(arena: *arena_mod.Arena, g: *gfx.Gfx, b: *buffer.GapBuffer, path: 
     st.title_len = 0;
     st.err = 0;
     st.save_failed = false;
+    st.dirty = true;
+    st.ub_gen = 0;
+    st.ub_valid = false;
+    st.ub_ch = 0;
+    st.ub_line = 0;
     const id_cap = buffer.bufLen(b) + 768 * 1024;
     const raw_ids = try allocBytes(arena, id_cap);
     st.ids_arena = arena_mod.init(raw_ids[0..id_cap]);
@@ -657,17 +680,40 @@ pub fn uiTestScroll(st: *UiState) usize {
     return st.opaque.scroll;
 }
 
+// Paint gate helpers: the first frame is dirty, and an idle frame presents the
+// existing back buffer without repainting cells.
+pub fn uiNeedsPaint(st: *UiState) bool {
+    return st.opaque.dirty;
+}
+
+pub fn uiPaintDone(st: *UiState) void {
+    st.opaque.dirty = false;
+}
+
+// Loop tick for event-free idle frames: a due declared-identifier rebuild is a
+// visual change, so mark the frame dirty and let the next paint show it.
+pub fn uiIdleTick(stw: *UiState) void {
+    const st = stw.opaque;
+    if (maybeIdleRebuild(st)) st.dirty = true;
+}
+
 pub fn uiStep(stw: *UiState, ev: *const gfx.Event) bool {
     const st = stw.opaque;
+    if (maybeIdleRebuild(st)) st.dirty = true;
     if (ev.kind == .close) return false;
-    if (ev.kind == .key_down) return handleKey(st, ev);
+    if (ev.kind == .key_down) {
+        st.dirty = true;
+        return handleKey(st, ev);
+    }
     if (ev.kind == .mouse_down or ev.kind == .mouse_move or ev.kind == .mouse_up) {
+        st.dirty = true;
         handleMouse(st, ev);
         return true;
     }
     if (ev.kind == .wheel) {
         // Wheel forward/away is a negative line delta in Win32 terms; the
         // editor scrolls up for positive ev.wheel and down for negative.
+        const before = st.scroll;
         var delta: i32 = ev.wheel;
         if (delta > 0) {
             var d: usize = @intCast(usize, delta);
@@ -677,6 +723,11 @@ pub fn uiStep(stw: *UiState, ev: *const gfx.Event) bool {
             while (d > 0) : (d -= 1) st.scroll += 1;
         }
         clampScroll(st);
+        if (st.scroll != before) st.dirty = true;
+        return true;
+    }
+    if (ev.kind == .resize or ev.kind == .focus_lost or ev.kind == .focus_gained) {
+        st.dirty = true;
         return true;
     }
     return true;
@@ -721,6 +772,29 @@ fn paintGutter(st: *UiImpl, row: u32, number: usize) void {
     _ = gfx.gfxDrawText(st.g, x, row, nb[0..p], COL_COMMENT, COL_BG);
 }
 
+// Append one screen cell to the current same-(fg,bg) run, flushing first when
+// the color changes. A full run is flushed immediately; the caller keeps the
+// buffer position so the next cell starts a fresh run at its own column.
+fn runChar(st: *UiImpl, row: u32, run: []u8, run_len: *usize, run_x: *u32,
+    run_fg: *gfx.Color, run_bg: *gfx.Color,
+    fg: gfx.Color, bg: gfx.Color, ch: u8, col: u32) void {
+    if (run_len.* > 0 and (fg != run_fg.* or bg != run_bg.*)) {
+        _ = gfx.gfxDrawText(st.g, run_x.*, row, run[0..run_len.*], run_fg.*, run_bg.*);
+        run_len.* = 0;
+    }
+    if (run_len.* == 0) {
+        run_x.* = st.gutter + col;
+        run_fg.* = fg;
+        run_bg.* = bg;
+    }
+    run[run_len.*] = ch;
+    run_len.* += 1;
+    if (run_len.* == run.len) {
+        _ = gfx.gfxDrawText(st.g, run_x.*, row, run[0..run_len.*], run_fg.*, run_bg.*);
+        run_len.* = 0;
+    }
+}
+
 fn paintTokens(st: *UiImpl, row: u32, line_start: usize, line: []const u8,
     toks: []const lexer.Token, nt: usize, br1: usize, br2: usize, have_br: bool) void {
     const sel_on = hasSelection(st);
@@ -730,6 +804,11 @@ fn paintTokens(st: *UiImpl, row: u32, line_start: usize, line: []const u8,
     if (st.cols > st.gutter) maxcol = st.cols - st.gutter;
     var screen_col: u32 = 0;
     var ti: usize = 0;
+    var run: [RUN_MAX]u8 = undefined;
+    var run_len: usize = 0;
+    var run_fg: gfx.Color = COL_FG;
+    var run_bg: gfx.Color = COL_BG;
+    var run_x: u32 = 0;
     while (ti < nt and screen_col < maxcol) : (ti += 1) {
         const tok = toks[ti];
         var declared = false;
@@ -753,20 +832,22 @@ fn paintTokens(st: *UiImpl, row: u32, line_start: usize, line: []const u8,
                 fg = COL_BG;
                 bg = COL_SEL;
             }
-            const x = st.gutter + screen_col;
             if (c == '\t') {
                 var next: u32 = (screen_col / TAB_W + 1) * TAB_W;
                 if (next > maxcol) next = maxcol;
                 while (screen_col < next) : (screen_col += 1) {
-                    _ = gfx.gfxDrawText(st.g, st.gutter + screen_col, row, " ", fg, bg);
+                    runChar(st, row, run[0..], &run_len, &run_x, &run_fg, &run_bg,
+                        fg, bg, ' ', screen_col);
                 }
             } else {
-                var one: [1]u8 = undefined;
-                one[0] = c;
-                _ = gfx.gfxDrawText(st.g, x, row, one[0..1], fg, bg);
+                runChar(st, row, run[0..], &run_len, &run_x, &run_fg, &run_bg,
+                    fg, bg, c, screen_col);
                 screen_col += 1;
             }
         }
+    }
+    if (run_len > 0) {
+        _ = gfx.gfxDrawText(st.g, run_x, row, run[0..run_len], run_fg, run_bg);
     }
 }
 
@@ -812,14 +893,26 @@ fn paintStatus(st: *UiImpl, caret_line: usize, caret_col: usize) void {
     if (st.save_failed) {
         p = putBytes(buf[0..], p, "  save failed (Ctrl+S retries)");
     }
-    var ub: match.Unbalance = undefined;
-    if (match.matchUnbalanced(st.b, &ub)) {
+    const gen = buffer.bufEditGen(st.b);
+    if (!st.ub_valid or st.ub_gen != gen) {
+        var ub: match.Unbalance = undefined;
+        if (match.matchUnbalanced(st.b, &ub)) {
+            st.ub_ch = ub.ch;
+            st.ub_line = ub.line;
+        } else {
+            st.ub_ch = 0;
+            st.ub_line = 0;
+        }
+        st.ub_gen = gen;
+        st.ub_valid = true;
+    }
+    if (st.ub_ch != 0) {
         p = putBytes(buf[0..], p, "  unbalanced ");
         var one: [1]u8 = undefined;
-        one[0] = ub.ch;
+        one[0] = st.ub_ch;
         p = putBytes(buf[0..], p, one[0..1]);
         p = putBytes(buf[0..], p, " from line ");
-        p = putU32(buf[0..], p, @intCast(u32, ub.line));
+        p = putU32(buf[0..], p, @intCast(u32, st.ub_line));
     }
     var lb: [LINE_MAX]u8 = undefined;
     const line = lineText(st, caret_line, lb[0..]);
@@ -841,11 +934,10 @@ pub fn uiPaint(stw: *UiState) UiError!void {
     const st = stw.opaque;
     if (st.err == 1) return error.OutOfMemory;
 
-    // Declared-ident freshness: rebuild after >= 2 s of edit idle.
-    if (st.edit_pending) {
-        const now = time_mod.ticksMs();
-        if (now - st.last_edit_ms >= IDLE_MS) rebuildIdents(st);
-    }
+    // Declared-ident freshness: rebuild after >= 2 s of edit idle. A rebuild
+    // is a visual change, so keep the frame dirty if this paint is what first
+    // observes it (the loop tick normally handles the event-free case).
+    if (maybeIdleRebuild(st)) st.dirty = true;
 
     var bw: u32 = 0;
     var bh: u32 = 0;
