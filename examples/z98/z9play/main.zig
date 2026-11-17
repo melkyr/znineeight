@@ -60,6 +60,7 @@
 @cInclude("<stdio.h>");
 
 const std = @import("std");
+const std_mem = @import("std_mem");
 const cli = @import("cli.zig");
 const filemod = @import("std_file");
 const ogg = @import("ogg.zig");
@@ -158,11 +159,18 @@ fn mixWrite(state: *void, samples: []const i16) audio.AudioError!usize {
     while (off < samples.len) {
         var n: usize = samples.len - off;
         if (n > MIX_MAX) n = MIX_MAX;
-        var i: usize = 0;
-        while (i < n) : (i += 1) {
-            var s: i32 = @intCast(i32, samples[off + i]);
-            s = s * @intCast(i32, g_mix_vol) / 100;
-            g_mix_buf[i] = @intCast(i16, s);
+        if (g_mix_vol == 100) {
+            // Unity volume is an exact scale; copy in bulk instead of per sample.
+            var dst: [*]u8 = @ptrCast([*]u8, &g_mix_buf[0]);
+            var src: [*]const u8 = @ptrCast([*]const u8, samples.ptr) + off * @sizeOf(i16);
+            std_mem.copyU8(dst, src, n * @sizeOf(i16));
+        } else {
+            var i: usize = 0;
+            while (i < n) : (i += 1) {
+                var s: i32 = @intCast(i32, samples[off + i]);
+                s = s * @intCast(i32, g_mix_vol) / 100;
+                g_mix_buf[i] = @intCast(i16, s);
+            }
         }
         var w: usize = g_real.write_fn(state, g_mix_buf[0..n]) catch return error.WriteFailed;
         if (w != n) return error.WriteFailed;

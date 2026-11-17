@@ -35,6 +35,7 @@
 // (the emitted C does not depend on the Zig level seeing the header macros).
 
 const std = @import("std");
+const std_mem = @import("std_mem");
 const pal = @import("audio_win9x_pal.zig");
 const audio = @import("audio.zig");
 
@@ -123,8 +124,9 @@ fn hdrDone(h: *WaveHdr) bool {
 }
 
 // Block until the buffer at `fill_idx` is free for reuse: if it is queued, poll
-// WHDR_DONE (sleeping 1 ms between reads), then unprepare it. Returns
-// immediately when the buffer is not queued.
+// WHDR_DONE (sleeping 10 ms between reads; the 500 ms buffers tolerate the
+// coarser poll), then unprepare it. Returns immediately when the buffer is not
+// queued.
 fn waitFree(ctx: *Win9xDev) void {
     while (ctx.queued[ctx.fill_idx]) {
         var h: *WaveHdr = &ctx.hdrs[ctx.fill_idx];
@@ -133,7 +135,7 @@ fn waitFree(ctx: *Win9xDev) void {
             ctx.queued[ctx.fill_idx] = false;
             break;
         }
-        std.time.sleepMs(1);
+        std.time.sleepMs(10);
     }
 }
 
@@ -233,10 +235,8 @@ pub fn write(state: *void, samples: []const i16) AudioError!usize {
         var space: usize = ctx.buf_bytes - ctx.fill_len;
         var take: usize = total - off;
         if (take > space) take = space;
-        var j: usize = 0;
-        while (j < take) : (j += 1) {
-            ctx.bufs[ctx.fill_idx * BUF_CAP + ctx.fill_len + j] = base[off + j];
-        }
+        var dst: [*]u8 = @ptrCast([*]u8, &ctx.bufs[ctx.fill_idx * BUF_CAP + ctx.fill_len]);
+        std_mem.copyU8(dst, base + off, take);
         ctx.fill_len += take;
         off += take;
         if (ctx.fill_len >= ctx.buf_bytes) {
@@ -258,7 +258,7 @@ pub fn drain(state: *void) AudioError!void {
     while (i < NBUF) : (i += 1) {
         if (ctx.queued[i]) {
             var h: *WaveHdr = &ctx.hdrs[i];
-            while (!hdrDone(h)) std.time.sleepMs(1);
+            while (!hdrDone(h)) std.time.sleepMs(10);
             _ = pal.waveOutUnprepareHeader(ctx.hwo, @ptrCast(*void, h), @intCast(u32, @sizeOf(WaveHdr)));
             ctx.queued[i] = false;
         }

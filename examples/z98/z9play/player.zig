@@ -42,6 +42,7 @@
 // `var` (AGENTS.md X.5).
 
 const std = @import("std");
+const std_mem = @import("std_mem");
 const audio = @import("platform/audio.zig");
 const ogg_stream = @import("ogg_stream.zig");
 const vs = @import("vorbis_setup.zig");
@@ -285,16 +286,25 @@ fn playerDecodeStep(p: *Player) PlayerError!void {
 // guarantees the block fits (`filled` never exceeds `flush_threshold + a
 // block`, well under capacity).
 fn playerRingAppend(p: *Player, samples: []const i16) void {
+    if (samples.len == 0) return;
     var cap: usize = @intCast(usize, p.ring.capacity);
-    var i: usize = 0;
-    while (i < samples.len) : (i += 1) {
-        var w: usize = @intCast(usize, p.ring.write_pos);
-        p.ring.data[w] = samples[i];
-        var nw: usize = w + 1;
-        if (nw >= cap) nw = 0;
-        p.ring.write_pos = @intCast(u32, nw);
-        p.ring.filled += 1;
+    var wp: usize = @intCast(usize, p.ring.write_pos);
+    var first: usize = cap - wp;
+    if (first > samples.len) first = samples.len;
+
+    var src: [*]const u8 = @ptrCast([*]const u8, samples.ptr);
+    var bps: usize = @sizeOf(i16);
+    std_mem.copyU8(@ptrCast([*]u8, &p.ring.data[wp]), src, first * bps);
+
+    var rest: usize = samples.len - first;
+    if (rest > 0) {
+        std_mem.copyU8(@ptrCast([*]u8, &p.ring.data[0]), src + first * bps, rest * bps);
     }
+
+    var nw: usize = wp + samples.len;
+    while (nw >= cap) nw -= cap;
+    p.ring.write_pos = @intCast(u32, nw);
+    p.ring.filled += @intCast(u32, samples.len);
 }
 
 // Write every filled sample (from `read_pos`, wrapping) to the audio backend,
