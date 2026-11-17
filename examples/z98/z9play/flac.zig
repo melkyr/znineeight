@@ -627,6 +627,7 @@ pub fn decode(d: *FlacDecoder, arena: *std.arena.Arena, out: []i16) FlacError!us
 
 pub const StreamFlacDecoder = struct {
     bf: *stream.BufferedFile,
+    br: StreamBitReader,
     arena: *std.arena.Arena,
     sample_rate: u32,
     channels: u8,
@@ -644,6 +645,7 @@ var g_empty_i64: [1]i64;
 pub fn zeroStreamFlacDecoder() StreamFlacDecoder {
     return StreamFlacDecoder{
         .bf = @intToPtr(*stream.BufferedFile, 0),
+        .br = zeroStreamBitReader(),
         .arena = @intToPtr(*std.arena.Arena, 0),
         .sample_rate = 0,
         .channels = 0,
@@ -657,51 +659,123 @@ pub fn zeroStreamFlacDecoder() StreamFlacDecoder {
     };
 }
 
-// MSB-first bit reader over a BufferedFile. While `recording` is set, loaded
-// bytes are captured in the fixed `hdr` buffer for the frame-header CRC-8; the
-// buffer is far larger than the maximum FLAC frame header.
+// MSB-first bit reader over a BufferedFile. `acc` holds `acc_bits` valid bits
+// right-aligned, with the next bit at position `acc_bits - 1`; refills read up
+// to eight bytes at a time. While `recording` is set, bytes are appended to
+// `hdr` when their last bit is consumed (not when they are prefetched), so
+// prefetched next-frame header bytes are captured in the next frame's `hdr`
+// while next-frame payload bytes never are.
 const StreamBitReader = struct {
     bf: *stream.BufferedFile,
-    cur: u8,
-    bit_pos: u8, // 0..7, next bit within `cur`
+    acc: u64,
+    acc_bits: u32,
     recording: bool,
     hdr: [64]u8,
     hdr_len: usize,
+    rec_byte: u8,
+    rec_bits: u32,
 };
 
-fn sLoadByte(br: *StreamBitReader) FlacError!void {
-    var maybe: ?u8 = stream.bufferedFileReadByte(br.bf) catch return error.Truncated;
-    if (maybe) |b| {
-        br.cur = b;
-    } else {
-        return error.Truncated;
-    }
-    if (br.recording) {
-        if (br.hdr_len >= br.hdr.len) return error.BadFrame;
-        br.hdr[br.hdr_len] = br.cur;
-        br.hdr_len += 1;
+fn zeroStreamBitReader() StreamBitReader {
+    return StreamBitReader{
+        .bf = @intToPtr(*stream.BufferedFile, 0),
+        .acc = 0,
+        .acc_bits = 0,
+        .recording = false,
+        .hdr = [64]u8{0},
+        .hdr_len = 0,
+        .rec_byte = 0,
+        .rec_bits = 0,
+    };
+}
+
+fn sLowMask(n: u32) u64 {
+    if (n >= 64) return ~@intCast(u64, 0);
+    return (@intCast(u64, 1) << @intCast(u64, n)) - 1;
+}
+
+// Refill until at least `need` bits are buffered. Prefetches up to eight bytes
+// per read; a short read is fine as long as the bits actually requested are
+// present (only a later unmatched read returns Truncated).
+fn sFill(br: *StreamBitReader, need: u32) FlacError!void {
+    while (br.acc_bits < need) {
+        var room: u32 = 64 - br.acc_bits;
+        var fit: u32 = room / 8;
+        if (fit == 0) return error.Truncated;
+        var want: usize = 8;
+        if (want > @intCast(usize, fit)) want = @intCast(usize, fit);
+        var tmp: [8]u8 = [8]u8{0};
+        for (tmp) |*item| {
+            item.* = 0;
+        }
+        var got: usize = stream.bufferedFileRead(br.bf, tmp[0..want]) catch return error.Truncated;
+        if (got == 0) return error.Truncated;
+        var i: usize = 0;
+        while (i < got) : (i += 1) {
+            br.acc = (br.acc << @intCast(u64, 8)) | @intCast(u64, tmp[i]);
+            br.acc_bits += 8;
+        }
     }
 }
 
-fn sReadBit(br: *StreamBitReader) FlacError!u1 {
-    if (br.bit_pos == 0) try sLoadByte(br);
-    var sh: u3 = @intCast(u3, 7 - br.bit_pos);
-    var bit: u1 = @intCast(u1, (br.cur >> sh) & 1);
-    if (br.bit_pos == 7) {
-        br.bit_pos = 0;
-    } else {
-        br.bit_pos += 1;
+// Record consumed bits into the frame-header bytes. Grouping starts when
+// recording is enabled, which is always at a byte-aligned frame boundary.
+fn sRecordBits(br: *StreamBitReader, bits: u64, n: u32) FlacError!void {
+    if (!br.recording) return;
+    var i: u32 = n;
+    while (i > 0) {
+        i -= 1;
+        var bit: u8 = @intCast(u8, (bits >> @intCast(u64, i)) & 1);
+        br.rec_byte = (br.rec_byte << @intCast(u8, 1)) | bit;
+        br.rec_bits += 1;
+        if (br.rec_bits == 8) {
+            if (br.hdr_len >= br.hdr.len) return error.BadFrame;
+            br.hdr[br.hdr_len] = br.rec_byte;
+            br.hdr_len += 1;
+            br.rec_byte = 0;
+            br.rec_bits = 0;
+        }
     }
+}
+
+// Consume `n` bits from the top of the valid window; recording captures their
+// actual values now, independent of when the bytes were prefetched.
+fn sConsume(br: *StreamBitReader, n: u32) FlacError!void {
+    if (n == 0) return;
+    var shift: u32 = br.acc_bits - n;
+    if (br.recording) {
+        var bits: u64 = (br.acc >> @intCast(u64, shift)) & sLowMask(n);
+        try sRecordBits(br, bits, n);
+    }
+    if (shift == 0) {
+        br.acc = 0;
+    } else {
+        br.acc = br.acc & ((@intCast(u64, 1) << @intCast(u64, shift)) - 1);
+    }
+    br.acc_bits = shift;
+}
+
+fn sReadBit(br: *StreamBitReader) FlacError!u1 {
+    try sFill(br, 1);
+    var shift: u32 = br.acc_bits - 1;
+    var bit: u1 = @intCast(u1, (br.acc >> @intCast(u64, shift)) & 1);
+    try sConsume(br, 1);
     return bit;
 }
 
 fn sReadBits(br: *StreamBitReader, n: u32) FlacError!u64 {
     if (n == 0) return 0;
     var v: u64 = 0;
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
-        var bit: u1 = try sReadBit(br);
-        v = (v << 1) | @intCast(u64, bit);
+    var left: u32 = n;
+    while (left > 0) {
+        var take: u32 = left;
+        if (take > 32) take = 32;
+        try sFill(br, take);
+        var shift: u32 = br.acc_bits - take;
+        var chunk: u64 = (br.acc >> @intCast(u64, shift)) & sLowMask(take);
+        try sConsume(br, take);
+        v = (v << @intCast(u64, take)) | chunk;
+        left -= take;
     }
     return v;
 }
@@ -719,16 +793,80 @@ fn sReadSigned(br: *StreamBitReader, n: u32) FlacError!i64 {
 fn sReadUnary(br: *StreamBitReader) FlacError!u32 {
     var q: u32 = 0;
     while (true) {
-        var bit: u1 = try sReadBit(br);
-        if (bit == 1) return q;
-        q += 1;
+        if (br.acc_bits == 0) try sFill(br, 8);
+        if (br.acc == 0) {
+            var nz: u32 = br.acc_bits;
+            try sConsume(br, nz);
+            q += nz;
+            if (q > 0x00ffffff) return error.BadFrame;
+            continue;
+        }
+        var nz: u32 = 0;
+        while (nz < br.acc_bits) : (nz += 1) {
+            var pos: u32 = br.acc_bits - 1 - nz;
+            if (((br.acc >> @intCast(u64, pos)) & 1) != 0) break;
+        }
+        try sConsume(br, nz + 1);
+        q += nz;
         if (q > 0x00ffffff) return error.BadFrame;
+        return q;
     }
     return 0;
 }
 
 fn sAlignByte(br: *StreamBitReader) void {
-    if (br.bit_pos != 0) br.bit_pos = 0;
+    var drop: u32 = br.acc_bits & 7;
+    if (drop == 0) return;
+    var shift: u32 = br.acc_bits - drop;
+    if (shift == 0) {
+        br.acc = 0;
+    } else {
+        br.acc = br.acc & ((@intCast(u64, 1) << @intCast(u64, shift)) - 1);
+    }
+    br.acc_bits = shift;
+}
+
+// Test-only seam for tests/flac_test.zig: drives the private MSB-first
+// streaming reader over an already-open BufferedFile. The public decoder
+// contract is unchanged.
+pub const TestStreamBitReader = struct {
+    br: StreamBitReader,
+};
+
+pub fn testStreamBitReaderInit(bf: *stream.BufferedFile) TestStreamBitReader {
+    var br: StreamBitReader = zeroStreamBitReader();
+    br.bf = bf;
+    return TestStreamBitReader{ .br = br };
+}
+
+pub fn testStreamBitReaderSetRecording(t: *TestStreamBitReader, recording: bool) void {
+    t.br.recording = recording;
+    if (recording) {
+        t.br.hdr_len = 0;
+        t.br.rec_byte = 0;
+        t.br.rec_bits = 0;
+    }
+}
+
+pub fn testStreamBitReaderReadBits(t: *TestStreamBitReader, n: u32) FlacError!u64 {
+    return sReadBits(&t.br, n);
+}
+
+pub fn testStreamBitReaderReadSigned(t: *TestStreamBitReader, n: u32) FlacError!i64 {
+    return sReadSigned(&t.br, n);
+}
+
+pub fn testStreamBitReaderReadUnary(t: *TestStreamBitReader) FlacError!u32 {
+    return sReadUnary(&t.br);
+}
+
+// Copy the recorded header bytes into `out`; returns the recorded length.
+pub fn testStreamBitReaderCopyHdr(t: *TestStreamBitReader, out: []u8) usize {
+    var n: usize = t.br.hdr_len;
+    if (n > out.len) n = out.len;
+    var i: usize = 0;
+    while (i < n) : (i += 1) out[i] = t.br.hdr[i];
+    return n;
 }
 
 fn sReadUtf8Number(br: *StreamBitReader) FlacError!u64 {
@@ -939,36 +1077,26 @@ fn sBlockSize(code: u32, br: *StreamBitReader) FlacError!u32 {
 }
 
 fn decodeStreamFrame(d: *StreamFlacDecoder, out: []i16) FlacError!usize {
-    var br: StreamBitReader = StreamBitReader{
-        .bf = d.bf,
-        .cur = 0,
-        .bit_pos = 0,
-        .recording = false,
-        .hdr = [64]u8{0},
-        .hdr_len = 0,
-    };
-    for (0..64) |i| {
-        br.hdr[i] = 0;
-    }
+    var br: *StreamBitReader = &d.br;
     br.bf = d.bf;
-    br.cur = 0;
-    br.bit_pos = 0;
     br.recording = true;
     br.hdr_len = 0;
+    br.rec_byte = 0;
+    br.rec_bits = 0;
 
-    var sync: u32 = @intCast(u32, try sReadBits(&br, 14));
+    var sync: u32 = @intCast(u32, try sReadBits(br, 14));
     if (sync != 0x3ffe) return error.BadFrame;
-    if (try sReadBit(&br) != 0) return error.BadFrame;
-    var blocking: u1 = try sReadBit(&br);
-    var bscode: u32 = @intCast(u32, try sReadBits(&br, 4));
-    var srcode: u32 = @intCast(u32, try sReadBits(&br, 4));
-    var chanassign: u32 = @intCast(u32, try sReadBits(&br, 4));
-    var sscode: u32 = @intCast(u32, try sReadBits(&br, 3));
-    if (try sReadBit(&br) != 0) return error.BadFrame;
+    if (try sReadBit(br) != 0) return error.BadFrame;
+    var blocking: u1 = try sReadBit(br);
+    var bscode: u32 = @intCast(u32, try sReadBits(br, 4));
+    var srcode: u32 = @intCast(u32, try sReadBits(br, 4));
+    var chanassign: u32 = @intCast(u32, try sReadBits(br, 4));
+    var sscode: u32 = @intCast(u32, try sReadBits(br, 3));
+    if (try sReadBit(br) != 0) return error.BadFrame;
 
-    _ = try sReadUtf8Number(&br);
+    _ = try sReadUtf8Number(br);
 
-    var block: u32 = try sBlockSize(bscode, &br);
+    var block: u32 = try sBlockSize(bscode, br);
 
     var frame_rate: u32 = d.sample_rate;
     switch (srcode) {
@@ -1006,13 +1134,13 @@ fn decodeStreamFrame(d: *StreamFlacDecoder, out: []i16) FlacError!usize {
             frame_rate = 96000;
         },
         12 => {
-            frame_rate = @intCast(u32, try sReadBits(&br, 8)) * 1000;
+            frame_rate = @intCast(u32, try sReadBits(br, 8)) * 1000;
         },
         13 => {
-            frame_rate = @intCast(u32, try sReadBits(&br, 16));
+            frame_rate = @intCast(u32, try sReadBits(br, 16));
         },
         14 => {
-            frame_rate = @intCast(u32, try sReadBits(&br, 16)) * 10;
+            frame_rate = @intCast(u32, try sReadBits(br, 16)) * 10;
         },
         15 => {
             return error.BadFrame;
@@ -1063,9 +1191,9 @@ fn decodeStreamFrame(d: *StreamFlacDecoder, out: []i16) FlacError!usize {
         return error.BadFrame;
     }
 
-    if (br.bit_pos != 0) return error.BadFrame;
+    if ((br.acc_bits & 7) != 0) return error.BadFrame;
     br.recording = false;
-    var stored_crc: u8 = @intCast(u8, try sReadBits(&br, 8));
+    var stored_crc: u8 = @intCast(u8, try sReadBits(br, 8));
     var computed: u8 = crc8(br.hdr[0..br.hdr_len]);
     if (stored_crc != computed) return error.BadFrame;
 
@@ -1078,7 +1206,7 @@ fn decodeStreamFrame(d: *StreamFlacDecoder, out: []i16) FlacError!usize {
         if (bps > 33) return error.BadFrame;
         var base: usize = @intCast(usize, ch) * stride;
         var dst: []i64 = d.samples[base .. base + @intCast(usize, block)];
-        try sDecodeSubframe(&br, dst, block, bps);
+        try sDecodeSubframe(br, dst, block, bps);
     }
 
     switch (chanassign) {
@@ -1108,8 +1236,8 @@ fn decodeStreamFrame(d: *StreamFlacDecoder, out: []i16) FlacError!usize {
         else => {},
     }
 
-    sAlignByte(&br);
-    _ = try sReadBits(&br, 16); // frame CRC-16 (read, not verified, as in M8)
+    sAlignByte(br);
+    _ = try sReadBits(br, 16); // frame CRC-16 (read, not verified, as in M8)
 
     var nsamples: usize = @intCast(usize, block) * @intCast(usize, nch);
     if (out.len < nsamples) return error.BadBuffer;
@@ -1265,8 +1393,12 @@ pub fn openStream(arena: *std.arena.Arena, path: []const u8) FlacError!StreamFla
     var samples: []i64 = @ptrCast([*]i64, raw)[0..n];
     for (0..n) |i| samples[i] = 0;
 
+    var br: StreamBitReader = zeroStreamBitReader();
+    br.bf = bf;
+
     return StreamFlacDecoder{
         .bf = bf,
+        .br = br,
         .arena = arena,
         .sample_rate = info.sample_rate,
         .channels = info.channels,
@@ -1290,7 +1422,7 @@ pub fn closeStream(d: *StreamFlacDecoder) void {
 pub fn decodeStream(d: *StreamFlacDecoder, arena: *std.arena.Arena, out: []i16) FlacError!usize {
     _ = arena;
     if (d.eof) return 0;
-    if (stream.bufferedFileTell(d.bf) >= stream.bufferedFileSize(d.bf)) {
+    if (d.br.acc_bits == 0 and stream.bufferedFileTell(d.bf) >= stream.bufferedFileSize(d.bf)) {
         d.eof = true;
         return 0;
     }
