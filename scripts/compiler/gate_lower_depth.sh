@@ -20,9 +20,9 @@ set -euo pipefail
 #      safety net (EXPR_GUARD_MAX) that must not fire on legal input; when it
 #      does not trip this case passes with a note;
 #   5. the four 8-pin entries still emit and their `-fsafe`/`-ffast`
-#      `--dump-c89` md5s match the authoritative 8-pin table (seed v150
-#      rotation re-baseline; the new seed's lib/ post-dates the v149 std
-#      payload, so all pins moved):
+#      `--dump-c89` md5s match the authoritative 8-pin table (seed v151
+#      rotation re-baseline; lib/ is unchanged since v150 and 3b-H is
+#      emission-neutral for non-console modules, so all pins are unchanged):
 #        mud  948f50001c6ee7ece790eb5c0355d77a / 595002172e9ae517a5d0380f6748fa87
 #        gol  67faec5d617ad62f077f54642fdbd9a4 / 906dbec2ff71ea10b8429c2e3a55f8f8
 #        lisp 080f1a36b27e38958ccec50de8d96bf9 / 8e80d33918b2e9304394caa906e5691c
