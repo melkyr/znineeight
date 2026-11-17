@@ -8,6 +8,9 @@
 // level 0 with
 //   no field or member function named 'nope' in module
 // so lowering never runs: rc 2, 0 `.c`, one error[3060] per site, no 3042/3023.
+// Task 3b-C suppresses the dependent `error[3000] cannot declare variable of
+// type void` at the address site, so the whole fixture reports only the five
+// 3060s (one per root cause).
 //
 // Positions covered: read, call, store, address, and nested module chain.
 const h = @import("helper.zig");

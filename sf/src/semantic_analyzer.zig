@@ -1649,6 +1649,37 @@ fn semanticAnalyzerReportMissingModuleMember(self: *SemanticAnalyzer, node_idx: 
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), mmm_msg);
 }
 
+// Task 3b-C: true when the initializer subtree already carries a level-0
+// diagnostic marked by `diagnosticCollectorMarkNodeOnce` (e.g. the missing
+// module member inside `&h.nope`). Zig reports one error per root cause, so a
+// dependent diagnostic on the declaration (the type resolved to `void`) is
+// suppressed when the initializer already reported. Genuine void initializers
+// have no mark and still diagnose. Depth-limited; an exhausted walk is false.
+// Payload slots and extra-children ranges are kind-dependent (`ast.zig`), so
+// every edge follows the `nodeChildIsNode` / `nodeHasNodeExtraChildren`
+// guards: reading an identifier/name id as a node index would walk unrelated
+// subtrees and could hide a genuine diagnostic.
+fn semaInitializerReportedError(self: *SemanticAnalyzer, node_idx: u32, depth: u8) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    if (diag_mod.diagnosticCollectorNodeWasMarked(self.diag, node_idx)) return true;
+    if (depth >= @intCast(u8, 8)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) {
+        if (semaInitializerReportedError(self, node.child_0, depth + @intCast(u8, 1))) return true;
+    }
+    if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) {
+        if (semaInitializerReportedError(self, node.child_1, depth + @intCast(u8, 1))) return true;
+    }
+    if (ast_mod.nodeHasNodeExtraChildren(node.kind)) {
+        var ec_count = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        var ec_i: u32 = 0;
+        while (ec_i < ec_count) : (ec_i += 1) {
+            if (semaInitializerReportedError(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, ec_i), depth + @intCast(u8, 1))) return true;
+        }
+    }
+    return false;
+}
+
 // FF (Volume II D9): emit one clean introspection-builtin reject, deduped per
 // node. Level 0, span on the builtin call; the surrounding pipeline exits rc=2
 // with 0 `.c` (the former lowering net exited rc=3 through `error[3043]`).
@@ -7002,12 +7033,19 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     }
                 }
                 if (decl_type == type_mod.TYPE_VOID) {
-                    var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
-                    var vfvd_m: []const u8 = "VFLOW:vdag\n"; pal_mod.markerWrite(vfvd_m);
-                    var vsp = node.span_start;
-                    var vep = vsp + @intCast(u32, node.span_len);
-                    var vv_msg: []const u8 = "cannot declare variable of type void";
-                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, vsp, vep, vv_msg);
+                    // Task 3b-C: the initializer already reported a level-0
+                    // error (its type resolved to void as a consequence), so
+                    // Zig's one-error-per-root-cause rule suppresses this
+                    // dependent declaration diagnostic. A genuine void
+                    // initializer has no mark and still diagnoses.
+                    if (!semaInitializerReportedError(self, node.child_1, @intCast(u8, 0))) {
+                        var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
+                        var vfvd_m: []const u8 = "VFLOW:vdag\n"; pal_mod.markerWrite(vfvd_m);
+                        var vsp = node.span_start;
+                        var vep = vsp + @intCast(u32, node.span_len);
+                        var vv_msg: []const u8 = "cannot declare variable of type void";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, vsp, vep, vv_msg);
+                    }
                 }
                 var ct_entry = coercion_mod.coercionTableGet(self.coercion_table, node.child_1);
                 if (ct_entry == null) {

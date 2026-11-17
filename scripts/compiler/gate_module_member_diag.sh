@@ -12,7 +12,12 @@ set -uo pipefail
 #
 # reject fixture: --dump-c89 rc 2, zero `.c`, exactly five error[3060] lines
 #                 (one per read/call/store/address/chain site) carrying
-#                 "in module", and no error[3042] / warning[3023].
+#                 "in module", and no error[3000] (Task 3b-C cascade
+#                 suppression) / error[3042] / warning[3023].
+# combined probe: a marked missing-member error plus a genuine void initializer
+#                 in the same function still reports both the 3060 and the
+#                 `error[3000] cannot declare variable of type void` (guards
+#                 false suppression through the initializer mark walk).
 # ok fixture:     --dump-c89 rc 0, at least one `.c` (real member read + call).
 #
 # Exits 1 on any mismatch.
@@ -74,12 +79,53 @@ fi
 if grep -q 'warning\[3023\]' "$WORK/reject.err"; then
     bad "reject stderr still has warning[3023]"
 fi
+if grep -q 'error\[3000\]' "$WORK/reject.err"; then
+    bad "reject stderr has error[3000] (dependent void-var diagnostic after initializer error)"
+fi
 
 if [ "$fail" -eq 0 ]; then
-    note "reject: rc=2, 0 .c, five error[3060] 'in module', no 3042/3023"
+    note "reject: rc=2, 0 .c, five error[3060] 'in module', no error[3000], no 3042/3023"
 else
     note "reject stderr:"
     sed -n '1,40p' "$WORK/reject.err" >&2
+fi
+
+# ---- combined non-vacuity: marked error + genuine void initializer ----
+# Task 3b-C fix round 1: the suppression must only drop the DEPENDENT 3000.
+# A marked missing-member error elsewhere in the function must not hide a
+# genuine void-typed `const` initializer in the same function.
+mkdir -p "$WORK/combined/out"
+cat >"$WORK/combined/helper.zig" <<'ZIGEOF'
+pub const answer: i32 = 42;
+pub fn vf() void {}
+ZIGEOF
+cat >"$WORK/combined/main.zig" <<'ZIGEOF'
+const h = @import("helper.zig");
+pub fn main() void {
+    _ = h.nope;
+    const x = h.vf();
+    _ = x;
+}
+ZIGEOF
+( cd "$ROOT" && timeout 120 "$ZIG1" --dump-c89 --output-dir "$WORK/combined/out" "$WORK/combined/main.zig" ) \
+    >"$WORK/combined.out" 2>"$WORK/combined.err"
+crc=$?
+if [ "$crc" -ne 2 ]; then
+    bad "combined rc=$crc want 2"
+fi
+comb3060="$(grep -c 'error\[3060\]' "$WORK/combined.err" 2>/dev/null)"
+comb3060="${comb3060:-0}"
+if [ "$comb3060" -ne 1 ]; then
+    bad "combined has $comb3060 error[3060] lines want exactly 1"
+fi
+if ! grep -qF 'error[3000]: cannot declare variable of type void' "$WORK/combined.err"; then
+    bad "combined lost the genuine error[3000] cannot declare variable of type void (false suppression)"
+fi
+if [ "$fail" -eq 0 ]; then
+    note "combined: rc=2, one 3060 + genuine error[3000] retained"
+else
+    note "combined stderr:"
+    sed -n '1,40p' "$WORK/combined.err" >&2
 fi
 
 # ---- ok: real module member ----
