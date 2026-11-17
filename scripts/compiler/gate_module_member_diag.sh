@@ -2,14 +2,18 @@
 set -uo pipefail
 # scripts/compiler/gate_module_member_diag.sh [path/to/zig1]
 #
-# Task 3b: a missing member on a module alias must be diagnosed as
-# error[3060] with Zig's wording ("no field or member function named '...'
-# in module"), NOT as error[3042] ("non-value base expression in field
-# access") plus warning[3023] ("module used as value expression").
+# Task 3b-R: a missing member on a module alias is diagnosed at the
+# semantic-analyzer stage as a level-0 error[3060] with Zig's wording
+# ("no field or member function named '...' in module"), NOT at lowering as
+# error[3042] ("non-value base expression in field access") plus
+# warning[3023] ("module used as value expression"). A level-0 sema error trips
+# the post-sema gate, so the compile exits rc 2 with 0 `.c` and lowering never
+# runs.
 #
-# reject fixture: --dump-c89 rc 2, zero `.c`, exactly one error[3060]
-#                 carrying "in module", and no error[3042] / warning[3023].
-# ok fixture:     --dump-c89 rc 0, at least one `.c`.
+# reject fixture: --dump-c89 rc 2, zero `.c`, exactly five error[3060] lines
+#                 (one per read/call/store/address/chain site) carrying
+#                 "in module", and no error[3042] / warning[3023].
+# ok fixture:     --dump-c89 rc 0, at least one `.c` (real member read + call).
 #
 # Exits 1 on any mismatch.
 
@@ -58,8 +62,8 @@ fi
 
 err3060="$(grep -c 'error\[3060\]' "$WORK/reject.err" 2>/dev/null)"
 err3060="${err3060:-0}"
-if [ "$err3060" -ne 1 ]; then
-    bad "reject has $err3060 error[3060] lines want exactly 1"
+if [ "$err3060" -ne 5 ]; then
+    bad "reject has $err3060 error[3060] lines want exactly 5 (one per site)"
 fi
 if ! grep -qF "error[3060]: no field or member function named 'nope' in module" "$WORK/reject.err"; then
     bad "reject stderr lacks \"error[3060]: no field or member function named 'nope' in module\""
@@ -72,7 +76,7 @@ if grep -q 'warning\[3023\]' "$WORK/reject.err"; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    note "reject: rc=2, 0 .c, one error[3060] 'in module', no 3042/3023"
+    note "reject: rc=2, 0 .c, five error[3060] 'in module', no 3042/3023"
 else
     note "reject stderr:"
     sed -n '1,40p' "$WORK/reject.err" >&2

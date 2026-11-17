@@ -1633,6 +1633,22 @@ fn semanticAnalyzerReportUnknownMember(self: *SemanticAnalyzer, node_idx: u32, f
     }
 }
 
+// Task 3b-R: a missing member on a module alias is a sema-stage level-0
+// error[3060] with Zig's wording ("no field or member function named '...'
+// in module"), deduped per node. A level-0 error trips the post-sema
+// `hasErrors` gate, so the compile exits rc 2 with 0 `.c` and lowering never
+// runs (replacing the removed lowering-stage reword).
+fn semanticAnalyzerReportMissingModuleMember(self: *SemanticAnalyzer, node_idx: u32, field_name_id: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var mmm1: []const u8 = "no field or member function named '";
+    var mmm2: []const u8 = "' in module";
+    var mmm_name = interner_mod.stringInternerGet(self.interner, field_name_id);
+    var mmm_parts: [3][]const u8 = [3][]const u8{ mmm1, mmm_name, mmm2 };
+    var mmm_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &mmm_parts[0], @intCast(u32, 3));
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), mmm_msg);
+}
+
 // FF (Volume II D9): emit one clean introspection-builtin reject, deduped per
 // node. Level 0, span on the builtin call; the surrounding pipeline exits rc=2
 // with 0 `.c` (the former lowering net exited rc=3 through `error[3043]`).
@@ -1766,6 +1782,54 @@ fn semanticAnalyzerCheckMemberVisibility(self: *SemanticAnalyzer, node_idx: u32,
     return false;
 }
 
+// Task 3b-R: the module a field-access base expression denotes, mirroring
+// lower.zig's `resolveModuleBase` for the analyzer. An `ident_expr` is a module
+// when its symbol is a module alias (or carries a `module_type`), an
+// `import_expr` resolves through the module registry, and a nested
+// `field_access` recurses on its own base, treating the member as a module only
+// when that member is itself a module alias. Returns 0 when the base is not a
+// module.
+fn semaResolveModuleBase(self: *SemanticAnalyzer, base_node_idx: u32) u32 {
+    if (base_node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var bn = ast_mod.astStoreNodeAt(self.store, base_node_idx);
+    if (bn.kind == AstKind.ident_expr) {
+        var nid = ast_mod.astStoreIdentifier(self.store, base_node_idx);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, nid);
+        if (sym) |s| {
+            if (s.kind == sym_mod.SymbolKind.module) return s.module_id;
+            if (s.type_id != @intCast(u32, 0) and @intCast(usize, s.type_id) < self.registry.types_len) {
+                var sty = self.registry.types_items[@intCast(usize, s.type_id)];
+                if (sty.kind == type_mod.TypeKind.module_type) return sty.module_id;
+            }
+        }
+    } else if (bn.kind == AstKind.import_expr) {
+        var path_id: u32 = ast_mod.astStoreNodePayload(self.store, base_node_idx);
+        var target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, path_id);
+        if (target) |mtid| return mtid;
+    } else if (bn.kind == AstKind.field_access) {
+        var inner_mod = semaResolveModuleBase(self, bn.child_0);
+        if (inner_mod != @intCast(u32, 0)) {
+            var member_id: u32 = ast_mod.astStoreNodePayload(self.store, base_node_idx);
+            var member_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, inner_mod, member_id);
+            if (member_sym) |ms| {
+                if (ms.kind == sym_mod.SymbolKind.module) return ms.module_id;
+                if (ms.type_id != @intCast(u32, 0) and @intCast(usize, ms.type_id) < self.registry.types_len) {
+                    var mty = self.registry.types_items[@intCast(usize, ms.type_id)];
+                    if (mty.kind == type_mod.TypeKind.module_type) return mty.module_id;
+                }
+            }
+        }
+    }
+    var rt = rtt_mod.resolvedTypeTableGet(self.type_table, base_node_idx);
+    if (rt) |t| {
+        if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID and @intCast(usize, t) < self.registry.types_len) {
+            var ty = self.registry.types_items[@intCast(usize, t)];
+            if (ty.kind == type_mod.TypeKind.module_type) return ty.module_id;
+        }
+    }
+    return @intCast(u32, 0);
+}
+
 pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fae: []const u8 = "FAE\n"; pal_mod.markerWrite(fae);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -1871,6 +1935,8 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                             return fn_ty;
                         }
                     }
+                } else {
+                    semanticAnalyzerReportMissingModuleMember(self, node_idx, field_name_id);
                 }
                 var q1v_m: []const u8 = "Q1VF:FN"; pal_mod.markerWriteInt(q1v_m, field_name_id);
                 rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
@@ -1900,6 +1966,22 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                         return fs.type_id;
                     }
                 }
+            } else {
+                semanticAnalyzerReportMissingModuleMember(self, node_idx, field_name_id);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
+            }
+        }
+    }
+
+    if (base_node.kind != AstKind.ident_expr and base_node.kind != AstKind.import_expr) {
+        var chain_mod = semaResolveModuleBase(self, node.child_0);
+        if (chain_mod != @intCast(u32, 0)) {
+            var chain_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, chain_mod, field_name_id);
+            if (chain_sym == null) {
+                semanticAnalyzerReportMissingModuleMember(self, node_idx, field_name_id);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
             }
         }
     }

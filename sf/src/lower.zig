@@ -2986,7 +2986,6 @@ fn lowerFieldAccessStep(self: *LirLowerer, f: *ExprFrame) u32 {
                 var target_mod = s.module_id;
                 var mod_mem = lowerModuleMemberValue(self, target_mod, field_name_id);
                 if (mod_mem != TEMP_NONE) return mod_mem;
-                return lowerReportMissingModuleMember(self, node_idx, field_name_id);
             }
         }
     }
@@ -2998,7 +2997,6 @@ fn lowerFieldAccessStep(self: *LirLowerer, f: *ExprFrame) u32 {
         if (mod_base != @intCast(u32, 0)) {
             var mod_base_mem = lowerModuleMemberValue(self, mod_base, field_name_id);
             if (mod_base_mem != TEMP_NONE) return mod_base_mem;
-            return lowerReportMissingModuleMember(self, node_idx, field_name_id);
         }
     }
     lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
@@ -8705,23 +8703,6 @@ fn lowerModuleMemberValue(self: *LirLowerer, target_mod: u32, field_name_id: u32
     return TEMP_NONE;
 }
 
-// Task 3b: a module member that is absent from the resolved module is a
-// diagnostic, not a non-value base. Report Zig's wording under error[3060]
-// (mirrors semanticAnalyzerReportUnknownMember) and yield a void temp so the
-// field-access fallback never emits 3042/3023 for it.
-fn lowerReportMissingModuleMember(self: *LirLowerer, node_idx: u32, field_name_id: u32) u32 {
-    var mmm1: []const u8 = "no field or member function named '";
-    var mmm_name = si_mod.stringInternerGet(self.ctx.diag.interner, field_name_id);
-    var mmm2: []const u8 = "' in module";
-    var mmm_parts: [3][]const u8 = [3][]const u8{ mmm1, mmm_name, mmm2 };
-    var mmm_msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &mmm_parts[0], @intCast(u32, 3));
-    var mmm_node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0),
-        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)),
-        self.ctx.source_file_id, mmm_node.span_start, mmm_node.span_start + @intCast(u32, mmm_node.span_len), mmm_msg);
-    return nextTemp(self, type_mod.TYPE_VOID);
-}
-
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     var store = self.ctx.store;
@@ -10258,7 +10239,6 @@ fn lowerExprField(self: *LirLowerer, node_idx: u32) u32 {
                     var target_mod = s.module_id;
                     var mod_mem = lowerModuleMemberValue(self, target_mod, field_name_id);
                     if (mod_mem != TEMP_NONE) return mod_mem;
-                    return lowerReportMissingModuleMember(self, node_idx, field_name_id);
                 }
             }
         }
@@ -10270,7 +10250,6 @@ fn lowerExprField(self: *LirLowerer, node_idx: u32) u32 {
             if (mod_base != @intCast(u32, 0)) {
                 var mod_base_mem = lowerModuleMemberValue(self, mod_base, field_name_id);
                 if (mod_base_mem != TEMP_NONE) return mod_base_mem;
-                return lowerReportMissingModuleMember(self, node_idx, field_name_id);
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
