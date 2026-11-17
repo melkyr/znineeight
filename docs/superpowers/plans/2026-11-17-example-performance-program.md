@@ -58,6 +58,8 @@ New/modified files (all existing paths except the new plan/test files):
 | `examples/z98/z9play/tests/tier_flac.sh`, `tier_tui.sh` | frame-aware mixed-completion/playlist waits (no program change) |
 | `examples/z98/z9play/tests/tier_stream.sh` | sync the expected `tier_setup` count (22) after Task 1 |
 | `z9play-profile-report.md` (scratch, under `.superpowers/sdd/…`) | decode-cost attribution for Vorbis/FLAC (no source change) |
+| `z9play-fast-o2-report.md` (scratch) | pre/post `-ffast`+`-O2` z9play rates and callgrind attribution |
+| `z9torr-idle-report.md` (scratch) | idle CPU per-wake attribution and backoff design |
 
 ---
 
@@ -474,9 +476,56 @@ git commit -m "test(z9play): fix tier_flac/tier_tui pty framing races"
 - [ ] **Step 6: STOP.** Write the report to the scratch path; no commit.
 ---
 
+---
+### Task 16: z9play shipping-config comparison (`-ffast` emit + `-O2` link) — measurement only
+
+> **Why:** the baseline table used `-fsafe` + `-O0`, where Task 15 measured 63–66% of the runtime as checker/poison overhead. The shipping `-osw` build is OWC `/ox` + `-ffast`; the fair host proxy is Z98 emit with `-ffast` and the emitted C linked at `-O2`. This task measures pre-program vs HEAD in that configuration. No source fixes.
+
+**Files:**
+- Create (scratch, **not committed**): `.superpowers/sdd/2026-11-17-example-performance-program/z9play-fast-o2-report.md`
+- Modify (commit only this): `docs/superpowers/plans/2026-11-17-example-performance-baselines.md` — new "z9play shipping-config proxy" section; leave the `-fsafe` table intact
+- Modify: none else
+
+**Interfaces:**
+- Consumes: pre source `4e91d9d1`, current HEAD; compiler `/tmp/perf_seed/zig1_5_clean`; fixtures from baseline §2.
+- Produces: pre/post `-ffast` + `-O2` decode rates for OGG and FLAC, PCM parity evidence, and pre/post callgrind Ir attribution. No code change.
+
+- [ ] **Step 1: Extract both trees read-only** with `git archive 4e91d9d1` and `git archive HEAD` into distinct `/tmp/t16_pre` and `/tmp/t16_post` dirs (no branches/worktrees; main tree untouched).
+- [ ] **Step 2: Emit both with `-ffast`** (`/tmp/perf_seed/zig1_5_clean -ffast -o <dir> examples/z98/z9play/main.zig` from each tree, or `-o` into the tree's build dir; never emit from the main repo root).
+- [ ] **Step 3: Link both at `-O2`** inside `/tmp`: copy each emitted `build_target.sh` in place and substitute `-O0`→`-O2` (the method `tier_perf.sh:560` uses), recording the substitution. Do not edit the repo script. (`EXTRA_CFLAGS` is not present in the v151 emitted Linux script.)
+- [ ] **Step 4: Parity first.** Decode the committed OGG and the baseline FLAC fixture with both binaries; require the same goldens (`max_delta=1 rms_milli=36`; FLAC byte-exact sha1 `0e31277…`). If `-O2` changes output, STOP — timings are invalid.
+- [ ] **Step 5: Measure 5× per fixture per tree** with `/usr/bin/time -v`; report wall/user/CPU, median and min/max, and decode rate (`2.000 s / wall`).
+- [ ] **Step 6: Attribute with callgrind at `-ffast`** for both binaries (not the `-O2` builds): Ir% for Vorbis readers (`brRead`/`brBitZero`/`decodeScalar`/`decodeScalarEop`), FLAC readers (`sReadBit`/`sReadBits`/`sReadUnary`/`sFill`/`sConsume`), DSP (`imdctFft`/window/overlap), container/CRC/copies, player/sink. This isolates what Tasks 1–2 changed in the shipping configuration.
+- [ ] **Step 7: Verdict.** Did the reader rewrite reduce shipping-proxy cost for OGG and/or FLAC, and by how much? State the gcc-vs-Watcom and host-vs-P4 limits; operator run remains authoritative.
+- [ ] **Step 8: Commit** only the baseline-log section: `docs(perf): add z9play -ffast -O2 proxy comparison`.
+---
+
+---
+### Task 17: z9torr idle-CPU attribution and backoff design (investigation only)
+
+> **Why:** Task 9 cut idle CPU 99% → 55%. The remaining cost is per-wake work (coroutine resume, `acquirePiece`, zero-timeout `select`, keepalive/request bookkeeping), not the 1 ms sleep. This task quantifies it and specifies a capped idle backoff. **First half only:** verdicts and design — no fixes, no source/plan edits, no commits.
+
+**Files:**
+- Read: `examples/z98/z9torr/main.zig`, `peer.zig`, `wire.zig`, `scheduler.zig`, `sf/src/std_async.zig`, `sf/src/std_net.zig`
+- Create (scratch, **not committed**): `.superpowers/sdd/2026-11-17-example-performance-program/z9torr-idle-report.md`
+- Modify: none
+
+**Interfaces:**
+- Consumes: Task 9 report and the §4 10 s idle recipe (`docs/superpowers/plans/2026-11-17-example-performance-baselines.md`); compiler `/tmp/perf_seed/zig1_5_clean`.
+- Produces: iteration/wake counts, user CPU per wake, per-function attribution of the remaining idle CPU, and a concrete capped-backoff design (intervals, reset rules, expected projection, risks). No code change.
+
+- [ ] **Step 1: Reproduce** the §4 10 s idle scenario from a **separate /tmp tree** (emit/build there; never emit from the main repo root). Record wall/user/sys/CPU and voluntary context switches.
+- [ ] **Step 2: Count wakes/iterations** with `strace -c -f` (count `nanosleep`/`select`/`recv` families) and, if needed, `strace -tt` on a short window; compute work-per-iteration and work-per-wake.
+- [ ] **Step 3: Attribute** the user CPU with `valgrind --tool=callgrind` on a shortened idle run (e.g. `timeout 3`): report Ir% for `std.async.tick`, coroutine resume, `select`, `recv`, `acquirePiece`/scheduler, keepalive/request paths, logging, and "everything else". Map mangled names to source.
+- [ ] **Step 4: Separate fixed per-wake cost from long single-tick stretches.** Task 9 observed ticks that run long stretches inside project coroutines; quantify how much of the 55% is repeatable per-wake work vs such stretches (the backoff helps the former only).
+- [ ] **Step 5: Design the backoff:** propose capped exponential idle intervals (starting from 1 ms; candidate cap 50 ms), exact reset conditions (bytes/verified/retire/spawn/state changes), interaction with token refill, 1 Hz stats, keepalive, `STALL_MS`, and fallback retries; project idle CPU at 10/25/50 ms; list latency/risk (handshake/unchoke wakeup, stall timing) and the tests that must re-run (`tier_stall`, `tier_fallback`, `tier4_wine`, 10 s idle).
+- [ ] **Step 6: STOP.** Write the report; no fixes, no commits.
+---
+
+
 ### Task 11: Verification sweep + evidence log
 
-> **Blocked:** do not run this sweep until Task 14 and Task 15 have both run and the operator has reviewed the Task 15 profiling report.
+> **Blocked:** do not run this sweep until Task 14, Task 15, Task 16, and Task 17 have all run and the operator has reviewed the Task 15, Task 16, and Task 17 reports.
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-11-17-example-performance-baselines.md` (after column)
@@ -505,6 +554,7 @@ sh examples/z98/z9git/tests/tier_git.sh; sh examples/z98/z9git/tests/unit_store.
 - Task 12 (diagnostic) runs after Task 2; Task 3+ are blocked until the operator rules on its report. It is investigation-only and commits nothing.
 - Task 13 (tier-harness fix) runs after Task 12 and before Task 3; it unblocks Task 2's `tier_flac` green gate evidence (58/0 current inventory). Tier scripts only.
 - Task 14 (tier_stream count) and Task 15 (z9play profiling, investigation-only) run before Task 11. Task 11 is blocked until both complete and the operator reviews the profiling report; Task 15 commits nothing.
+- Task 16 (z9play `-ffast`/`-O2` measurement) and Task 17 (z9torr idle attribution, investigation-only) run before Task 11. Run them in parallel from separate `/tmp` trees to avoid `.zig1_*.tmp` CWD collisions. Task 11 is blocked until the operator reviews both reports; Task 17 commits nothing.
 - **Not in scope:** compiler/emitter codegen changes (e.g. automatic slice→`memcpy` lowering) — that would move `--dump-c89` pins. `std_mem.copyU8` already exists; the example tasks adopt it.
 - **z9gb perf depth:** top-3 structural wins only (timer batching, dirty PPU sync, single-pass line render). KNOWN_GAPS §3.2 future work (dynarec block lengthening, negative cache, PPU-read block enders) stays out.
 - **z9gb dynarec fallback:** if Task 4 cannot establish a safe fix within this program, the acceptable closeout is fail-closed dynarec on Win9x with a clear diagnostic and the interpreter as the default — documented in KNOWN_GAPS, with a follow-up defect for the ABI fix.
