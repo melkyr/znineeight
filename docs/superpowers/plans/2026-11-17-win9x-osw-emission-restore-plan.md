@@ -68,7 +68,7 @@ Proven silent-accept points (Task 1 + controller inspection): `semanticAnalyzerR
 - [ ] Module-chain base (`h.sub.nope`): add `semaResolveModuleBase(self, base_node_idx) u32` mirroring `lower.zig:8637-8654` (`ident_expr` → module symbol's `module_id`; `import_expr` → `moduleRegistryPathToIdGet`; `field_access` → recurse on its base + qualified member lookup only when the member is itself a module). In `semanticAnalyzerResolveFieldAccess`, before the generic base-type path, when the base is not an ident/import but `semaResolveModuleBase` yields a module id, resolve `field_name_id` in that module: found → existing member resolution; missing → report + `TYPE_VOID`.
 - [ ] Position coverage (fixtures prove each): read `_ = h.nope;`, call `h.nope();`, store `h.nope = 1;`, address `const p = &h.nope;`, and chain `_ = h.sub.nope;` → exactly one `error[3060] … in module` each, no `error[3042]`, no `warning[3023]`. If the call-callee path (`semanticAnalyzerResolveFnCall`, field-access callee) or the lvalue/address path does not route through `ResolveFieldAccess`, add the same lookup+report at that site — same helper, same wording.
 - [ ] Accepted shapes unchanged: real module members/constants/functions, `@import("…").member`, nested real members (`h.sub.answer`) all compile with byte-identical emission for the 4 documented programs.
-- [ ] Scope boundary (record as a defect note, do NOT fix here): a member that EXISTS but is a type/module used as a value (`_ = h.sub;`) keeps today's behaviour.
+- [ ] Scope boundary (recorded in the defects ledger as D19 by Task 3b-D, not fixed here): a member that EXISTS but is a type/module used as a value (`_ = h.sub;`) keeps today's behaviour.
 - [ ] Fixtures: extend `repro/mi_matrix/module_member_missing_reject_xmod/` (main.zig gains the call/store/address/chain sites; `helper.zig` gains `pub const sub = @import("sub.zig");` plus a new `sub.zig`) and set `expected_error.txt` to `3060 <site count>` (force-add with `git add -f`). Extend `repro/mi_matrix/module_member_ok_xmod/` with a real member call. Both must stay listed by `scripts/corpus/list_corpus_dirs.sh`.
 - [ ] Update `scripts/compiler/gate_module_member_diag.sh` comments to say sema-stage; keep the assertions (rc 2, 0 `.c`, exact count of `error[3060] … in module`, no 3042/3023; ok fixture rc 0 and ≥1 `.c`). The gate must FAIL on the pre-change build (non-vacuity).
 - [ ] Re-run the Task 1 z9gb `-osw` repro with the stale v149 `lib/`: rc 2, 0 `.c`, one `error[3060] … in module` per call site (2), no 3042/3023.
@@ -76,6 +76,40 @@ Proven silent-accept points (Task 1 + controller inspection): `semanticAnalyzerR
 - [ ] Commit `fix(sema): diagnose missing module member as error[3060]` (includes the `lower.zig` revert).
 
 **Gate:** every fixture site and the z9gb stale-lib repro report `error[3060] … in module` with no 3042/3023 and no `.c`; ok fixture compiles; lowering no longer contains `lowerReportMissingModuleMember`; corpus/gates green; fixed point closes; accepted-shape emission unchanged.
+
+### Task 3b-C: Suppress dependent diagnostics after a level-0 error (cascade)
+
+**Files:** `sf/src/diagnostics.zig` (one query), `sf/src/semantic_analyzer.zig` (decl check + helper), reject fixture/gate.
+
+Zig reports one error per root cause. Today a level-0 error whose expression resolves to `TYPE_VOID` also trips the const/var-decl check (`semantic_analyzer.zig:7007-7012`), so `const p = &h.nope;` reports `error[3060]` **plus** `error[3000] cannot declare variable of type void`. Measured in Task 3b-R.
+
+- [ ] Add `pub fn diagnosticCollectorNodeWasMarked(self: *DiagnosticCollector, node_idx: u32) bool` to `sf/src/diagnostics.zig`: scan the existing `diag_seen_items[0..diag_seen_len]` mark set used by `diagnosticCollectorMarkNodeOnce` (`:544-561`). Read-only, no new storage.
+- [ ] Add `fn semaInitializerReportedError(self: *SemanticAnalyzer, node_idx: u32, depth: u8) bool` in `semantic_analyzer.zig`: true when the node is marked, else recurse (depth-limited to 8) over `child_0`, `child_1` and the extra children via `astStoreNodeExtraChildCount`/`astStoreNodeExtraChildAt`; return false at the limit.
+- [ ] In the `decl_type == type_mod.TYPE_VOID` check (`:7007-7012`), skip the `cannot declare variable of type void` diagnostic when `semaInitializerReportedError(self, node.child_1, 0)` is true (the initializer already reported). Behaviour for genuine void initializers (e.g. `const x = voidFn();`) is unchanged — keep the diagnostic there.
+- [ ] Fixture `repro/mi_matrix/module_member_missing_reject_xmod/`: the `const p = &h.nope;` site must produce exactly ONE diagnostic (`error[3060]`), no `error[3000]`. `expected_error.txt` stays `3060 5`.
+- [ ] `scripts/compiler/gate_module_member_diag.sh`: assert the reject stderr has **no** `error[3000]` anywhere and exactly 5 `error[3060]` lines. Gate must FAIL on the pre-task build `/tmp/zig3bR/zig1_5_clean` (which prints the extra 3000).
+- [ ] Non-vacuity probe (scratch, `/tmp`): `fn f() void {} pub fn main() void { const x = f(); _ = x; }` still reports `cannot declare variable of type void`.
+- [ ] Rebuild (hop1==hop2, record md5), rerun the fixture gate, `gate_warn_clean.sh`, `tier_edit.sh` (38/0, lexer md5 unchanged); confirm the 4-program emission is unchanged under the same lib.
+- [ ] Commit `fix(sema): suppress dependent diagnostics after a level-0 error`.
+
+**Gate:** reject fixture emits exactly its five 3060s with no 3000/3042/3023 and no `.c`; genuine void-var diagnosis still fires; gates green; fixed point closes.
+
+### Task 3b-D: Audit the defects ledger; document the deferred gaps
+
+**Files:** `examples/torrent_example_defects.md` (only).
+
+The ledger (`D16`, `D17`, `D18`, header) must reflect today's code. Verify before deleting; hard-delete resolved text (IDs stay stable, never reused).
+
+- [ ] **Verify D16 sub-items** against the current compiler with scratch probes (`/tmp`), one per bullet: (a) assignment-expression/assignment-ending block typing; (b) mixed statement switch `switch { 0 => 1, else => true }`; (c) comptime-known selector with an untaken mismatching prong; (d) `anyerror!i32`; (e) `const y: ?i32 = { g = 1; };` and its `E!i32` form. Delete each bullet the current compiler now matches on Zig 0.17.1; keep the rest. Replace brittle line numbers (`semantic_analyzer.zig:4725/:4729/:5039-5044`, `lower.zig:6105`, `async_analysis.zig:396`) with symbol names (`semanticAnalyzerResolveAssign`, `sw_is_stmt_expr`, the compound-assign lowering, async frame sizing). Keep the Task 9j/9l/9k/9f evidence intact.
+- [ ] **Verify D17** (optional array return `?[2][]const u8`): current inspection shows `wrap_optional`/`unwrap_optional` still emit a plain C assignment (`c89_emit.zig` optional arms), so the repro should still fail with `assignment to expression with array type`. Keep the entry if it reproduces; delete it only if it now builds and runs correctly.
+- [ ] **Verify D18** (indexed write into a nested array field): repro the `s.exp.hold[i] = 0` shape; confirm dump/build rc 0 and the lost store (emitted by-value temp). Keep if it reproduces.
+- [ ] **Add D19 — Module/type values (parity gap, deferred):** `const a = h.sub;` (legal Zig) is falsely rejected with `error[3042]` + `warning[3023]`; `_ = h.sub;` / `&h.sub` reject with the same misleading pair instead of `expected value, found type`; `_ = i32;` is silently accepted. Record the measured rc/`.c` table from Task 3b-R, note that `typeRegistryGetOrCreateModule` exists, and that the scoped fix + oracle probe pack were deferred out of the `-osw` hotfix.
+- [ ] **Add D20 — Sema error cascades:** a level-0 error whose expression resolves to `void` can emit a second, Zig-absent diagnostic; cite the `const p = &h.nope;` case and the general TYPE_VOID-returning rejects. If Task 3b-C is already merged, state the fixed scope and list only the remaining cases.
+- [ ] **Add D21 — Oracle-claim staleness:** current-source comments/docs cite Zig 0.15.2 while the recorded oracle is **Zig 0.17.1** (D16 / Task 9j, archive sha256 `3581863e…`, binary `58959f01…`); `grep -rn '0\.15\.2' sf/src sf/docs/tech_docs docs/reference docs/sf` counts the sites; rebase deferred. Historical plans/specs/repro stay frozen.
+- [ ] Update the header: next free slot (`D22`), the Open list, and the "Tracks only open defects" note; hard-delete any resolved text and confirm `git diff` shows no ID renumbering.
+- [ ] Commit `docs(examples): audit defect ledger; record deferred parity gaps`.
+
+**Gate:** every deletion is backed by a reproduction recorded in the entry's evidence (or the entry is kept); D16–D18 current; D19–D21 added; header consistent.
 
 ### Task 3b-G: Pin `gate_lower_depth.sh` emission goldens to the committed seed lib
 
@@ -107,8 +141,16 @@ Why: the committed v149 seed ships a `lib/` whose `std_dinput.zig` / `std_dinput
 
 **Gate:** seed v150 at the Task 3b-R fixed point; archive/zip/lib-manifest md5s recorded and consistent across CHANGELOG/README/QUICK_REF; all 8 pins re-measured and updated with the reason recorded; z9gb `-osw` emits `.c` from the new seed; `tier_win32.sh --smoke` green.
 
+### Deferred (out of scope for this hotfix — recorded as D19–D21 in `examples/torrent_example_defects.md`)
+
+None of these is a compile/emit failure for accepted code, so they do not belong in the `-osw` restore:
+
+- **3b-V (was: module/type values).** Support `const a = h.sub;` (legal Zig, currently a loud false reject), reject `_ = h.sub;` / `&h.sub` with `expected value, found type`, and stop silently accepting `_ = i32;`. Needs a real oracle-verified probe pack first. → **D19**.
+- **3b-E (oracle probe pack).** Committed probes + operator-run Zig 0.17.1 transcript for the module/type-value shapes (the ledger's D16 already proves 0.17.1 is the oracle). → feeds **D19**.
+- **3b-O (oracle-claim rebase).** ~95 current-surface comments/docs still cite Zig 0.15.2 while the recorded oracle is 0.17.1; historical plans/specs/repro stay frozen. → **D21**.
+
 ### Task 4: Verification + close
 
-- [ ] Full evidence set: Task 1 repro commands, Task 2/3b-R/3b-G/3 gates, strict-C89 scans, seed fixed point, `tier_edit.sh`, `tier_win32.sh --smoke`, and (if cheap) `tier_m1_std.sh` on the rebuilt compiler.
+- [ ] Full evidence set: Task 1 repro commands, Task 2/3b-R/3b-C/3b-D/3b-G/3 gates, strict-C89 scans, seed fixed point, `tier_edit.sh`, `tier_win32.sh --smoke`, and (if cheap) `tier_m1_std.sh` on the rebuilt compiler.
 - [ ] Write a short `KNOWN_GAPS`/notes entry only if a residual limitation remains (e.g. OWC-only syntax classes not gated).
 - [ ] Commit final evidence notes; STOP for review/merge decision (target `zig1_start`, no push).
