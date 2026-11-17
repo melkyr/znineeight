@@ -54,6 +54,7 @@ New/modified files (all existing paths except the new plan/test files):
 | `examples/z98/z9torr/main.zig`, `wire.zig` | Idle sleep, single-pass slot scans, bulk copies |
 | `examples/z98/z9git/httpgit.zig`, `packhash.zig` (new), `delta.zig`, `pack.zig` | Batched SHA-1 tail window, bulk copies |
 | `examples/z98/z9play/tests/bitreader_test.zig` (new, wired into `tier_setup.sh`), `z9gb/tests/tier_dmg.sh` (inline `timer_test.zig` heredoc), `z9edit/tests/buffer_test.zig` (extended), `z9git/tests/packhash_test.zig` (new, wired into `unit_store.sh`) | Differential/unit tests for the refactors |
+| `diagnostic-tier-flac-report.md` (scratch, under `.superpowers/sdd/…`) | per-failure ownership verdict for the z9play tier_flac/tier_tui failures (no source change) |
 
 ---
 
@@ -194,6 +195,30 @@ git commit -m "perf(z9play): word-accumulator Vorbis bit reader"
 git add examples/z98/z9play/flac.zig examples/z98/z9play/tests/flac_test.zig
 git commit -m "perf(z9play): word-accumulator FLAC bit reader"
 ```
+
+---
+### Task 12: Diagnostic — z9play `tier_flac`/`tier_tui` failures (investigation only)
+
+> **Execution note (operator ruling 2026-11-17):** run this task immediately after Task 2 and before Task 3. Verdicts only — no fixes, no gate changes, no commits. Implementation tasks wait for the operator's ruling on the report.
+
+**Files:**
+- Read: `examples/z98/z9play/tests/tier_flac.sh`, `tier_tui.sh`, `tier_decode.sh`, `tests/flac_test.zig`, `main.zig`, `ui.zig`, and the emitted C for the failing paths
+- Create (scratch, **not committed**): `.superpowers/sdd/2026-11-17-example-performance-program/diagnostic-tier-flac-report.md`
+- Modify: none
+
+**Interfaces:**
+- Consumes: Task 2 report (`task-2-report.md`), the recorded baseline result at `c6028b11` (`tier_flac` 55/3 with the same three failures), HEAD `abafb620`.
+- Produces: one ownership verdict per failure — compiler defect (minimal repro), tier/harness defect (exact line), example defect (exact line), or environment flake — with reproducible command evidence and candidate fix scopes. No code change.
+
+- [ ] **Step 1: Reproduce at HEAD.** With `/tmp/perf_seed/zig1_5_clean`, run `sh examples/z98/z9play/tests/tier_flac.sh`; capture the three failing check names and their assertion output. Run `sh examples/z98/z9play/tests/tier_tui.sh` standalone 3 times; capture each failing case name and repeat pattern (`playlist-add-status`, `playlist-add-no-stale-zero` are the reported flakes).
+- [ ] **Step 2: Baseline parity.** In a detached worktree (do not disturb the main worktree), check out `c6028b11`, build with the same compiler, and run the same checks. Confirm identical failures or characterize any difference.
+- [ ] **Step 3: Isolate each failure.** Read the tier scripts and run the smallest command each failing check runs. Record exit codes, stdout/stderr, fixtures used, temp paths, ports and timing. Repeat 3-5 times to separate deterministic defects from flakes.
+- [ ] **Step 4: `mixed TUI OGG payload out of bound (max_delta=999999 rms_milli=999999)`.** Determine how the payload is produced and compared (fixture, WAV, TUI mode, file reuse), whether the comparison reads a stale/wrong file, and whether the `999999` sentinel means the comparison never ran. State exactly which line produces it.
+- [ ] **Step 5: `mixed-ogg-wav-complete`.** Identify the exact completion assertion and the input/order that triggers it; run it in isolation.
+- [ ] **Step 6: `tier_tui` 38/1.** Identify the failing case per run and whether it is a race/timeout/port/temp-file issue or a real behavior bug; report repeat counts.
+- [ ] **Step 7: Verdicts.** For each failure: owner (compiler / tier / example / environment), file:line evidence, and the candidate fix scope, risk and cost. If compiler is suspected, include a minimal repro (command, rc, emitted C excerpt, expected vs actual).
+- [ ] **Step 8: STOP.** Write the report to the scratch path above and return; do not implement any fix and do not commit.
+---
 
 ### Task 3: z9play audio wait + copy/mix micro-fixes
 
@@ -406,6 +431,7 @@ sh examples/z98/z9git/tests/tier_git.sh; sh examples/z98/z9git/tests/unit_store.
 ## Notes / Open Decisions
 
 - **Ordering:** z9play (Task 1-3) → z9gb dynarec (Task 4) → z9gb perf (5-6) → z9edit (7-8) → z9torr/z9git (9-10). Adjust only if the operator rules differently.
+- Task 12 (diagnostic) runs after Task 2; Task 3+ are blocked until the operator rules on its report. It is investigation-only and commits nothing.
 - **Not in scope:** compiler/emitter codegen changes (e.g. automatic slice→`memcpy` lowering) — that would move `--dump-c89` pins. `std_mem.copyU8` already exists; the example tasks adopt it.
 - **z9gb perf depth:** top-3 structural wins only (timer batching, dirty PPU sync, single-pass line render). KNOWN_GAPS §3.2 future work (dynarec block lengthening, negative cache, PPU-read block enders) stays out.
 - **z9gb dynarec fallback:** if Task 4 cannot establish a safe fix within this program, the acceptable closeout is fail-closed dynarec on Win9x with a clear diagnostic and the interpreter as the default — documented in KNOWN_GAPS, with a follow-up defect for the ABI fix.
