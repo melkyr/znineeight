@@ -749,6 +749,20 @@ per-expedition tool charge are not covered by M4 or by the M5 plan's file list.
   (`2026-11-12-undersanded-m07-save-system-plan.md:19,43`), so keep that hold
   entry if the hold is the chosen parts store.
 
+- **Speed and Precision boat tables are dead.** The tier tables exist
+  (`world.speedMax`, `world.precisionMargin`), but `fight.startFightDef`
+  hardcodes `BASE_SPEED = 10` and `DEFAULT_MARGIN_PCT` (`fight.zig:125-126`)
+  and `hunt` copies only Hull/cond into the fight (`expedition.zig`).
+  M5 must copy `world.speedMax(&g.world)` and
+  `world.precisionMargin(&g.world)` into `FightState.player_speed` /
+  `margin_pct` at fight start; this is M5-owned, not an M4 change.
+- **Five M2-era defs have blank §14.4 drop tables.** Mystic Eel, Mystic
+  Electric Eel, Steel Tuna, Anemoniacus, and Freezing Perch have no authored
+  drops; M8 Task 2 authors all drops when the content moves to `data.z98`.
+  Until then a kill/subdue of those creatures legitimately shows
+  `Secured: nothing` in M4 play. The loop golden's fight 2 is Anemoniacus,
+  hence its empty kill line.
+
 Checked, no amendment needed: `World` already carries `money`, `expertise[10]`,
 `boat[5]` tier counts, `hull`, `cosmetics_owned`, and `cosmetics_unlocked`
 (`def.zig:77-80`); part/keystone ids 1–9 exist (`creatures_t1.zig:39-47`); the
