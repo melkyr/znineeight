@@ -153,7 +153,7 @@ pub const MSG_LAST_SURGE: i32 = 1;
 // Decline copy used when no coupling regen is active (fight.MSG_DECLINE keeps
 // the active-regen wording). Next free id after fight.zig's MSG_* table.
 pub const MSG_DECLINE_PLAIN: i32 = 15;
-// Settlement record for the Secured line; no message-table text.
+// Settlement record for the Secured line; renders the static row below.
 pub const MSG_SECURED: i32 = 16;
 
 pub const MsgRow = struct { id: i32, text: []const u8 };
@@ -162,6 +162,10 @@ pub const MESSAGES = [_]MsgRow{
     MsgRow{
         .id = MSG_LAST_SURGE,
         .text = "Its will returns in a slow, deliberate wave.",
+    },
+    MsgRow{
+        .id = MSG_SECURED,
+        .text = "Secured.",
     },
 };
 

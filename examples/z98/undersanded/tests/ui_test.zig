@@ -254,6 +254,22 @@ fn tRenderSubdueLogCopy() bool {
     return contains(dumpScreen(&sc, buf[0..]), "Subdued Mystic Eel (95%).");
 }
 
+fn tRenderSecuredMsgRow() bool {
+    var s: def.GameState = undefined;
+    game.startFight(&s, 0);
+    const d = creatures.defAt(0);
+
+    fight.log(&s, def.CLS_SECURED, def.MSG_SECURED, 0, def.OUT_SUBDUE);
+
+    var sc: render.Screen = undefined;
+    render.renderFrame(&s, &d, &sc);
+    var buf: [4096]u8 = undefined;
+    const text = dumpScreen(&sc, buf[0..]);
+    if (!contains(text, "Secured.")) return false;
+    if (contains(text, "Log 16.")) return false;
+    return true;
+}
+
 fn tRenderModal() bool {
     var s: def.GameState = undefined;
     game.startFight(&s, 3);
@@ -443,6 +459,7 @@ pub fn main() void {
     report("render_effective_speed_steel_tuna", tRenderEffectiveSpeed());
     report("render_effective_speed_last_surge_cap", tRenderSurgedSpeed());
     report("render_subdue_log_copy_9_4", tRenderSubdueLogCopy());
+    report("render_secured_msg_row_4b", tRenderSecuredMsgRow());
     report("render_subdue_modal", tRenderModal());
     report("creatures_table_5_rows_14_2", tCreatureTable());
     report("creatures_behaviors_14_3", tCreatureBehaviors());
