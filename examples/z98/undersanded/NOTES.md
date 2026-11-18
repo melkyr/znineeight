@@ -659,3 +659,29 @@ wine in the native-only worktree); non-gating by design.
 - **Dormant M4 fields:** `F_PHASING`/`F_INK`/`F_DECOY`/`blind_chance` will be
   set at M4 but stay inert until M8 wires the fight logic. `--dump-grid
   --screen dock|map|node` is extended at M4.
+
+### M4 resume amendments (2026-11-18)
+
+- **Compiler seed v151** (`a2fc8105…`, `/tmp/seed151_build/zig1_5_clean`) is the
+  compiler for the remaining M4 tasks; the v149 pin above is historical. Re-run
+  the M4 drivers with v151 before dispatching.
+- **Dock Rest is Task 4d** (spec §5): `restAtDock(g)` — +40 Hull clamped to
+  `hullMax`, exactly 1 phase, no condition, no RNG. The earlier `restAtNode`
+  path (+30) stays node-only; `expeditionStep` already returns early at dock.
+- **Console nav is Task 4c:** pure `nav.zig` (`navStep` + `navRun`), nav-local
+  screen ids, keys per the plan (dock `R/U/C/B/T/D/Q`; map `1–9`/`Esc`; node
+  `H/R/S`; when a Subdue settlement is pending the node hint becomes
+  `[R]elease  [S]ell`). `undtool --play` (gfx-free) and `undtool --fight` (M2
+  chooser) are the two entry points; `app.runConsoleFight` runs nav.
+  Enablers: `NO_FIGHT` moves to `def.zig`, `game.newGame`, `input.readKey` pub.
+  `renderMap` gains a key-hint line (map golden regenerated); `renderNode`
+  gains the conditional settlement line.
+- **`MSG_SECURED` (Task 4b)** gets the static row text `"Secured."`; parts
+  detail stays in `securedLine`.
+- **D18 discipline:** no indexed writes through a nested struct field
+  (`g.exp.hold[i]`, `g.world.ready[i]`, `g.world.boat[i]`) in nav/tests; use a
+  `*Expedition`/`*World` pointer or a whole-struct literal.
+- **Do not edit `examples/torrent_example_defects.md` in this worktree.** Its
+  copy ends at D18; `zig1_start` now has D16–D23 (D22 OWC bare fn-ptr, D23
+  MinGW 3.4.2 import casts), next free slot D24. None of D16–D23 blocks M4;
+  D18 is the only one that touches game code.

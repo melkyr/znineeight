@@ -14,6 +14,8 @@
 
 **Target branch:** `zig1_start` (master from M4 onward; `zig1_improvements` was merged into it as PR #791). Finish merges back to `zig1_start` locally; **no push**.
 
+**State at resume:** Tasks 0–4 executed and reviewed (`34a02bb1`; `d90349a9`/`d8e9f248`/`f27a0407`; `72654128`/`60d53573`/`254f77f2`; `eef8b005`/`04b8b561`; `a52207e1`/`95c4ae73`/`d6396484`/`2b0df5a6`). Remaining: 4b, 4c, 4d, 5, 6. Current compiler seed is **v151** (`a2fc8105…`, `/tmp/seed151_build/zig1_5_clean`) — re-run the M4 drivers with it before dispatching. Do not edit `examples/torrent_example_defects.md` in this worktree: its copy ends at D18, while `zig1_start` has D16–D23 (next free slot D24).
+
 ## Global Constraints
 
 **Test model (spec §26, binding):** tiers run natively — `undtool.nix` (COMMAND.COM-analogue console) + native test drivers are the FAST gate; Wine/DD7/DSound probes are SLOW evidence only, never the gate; operator hardware is M16-only. Logic goldens must be runnable in CI without Wine.
@@ -22,7 +24,7 @@ As prior milestones. `game.zig` stays pure — World/calendar logic lives in `ga
 
 ## File Structure
 
-- `examples/z98/undersanded/world.zig` — World struct (§25.7), cycle/phase advance, `ready[]` availability (`cycle > ready || (cycle == ready && phase == Day)`), renewal writes (`ready = cycle + respawn[0/1/2]` verbatim per §14.2 sub/kill/over), release bonus, lockout + global echo, wariness. Also: `World.hull` (current Hull, base 100) and the boat **tier-count** tables (Hull 100/125/150/200 · Speed 10/12/15/19 · Cargo 0/1/2/3 · Oxygen fights 3/4/5/6 · Precision 10/15/20/25). `markTaken` sets `family_overkill_mask` on OVERKILL and the wary bit on release; `pub fn consumeWariness(w, def) i32` returns +15 and clears the bit.
+- `examples/z98/undersanded/world.zig` — World struct (§25.7), cycle/phase advance, `ready[]` availability (`cycle > ready || (cycle == ready && phase == Day)`), renewal writes (`ready = cycle + respawn[0/1/2]` verbatim per §14.2 sub/kill/over), release bonus, lockout + global echo, wariness. Also: `World.hull` (current Hull, base 100) and the boat **tier-count** tables (Hull 100/125/150/200 · Speed 10/12/15/19 · Cargo 0/1/2/3 · Oxygen fights 3/4/5/6 · Precision 10/15/20/25). `markTaken` sets `family_overkill_mask` on OVERKILL (`applyRelease` sets the wary bit); `pub fn consumeWariness(w, def) i32` returns +15 and clears the bit.
 - `examples/z98/undersanded/creatures_t1.zig` (modify) — DEFS grows 5→18 with the 13 missing non-boss T1 defs (rows 3,5–16: commons Rust Tuna/Kelp Crab/Brine Jelly/Chitin Barnacle/Spark Anemone; named Mileel/Tunisteel; rares Coral Crab/Abyssal Lantern-Jelly/Neon Ghost-Ray/Glass Squid/Brine Angler/Ironclad Wrasse) from §14.2 stats, §14.4 drops, §14.3 behaviors. Flag behaviors (`F_PHASING`/`F_INK`/`F_DECOY`/`blind_chance`) are set but **inert until M8 wires fight logic**; the undtool token table stays the 5 sim creatures (indices 0–4).
 - `examples/z98/undersanded/expedition.zig` — depart/travel-out/fight-count/return, hold (secured parts), Hull 0 ascent, player flee, creature flee, early surface.
 - `examples/z98/undersanded/encounter.zig` — pool build → rare pipeline (§12 5 steps) → weighted roll.
@@ -36,7 +38,7 @@ As prior milestones. `game.zig` stays pure — World/calendar logic lives in `ga
 - Rare pipeline order (lockout zeroes BEFORE bonus/echo arithmetic; floor 0; renormalize) → table-driven pipeline tests with 0/1/2 locked nodes and release bonuses 0/8/40/48.
 - Renewal Day-of-cycle semantics (subdued Night of cycle 3, renewal 3 → available Day of cycle 6) → exact-cycle test.
 - Loot hold integrity across ascent (current-fight loot dropped, earlier secured loot kept) → two-fight expedition test with forced Hull 0.
-- Empty-pool Rest must be safe (no rough-sleep) while node Rest is not → condition-application test. **Rest/conditions wiring (owned here, math hooks exist at M2):** `pub fn rest(g: *GameState, kind: i32) void` — Hull heal +40 dock / +30 node / +30 empty-pool safe (clamped to `HULL_TABLE[boat[HULL]]`), with the condition written into `g.pending_cond`; node Rest grants a rough-sleep condition via 1 RNG draw (`rngRange(0,2)` → Drowsy/Shaky/Exposed) → copied into `FightState.cond` at next fight start (M2 math: Drowsy −20% Strike, Shaky margin ÷2, Exposed +25% incoming). Empty-pool safety is decided by the encounter pool (`rollEncounter` false), so `rest` needs that check.
+- Empty-pool Rest must be safe (no rough-sleep) while node Rest is not → condition-application test. **Rest/conditions wiring (owned here, math hooks exist at M2):** node Rest = `expeditionStep(g, EXP_REST)` → `restAtNode` (+30 Hull clamped to `HULL_TABLE[boat[HULL]]`, 1 phase, rough-sleep condition unless the pool is empty); dock Rest = `restAtDock(g)` (Task 4d: +40 Hull clamped, 1 phase, no condition, no RNG). The node condition is written into `g.pending_cond` via 1 RNG draw (`rngRange(0,2)` → Drowsy/Shaky/Exposed) → copied into `FightState.cond` at next fight start (M2 math: Drowsy −20% Strike, Shaky margin ÷2, Exposed +25% incoming). Empty-pool safety is decided by the encounter pool (`rollEncounter` false).
 
 ---
 
@@ -66,19 +68,31 @@ As prior milestones. `game.zig` stays pure — World/calendar logic lives in `ga
 
 ### Task 4b: `MSG_SECURED` message-table row (user-authorized)
 
-**Interfaces:** `def.zig` MESSAGES gains `MSG_SECURED` (id 16) with its text; `render_term` generic fight-log rendering resolves it (never `Log 16.`); `securedLine` unchanged.
-- [ ] Add the row + render case; unit test asserts a log entry with `msg_id=MSG_SECURED` renders the secured text (never `Log 16.`) and that NODE `securedLine` output is unchanged. PASS. Commit `example(undersanded): MSG_SECURED message row`.
+**Interfaces:** `def.zig` `MESSAGES` gains `MsgRow{ .id = MSG_SECURED (16), .text = "Secured." }` (replace the "no message-table text" comment); `render_term.msgLine`'s generic `else` branch already resolves ids through `def.messageText`, so the row alone fixes it — no new switch case. `securedLine` stays log-derived (parts detail is not in the row).
+- [ ] Add the row + unit test: a log entry with `class = CLS_SECURED, msg_id = MSG_SECURED` renders `"Secured."` through `msgLine` (never `Log 16.`), and NODE `securedLine` output for subdue/kill/overkill/flee is unchanged. PASS. Commit `example(undersanded): MSG_SECURED message row`.
 
 ### Task 4c: Playable console navigation (user-authorized; gate literal)
 
-- [ ] Wire the console loop dock → map → node → fight → settlement prompt → return: keys for menu selection, Depart + zone choice, Hunt/Rest/Surface, Release/Sell, the pending-settlement guard, exit via EOF; no gfx dependency (works under native `undtool.nix` and `undtool.exe` CUI). Deterministic navigation test: one full loop (dock → Z2 → subdue → release → surface) and one Hull-0 ascent abort, no hand input. README updated. PASS (native; Wine evidence non-gating). Commit `example(undersanded): playable console expedition loop`.
+**Design (pinned):**
+- New `nav.zig`, pure and gfx-free: `pub fn navStep(g: *GameState, key: input.Key) i32` (returns the screen id) + `pub fn navRun(g: *GameState) void` (reads keys via `input.readKey`, exits on EOF). Nav screen ids are nav-local consts (`NAV_DOCK`, `NAV_MAP`, `NAV_NODE`, `NAV_SETTLE`) disjoint from `fight.SCREEN_*` (0–2).
+- Keys — **DOCK:** `R`efine/`U`pgrade/`C`raft/`B`uy print "not yet (M5)"; `T` Rest → `restAtDock` (Task 4d); `D`epart → MAP; `Q`uit and EOF exit. **MAP:** `1`–`8` → Z1–Z8; `9` → boss route (refuse with the locked message while `bossGateOpen` is false); `Esc` → DOCK. **NODE:** `H`unt; `R`est; `S`urface; EOF exits anywhere. **Pending settlement** (`fight.outcome == OUT_SUBDUE && fight.def_index >= 0`): the node hint line is replaced by `[R]elease  [S]ell` and `R`/`S` resolve the choice (`resolveSubdueChoice`) instead of Rest/Surface; all other keys are refused (the `expeditionStep` guard already enforces this).
+- Renderers: `renderMap` gains `[1-8] Z1-Z8  [9] Boss  [Esc] Back` (regenerates `tests/fixtures/dump_grid_map.golden`); `renderNode` gains the conditional settlement line (its fixed-state golden is unaffected); `renderDock` unchanged.
+- Enablers: move `NO_FIGHT` from `expedition.zig` to `def.zig` (FightState sentinel; expedition uses `def.NO_FIGHT`); add `pub fn newGame(s: *GameState) void` in `game.zig` (`std_mem.zeroU8` over the state, then `zeroWorld`, the `exp` literal, and `fight.def_index = def.NO_FIGHT`); move `readKey` from `fight_console.zig` to `input.zig` as `pub fn readKey() ?Key`.
+- Entry points: `undtool.zig` gains `--play` (calls `navRun`; gfx-free; exclusive of other tool flags) and `--fight` (calls `fight_console.run`, keeping the M2 five-creature chooser); `app.runConsoleFight` calls `navRun` (the M1 diagnostics block stays). README updated (dock keys, `--play`, `--fight`, Q at dock only).
+- **D18 discipline:** no indexed write through a nested struct field (`g.exp.hold[i]`, `g.world.ready[i]`, `g.world.boat[i]`). Use a `*Expedition`/`*World` pointer or a whole-struct literal (shipped pattern `expedition.zig:103,292`).
+- [ ] Implement nav + the renderer/enabler changes. Deterministic tests, no hand input: a pure `navStep` walk dock → Z2 → hunt → subdue → release → surface asserting `field_phases`, hold and money, plus one Hull-0 ascent abort; a hold write in the walk guards D18. PASS (native drivers; Wine evidence non-gating). Commit `example(undersanded): playable console expedition loop`.
+
+### Task 4d: Dock Rest (spec §5)
+
+**Interfaces:** `pub fn restAtDock(g: *GameState) void` — `World.hull += 40`, clamped to `world.hullMax`; exactly one `advancePhase`; no condition, no RNG draw. Dock Rest always costs 1 phase, even at full Hull (spec §5 table).
+- [ ] Unit test: 60 → 100 (+40); clamp at 100 (base) and 200 (Hull T3); `field_phases` and `cycle` advance exactly 1; `pending_cond` stays `COND_NONE`; `rng_state` unchanged. PASS. Commit `example(undersanded): dock Rest`.
 
 ### Task 5: `tier_m4_loop.sh`
 
-- [ ] Tier: Task 1–3 unit tests + a scripted full expedition golden (seeded, exact log): depart Z2 → 2 fights (subdue+release, kill) → return → hold totals match; ascent variant keeps only fight-1 loot; empty-pool safe Rest round; **plus the Task 4c console navigation walk end-to-end and the Task 4b `MSG_SECURED` render assertion**. Non-vacuous. Run PASS. Commit `example(undersanded): M4 loop tier`.
+- [ ] Tier (native FAST): Task 1–3 drivers + Task 4/4d tests + a scripted full expedition golden (seeded, exact log): depart Z2 → 2 fights (subdue+release, kill) → return → hold totals match; ascent variant keeps only fight-1 loot; empty-pool safe Rest round; dock Rest (+40 / 1 phase / clamp); nav walk driver end-to-end with the `MSG_SECURED` assertion. SLOW evidence: `undtool.nix --play` fed a scripted key stream (plus the CUI `undtool.exe` under Wine). Non-vacuous. Run PASS. Commit `example(undersanded): M4 loop tier`.
 
-**Gate:** full dock→travel→fight→return terminal loop playable (Task 4c wires the console); every §6/§12 rule exercised by a test; screen goldens stable; secured line renders via its message row (Task 4b).
+**Gate:** full dock→travel→fight→settlement→return terminal loop playable (Task 4c wires the console; dock Rest works, Task 4d); every §5/§6/§12 rule exercised by a test; screen goldens stable; secured line renders via its message row (Task 4b).
 
 ### Task 6: Next-milestone amendment review (M5)
 
-- [ ] Read `2026-11-12-undersanded-m05-dock-economy-plan.md`; judge World fields (money, expertise, boat) and dock action surface vs M5 needs. Amendment or "no amendment needed" in NOTES.md.
+- [ ] Read `2026-11-12-undersanded-m05-dock-economy-plan.md`; judge World fields (money, expertise, boat), `restAtDock`/`newGame`/`NO_FIGHT` placement and the dock action surface vs M5 needs. Amendment or "no amendment needed" in NOTES.md.
