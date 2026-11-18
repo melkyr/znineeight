@@ -21,6 +21,8 @@ const fight = @import("fight.zig");
 const game = @import("game.zig");
 const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
+const nav = @import("nav.zig");
+const fight_console = @import("fight_console.zig");
 const file_mod = @import("std_file");
 
 const TokenRow = struct { name: []const u8, index: i32 };
@@ -109,6 +111,28 @@ pub fn dumpFightFrame(def_index: i32, seed: u32, out: []u8) []const u8 {
     fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.RULES[0..]);
     var sc: render.Screen = undefined;
     render.renderFrame(&s, &d, &sc);
+    return render.dump(&sc, out);
+}
+
+// --dump-grid payload for the fixed non-fight screens. The pinned state is a
+// zeroed GameState with the canonical zero World overlaid (Hull 100, Coins 0,
+// all boat tiers 0, no creatures seen). Returns null for an unknown id.
+pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
+    var s: def.GameState = undefined;
+    sim.zeroState(&s);
+    game.zeroWorld(&s.world);
+    s.exp.seed = DUMP_SEED;
+
+    var sc: render.Screen = undefined;
+    if (eq(screen_id, "dock")) {
+        render.renderDock(&s, &sc);
+    } else if (eq(screen_id, "map")) {
+        render.renderMap(&s, &sc);
+    } else if (eq(screen_id, "node")) {
+        render.renderNode(&s, &sc);
+    } else {
+        return null;
+    }
     return render.dump(&sc, out);
 }
 
@@ -243,6 +267,9 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_replay = false;
     var have_dump_grid = false;
     var have_screen = false;
+    var have_play = false;
+    var have_fight = false;
+    var have_hull = false;
     var n_fights: i32 = 0;
     var seed0: u32 = 0;
     var hull: i32 = 100;
@@ -257,6 +284,10 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         const a = os.argv(i);
         if (eq(a, "--test-rules")) {
             have_test_rules = true;
+        } else if (eq(a, "--play")) {
+            have_play = true;
+        } else if (eq(a, "--fight")) {
+            have_fight = true;
         } else if (eq(a, "--replay")) {
             i += 1;
             if (i >= nargs) {
@@ -325,10 +356,35 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
                 fail("undtool: --hull must be greater than 0");
                 return;
             }
+            have_hull = true;
         } else if (startsFlag(a)) {
             fail("undtool: unknown flag");
             return;
         }
+    }
+
+    // Interactive play modes are exclusive: neither combines with the other nor
+    // with any tool flag.
+    if (have_play or have_fight) {
+        if (have_play and have_fight) {
+            fail("undtool: --play and --fight are mutually exclusive");
+            return;
+        }
+        if (have_test_rules or have_replay or have_dump_grid or have_screen or
+            have_sim or have_creature or have_seed or have_hull)
+        {
+            fail("undtool: --play/--fight cannot be combined with tool flags");
+            return;
+        }
+        if (have_play) {
+            var s: def.GameState = undefined;
+            game.newGame(&s);
+            nav.navRun(&s);
+        } else {
+            fight_console.run();
+        }
+        os.exit(0);
+        return;
     }
 
     if (have_test_rules) {
@@ -353,19 +409,23 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             fail("undtool: --dump-grid requires --screen");
             return;
         }
-        if (!eq(screen_id, "fight")) {
-            fail("undtool: unknown --screen id");
-            return;
-        }
-        var dump_index: i32 = 0;
-        if (have_creature) {
-            dump_index = tokenIndex(token) orelse {
-                fail("undtool: unknown --creature token");
+        var buf: [8192]u8 = undefined;
+        var text: []const u8 = undefined;
+        if (eq(screen_id, "fight")) {
+            var dump_index: i32 = 0;
+            if (have_creature) {
+                dump_index = tokenIndex(token) orelse {
+                    fail("undtool: unknown --creature token");
+                    return;
+                };
+            }
+            text = dumpFightFrame(dump_index, DUMP_SEED, buf[0..]);
+        } else {
+            text = dumpFixedScreen(screen_id, buf[0..]) orelse {
+                fail("undtool: unknown --screen id");
                 return;
             };
         }
-        var buf: [8192]u8 = undefined;
-        const text = dumpFightFrame(dump_index, DUMP_SEED, buf[0..]);
         file_mod.writeAll(dump_path, text) catch {
             fail("undtool: --dump-grid write failed");
             return;

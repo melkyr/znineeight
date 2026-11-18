@@ -254,6 +254,22 @@ fn tRenderSubdueLogCopy() bool {
     return contains(dumpScreen(&sc, buf[0..]), "Subdued Mystic Eel (95%).");
 }
 
+fn tRenderSecuredMsgRow() bool {
+    var s: def.GameState = undefined;
+    game.startFight(&s, 0);
+    const d = creatures.defAt(0);
+
+    fight.log(&s, def.CLS_SECURED, def.MSG_SECURED, 0, def.OUT_SUBDUE);
+
+    var sc: render.Screen = undefined;
+    render.renderFrame(&s, &d, &sc);
+    var buf: [4096]u8 = undefined;
+    const text = dumpScreen(&sc, buf[0..]);
+    if (!contains(text, "Secured.")) return false;
+    if (contains(text, "Log 16.")) return false;
+    return true;
+}
+
 fn tRenderModal() bool {
     var s: def.GameState = undefined;
     game.startFight(&s, 3);
@@ -278,7 +294,7 @@ fn tRenderModal() bool {
 // ---- Creature table completeness (spec §14.2/§14.3) -----------------------
 
 fn tCreatureTable() bool {
-    if (creatures.DEFS.len != 5) return false;
+    if (creatures.DEFS.len != 18) return false;
 
     const ids = [5]i32{ 1, 2, 4, 18, 19 };
     const hps = [5]i32{ 70, 80, 120, 95, 105 };
@@ -339,7 +355,7 @@ fn tCreatureBehaviors() bool {
     if (perch.flee_kind != fight.FLEE_HIT_PCT) return false;
     if (perch.flee_th != 20) return false;
 
-    if (creatures.RULES.len != 2) return false;
+    if (creatures.RULES.len != 4) return false;
     const r0 = creatures.RULES[0];
     if (r0.cond_op != behavior.RES_BELOW or r0.cond_a != 50) return false;
     if (r0.effect_op != behavior.HULL_DMG or r0.effect_a != 8) return false;
@@ -443,6 +459,7 @@ pub fn main() void {
     report("render_effective_speed_steel_tuna", tRenderEffectiveSpeed());
     report("render_effective_speed_last_surge_cap", tRenderSurgedSpeed());
     report("render_subdue_log_copy_9_4", tRenderSubdueLogCopy());
+    report("render_secured_msg_row_4b", tRenderSecuredMsgRow());
     report("render_subdue_modal", tRenderModal());
     report("creatures_table_5_rows_14_2", tCreatureTable());
     report("creatures_behaviors_14_3", tCreatureBehaviors());

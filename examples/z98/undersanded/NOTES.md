@@ -624,3 +624,150 @@ M4's World and encounter work is validated by M4's own `world_test`/
   `fight.startFightDef` reads only the seed fields of `exp` and never touches
   `world` (`sim.zig:115-119`; `fight.zig:115-158`); M4's World/expedition path
   must explicitly initialize `GameState.world` (R8, spec §24).
+
+## M4 preflight
+
+M3 gate confirmed green from this worktree before M4 work starts:
+
+```
+ZIG=/tmp/zig1-m1/zig1_5_clean OUT=/tmp/m4_t0/m3_gate \
+  sh examples/z98/undersanded/tests/tier_m3_sim.sh
+TIER_M3 PASS 65 passed / 0 failed / 1 evidence skips
+```
+
+The single skip is the SLOW Wine `undtool.exe` evidence section (no built exe /
+wine in the native-only worktree); non-gating by design.
+
+- **13 missing non-boss T1 defs are authored at M4 (DEFS 5→18):** Rust Tuna,
+  Kelp Crab, Brine Jelly, Chitin Barnacle, Spark Anemone, Mileel, Tunisteel,
+  Coral Crab, Abyssal Lantern-Jelly, Neon Ghost-Ray, Glass Squid, Brine Angler,
+  Ironclad Wrasse. The boss row stays M11; M4 authors no boss def.
+- **Boat tiers:** `boat[5]` stores tier counts 0–3 (0 = base). Derived tables:
+  Hull 100/125/150/200, Speed 10/12/15/19, Cargo 0/1/2/3, Oxygen 3/4/5/6,
+  Precision margin 10/15/20/25. Max fights = 3 + `boat[OXYGEN]`.
+- **`World.hull` added** (base 100, persists across the expedition;
+  `FightState.hull` is the per-fight copy). Dock Rest +40 clamps to the Hull
+  table max.
+- **Return leg = travel phases only** (no arrival action); outbound = 1 Depart
+  phase + travel.
+- **Grudge application = M5.** M4 sets/clears `family_overkill_mask` on
+  overkill and applies wariness at fight start (+15 res/max_res, clear bit) via
+  `consumeWariness`; release sets the wary bit.
+- **Renewal semantics (spec §5/§14.2):** `ready = cycle + respawn[outcome]`
+  used **verbatim** for subdue/kill/overkill — no multiplying. Creature-flee
+  uses the subdue-length value; boss 20/40 is handled at M11.
+- **Dormant M4 fields:** `F_PHASING`/`F_INK`/`F_DECOY`/`blind_chance` will be
+  set at M4 but stay inert until M8 wires the fight logic. `--dump-grid
+  --screen dock|map|node` is extended at M4.
+
+### M4 resume amendments (2026-11-18)
+
+- **Compiler seed v151** (`a2fc8105…`, `/tmp/seed151_build/zig1_5_clean`) is the
+  compiler for the remaining M4 tasks; the v149 pin above is historical. Re-run
+  the M4 drivers with v151 before dispatching.
+- **Dock Rest is Task 4d** (spec §5): `restAtDock(g)` — +40 Hull clamped to
+  `hullMax`, exactly 1 phase, no condition, no RNG. The earlier `restAtNode`
+  path (+30) stays node-only; `expeditionStep` already returns early at dock.
+- **Console nav is Task 4c:** pure `nav.zig` (`navStep` + `navRun`), nav-local
+  screen ids, keys per the plan (dock `R/U/C/B/T/D/Q`; map `1–9`/`Esc`; node
+  `H/R/S`; when a Subdue settlement is pending the node hint becomes
+  `[R]elease  [S]ell`). `undtool --play` (gfx-free) and `undtool --fight` (M2
+  chooser) are the two entry points; `app.runConsoleFight` runs nav.
+  Enablers: `NO_FIGHT` moves to `def.zig`, `game.newGame`, `input.readKey` pub.
+  `renderMap` gains a key-hint line (map golden regenerated); `renderNode`
+  gains the conditional settlement line.
+- **`MSG_SECURED` (Task 4b)** gets the static row text `"Secured."`; parts
+  detail stays in `securedLine`.
+- **D18 discipline:** no indexed writes through a nested struct field
+  (`g.exp.hold[i]`, `g.world.ready[i]`, `g.world.boat[i]`) in nav/tests; use a
+  `*Expedition`/`*World` pointer or a whole-struct literal.
+- **Do not edit `examples/torrent_example_defects.md` in this worktree.** Its
+  copy ends at D18; `zig1_start` now has D16–D23 (D22 OWC bare fn-ptr, D23
+  MinGW 3.4.2 import casts), next free slot D24. None of D16–D23 blocks M4;
+  D18 is the only one that touches game code.
+
+### M5 amendment review (M4 Task 6)
+
+Verdict: **amendment required** — M5's dock UI/dispatch, refined-material
+inventory, persistent craft parts, cosmetic-unlock gating, tool ownership, and
+per-expedition tool charge are not covered by M4 or by the M5 plan's file list.
+
+- **Dock action dispatch/messages are unowned.** M4 `dockStep` handles only
+  `q/d/t`; `r/u/c/b` are deliberate no-ops (`nav.zig:63-69`) and `renderDock`
+  prints `Refine, Upgrade, Craft, Buy: not yet (M5).` (`render_term.zig:422`).
+  M5's Refine(material) / Upgrade(axis) / Craft(tool) / Buy(cosmetic) need key
+  dispatch, selection sub-prompts, and result/refusal messages. Amend
+  `2026-11-12-undersanded-m05-dock-economy-plan.md` File Structure and Task 2
+  to add `nav.zig` + `render_term.zig` (with nav/screens test and golden
+  updates); no M4 code change is needed because the stubs are intentional.
+- **No persistent refined-material inventory.** M4 stores only loot parts in
+  `Expedition.hold`, which is kept on return but zeroed at the next `depart`
+  (`expedition.zig:299-305`), so M5 Refine output would vanish before the next
+  dock use. Amend `examples/z98/undersanded/def.zig` §25.7 `World` with
+  `materials: [MAX_MATERIALS]i32`, reset it in `game.zeroWorld`
+  (`game.zig:16-53`), and consume it from M5 `economy.zig`/`dock.zig`. Add the
+  field to the §25.7 layout row and the M5 plan File Structure/Task 2.
+- **No persistent parts for Craft.** M5 Craft consumes parts (e.g. Sonar Ping
+  = Glass Pane ×2 + Gland Sac ×1), but T1 tables never supply both in one
+  expedition and `depart` zeroes `Expedition.hold` (`expedition.zig:299-305`).
+  Amend the M5 plan File Structure/Task 2 to **stop zeroing `hold` at
+  `depart`** (kept on return already, `expedition.zig:170-178`): the hold is
+  already the §7 parts store, so this is simpler than a second inventory and
+  needs no new World field. Adjust the M4 loop tests/goldens that assume a
+  fresh hold.
+- **Cosmetic gating reuses `World.cosmetics_unlocked`.** `World` already has
+  `cosmetics_owned` / `cosmetics_unlocked: u32` (`def.zig:80`, persisted by
+  M7); no new field is needed. Amend the M5 plan Task 2 to set the relevant
+  `cosmetics_unlocked` bits on first arrival at Z1/Z2/Z3 (and boss-kill
+  milestones) in the M5-owned depart/kill path, and consume that mask in Buy
+  gating.
+- **No persistent tool-ownership field.** M5 Task 2/3 craft owned-forever tools
+  and equip one at depart, but `def.World` has no `tools_owned` (only
+  `cosmetics_owned` / `cosmetics_unlocked`; `def.zig:80`) and nothing else
+  persists ownership. Amend `examples/z98/undersanded/def.zig` §25.7 `World`
+  with `tools_owned: u32` (7 tools fit `MAX_TOOLS=8`) and reset it in
+  `game.zeroWorld` (`game.zig:16-53`); consume it from M5 `dock.zig`/
+  `tools.zig`. Add the matching §25.7 layout row.
+- **FightState tool/charge is fight-local, not per-expedition.**
+  `startFightDef` zeroes `tool`, `tool_charge`, `tool_broken`, and
+  `tool_active` on every fight (`fight.zig:136-139`), while M5 needs
+  equip-at-depart, 1 activated charge per expedition, and broken clearing only
+  at the next Depart. Amend the M5 plan File Structure (add `expedition.zig`)
+  and Task 2/3 plus `def.Expedition` (or a documented World equivalent) to
+  persist `tool`, `tool_charge`, and `tool_broken` across fights, initialized/
+  cleared by the M5-owned `expedition.depart` hook (`expedition.zig:293-318`)
+  and copied into `FightState` after `startFightDef` (as `hunt` already does
+  for Hull/cond). `game.newGame` must clear them, and `game.startFight` also
+  builds an `Expedition` literal (`game.zig:71-84`) so it must initialise any
+  new fields too. M5 must own the `expedition.zig` depart hook rather than
+  relying on the per-fight reset.
+- **Save/load downstream.** `World.materials` (and the persistent parts store
+  chosen above) must be on the M7 persisted-field list or refined materials
+  vanish on save/load. Amend
+  `2026-11-12-undersanded-m07-save-system-plan.md` Global Constraints and its
+  Task 3 save-list bullets; M7 already lists expedition state + hold
+  (`2026-11-12-undersanded-m07-save-system-plan.md:19,43`), so keep that hold
+  entry if the hold is the chosen parts store.
+
+- **Speed and Precision boat tables are dead.** The tier tables exist
+  (`world.speedMax`, `world.precisionMargin`), but `fight.startFightDef`
+  hardcodes `BASE_SPEED = 10` and `DEFAULT_MARGIN_PCT` (`fight.zig:125-126`)
+  and `hunt` copies only Hull/cond into the fight (`expedition.zig`).
+  M5 must copy `world.speedMax(&g.world)` and
+  `world.precisionMargin(&g.world)` into `FightState.player_speed` /
+  `margin_pct` at fight start; this is M5-owned, not an M4 change.
+- **Five M2-era defs have blank §14.4 drop tables.** Mystic Eel, Mystic
+  Electric Eel, Steel Tuna, Anemoniacus, and Freezing Perch have no authored
+  drops; M8 Task 2 authors all drops when the content moves to `data.z98`.
+  Until then a kill/subdue of those creatures legitimately shows
+  `Secured: nothing` in M4 play. The loop golden's fight 2 is Anemoniacus,
+  hence its empty kill line.
+
+Checked, no amendment needed: `World` already carries `money`, `expertise[10]`,
+`boat[5]` tier counts, `hull`, `cosmetics_owned`, and `cosmetics_unlocked`
+(`def.zig:77-80`); part/keystone ids 1–9 exist (`creatures_t1.zig:39-47`); the
+derived boat tables are in `world.zig:24-28,117-139`. `NO_FIGHT` lives in
+`def.zig:116` and `newGame`/`zeroWorld` is the clean reset path
+(`game.zig:16-69`). Dock Rest is already split correctly: public `restAtDock`
+is +40 Hull, one phase, no RNG/condition (`expedition.zig:89-96`) vs node Rest
+(+30, condition roll, `expedition.zig:349-363`).

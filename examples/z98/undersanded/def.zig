@@ -74,6 +74,7 @@ pub const World = struct {
     lockout_until: [MAX_ZONES]i32,
     family_overkill_mask: u32, wary_mask: [2]u32,
     rng_state: u32,
+    hull: i32,
     boat: [5]i32, money: i32,
     expertise: [MAX_MATERIALS]i32,
     cosmetics_owned: u32, cosmetics_unlocked: u32,
@@ -111,6 +112,9 @@ pub const ACT_DECLINE: i32 = 6;
 
 pub const Action = struct { kind: i32, arg: i32 };
 
+// No fight is in progress: FightState.def_index is parked at this sentinel.
+pub const NO_FIGHT: i32 = -1;
+
 pub const OUT_ONGOING: i32 = 0;
 pub const OUT_SUBDUE: i32 = 1;
 pub const OUT_KILL: i32 = 2;
@@ -124,6 +128,8 @@ pub const BAR_RESTRAIN: i32 = 2;
 
 pub const LOG_NORMAL: i32 = 0;
 pub const LOG_WARN: i32 = 1;
+// Internal settlement record: entry.a = fight.def_index, entry.b = outcome.
+pub const CLS_SECURED: i32 = 2;
 
 pub const COND_NONE: i32 = 0;
 pub const COND_DROWSY: i32 = 1;
@@ -150,6 +156,8 @@ pub const MSG_LAST_SURGE: i32 = 1;
 // Decline copy used when no coupling regen is active (fight.MSG_DECLINE keeps
 // the active-regen wording). Next free id after fight.zig's MSG_* table.
 pub const MSG_DECLINE_PLAIN: i32 = 15;
+// Settlement record for the Secured line; renders the static row below.
+pub const MSG_SECURED: i32 = 16;
 
 pub const MsgRow = struct { id: i32, text: []const u8 };
 
@@ -157,6 +165,10 @@ pub const MESSAGES = [_]MsgRow{
     MsgRow{
         .id = MSG_LAST_SURGE,
         .text = "Its will returns in a slow, deliberate wave.",
+    },
+    MsgRow{
+        .id = MSG_SECURED,
+        .text = "Secured.",
     },
 };
 
