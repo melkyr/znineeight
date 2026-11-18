@@ -330,7 +330,10 @@ fn tHullZeroKeepsHold() bool {
     if (g.fight.hull != 1) return false;
 
     const phases_before = g.world.field_phases;
-    expedition.expeditionStep(&g, def.ACT_EQUIP);
+    // Keep Resolve high so Restrain cannot subdue: the creature still acts
+    // and its hit at Hull 1 forces the Emergency Ascent.
+    g.fight.res = 100000;
+    expedition.expeditionStep(&g, def.ACT_RESTRAIN);
 
     // Emergency Ascent ended the fight immediately (not a player flee).
     if (expedition.isInFight(&g)) return false;

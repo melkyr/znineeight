@@ -21,6 +21,7 @@ const encounter = @import("encounter.zig");
 const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
 const fight = @import("fight.zig");
+const tools = @import("tools.zig");
 const game = @import("game.zig");
 
 // ---- Field actions --------------------------------------------------------
@@ -384,6 +385,21 @@ fn hunt(g: *def.GameState) void {
     g.pending_cond = def.COND_NONE;
     g.fight.hull = g.world.hull;
     g.fight.max_hull = world.hullMax(&g.world);
+
+    // §11 loadout: Speed and Precision tiers feed the fight math directly.
+    g.fight.player_speed = world.speedMax(&g.world);
+    g.fight.margin_pct = world.precisionMargin(&g.world);
+
+    // P22.5 tool lifecycle: copy the expedition tool state. A working rigged
+    // tool is always on; activated tools wait for EQUIP. Charge and breakage
+    // stay expedition-scoped.
+    g.fight.tool = g.exp.tool;
+    g.fight.tool_charge = g.exp.tool_charge;
+    g.fight.tool_broken = g.exp.tool_broken;
+    g.fight.tool_active = 0;
+    if (g.fight.tool != 0 and g.fight.tool_broken == 0 and tools.isRigged(g.fight.tool)) {
+        g.fight.tool_active = 1;
+    }
 
     const wary = world.consumeWariness(&g.world, idx);
     g.fight.max_res += wary;

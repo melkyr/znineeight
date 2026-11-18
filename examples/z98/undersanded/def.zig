@@ -174,6 +174,10 @@ pub const MESSAGES = [_]MsgRow{
         .id = MSG_SECURED,
         .text = "Secured.",
     },
+    MsgRow{
+        .id = 17,
+        .text = "The creature is stunned and loses its action.",
+    },
 };
 
 pub fn messageText(id: i32) ?[]const u8 {

@@ -12,6 +12,7 @@ const def = @import("def.zig");
 const math = @import("math.zig");
 const rng = @import("rng.zig");
 const behavior = @import("behavior.zig");
+const tools = @import("tools.zig");
 const std_math = @import("std_math");
 
 // ---- Player baseline (§8.1) ----------------------------------------------
@@ -52,8 +53,15 @@ pub const STAT_RES: i32 = 2;
 
 pub const TOOL_PLATE: i32 = 1;
 pub const TOOL_BRINE_NET: i32 = 2;
+pub const TOOL_ELECTRIC_GLAND: i32 = 3;
+pub const TOOL_PRESSURE_HOOK: i32 = 5;
+pub const TOOL_CORAL_SHIELD: i32 = 7;
 
 pub const FLEE_HIT_PCT: i32 = 1;
+
+// Sonar lookahead vocabulary (M5: no ink/decoy yet).
+pub const CREATURE_ACT_ATTACK: i32 = 1;
+pub const CREATURE_ACT_FLEE: i32 = 2;
 
 // ---- Screens / log message ids -------------------------------------------
 
@@ -74,6 +82,7 @@ pub const MSG_PLAYER_FLED: i32 = 11;
 pub const MSG_CREATURE_FLED: i32 = 12;
 pub const MSG_EQUIP: i32 = 13;
 pub const MSG_DISCHARGE: i32 = 14;
+pub const MSG_STUN: i32 = 17;
 
 // ---- Log ------------------------------------------------------------------
 
@@ -148,6 +157,7 @@ pub fn startFightDef(s: *def.GameState, def_index: i32, cdef: *const def.Creatur
     s.fight.pending_blind = 0;
     s.fight.pending_ink = 0;
     s.fight.pending_flee = 0;
+    s.fight.pending_stun = 0;
     s.fight.active_armor_pct = cdef.armor_pct;
     s.fight.active_resist_restrain = cdef.resist_restrain_pct;
     s.fight.cond = def.COND_NONE;
@@ -256,6 +266,17 @@ pub fn creatureFirst(s: *const def.GameState, cdef: *const def.CreatureDef, rule
     return effectiveSpeed(s, cdef, rules) > s.fight.player_speed;
 }
 
+// Sonar lookahead (P22.3): copy the flat FightState, decide on the copy, and
+// discard it. M5 reports only attack/flee; M8 extends it with ink/decoy.
+pub fn peekCreatureAction(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
+    var copy: def.GameState = undefined;
+    copy.fight = s.fight;
+
+    if (copy.fight.pending_flee != 0 and !hookActive(&copy)) return CREATURE_ACT_FLEE;
+    _ = effectiveAttack(&copy, cdef, rules);
+    return CREATURE_ACT_ATTACK;
+}
+
 // Strike-time armor: compute from the def plus every persistent SET_ARMOR rule
 // whose condition currently holds, instead of trusting the cache that
 // applyRules refreshed on the previous action.
@@ -286,11 +307,19 @@ pub fn effectiveArmorPct(s: *const def.GameState, cdef: *const def.CreatureDef, 
     return a;
 }
 
-fn effectiveResist(s: *const def.GameState) i32 {
+pub fn effectiveResistRestrain(s: *const def.GameState) i32 {
     var r = s.fight.active_resist_restrain;
     if (r <= 0) r = PERCENT_BASE;
     if (s.fight.tool_active != 0 and s.fight.tool == TOOL_BRINE_NET) r = PERCENT_BASE;
     return r;
+}
+
+fn hookActive(s: *const def.GameState) bool {
+    return s.fight.tool_active != 0 and s.fight.tool == TOOL_PRESSURE_HOOK;
+}
+
+fn shieldActive(s: *const def.GameState) bool {
+    return s.fight.tool_active != 0 and s.fight.tool == TOOL_CORAL_SHIELD;
 }
 
 fn resetActive(s: *def.GameState, cdef: *const def.CreatureDef) void {
@@ -309,6 +338,8 @@ fn applyEffect(s: *def.GameState, e: def.Effect) void {
             s.fight.hp = std_math.min(s.fight.max_hp, s.fight.hp + e.a);
         },
         behavior.HULL_DMG => {
+            // Coral Shield negates discharge-type Hull damage entirely (§10).
+            if (shieldActive(s)) return;
             var d = e.a;
             if (d < 0) d = 0;
             s.fight.hull -= d;
@@ -320,6 +351,8 @@ fn applyEffect(s: *def.GameState, e: def.Effect) void {
             s.fight.active_armor_pct = e.a;
         },
         behavior.SET_FLEE => {
+            // Pressure Hook prevents the creature from escaping (§10).
+            if (hookActive(s)) return;
             if (e.a != 0) {
                 s.fight.pending_flee = e.a;
             } else {
@@ -444,14 +477,14 @@ fn strike(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavi
 
     if (cdef.flee_kind == FLEE_HIT_PCT and cdef.flee_th > 0) {
         if (hitExceedsPct(dmg, s.fight.max_hp, cdef.flee_th)) {
-            s.fight.pending_flee = PENDING_ON;
+            if (!hookActive(s)) s.fight.pending_flee = PENDING_ON;
         }
     }
 }
 
 fn restrain(s: *def.GameState) void {
     var dmg = rng.rngRange(&s.fight.rng_state, RESTRAIN_MIN, RESTRAIN_MAX);
-    dmg = math.applyPct(dmg, effectiveResist(s));
+    dmg = math.applyPct(dmg, effectiveResistRestrain(s));
     if (dmg < 0) dmg = 0;
 
     s.fight.res -= dmg;
@@ -471,10 +504,16 @@ fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
             restrain(s);
         },
         def.ACT_EQUIP => {
+            // The equipped tool comes from Depart (hunt copies it); the action
+            // argument is ignored. step() refuses unusable EQUIP before turn
+            // order, so reaching here means the charge is spendable.
             s.fight.actions += 1;
-            s.fight.tool = a.arg;
             s.fight.tool_active = 1;
-            log(s, def.LOG_NORMAL, MSG_EQUIP, a.arg, 0);
+            s.fight.tool_charge -= 1;
+            if (s.fight.tool_charge < 0) s.fight.tool_charge = 0;
+            s.exp.tool_charge = s.fight.tool_charge;
+            log(s, def.LOG_NORMAL, MSG_EQUIP, s.fight.tool, 0);
+            if (s.fight.tool == TOOL_ELECTRIC_GLAND) s.fight.pending_stun = 1;
         },
         def.ACT_FLEE => {
             s.fight.outcome = def.OUT_PLAYER_FLED;
@@ -487,7 +526,14 @@ fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
 // ---- Creature action / coupling ------------------------------------------
 
 fn creatureAct(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
-    if (s.fight.pending_flee != 0) {
+    // Electric Gland stun: exactly one creature action is lost.
+    if (s.fight.pending_stun != 0) {
+        s.fight.pending_stun = 0;
+        log(s, def.LOG_NORMAL, MSG_STUN, 0, 0);
+        return;
+    }
+
+    if (s.fight.pending_flee != 0 and !hookActive(s)) {
         s.fight.pending_flee = 0;
         s.fight.outcome = def.OUT_CREATURE_FLED;
         log(s, def.LOG_NORMAL, MSG_CREATURE_FLED, 0, 0);
@@ -501,6 +547,9 @@ fn creatureAct(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const b
     s.fight.hull_spent += dmg;
     if (s.fight.hull < 0) s.fight.hull = 0;
     log(s, def.LOG_NORMAL, MSG_CREATURE_ATTACK, dmg, s.fight.hull);
+
+    // Fragile tools: a single incoming hit, not cumulative damage.
+    tools.onHullHit(s, dmg);
 }
 
 fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
@@ -573,6 +622,14 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
     switch (a.kind) {
         def.ACT_STRIKE, def.ACT_RESTRAIN, def.ACT_EQUIP, def.ACT_FLEE => {},
         else => return,
+    }
+
+    // EQUIP is refused before turn order: no round, no creature action, no RNG.
+    // The equipped tool comes from Depart; the action arg is never consulted.
+    if (a.kind == def.ACT_EQUIP) {
+        const equipped = if (s.fight.tool != 0) s.fight.tool else s.exp.tool;
+        if (!tools.canEquip(s, equipped)) return;
+        if (s.fight.tool == 0) s.fight.tool = equipped;
     }
 
     const player_first = !creatureFirst(s, cdef, rules);

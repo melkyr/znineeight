@@ -157,13 +157,14 @@ fn tHullZeroAscentReturnsDock() bool {
     if (nav.navStep(&g, &st, key('d')) != nav.NAV_MAP) return false;
     if (nav.navStep(&g, &st, key('2')) != nav.NAV_NODE) return false;
 
-    // Enter the next fight at 1 Hull; Equip draws no damage, so the creature's
-    // hit zeroes Hull and postFight performs the Emergency Ascent.
+    // Enter the next fight at 1 Hull; a Restrain leaves Resolve above 0 on the
+    // first round, so the creature's hit zeroes Hull and postFight performs the
+    // Emergency Ascent.
     g.world.hull = 1;
     var guard: i32 = 0;
     while (g.exp.active != 0 and guard < 200) : (guard += 1) {
         if (expedition.isInFight(&g)) {
-            _ = nav.navStep(&g, &st, key('e'));
+            _ = nav.navStep(&g, &st, key('r'));
         } else if (pending(&g)) {
             _ = nav.navStep(&g, &st, key('r'));
         } else {
