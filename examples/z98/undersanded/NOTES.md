@@ -773,3 +773,56 @@ derived boat tables are in `world.zig:24-28,117-139`. `NO_FIGHT` lives in
 (`game.zig:16-69`). Dock Rest is already split correctly: public `restAtDock`
 is +40 Hull, one phase, no RNG/condition (`expedition.zig:89-96`) vs node Rest
 (+30, condition roll, `expedition.zig:349-363`).
+
+### M5 preflight (2026-11-18)
+
+**Spec §38 P22 rulings (binding):**
+- Deep refine is legal at **0 yield** and still grants +1 expertise; never
+  clamp and never refuse for a 0 yield. Deep loses 1 per part below E5.
+- Tool scope split: M5 wires only post-M4 behaviors (Plate armor negation,
+  Brine Net shell/restrain bypass, Coral Shield discharge negation, Pressure
+  Hook flee prevention, Electric Gland stun). Blind/decoy/ink/phasing and
+  Lure/Sonar reveals move to **M8**; M5 only stores/passes their flags.
+- Sonar lookahead peeks on a **copied flat `FightState`**, discards it, and
+  never mutates `GameState`, log, or world; M8 extends it with ink/decoy.
+- `Expedition.hold` is the persistent dock parts store: `depart` must not
+  zero it. Craft/keystones consume the hold; Refine consumes all of one type.
+- Persistence: `World.materials`, `World.tools_owned`, `World.tool_selected`;
+  `Expedition.tool/tool_charge/tool_broken` (tool selection is free at
+  Depart; broken tools clear at the next Depart).
+- Refusals (insufficient parts/materials/coins, failed E2/E4 gate) cost **no
+  phase and no RNG**; every successful dock action costs exactly 1 phase.
+- The M5 economy walk starts at **0 materials / E0** and asserts materials
+  **spent** = 111 + Steel Fins ×2; full-run pacing stays M15.
+- Rare-batch refine warning: Glow Polyp → Luminescence and Glass Pane → Glass
+  need a second confirming press stating part count and yield (including
+  `0 materials` below E5); commons refine on one press; keystones never refine.
+
+**M5 files:** `economy.zig`, `dock.zig`, `tools.zig`; modify `def.zig`,
+`game.zig`, `expedition.zig`, `fight.zig`, `nav.zig`, `render_term.zig`,
+`tables_t1.zig`; tests `economy_test.zig`, `dock_test.zig`, `tools_test.zig`,
+`tier_m5_dock.sh`, `fixtures/economy_full.md`; dock/sub-menu goldens.
+Task 0 adds only `ToolRow`/`UpgradeRow`/`CosmeticRow` (+ local `CostSlot`) to
+`tables_t1.zig`; `MaterialAmt` belongs to Task 1's `economy.zig`.
+
+**§17 arithmetic (verified against the rows):**
+- Hull: Chitin 3 + 6 + 10 = 19; Plate 2 + 4 = 6.
+- Precision: Gland 2 + 4 + 8 = 14; Luminescence 1 + 2 + 2 = 5.
+- Cargo: Brine 3 + 6 + 10 = 19; Coral 1 + 2 + 4 = 7.
+- Oxygen: Coral 3 + 6 + 10 = 19; Brine 1 + 2 + 4 = 7.
+- Speed: Glass 2 + 2 + 4 = 8; Gland 1 + 2 + 4 = 7; Steel Fins ×2.
+- Totals: Chitin 19, Plate 6, Gland 21, Lum 5, Brine 26, Coral 26, Glass 8
+  = **111** + Steel Fins ×2.
+- Parts at E3 (deep yields 2, commons 3): Shell 19/3↑=7, Plate 6/3=2,
+  Gland 21/3=7, Glow Polyp 5/2↑=3, Brine 26/3↑=9, Coral 26/3↑=9,
+  Glass Pane 8/2=4 → **41 parts** + Steel Fins ×2.
+- Cosmetics: 12 items summing 2,100 coins (150/175/200 ×4 categories).
+
+**M4 baseline:** compiler `/tmp/seed151_build/zig1_5_clean` (md5
+`a2fc81055dc1cb7a67099fe3934d22ee`); `ZIG=… OUT=/tmp/m5_t0 sh
+tests/tier_m4_loop.sh` → `TIER_M4 PASS 47 passed / 0 failed` (1 Wine
+evidence skip).
+
+**Deliberate M4 edit (Task 2):** `depart` stops zeroing `hold`/`hold_n` so the
+dock keeps its parts store. No current M4 test depends on a fresh hold; the
+M4 tier above is the baseline to re-verify after that change.

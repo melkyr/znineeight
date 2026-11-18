@@ -6,6 +6,7 @@
 // until M13. Base weights sum to 100 per zone/phase (commons + rares).
 
 const def = @import("def.zig");
+const world = @import("world.zig");
 
 pub const EncounterRow = struct { def_index: i32, weight: i32 };
 
@@ -105,3 +106,111 @@ pub fn rows(zone: i32, phase: i32) []const EncounterRow {
         else => return EMPTY[0..],
     }
 }
+
+// ---- §10 tools -----------------------------------------------------------
+//
+// Tool ids match `creatures_t1.TOOL_*` counter-tool ids. Costs are keystone
+// parts as-is; material ids are the §14.1 source part ids (R7).
+
+pub const TOOL_KIND_ACTIVATED: i32 = 0;
+pub const TOOL_KIND_RIGGED: i32 = 1;
+
+// Two-field cost slot local to the dock/M6 tables. `kind` 0 = unused slot;
+// otherwise a part id (1..9). Task 1's `MaterialAmt` is a separate type.
+pub const CostSlot = struct { kind: i32, amt: i32 };
+
+pub const ToolRow = struct {
+    id: i32,
+    kind: i32,
+    cost: [3]CostSlot,
+};
+
+fn slot(kind: i32, amt: i32) CostSlot {
+    return CostSlot{ .kind = kind, .amt = amt };
+}
+
+const NONE_SLOT = CostSlot{ .kind = 0, .amt = 0 };
+
+pub const TOOLS = [_]ToolRow{
+    // Steel Plate Tool | Rigged | Plate Scrap ×3
+    .{ .id = 1, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(2, 3), NONE_SLOT, NONE_SLOT } },
+    // Brine Net | Rigged | Brine Vial ×2, Shell Chip ×1
+    .{ .id = 2, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(4, 2), slot(1, 1), NONE_SLOT } },
+    // Electric Gland | Activated | Gland Sac ×3
+    .{ .id = 3, .kind = TOOL_KIND_ACTIVATED, .cost = [3]CostSlot{ slot(3, 3), NONE_SLOT, NONE_SLOT } },
+    // Bioluminescent Lure | Activated | Glow Polyp ×2, Glass Pane ×1
+    .{ .id = 4, .kind = TOOL_KIND_ACTIVATED, .cost = [3]CostSlot{ slot(6, 2), slot(7, 1), NONE_SLOT } },
+    // Pressure Hook | Rigged | Hooked Barbel ×1, Shell Chip ×2, Coral Bud ×1
+    .{ .id = 5, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(8, 1), slot(1, 2), slot(5, 1) } },
+    // Sonar Ping | Activated | Glass Pane ×2, Gland Sac ×1
+    .{ .id = 6, .kind = TOOL_KIND_ACTIVATED, .cost = [3]CostSlot{ slot(7, 2), slot(3, 1), NONE_SLOT } },
+    // Coral Shield | Rigged | Coral Bud ×2, Plate Scrap ×1
+    .{ .id = 7, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(5, 2), slot(2, 1), NONE_SLOT } },
+};
+
+// ---- §11 upgrade costs ---------------------------------------------------
+//
+// One row per axis/tier; `axis` uses the `World.boat` indexes (the same
+// indexes dock Upgrade applies). Material ids follow R7: 1 Chitin, 2 Steel
+// Plate, 3 Gland, 4 Brine, 5 Coral, 6 Luminescence, 7 Glass; 8/9 are the
+// Hooked Barbel / Steel Fins keystone parts.
+
+pub const UpgradeRow = struct {
+    axis: i32,
+    tier: i32,
+    cost: [3]CostSlot,
+};
+
+pub const UPGRADES = [_]UpgradeRow{
+    // Hull
+    .{ .axis = world.BOAT_HULL, .tier = 1, .cost = [3]CostSlot{ slot(1, 3), NONE_SLOT, NONE_SLOT } },
+    .{ .axis = world.BOAT_HULL, .tier = 2, .cost = [3]CostSlot{ slot(1, 6), slot(2, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_HULL, .tier = 3, .cost = [3]CostSlot{ slot(1, 10), slot(2, 4), NONE_SLOT } },
+    // Precision
+    .{ .axis = world.BOAT_PRECISION, .tier = 1, .cost = [3]CostSlot{ slot(3, 2), slot(6, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_PRECISION, .tier = 2, .cost = [3]CostSlot{ slot(3, 4), slot(6, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_PRECISION, .tier = 3, .cost = [3]CostSlot{ slot(3, 8), slot(6, 2), NONE_SLOT } },
+    // Cargo
+    .{ .axis = world.BOAT_CARGO, .tier = 1, .cost = [3]CostSlot{ slot(4, 3), slot(5, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_CARGO, .tier = 2, .cost = [3]CostSlot{ slot(4, 6), slot(5, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_CARGO, .tier = 3, .cost = [3]CostSlot{ slot(4, 10), slot(5, 4), NONE_SLOT } },
+    // Oxygen
+    .{ .axis = world.BOAT_OXYGEN, .tier = 1, .cost = [3]CostSlot{ slot(5, 3), slot(4, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_OXYGEN, .tier = 2, .cost = [3]CostSlot{ slot(5, 6), slot(4, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_OXYGEN, .tier = 3, .cost = [3]CostSlot{ slot(5, 10), slot(4, 4), NONE_SLOT } },
+    // Speed
+    .{ .axis = world.BOAT_SPEED, .tier = 1, .cost = [3]CostSlot{ slot(7, 2), slot(3, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_SPEED, .tier = 2, .cost = [3]CostSlot{ slot(7, 2), slot(3, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_SPEED, .tier = 3, .cost = [3]CostSlot{ slot(7, 4), slot(3, 4), slot(9, 2) } },
+};
+
+// ---- §11 cosmetics -------------------------------------------------------
+//
+// Twelve fixed items in §11 order (bit 0..11). Prices total 2,100 coins.
+// Unlock milestones: zone-first-arrival bits (set by M5) or Derelict kill.
+
+pub const UNLOCK_Z1: i32 = 1;
+pub const UNLOCK_Z2: i32 = 2;
+pub const UNLOCK_Z3: i32 = 3;
+pub const UNLOCK_DERELICT: i32 = 4;
+
+pub const CosmeticRow = struct {
+    name: []const u8,
+    price: i32,
+    unlock: i32,
+};
+
+pub const COSMETICS = [_]CosmeticRow{
+    .{ .name = "Foam White", .price = 150, .unlock = UNLOCK_Z1 },
+    .{ .name = "Abyss Teal", .price = 175, .unlock = UNLOCK_Z2 },
+    .{ .name = "Leviathan Black", .price = 200, .unlock = UNLOCK_Z3 },
+    .{ .name = "Gull Skull", .price = 150, .unlock = UNLOCK_Z1 },
+    .{ .name = "Lantern Jaw", .price = 175, .unlock = UNLOCK_Z2 },
+    .{ .name = "Derelict Cog", .price = 200, .unlock = UNLOCK_DERELICT },
+    .{ .name = "Patched Pennant", .price = 150, .unlock = UNLOCK_Z1 },
+    .{ .name = "Reef Signal", .price = 175, .unlock = UNLOCK_Z3 },
+    .{ .name = "Trench Mark", .price = 200, .unlock = UNLOCK_DERELICT },
+    .{ .name = "Barnacle Stamp", .price = 150, .unlock = UNLOCK_Z2 },
+    .{ .name = "Glass Squid", .price = 175, .unlock = UNLOCK_Z3 },
+    .{ .name = "Boss Sigil", .price = 200, .unlock = UNLOCK_DERELICT },
+};
