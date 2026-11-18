@@ -590,6 +590,7 @@ fn tCreatureDefsAndFields() bool {
 
 fn tStartFightWorldZeroed() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
 
     if (s.world.cycle != 0) return false;
@@ -793,6 +794,7 @@ fn tDeclineNoRngAndGate() bool {
 // Creature attack reduces Hull by its Attack value.
 fn tCreatureAttackHull() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 2);
 
     const before = s.fight.hull;
@@ -807,6 +809,8 @@ fn tCreatureAttackHull() bool {
 fn tLogDeterminism() bool {
     var a: def.GameState = undefined;
     var b: def.GameState = undefined;
+    game.newGame(&a);
+    game.newGame(&b);
     game.startFight(&a, 2);
     game.startFight(&b, 2);
 
@@ -831,6 +835,7 @@ fn tLogDeterminism() bool {
 
 fn tFleeOutcome() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
     game.gameStep(&s, def.Action{ .kind = def.ACT_FLEE, .arg = 0 });
     return s.fight.outcome == def.OUT_PLAYER_FLED;
@@ -904,6 +909,7 @@ fn countMsg(s: *const def.GameState, msg_id: i32) i32 {
 // `modal_mode` decides the fixed answer (Attempt or Fight-on/Decline). The
 // pattern cycles if the fight is still live, so every run terminates.
 fn runInto(s: *def.GameState, def_index: i32, pattern: []const u8, modal_mode: i32) FightRun {
+    game.newGame(s);
     game.startFight(s, def_index);
 
     var r = FightRun{

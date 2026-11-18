@@ -13,6 +13,7 @@ const math = @import("math.zig");
 const rng = @import("rng.zig");
 const behavior = @import("behavior.zig");
 const tools = @import("tools.zig");
+const creatures = @import("creatures_t1.zig");
 const std_math = @import("std_math");
 
 // ---- Player baseline (§8.1) ----------------------------------------------
@@ -50,6 +51,8 @@ pub const DESPAIR_RES_GATE_PCT: i32 = 50;
 
 pub const STAT_HP: i32 = 1;
 pub const STAT_RES: i32 = 2;
+
+pub const GRUDGE_ARMOR_PCT: i32 = 30;
 
 pub const TOOL_PLATE: i32 = 1;
 pub const TOOL_BRINE_NET: i32 = 2;
@@ -174,6 +177,29 @@ pub fn startFightDef(s: *def.GameState, def_index: i32, cdef: *const def.Creatur
     }
     s.pending_cond = def.COND_NONE;
     s.screen = SCREEN_FIGHT;
+}
+
+// ---- Grudges (§10) --------------------------------------------------------
+//
+// A named creature's grudge fires when any member of its family was overkilled
+// this run. The world mask is run-scoped (world.runReset ends a run); `mask` is
+// passed explicitly so game.startFight can apply the pre-reset run mask.
+pub fn applyGrudge(s: *def.GameState, cdef: *const def.CreatureDef, mask: u32) void {
+    if (cdef.grudge_kind == 0) return;
+    if (cdef.grudge_family < 0 or cdef.grudge_family >= 32) return;
+    const bit: u32 = @intCast(u32, 1) << @intCast(u32, cdef.grudge_family);
+    if ((mask & bit) == 0) return;
+
+    switch (cdef.grudge_kind) {
+        creatures.GRUDGE_RES => {
+            s.fight.res += cdef.grudge_value;
+            s.fight.max_res += cdef.grudge_value;
+        },
+        creatures.GRUDGE_ARMOR => {
+            s.fight.flags = s.fight.flags | def.F_GRUDGE_ARMOR;
+        },
+        else => {},
+    }
 }
 
 // ---- Derived creature stats ----------------------------------------------
@@ -303,6 +329,7 @@ pub fn effectiveArmorPct(s: *const def.GameState, cdef: *const def.CreatureDef, 
         }
     }
 
+    if (s.fight.flags & def.F_GRUDGE_ARMOR != 0) a = GRUDGE_ARMOR_PCT;
     if (s.fight.tool_active != 0 and s.fight.tool == TOOL_PLATE) a = PERCENT_BASE;
     return a;
 }

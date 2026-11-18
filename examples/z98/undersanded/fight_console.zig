@@ -64,6 +64,7 @@ pub fn run() void {
     io.write("\n");
 
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, index);
     printFrame(&s, &d);
 

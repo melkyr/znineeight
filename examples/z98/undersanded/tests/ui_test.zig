@@ -110,6 +110,7 @@ fn dumpScreen(sc: *const render.Screen, out: []u8) []const u8 {
 
 fn tRenderFightFrame() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 2);
     const d = creatures.defAt(2);
 
@@ -134,6 +135,7 @@ fn tRenderFightFrame() bool {
 
 fn tRenderNoMutation() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
     const d = creatures.defAt(0);
 
@@ -158,6 +160,7 @@ fn tRenderNoMutation() bool {
 
 fn tRenderZeroAndMaxBars() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 2);
     const d = creatures.defAt(2);
 
@@ -186,6 +189,7 @@ fn tRenderZeroAndMaxBars() bool {
 
 fn tRenderLogLine() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
     const d = creatures.defAt(0);
 
@@ -200,6 +204,7 @@ fn tRenderLogLine() bool {
 
 fn tRenderEffectiveSpeed() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 2);
     const d = creatures.defAt(2);
 
@@ -218,6 +223,7 @@ fn tRenderEffectiveSpeed() bool {
 
 fn tRenderSurgedSpeed() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
     const d = creatures.defAt(0);
 
@@ -239,6 +245,7 @@ fn tRenderSurgedSpeed() bool {
 
 fn tRenderSubdueLogCopy() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
     const d = creatures.defAt(0);
 
@@ -256,6 +263,7 @@ fn tRenderSubdueLogCopy() bool {
 
 fn tRenderSecuredMsgRow() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
     const d = creatures.defAt(0);
 
@@ -272,6 +280,7 @@ fn tRenderSecuredMsgRow() bool {
 
 fn tRenderModal() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 3);
     const d = creatures.defAt(3);
     s.screen = fight.SCREEN_SUBDUE;
@@ -374,6 +383,7 @@ const Smoke = struct { outcome: i32, steps: i32, saw_modal: bool };
 
 fn runSequence(def_index: i32, seq: []const u8) Smoke {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, def_index);
 
     var r = Smoke{ .outcome = s.fight.outcome, .steps = 0, .saw_modal = false };

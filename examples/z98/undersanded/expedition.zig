@@ -404,6 +404,9 @@ fn hunt(g: *def.GameState) void {
     const wary = world.consumeWariness(&g.world, idx);
     g.fight.max_res += wary;
     g.fight.res += wary;
+
+    // §10 grudge: run-scoped family overkill raises this fight's stats.
+    fight.applyGrudge(g, &cdef, g.world.family_overkill_mask);
 }
 
 fn restAtNode(g: *def.GameState) void {

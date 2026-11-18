@@ -86,11 +86,16 @@ pub fn startFight(s: *def.GameState, def_index: i32) void {
         .tool_charge = 0,
         .tool_broken = 0,
     };
+    // The grudge mask is run-scoped, not per-fight fixture state: capture it
+    // before zeroWorld so a standalone startFight still honours the current
+    // run's overkills. Callers must pass an initialised GameState.
+    const grudge_mask = s.world.family_overkill_mask;
     zeroWorld(&s.world);
     s.fight.pending_stun = 0;
 
     var d = creatures.defAt(def_index);
     fight.startFightDef(s, def_index, &d, creatures.RULES[0..]);
+    fight.applyGrudge(s, &d, grudge_mask);
 }
 
 pub fn gameStep(s: *def.GameState, a: def.Action) void {
