@@ -685,3 +685,33 @@ wine in the native-only worktree); non-gating by design.
   copy ends at D18; `zig1_start` now has D16–D23 (D22 OWC bare fn-ptr, D23
   MinGW 3.4.2 import casts), next free slot D24. None of D16–D23 blocks M4;
   D18 is the only one that touches game code.
+
+### M5 amendment review (M4 Task 6)
+
+Verdict: **amendment required** — M5's dock UI/dispatch and persistent tool
+ownership are not covered by M4 or by the M5 plan's file list.
+
+- **Dock action dispatch/messages are unowned.** M4 `dockStep` handles only
+  `q/d/t`; `r/u/c/b` are deliberate no-ops (`nav.zig:63-69`) and `renderDock`
+  prints `Refine, Upgrade, Craft, Buy: not yet (M5).` (`render_term.zig:421-423`).
+  M5's Refine(material) / Upgrade(axis) / Craft(tool) / Buy(cosmetic) need key
+  dispatch, selection sub-prompts, and result/refusal messages. Amend
+  `2026-11-12-undersanded-m05-dock-economy-plan.md` File Structure and Task 2
+  to add `nav.zig` + `render_term.zig` (with nav/screens test and golden
+  updates); no M4 code change is needed because the stubs are intentional.
+- **No persistent tool-ownership field.** M5 Task 2/3 craft owned-forever tools
+  and equip one at depart, but `def.World` has no `tools_owned` (only
+  `cosmetics_owned`; `def.zig:66-83`) and nothing else persists ownership.
+  Amend `examples/z98/undersanded/def.zig` §25.3 `World` with
+  `tools_owned: u32` (7 tools fit `MAX_TOOLS=8`) and reset it in
+  `game.zeroWorld` (`game.zig:16-53`); consume it from M5 `dock.zig`/
+  `tools.zig`. Record the matching §25.7 layout row in the M5 notes.
+
+Checked, no amendment needed: `World` already carries `money`, `expertise[10]`,
+`boat[5]` tier counts, `hull`, and cosmetic masks (`def.zig:78-80`); part/
+keystone ids 1–9 exist (`creatures_t1.zig:38-47`); the derived boat tables are
+in `world.zig:24-28,117-139`. `NO_FIGHT` lives in `def.zig:116` and
+`newGame`/`zeroWorld` is the clean reset path (`game.zig:16-69`). Dock Rest is
+already split correctly: public `restAtDock` is +40 Hull, one phase, no RNG/
+condition (`expedition.zig:89-96`) vs node Rest (+30, condition roll,
+`expedition.zig:349-363`).
