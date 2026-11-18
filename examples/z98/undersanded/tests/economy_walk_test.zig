@@ -93,6 +93,7 @@ fn tRealE0Walk() bool {
     var g = newGame();
     var produced = [10]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     var granted = [10]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    var spend = [10]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     var refines: i32 = 0;
     var upgrades: i32 = 0;
 
@@ -160,6 +161,12 @@ fn tRealE0Walk() bool {
             if (g.world.boat[@intCast(usize, axis)] != tier) return false;
             if (g.world.field_phases != phases + 1) return false;
             if (!countsNonNegative(&g)) return false;
+            var c: usize = 0;
+            while (c < cost.len) : (c += 1) {
+                const kind = cost[c].kind;
+                if (kind < economy.MAT_CHITIN or kind > economy.MAT_GLASS) continue;
+                spend[@intCast(usize, kind)] += cost[c].amt;
+            }
             upgrades += 1;
         }
     }
@@ -167,24 +174,27 @@ fn tRealE0Walk() bool {
     var spent: i32 = 0;
     m = 1;
     while (m <= economy.MAT_GLASS) : (m += 1) {
-        const left = g.world.materials[@intCast(usize, m)];
-        if (left > produced[@intCast(usize, m)]) return false;
-        const used = produced[@intCast(usize, m)] - left;
-        spent += used;
+        const u: usize = @intCast(usize, m);
+        const target = TARGETS[u];
+        const left = g.world.materials[u];
+        if (produced[u] < target) return false;
+        if (spend[u] != target) return false;
+        if (left != produced[u] - target) return false;
+        spent += spend[u];
         io.write("walk m=");
         io.printInt(m);
         io.write(" target=");
-        io.printInt(TARGETS[@intCast(usize, m)]);
+        io.printInt(target);
         io.write(" granted=");
-        io.printInt(granted[@intCast(usize, m)]);
+        io.printInt(granted[u]);
         io.write(" produced=");
-        io.printInt(produced[@intCast(usize, m)]);
+        io.printInt(produced[u]);
         io.write(" spent=");
-        io.printInt(used);
+        io.printInt(spend[u]);
         io.write(" left=");
         io.printInt(left);
         io.write(" exp=");
-        io.printInt(g.world.expertise[@intCast(usize, m)]);
+        io.printInt(g.world.expertise[u]);
         io.write("\n");
     }
 
