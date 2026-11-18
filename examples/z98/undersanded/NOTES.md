@@ -826,3 +826,50 @@ evidence skip).
 **Deliberate M4 edit (Task 2):** `depart` stops zeroing `hold`/`hold_n` so the
 dock keeps its parts store. No current M4 test depends on a fresh hold; the
 M4 tier above is the baseline to re-verify after that change.
+
+### M5 Task 5 — real-E0 economy walk + dock tier
+
+- **Walk driver:** `tests/economy_walk_test.zig` is the P22.7 walk. It starts
+  from `game.newGame` (0 materials, E0, boat 0), does four one-part refines per
+  material to reach E4, adds one measured E4 batch when the four refines are
+  short of the §17 target, grants Steel Fins ×2, then buys every axis T1→T3.
+  It asserts 111 materials **spent**, Steel Fins `hold[9] == 0`, every axis at
+  T3, no negative material/hold count, and +1 `field_phases` per successful
+  refine/upgrade. The gate is not bypassed: each purchase asserts
+  `canBuyTier`, and the same Hull T2 cost is refused at E1 with no spend and
+  no phase.
+- **Walk result:** 34 refines + 15 upgrades = 49 phases; 117 materials
+  produced, 111 spent, 6 left.
+
+  | Mat | Target | Granted | Produced | Spent | Left | Exp |
+  | :-- | --: | --: | --: | --: | --: | --: |
+  | Chitin | 19 | 8 | 20 | 19 | 1 | 5 |
+  | Steel Plate | 6 | 4 | 8 | 6 | 2 | 4 |
+  | Gland | 21 | 9 | 23 | 21 | 2 | 5 |
+  | Brine | 26 | 10 | 26 | 26 | 0 | 5 |
+  | Coral | 26 | 10 | 26 | 26 | 0 | 5 |
+  | Luminescence | 5 | 5 | 6 | 5 | 1 | 5 |
+  | Glass | 8 | 6 | 8 | 8 | 0 | 5 |
+  | **Total** | **111** | **52** | **117** | **111** | **6** | |
+
+  Table self-check: 41 parts at E3, §17 target sum 111, cosmetics 2,100.
+- **Fixture:** `tests/fixtures/economy_full.md` records the §17 table plus the
+  §21.5 full-game projection: boat cost fixed at 111 + Steel Fins ×2 (global,
+  not per-tier), T2–T4 sale bands (T2 20–80, T3 30–90, T4 40–100; envelope
+  20–100), and deep Luminescence/Glass sources per band. Projection only; M13
+  re-derives source rows and M15 measures pacing.
+- **Tier:** `tests/tier_m5_dock.sh` is FAST/native only: `economy_test`,
+  `dock_test`, `tools_test`, `grudge_test`, `economy_walk_test`, key case names
+  and exact walk totals, the fixture existence/size/marker check, and a nested
+  `tier_m4_loop.sh` (whose dock golden is byte-matched). Result:
+  `TIER_M5 PASS 56 passed / 0 failed`.
+- **§41 Q2 re-check:** Steel Plate is now **rigged/passive from fight start**
+  (`rigged_active_at_fight_start_no_charge`), so M2's "spend a tempo turn to
+  equip Plate" no longer exists. Tools still change how a fight is played via
+  passive effects (Plate armour negation, Brine Net shell/restrain bypass,
+  Pressure Hook flee prevention, Coral Shield discharge negation) and the
+  activated Electric Gland stun — not just a damage number. The M2 answer's
+  mechanism changes; the "equipment changes the action plan" conclusion still
+  holds.
+- **Pacing:** full-run pacing/day-count measurement stays **M15**; this task
+  only closes the §17 arithmetic from a cold start.
