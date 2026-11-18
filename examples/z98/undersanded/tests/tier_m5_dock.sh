@@ -135,6 +135,7 @@ TOOLS_LOG="$OUT/tools_test/run.log"
 for c in plate_negates_armor_60_to_100 \
     coral_shield_electric_eel_discharge_zero \
     pressure_hook_blocks_flee electric_gland_stun_skips_one_action \
+    equip_exp_tool_fallback_equips_charge \
     rigged_active_at_fight_start_no_charge \
     break_persists_and_clears_on_depart \
     peek_leaves_state_byte_identical speed_precision_loadout_applied; do

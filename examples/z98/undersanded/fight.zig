@@ -657,7 +657,11 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
     if (a.kind == def.ACT_EQUIP) {
         const equipped = if (s.fight.tool != 0) s.fight.tool else s.exp.tool;
         if (!tools.canEquip(s, equipped)) return;
-        if (s.fight.tool == 0) s.fight.tool = equipped;
+        if (s.fight.tool == 0) {
+            s.fight.tool = equipped;
+            s.fight.tool_charge = s.exp.tool_charge;
+            s.fight.tool_broken = s.exp.tool_broken;
+        }
     }
 
     const player_first = !creatureFirst(s, cdef, rules);

@@ -366,6 +366,32 @@ fn tEquipRefusalNoRoundNoRng() bool {
     return true;
 }
 
+fn tEquipExpToolFallbackEquipsCharge() bool {
+    var d = neutralDef();
+    var s: def.GameState = undefined;
+    begin(&s, &d, noRules());
+    s.world.tools_owned = toolMask(4);
+    s.fight.tool = 0;
+    s.fight.tool_charge = 0;
+    s.fight.tool_broken = 0;
+    s.fight.tool_active = 0;
+    s.exp.tool = 4;
+    s.exp.tool_charge = 1;
+    s.exp.tool_broken = 0;
+
+    const round = s.fight.round;
+    const actions = s.fight.actions;
+    fight.step(&s, def.Action{ .kind = def.ACT_EQUIP, .arg = 0 }, &d, noRules());
+
+    if (s.fight.tool != 4) return false;
+    if (s.fight.tool_active != 1) return false;
+    if (s.fight.tool_charge != 0) return false;
+    if (s.exp.tool_charge != 0) return false;
+    if (s.fight.actions != actions + 1) return false;
+    if (s.fight.round != round + 1) return false;
+    return hasMsg(&s, fight.MSG_EQUIP);
+}
+
 // ---- Fragile --------------------------------------------------------------
 
 // Real ordering: the creature is faster, so its >=15 hit breaks the activated
@@ -513,6 +539,7 @@ pub fn main() void {
     report("electric_gland_stun_skips_one_action", tStunSkipsOneAction());
     report("activated_tool_one_use_per_expedition", tEquipChargeOneUse());
     report("equip_refusal_no_round_no_rng", tEquipRefusalNoRoundNoRng());
+    report("equip_exp_tool_fallback_equips_charge", tEquipExpToolFallbackEquipsCharge());
     report("creature_first_fragile_blocks_equip", tCreatureFirstFragileBlocksEquip());
     report("fragile_boundary_precision_1_2", tFragileBoundary());
     report("rigged_active_at_fight_start_no_charge", tRiggedActiveAtFightStart());
