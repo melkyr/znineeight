@@ -149,7 +149,7 @@ pub fn apportion(w: *def.World, zone: i32, out_def: *[def.MAX_ENCOUNTER]i32, out
         rare_target = clampTarget(world.rareChance(w, zone));
         common_target = TOTAL_PCT - rare_target;
     } else if (rare_n > 0) {
-        rare_target = TOTAL_PCT;
+        rare_target = clampTarget(world.rareChance(w, zone));
     } else {
         common_target = TOTAL_PCT;
     }

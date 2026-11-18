@@ -277,6 +277,34 @@ fn tLockedNodeRareZero() bool {
     return true;
 }
 
+// A rare-only pool must still honour the node's rareChance: locking the node
+// makes that zero, so every weight is zero and the roll safely fails.
+fn tRareOnlyPoolHonoursLockout() bool {
+    var w = nightWorld();
+    const zone: i32 = 2;
+    const rows = tables.rows(zone, w.phase);
+    var i: usize = 0;
+    while (i < rows.len) : (i += 1) {
+        if (isRareDef(rows[i].def_index)) continue;
+        const ri: usize = @intCast(usize, zone) * def.MAX_CREATURES + @intCast(usize, rows[i].def_index);
+        w.ready[ri] = w.cycle + 5;
+    }
+    w.lockout_until[@intCast(usize, zone)] = w.cycle + 5;
+    if (world.rareChance(&w, zone) != 0) return false;
+
+    var defs: [def.MAX_ENCOUNTER]i32 = undefined;
+    var weights: [def.MAX_ENCOUNTER]i32 = undefined;
+    const n = buildPool(&w, zone, &defs, &weights);
+    if (n <= 0) return false;
+    if (poolSum(&weights, n) != 0) return false;
+    if (poolRareSum(&defs, &weights, n) != 0) return false;
+    if (poolCommonSum(&defs, &weights, n) != 0) return false;
+
+    var out: i32 = -1;
+    if (encounter.rollEncounter(&w, zone, &out)) return false;
+    return true;
+}
+
 fn tEmptyPoolFalse() bool {
     var w = dayWorld();
 
@@ -384,6 +412,7 @@ pub fn main() void {
     report("z3_night_rare_share_scales_with_echo", tRareShareScalesWithEcho());
     report("rare_share_exact_with_release", tRareShareExactWithRelease());
     report("locked_node_rare_share_zero", tLockedNodeRareZero());
+    report("rare_only_pool_honours_lockout", tRareOnlyPoolHonoursLockout());
     report("empty_pool_returns_false", tEmptyPoolFalse());
     report("rare_roll_clears_release_bonus", tReleaseResetOnRare());
     report("common_and_named_picks_keep_release_bonus", tReleaseSurvivesCommonAndNamed());
