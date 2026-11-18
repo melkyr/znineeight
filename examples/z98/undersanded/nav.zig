@@ -1,25 +1,42 @@
-// nav.zig — UNDERSANDED M4 playable console navigation (spec §12, §16, §26).
+// nav.zig — UNDERSANDED M5 playable console navigation (spec §12, §16, §26).
 //
 // Pure navigation: navStep maps one key to the next nav screen id and mutates
-// game state only through the expedition entry points. All I/O lives in
+// game state only through the dock/expedition entry points. All I/O lives in
 // navRun (one stdin key per frame); there is no gfx and no RNG of our own.
 //
 // Nav screen ids live here and stay disjoint from fight.SCREEN_* (0..2).
 // GameState.screen carries the nav id while navigating; fight.zig overwrites
 // it with SCREEN_FIGHT/SCREEN_SUBDUE when a fight starts.
+//
+// UI-only state (the rare-batch two-press confirm and the last dock result)
+// lives in NavState, never GameState (R16).
 
 const io = @import("std_io.zig");
 const def = @import("def.zig");
 const input = @import("input.zig");
 const expedition = @import("expedition.zig");
 const creatures = @import("creatures_t1.zig");
+const dock = @import("dock.zig");
 const render = @import("render_term.zig");
 
 pub const NAV_DOCK: i32 = 10;
 pub const NAV_MAP: i32 = 11;
 pub const NAV_NODE: i32 = 12;
 pub const NAV_SETTLE: i32 = 13;
+pub const NAV_REFINE: i32 = 14;
+pub const NAV_UPGRADE: i32 = 15;
+pub const NAV_CRAFT: i32 = 16;
+pub const NAV_BUY: i32 = 17;
+pub const NAV_TOOLS: i32 = 18;
 pub const NAV_QUIT: i32 = -1;
+
+pub const NAV_RESULT_NONE: i32 = -100;
+pub const NAV_RESULT_PREVIEW: i32 = -101;
+
+pub const NavState = struct {
+    armed: i32,
+    last: i32,
+};
 
 fn lower(c: u8) u8 {
     if (c >= 'A' and c <= 'Z') return c + 32;
@@ -60,12 +77,90 @@ fn screenAfterField(g: *def.GameState) i32 {
     return deriveScreen(g);
 }
 
-fn dockStep(g: *def.GameState, key: input.Key) i32 {
+fn dockStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    st.armed = 0;
     if (isChar(key, 'q')) return NAV_QUIT;
     if (isChar(key, 'd')) return setScreen(g, NAV_MAP);
     if (isChar(key, 't')) expedition.restAtDock(g);
-    // r/u/c/b print "not yet (M5)" on screen; any other key is a no-op.
+    if (isChar(key, 'r')) return setScreen(g, NAV_REFINE);
+    if (isChar(key, 'u')) return setScreen(g, NAV_UPGRADE);
+    if (isChar(key, 'c')) return setScreen(g, NAV_CRAFT);
+    if (isChar(key, 'b')) return setScreen(g, NAV_BUY);
+    if (isChar(key, 'e')) return setScreen(g, NAV_TOOLS);
     return setScreen(g, NAV_DOCK);
+}
+
+// Refine sub-menu: common parts execute on one press; Glow Polyp (6) and Glass
+// Pane (7) arm a rare-batch preview and execute on the same key again. Any
+// other key cancels the arm; Esc backs out to the dock (R11/P22.9).
+fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    if (isEsc(key)) {
+        st.armed = 0;
+        return setScreen(g, NAV_DOCK);
+    }
+
+    if (key.ch >= '1' and key.ch <= '7') {
+        const material: i32 = @intCast(i32, key.ch - '0');
+        if (st.armed != 0 and st.armed != material) {
+            st.armed = 0;
+            return setScreen(g, NAV_REFINE);
+        }
+        if (dock.isRareRefine(material) and st.armed != material
+            and dock.refineParts(g, material) > 0) {
+            st.armed = material;
+            st.last = NAV_RESULT_PREVIEW;
+            return setScreen(g, NAV_REFINE);
+        }
+        st.armed = 0;
+        st.last = dock.dockRefine(g, material);
+        return setScreen(g, NAV_REFINE);
+    }
+
+    // Any other key cancels a pending rare-batch confirm.
+    st.armed = 0;
+    return setScreen(g, NAV_REFINE);
+}
+
+fn upgradeStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (key.ch >= '1' and key.ch <= '5') {
+        const axis: i32 = @intCast(i32, key.ch - '1');
+        st.last = dock.dockUpgrade(g, axis);
+    }
+    return setScreen(g, NAV_UPGRADE);
+}
+
+fn craftStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (key.ch >= '1' and key.ch <= '7') {
+        const tool: i32 = @intCast(i32, key.ch - '0');
+        st.last = dock.dockCraft(g, tool);
+    }
+    return setScreen(g, NAV_CRAFT);
+}
+
+fn buyStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    const c = lower(key.ch);
+    if (c >= '1' and c <= '9') {
+        const cosmetic: i32 = @intCast(i32, c - '1');
+        st.last = dock.dockBuy(g, cosmetic);
+    } else if (c >= 'a' and c <= 'c') {
+        const cosmetic: i32 = @intCast(i32, 9 + (c - 'a'));
+        st.last = dock.dockBuy(g, cosmetic);
+    }
+    return setScreen(g, NAV_BUY);
+}
+
+fn toolsStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (isChar(key, '0')) {
+        st.last = dock.dockSelectTool(g, 0);
+    } else if (key.ch >= '1' and key.ch <= '7') {
+        const tool: i32 = @intCast(i32, key.ch - '0');
+        st.last = dock.dockSelectTool(g, tool);
+    }
+    return setScreen(g, NAV_TOOLS);
 }
 
 fn mapStep(g: *def.GameState, key: input.Key) i32 {
@@ -102,8 +197,10 @@ fn nodeStep(g: *def.GameState, key: input.Key) i32 {
     return setScreen(g, NAV_NODE);
 }
 
-// Next screen id for one key. Mutates game state only via expedition.
-pub fn navStep(g: *def.GameState, key: input.Key) i32 {
+// Next screen id for one key. Mutates game state only via dock/expedition.
+pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    st.last = NAV_RESULT_NONE;
+
     // (1) A live fight consumes the key through the fight key map, then the
     // post-fight state decides which nav screen comes next.
     if (expedition.isInFight(g)) {
@@ -126,11 +223,17 @@ pub fn navStep(g: *def.GameState, key: input.Key) i32 {
         return setScreen(g, deriveScreen(g));
     }
 
-    // (3) Field screens. An uninitialised screen id is treated as the dock.
+    // (3) Field and dock sub-menu screens. An uninitialised screen id is
+    // treated as the dock.
     switch (g.screen) {
         NAV_MAP => return mapStep(g, key),
         NAV_NODE => return nodeStep(g, key),
-        else => return dockStep(g, key),
+        NAV_REFINE => return refineStep(g, st, key),
+        NAV_UPGRADE => return upgradeStep(g, st, key),
+        NAV_CRAFT => return craftStep(g, st, key),
+        NAV_BUY => return buyStep(g, st, key),
+        NAV_TOOLS => return toolsStep(g, st, key),
+        else => return dockStep(g, st, key),
     }
 }
 
@@ -142,29 +245,48 @@ fn drawCurrent(g: *def.GameState, out: []u8) []const u8 {
     } else switch (g.screen) {
         NAV_MAP => render.renderMap(g, &sc),
         NAV_NODE, NAV_SETTLE => render.renderNode(g, &sc),
+        NAV_REFINE => render.renderRefine(g, &sc),
+        NAV_UPGRADE => render.renderUpgrade(g, &sc),
+        NAV_CRAFT => render.renderCraft(g, &sc),
+        NAV_BUY => render.renderBuy(g, &sc),
+        NAV_TOOLS => render.renderTools(g, &sc),
         else => render.renderDock(g, &sc),
     }
     return render.dump(&sc, out);
 }
 
+fn writeRarePreview(g: *def.GameState, st: *const NavState) void {
+    const parts = dock.refineParts(g, st.armed);
+    const total = parts * dock.refinePerPart(g, st.armed);
+    io.write("Rare batch: ");
+    io.printInt(parts);
+    io.write(" parts -> ");
+    io.printInt(total);
+    io.write(" materials (expertise +1). Press again to confirm; Esc cancels.\n");
+}
+
 // Interactive console loop: render, prompt, read one key, step. EOF exits.
 pub fn navRun(g: *def.GameState) void {
-    if (g.screen != NAV_MAP and g.screen != NAV_NODE and g.screen != NAV_SETTLE) {
+    if (g.screen != NAV_MAP and g.screen != NAV_NODE and g.screen != NAV_SETTLE
+        and g.screen != NAV_REFINE and g.screen != NAV_UPGRADE
+        and g.screen != NAV_CRAFT and g.screen != NAV_BUY and g.screen != NAV_TOOLS) {
         g.screen = NAV_DOCK;
     }
 
+    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE };
     var buf: [8192]u8 = undefined;
 
     while (true) {
         io.write(drawCurrent(g, buf[0..]));
         io.write("> ");
         const key = input.readKey() orelse return;
-        const was_dock = g.screen == NAV_DOCK;
-        const next = navStep(g, key);
+        const next = navStep(g, &st, key);
         if (next == NAV_QUIT) return;
-        if (was_dock and next == NAV_DOCK
-            and (isChar(key, 'r') or isChar(key, 'u') or isChar(key, 'c') or isChar(key, 'b'))) {
-            io.write("Refine, Upgrade, Craft, Buy: not yet (M5).\n");
+        if (st.last >= 0) {
+            io.write(dock.resultText(st.last));
+            io.write("\n");
+        } else if (st.last == NAV_RESULT_PREVIEW) {
+            writeRarePreview(g, &st);
         }
     }
 }

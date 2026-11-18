@@ -33,6 +33,19 @@ fn key(c: u8) input.Key {
     return input.Key{ .ch = c, .code = 0 };
 }
 
+fn escKey() input.Key {
+    return input.Key{ .ch = input.KEY_ESC, .code = 0 };
+}
+
+fn newNav() nav.NavState {
+    return nav.NavState{ .armed = 0, .last = nav.NAV_RESULT_NONE };
+}
+
+fn setHold(g: *def.GameState, part: i32, n: i32) void {
+    const ep = &g.exp;
+    ep.hold[@intCast(usize, part)] = n;
+}
+
 fn pending(g: *const def.GameState) bool {
     return g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != def.NO_FIGHT;
 }
@@ -49,12 +62,13 @@ fn holdNonZero(h: *const [def.MAX_PARTS]i32) bool {
 fn tDockMapNode() bool {
     var g: def.GameState = undefined;
     game.newGame(&g);
+    var st = newNav();
 
-    if (nav.navStep(&g, key('d')) != nav.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('d')) != nav.NAV_MAP) return false;
     if (g.screen != nav.NAV_MAP) return false;
     if (g.world.field_phases != 0) return false;
 
-    if (nav.navStep(&g, key('2')) != nav.NAV_NODE) return false;
+    if (nav.navStep(&g, &st, key('2')) != nav.NAV_NODE) return false;
     if (g.screen != nav.NAV_NODE) return false;
     if (g.exp.active != 1) return false;
     if (g.exp.zone != 1) return false;
@@ -66,21 +80,22 @@ fn tDockMapNode() bool {
 fn tPolicySubdueReleaseSurface() bool {
     var g: def.GameState = undefined;
     game.newGame(&g);
-    if (nav.navStep(&g, key('d')) != nav.NAV_MAP) return false;
-    if (nav.navStep(&g, key('2')) != nav.NAV_NODE) return false;
+    var st = newNav();
+    if (nav.navStep(&g, &st, key('d')) != nav.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('2')) != nav.NAV_NODE) return false;
     if (g.world.field_phases != 3) return false;
 
     // Hunt, then the pinned policy: modal -> Attempt, else Strike above 50%
     // HP, else Restrain.
-    _ = nav.navStep(&g, key('h'));
+    _ = nav.navStep(&g, &st, key('h'));
     var guard: i32 = 0;
     while (expedition.isInFight(&g) and guard < 200) : (guard += 1) {
         if (g.screen == fight.SCREEN_SUBDUE or g.screen == fight.SCREEN_SUBDUE_POST) {
-            _ = nav.navStep(&g, key('a'));
+            _ = nav.navStep(&g, &st, key('a'));
         } else if (g.fight.hp * 100 > g.fight.max_hp * 50) {
-            _ = nav.navStep(&g, key('s'));
+            _ = nav.navStep(&g, &st, key('s'));
         } else {
-            _ = nav.navStep(&g, key('r'));
+            _ = nav.navStep(&g, &st, key('r'));
         }
     }
     if (expedition.isInFight(&g)) return false;
@@ -90,13 +105,13 @@ fn tPolicySubdueReleaseSurface() bool {
     if (!holdNonZero(&g.exp.hold)) return false;
 
     const money = g.world.money;
-    if (nav.navStep(&g, key('r')) != nav.NAV_NODE) return false;
+    if (nav.navStep(&g, &st, key('r')) != nav.NAV_NODE) return false;
     if (pending(&g)) return false;
     if (g.exp.active != 1) return false;
     if (g.world.money != money) return false;
     if (g.world.field_phases != 3) return false;
 
-    if (nav.navStep(&g, key('s')) != nav.NAV_DOCK) return false;
+    if (nav.navStep(&g, &st, key('s')) != nav.NAV_DOCK) return false;
     if (g.screen != nav.NAV_DOCK) return false;
     if (g.exp.active != 0) return false;
     if (g.world.money != money) return false;
@@ -109,10 +124,11 @@ fn tPolicySubdueReleaseSurface() bool {
 fn tDockRestHealsOnePhase() bool {
     var g: def.GameState = undefined;
     game.newGame(&g);
+    var st = newNav();
     g.world.hull = 60;
     g.world.field_phases = 0;
 
-    if (nav.navStep(&g, key('t')) != nav.NAV_DOCK) return false;
+    if (nav.navStep(&g, &st, key('t')) != nav.NAV_DOCK) return false;
     if (g.world.hull != 100) return false;
     if (g.world.field_phases != 1) return false;
     if (g.exp.active != 0) return false;
@@ -123,9 +139,10 @@ fn tDockRestHealsOnePhase() bool {
 fn tLockedBossStaysMap() bool {
     var g: def.GameState = undefined;
     game.newGame(&g);
+    var st = newNav();
 
-    if (nav.navStep(&g, key('d')) != nav.NAV_MAP) return false;
-    if (nav.navStep(&g, key('9')) != nav.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('d')) != nav.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('9')) != nav.NAV_MAP) return false;
     if (g.screen != nav.NAV_MAP) return false;
     if (g.exp.active != 0) return false;
     if (g.world.field_phases != 0) return false;
@@ -136,8 +153,9 @@ fn tLockedBossStaysMap() bool {
 fn tHullZeroAscentReturnsDock() bool {
     var g: def.GameState = undefined;
     game.newGame(&g);
-    if (nav.navStep(&g, key('d')) != nav.NAV_MAP) return false;
-    if (nav.navStep(&g, key('2')) != nav.NAV_NODE) return false;
+    var st = newNav();
+    if (nav.navStep(&g, &st, key('d')) != nav.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('2')) != nav.NAV_NODE) return false;
 
     // Enter the next fight at 1 Hull; Equip draws no damage, so the creature's
     // hit zeroes Hull and postFight performs the Emergency Ascent.
@@ -145,16 +163,91 @@ fn tHullZeroAscentReturnsDock() bool {
     var guard: i32 = 0;
     while (g.exp.active != 0 and guard < 200) : (guard += 1) {
         if (expedition.isInFight(&g)) {
-            _ = nav.navStep(&g, key('e'));
+            _ = nav.navStep(&g, &st, key('e'));
         } else if (pending(&g)) {
-            _ = nav.navStep(&g, key('r'));
+            _ = nav.navStep(&g, &st, key('r'));
         } else {
-            _ = nav.navStep(&g, key('h'));
+            _ = nav.navStep(&g, &st, key('h'));
         }
     }
     if (g.exp.active != 0) return false;
     if (g.screen != nav.NAV_DOCK) return false;
     if (g.world.hull != 0) return false;
+    return true;
+}
+
+// (f) Dock keys open each sub-menu and Esc backs out.
+fn tDockMenuKeys() bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    var st = newNav();
+
+    if (nav.navStep(&g, &st, key('r')) != nav.NAV_REFINE) return false;
+    if (nav.navStep(&g, &st, escKey()) != nav.NAV_DOCK) return false;
+    if (nav.navStep(&g, &st, key('u')) != nav.NAV_UPGRADE) return false;
+    if (nav.navStep(&g, &st, escKey()) != nav.NAV_DOCK) return false;
+    if (nav.navStep(&g, &st, key('c')) != nav.NAV_CRAFT) return false;
+    if (nav.navStep(&g, &st, escKey()) != nav.NAV_DOCK) return false;
+    if (nav.navStep(&g, &st, key('b')) != nav.NAV_BUY) return false;
+    if (nav.navStep(&g, &st, escKey()) != nav.NAV_DOCK) return false;
+    if (nav.navStep(&g, &st, key('e')) != nav.NAV_TOOLS) return false;
+    if (nav.navStep(&g, &st, escKey()) != nav.NAV_DOCK) return false;
+    if (g.world.field_phases != 0) return false;
+    return true;
+}
+
+// (g) Rare batch arms once, confirms on the same key, common refines at once.
+fn tRareConfirmKeys() bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    var st = newNav();
+    setHold(&g, 1, 2);
+    setHold(&g, 6, 3);
+    const rng = g.world.rng_state;
+
+    if (nav.navStep(&g, &st, key('r')) != nav.NAV_REFINE) return false;
+    if (nav.navStep(&g, &st, key('6')) != nav.NAV_REFINE) return false;
+    if (st.armed != 6) return false;
+    if (st.last != nav.NAV_RESULT_PREVIEW) return false;
+    if (g.exp.hold[6] != 3) return false;
+    if (g.world.field_phases != 0) return false;
+
+    if (nav.navStep(&g, &st, key('6')) != nav.NAV_REFINE) return false;
+    if (st.armed != 0) return false;
+    if (st.last != 0) return false;
+    if (g.exp.hold[6] != 0) return false;
+    if (g.world.expertise[6] != 1) return false;
+    if (g.world.materials[6] != 0) return false;
+    if (g.world.field_phases != 1) return false;
+
+    if (nav.navStep(&g, &st, key('1')) != nav.NAV_REFINE) return false;
+    if (g.exp.hold[1] != 0) return false;
+    if (g.world.materials[1] != 2) return false;
+    if (g.world.field_phases != 2) return false;
+    if (g.world.rng_state != rng) return false;
+    return true;
+}
+
+// (h) Any other key cancels an armed rare batch without refining it.
+fn tRareCancelKeys() bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    var st = newNav();
+    setHold(&g, 1, 2);
+    setHold(&g, 6, 3);
+
+    if (nav.navStep(&g, &st, key('r')) != nav.NAV_REFINE) return false;
+    if (nav.navStep(&g, &st, key('6')) != nav.NAV_REFINE) return false;
+    if (st.armed != 6) return false;
+
+    if (nav.navStep(&g, &st, key('x')) != nav.NAV_REFINE) return false;
+    if (st.armed != 0) return false;
+    if (g.exp.hold[6] != 3) return false;
+    if (g.exp.hold[1] != 2) return false;
+    if (g.world.field_phases != 0) return false;
+
+    // Esc from the sub-menu backs out to the dock.
+    if (nav.navStep(&g, &st, escKey()) != nav.NAV_DOCK) return false;
     return true;
 }
 
@@ -164,6 +257,9 @@ pub fn main() void {
     report("dock_rest_60_to_100_one_phase", tDockRestHealsOnePhase());
     report("locked_boss_stays_map", tLockedBossStaysMap());
     report("hull_zero_ascent_returns_dock", tHullZeroAscentReturnsDock());
+    report("dock_menu_keys_and_esc", tDockMenuKeys());
+    report("rare_batch_two_press_confirm", tRareConfirmKeys());
+    report("rare_batch_other_key_cancels", tRareCancelKeys());
 
     if (fails != 0) os.exit(1);
     io.write("nav_test PASS\n");

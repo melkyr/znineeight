@@ -290,6 +290,41 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
 
 // ---- Actions --------------------------------------------------------------
 
+// Owned-tool bits are keyed by tool id (R6: tool 1..7 -> bit 1..7).
+fn toolOwned(w: *const def.World, tool: i32) bool {
+    if (tool < 1 or tool > 7) return false;
+    const bit: u32 = @intCast(u32, tool);
+    const mask: u32 = @intCast(u32, 1) << bit;
+    return (w.tools_owned & mask) != 0;
+}
+
+fn toolKind(tool: i32) i32 {
+    var i: usize = 0;
+    while (i < tables.TOOLS.len) : (i += 1) {
+        if (tables.TOOLS[i].id == tool) return tables.TOOLS[i].kind;
+    }
+    return -1;
+}
+
+// Zone milestones de-gray the 12 cosmetics (R12: `CosmeticRow.unlock` is a
+// condition id, the stored bits are item indexes 0..11). Derelict bits stay 0
+// until M11.
+fn unlockZoneCosmetics(w: *def.World, zone: i32) void {
+    var cond: i32 = 0;
+    switch (zone) {
+        0 => cond = tables.UNLOCK_Z1,
+        1 => cond = tables.UNLOCK_Z2,
+        2 => cond = tables.UNLOCK_Z3,
+        else => return,
+    }
+    var i: usize = 0;
+    while (i < tables.COSMETICS.len) : (i += 1) {
+        if (tables.COSMETICS[i].unlock != cond) continue;
+        const bit: u32 = @intCast(u32, i);
+        w.cosmetics_unlocked = w.cosmetics_unlocked | (@intCast(u32, 1) << bit);
+    }
+}
+
 pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     const ep = &g.exp;
     ep.active = 1;
@@ -298,12 +333,20 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     // Bound the drawn seed (see SEED_MASK): fight.zig adds `fight_index*77`
     // in u32, and a full-range seed would trap under -fsafe.
     ep.seed = rng.rngNext(&g.world.rng_state) & SEED_MASK;
-    ep.hold_n = 0;
-    g.log_n = 0;
-    var i: usize = 0;
-    while (i < def.MAX_PARTS) : (i += 1) {
-        ep.hold[i] = 0;
+
+    // P22.4: the hold is the persistent dock parts store, kept across depart.
+    // P22.5/R6: copy the selected tool, charging activated tools once.
+    var selected = g.world.tool_selected;
+    if (!toolOwned(&g.world, selected)) selected = 0;
+    ep.tool = selected;
+    ep.tool_charge = 0;
+    if (selected != 0 and toolKind(selected) == tables.TOOL_KIND_ACTIVATED) {
+        ep.tool_charge = 1;
     }
+    ep.tool_broken = 0;
+
+    g.log_n = 0;
+    unlockZoneCosmetics(&g.world, zone);
 
     g.fight.def_index = NO_FIGHT;
     g.fight.outcome = def.OUT_ONGOING;

@@ -61,6 +61,7 @@ pub const FightState = struct {
     pending_blind: i32, pending_ink: i32, pending_flee: i32,
     active_armor_pct: i32, active_resist_restrain: i32,
     cond: i32,
+    pending_stun: i32,
 };
 
 pub const World = struct {
@@ -77,6 +78,8 @@ pub const World = struct {
     hull: i32,
     boat: [5]i32, money: i32,
     expertise: [MAX_MATERIALS]i32,
+    materials: [MAX_MATERIALS]i32,
+    tools_owned: u32, tool_selected: i32,
     cosmetics_owned: u32, cosmetics_unlocked: u32,
     field_record_written: i32,
     boss_variants_seen: u32, boss_kills: i32,
@@ -87,6 +90,7 @@ pub const LogEntry = struct { class: i32, msg_id: i32, a: i32, b: i32 };
 pub const Expedition = struct {
     active: i32, zone: i32, fight_index: i32, seed: u32,
     hold: [MAX_PARTS]i32, hold_n: i32,
+    tool: i32, tool_charge: i32, tool_broken: i32,
 };
 
 pub const Effect = struct { op: i32, a: i32, b: i32 };
