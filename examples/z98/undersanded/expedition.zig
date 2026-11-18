@@ -45,6 +45,7 @@ const SEED_MASK: u32 = 0x00FFFFFF;
 pub const NO_FIGHT: i32 = -1;
 
 const REST_HEAL: i32 = 30;
+const DOCK_REST_HEAL: i32 = 40;
 const HEAVY_MIN_COST: i32 = 3;
 const HEAVY_BONUS: i32 = 1;
 const HEAVY_TIER: i32 = 3;
@@ -81,6 +82,17 @@ fn healNode(g: *def.GameState) void {
     if (h > mx) h = mx;
     if (h < 0) h = 0;
     g.world.hull = h;
+}
+
+// §5: Dock Rest always costs exactly one phase, even at full Hull. It is safe
+// (no condition roll) and draws no RNG.
+pub fn restAtDock(g: *def.GameState) void {
+    var h = g.world.hull + DOCK_REST_HEAL;
+    const mx = world.hullMax(&g.world);
+    if (h > mx) h = mx;
+    if (h < 0) h = 0;
+    g.world.hull = h;
+    world.advancePhase(&g.world);
 }
 
 // Empty pool check for the safe-Rest distinction (§5/§12). apportion does not

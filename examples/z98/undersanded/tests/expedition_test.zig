@@ -925,6 +925,59 @@ fn tSecuredExactlyOnce() bool {
     return true;
 }
 
+fn tDockRest() bool {
+    // 60 -> 100 (+40); Day -> Night keeps the cycle, phase +1, no condition,
+    // no RNG draw.
+    var g = newGame();
+    const gw = &g.world;
+    gw.hull = 60;
+    gw.phase = world.PHASE_DAY;
+    gw.cycle = 4;
+    gw.field_phases = 10;
+    gw.rng_state = 12345;
+    g.pending_cond = def.COND_NONE;
+
+    expedition.restAtDock(&g);
+    if (gw.hull != 100) return false;
+    if (gw.field_phases != 11) return false;
+    if (gw.phase != world.PHASE_NIGHT) return false;
+    if (gw.cycle != 4) return false;
+    if (g.pending_cond != def.COND_NONE) return false;
+    if (gw.rng_state != 12345) return false;
+
+    // Clamp at the base 100 max (Hull tier 0).
+    var c = newGame();
+    const cw = &c.world;
+    cw.boat[world.BOAT_HULL] = 0;
+    cw.hull = 90;
+    expedition.restAtDock(&c);
+    if (cw.hull != 100) return false;
+
+    // Clamp at the Hull T3 max (200); Night -> Day advances the cycle +1 and
+    // the phase count +1.
+    var h = newGame();
+    const hw = &h.world;
+    hw.boat[world.BOAT_HULL] = 3;
+    hw.hull = 190;
+    hw.phase = world.PHASE_NIGHT;
+    hw.cycle = 2;
+    hw.field_phases = 5;
+    expedition.restAtDock(&h);
+    if (hw.hull != 200) return false;
+    if (hw.field_phases != 6) return false;
+    if (hw.phase != world.PHASE_DAY) return false;
+    if (hw.cycle != 3) return false;
+
+    // Full Hull still costs exactly one phase (§5).
+    var f = newGame();
+    f.world.hull = 100;
+    f.world.field_phases = 0;
+    expedition.restAtDock(&f);
+    if (f.world.hull != 100) return false;
+    if (f.world.field_phases != 1) return false;
+    return true;
+}
+
 pub fn main() void {
     report("z2_phase_ledger_depart_return", tZ2PhaseLedger());
     report("fight_seed_formula_seed_plus_index_77", tFightSeedFormula());
@@ -949,6 +1002,7 @@ pub fn main() void {
     report("depart_parks_no_fight_state", tDepartParksNoFight());
     report("secured_line_no_entry_empty", tSecuredNoEntryEmpty());
     report("secured_awards_exactly_once", tSecuredExactlyOnce());
+    report("dock_rest_heal_phase_no_condition_rng", tDockRest());
 
     if (fails != 0) os.exit(1);
     io.write("expedition_test PASS\n");
