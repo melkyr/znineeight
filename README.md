@@ -303,6 +303,23 @@ use `i686-w64-mingw32-gcc` (12-win32). The three Windows compilers were built an
 on the operator's Windows 98 machine with MSVC 6, OpenWatcom 1.9, and MinGW gcc 3.4.5; the
 canonical Win9x binary is the OpenWatcom static-CLIB build (no `msvcrt.dll`).
 
+### Known issue: MinGW GCC 3.4.2 (Win9x no-CRT)
+
+The operator's native MinGW on the P4 identifies as **GCC 3.4.2
+(mingw-special)** (the release notes label the toolchain 3.4.5; the binary
+reports 3.4.2). It miscompiles calls to Win32 imports that the emitted C
+routes through a mismatched function-pointer cast: it warns `function called
+through a non-compatible type` and replaces the call with `int $5`. z9gb then
+faults at `CreateFileA` with exception 05H. This is emitted-C UB, not a
+control-flow or optimization problem: 20 control-flow shapes still trap, while
+direct calls work.
+
+Use **modern `i686-w64-mingw32-gcc`** or **OpenWatcom** for a working build.
+The planned emitter fix is to emit a direct call when the call site has the
+platform header (`std_os_prelude.h`/`<windows.h>`) and keep the stdcall cast
+for header-less externs. See `examples/torrent_example_defects.md` D23 and
+`examples/z98/z9gb/KNOWN_GAPS.md` §9.
+
 ## RAM & Wall-Clock Comparison
 Measured on the build machine, each row 3× under `/usr/bin/time -v` in fresh scratch dirs with
 fresh output names (no incremental caching); **median** reported. wall = "Elapsed (wall clock)",

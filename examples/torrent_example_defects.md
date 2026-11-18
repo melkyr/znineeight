@@ -3,9 +3,9 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D22**.
+deleted numbers are not reused. Next free slot: **D24**.
 
-Open: **D16, D17, D18, D19, D20, D21**.
+Open: **D16, D17, D18, D19, D20, D21, D22, D23**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -322,7 +322,7 @@ the 3042/3023 pair): the current compiler emits `error[3043]` and exits 3.
 The `error[3043] internal: unsupported address-of l-value (node 6)` failure is
 a **separate internal-error defect**, not part of the module/type parity gap;
 it is recorded under D19 for the address-of module shape without consuming a
-new ID (the next free slot remains **D22**).
+new ID (the next free slot remains **D24**).
 
 **Representability.** `typeRegistryGetOrCreateModule(module_id)` exists in
 `sf/src/type_registry.zig` and creates a `module_type`, so module values are
@@ -405,3 +405,132 @@ rewrite comments/docs here: this task is doc-only for this ledger. Historical
 strings in current-source comments as stale metadata pending a separate
 cleanup.
 
+## D22 — OpenWatcom bare/cdecl function-pointer types are not cdecl
+
+**Status:** OPEN (deferred, doc-only).
+**Backend:** OpenWatcom 1.9 (Win32).
+
+A bare function-pointer type (no explicit calling convention) is not treated as
+cdecl on OpenWatcom, so indirect calls through such a pointer use the wrong
+convention. The z9gb workaround shipped in `1cb44c39`: machine-code entry
+points and helpers use `extern "stdcall"`, `Z98_STDCALL`-qualified
+function-pointer typedefs, and callee-clean glue (`ret 4`). The general
+bare/cdecl case remains unfixed; any parity fix is separately authorized.
+
+---
+
+## D23 — MinGW GCC 3.4.2 traps incompatible Win32 function-pointer casts
+
+**Status:** OPEN (emitted-C UB; direct-call workaround proved).
+
+**Backend:** MinGW GCC 3.4.2 (mingw-special), Win32, Pentium 4 / Win98.
+
+**Root cause.** The emitted C calls Win32 imports through a cast to a
+mismatched function-pointer type:
+
+```c
+zT_47 = ((zT_04A29DB2_FS_void__unsigned_c)CreateFileA)(...);
+zT_24 = ((zT_4E5CC50D_FS_int_void__unsign)ReadFile)(...);
+zT_24 = ((zT_4E5CC50D_FS_int_void__unsign)WriteFile)(...);
+zT_38 = ((zT_4D39C164_FS_int_unsigned_cha)MoveFileA)(...);
+```
+
+GCC warns `function called through a non-compatible type`. GCC 3.4.2
+replaces the call with `int $5`; the call disappears. Modern GCC warns but
+still emits the call. `CloseHandle` is already emitted as a direct
+`call _CloseHandle@4` and never traps. This is UB in the emitted C, not a
+control-flow or block-layout problem.
+
+**Evidence.**
+
+- All 20 control-flow shapes (while/do/for/goto/if-else/switch/out-param/
+  helper/separate TU) still had 8 `int $5` and no
+  `CreateFileA`/`ReadFile`/`WriteFile`.
+- Bool-lift shape 21 and bool+goto shape 23: 8 `int $5`, no calls.
+- Direct-call shape 22: 4 `int $5`; `CreateFileA`, `ReadFile`, `WriteFile`,
+  `MoveFileA` each present as direct `call _CreateFileA@28`,
+  `_ReadFile@20`, `_WriteFile@20`, `_MoveFileA@8`.
+- The remaining four traps are `exists` (`GetFileAttributesA`), `remove`
+  (`DeleteFileA`), `openDir` (`FindFirstFileA`), `readDir`
+  (`FindNextFileA`) — outside z9gb's open/read/write/seek/size path.
+- `-mno-stack-arg-probe`, `-fno-bounds-check`, O0/O1/O2/Os, and every
+  control-flow shape did not help.
+- Object-name collisions were ruled out: the final shape matrix used
+  distinct files and explicit `-o`; all still trapped except shape 22.
+- The `function called through a non-compatible type` warnings are present
+  on the P4 build.
+
+**Why.** `std_file_pal.zig` declares these imports `extern "stdcall"`;
+`std_file.zig` calls `pal.CreateFileA` etc. The emitter chooses a generic
+function-pointer typedef and emits the cast form. When the cast's prototype
+is not the real stdcall prototype, GCC 3.4.2 treats the call as invalid and
+emits the trap.
+
+**Fix.** Emit direct extern calls for these imports (the path already used
+for `CloseHandle`), or cast to the exact compatible stdcall prototype. Do
+not chase control-flow shapes. The root `std_file_428B49AE.c` is now the
+direct-call shape-22 source (MD5 `4bb81fd8d991772e6539f5c3f59166e8`), and
+`build_mingw_full.bat` builds `prog.exe` for the P4.
+
+**Why an emitter fix works, and what it should look like.** The cast is
+deliberate: `emitCalleeExpr` (`sf/src/c89_emit.zig:2054`) wraps a stdcall
+extern in the `FS_...` fn-pointer typedef to force the ABI when the C compiler
+may not have a prototype; `emitFnPtrType` (`:1810`) builds that typedef from
+the Z98 types. The bug is that those Z98 types are not the Win32 C types:
+`u32` → `unsigned int` vs `DWORD` = `unsigned long`; `[*]const u8` →
+`unsigned char*` vs `LPCSTR` = `const char*`; `[*]u8` → `unsigned char*` vs
+`LPVOID` = `void*`; `*u32` → `unsigned int*` vs `LPDWORD` =
+`unsigned long*`; `*void` vs `LPSECURITY_ATTRIBUTES`/`OVERLAPPED` struct
+pointers. `CloseHandle` survives because `void*`/`i32` exactly match
+`HANDLE`/`BOOL`; that is the proof.
+
+The C backend does not need to know the prototype; it needs to know whether
+the C compiler will see the header declaration. It already has that signal:
+`moduleClosureHasCIncludes` (`c89_emit.zig:2240`) is used by
+`emitExternDeclFor` (`:2206`) to decide whether to emit an extern declaration.
+The fix should reuse a **precise** version of that signal at the call site:
+
+1. Thread the call-site module id into `emitCalleeExpr`.
+2. If the module closure includes the platform prelude/Windows header that
+   declares the symbol, emit `name(args)` directly; the header's `WINAPI`
+   stdcall prototype is authoritative for the C call.
+3. Otherwise keep `((FS_x)name)(args)`; this preserves the stdcall ABI for
+   header-less externs.
+4. Do not use “has any `@cInclude`” blindly: a module can include `<stdio.h>`
+   without `<windows.h>`. Restrict the direct-call path to the platform
+   prelude/Windows include, or add a per-extern flag that says the header
+   provides the prototype.
+5. The Z98 extern declaration remains the source of truth for other backends;
+   `@cInclude` is a C-backend hint, not a language dependency.
+
+This fixes every Win32 import whose header is visible, including `std_os`,
+DirectDraw/DirectSound/DirectInput. It avoids modeling every C struct pointer
+in Z98 and keeps the C-specific decision in the C backend.
+
+**Option 3 is complementary, not a substitute.** Z98 has `c_char` → `char`
+(`type_registry.zig:546`; `*const c_char` → `char*`, `:594`) but no
+`c_ulong`/`c_long`/`c_ushort`/`c_uint`/`c_int`/`c_void`. Adding scalar aliases
+improves `DWORD`/`LPCSTR`/`LPDWORD` fidelity, but `LPSECURITY_ATTRIBUTES`,
+`LPOVERLAPPED`, COM/DirectX struct pointers still need exact C type names;
+`void*` is not compatible with a struct pointer. Matching those in Z98 would
+need opaque structs with exact C typedef names or a `c_type("...")` escape
+hatch — more C-specific, not more backend-neutral. Option 3 alone cannot make
+the cast types match the headers.
+
+**Fix validation.** Add a focused emitter test: a stdcall extern declared by
+an `@cInclude`d platform header emits a direct call; the same extern without
+the header still emits the cast. Then regenerate and run the full battery:
+dump pins, compiler/std tests, all example gates, OWC and modern GCC, then the
+P4 GCC 3.4.2 build (`build_mingw_full.bat`). The shape-22 C is the current
+diagnostic/workaround, not the shipping fix.
+
+**Scope.** The other P4 object-scan counts (`std_os` 10, `std_dsound_pal` 9,
+`std_ddraw_pal` 8, `cache` 3, `std_time` 2, `std_dinput_pal` 2, `std_io` 1,
+`input_config` 1, `emu` 1) include other indirect casts. z9gb's headless
+open/read/write path is clean with the direct `std_file`; the full windowed
+showcase still needs the global emitter fix, or the same direct-call edit in
+those modules.
+
+**Not this defect.** Block dropping after `return`, stack probe, bounds
+check, optimization level, and basename collisions were all tested and ruled
+out.

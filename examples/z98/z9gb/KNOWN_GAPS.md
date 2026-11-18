@@ -311,3 +311,27 @@ wine z9gb.exe --headless --cgb --frames 600 --dynarec --dynarec-stats \
 - Rumble output and real tilt hardware (debt above).
 - Win98/Pentium II hardware certification.
 - General-purpose emulator performance optimization (see §3).
+
+## 9. Known toolchain issue: MinGW GCC 3.4.2 (native P4)
+
+The operator's native MinGW reports **GCC 3.4.2 (mingw-special)**, not 3.4.5.
+A no-CRT build with it faults at file open with exception 05H: GCC warns
+`function called through a non-compatible type` for Win32 imports emitted as
+mismatched function-pointer casts, then replaces the call with `int $5`.
+`CreateFileA`/`ReadFile`/`WriteFile` disappear from the object.
+
+- Tested without success: O0/O1/O2/Os, `-mno-stack-arg-probe`,
+  `-fno-bounds-check`, 20 control-flow shapes, bool-lift/goto, helper,
+  out-param, and separate-TU variants.
+- Direct-call shape 22 keeps `CreateFileA`/`ReadFile`/`WriteFile`/`MoveFileA`;
+  the remaining `int $5` are unused `exists`/`remove`/`openDir`/`readDir`.
+- Workaround: build with modern `i686-w64-mingw32-gcc` (the playable exe) or
+  OpenWatcom.
+- Planned fix: the emitter emits a direct call when the platform header is
+  visible, and keeps the stdcall cast for header-less externs. Other modules
+  with indirect casts (`std_os`, `std_ddraw_pal`, `std_dsound_pal`,
+  `std_dinput_pal`, `std_time`, `std_io`, `cache`, `emu`,
+  `input_config`) must be re-scanned after the fix.
+- This is not a z9gb source/control-flow defect. Details:
+  `examples/torrent_example_defects.md` D23.
+
