@@ -889,3 +889,52 @@ Verdict: **amendment required** — the §25.1 capacities already match and need
 - **M6 Task 6 (M7 review).** When checking the save-section overlap, confirm M7's already-listed fields cover the M5 persisted state: `World.materials[10]`, `World.tools_owned`, `World.tool_selected`, `Expedition.hold[14]/hold_n`, `Expedition.tool/tool_charge/tool_broken`, plus `expertise`, `boat`, `money`, and `cosmetics_owned/unlocked` (all already named in the M7 plan); the `FightState` tool fields are transient. `Tables` stays content-only; no save state in `data.z98`.
 
 Checked, no amendment needed: §25.1 capacities in M6 Global (56/12/4/8/14/10/96/24/12) match `def.zig` exactly; the `MAX_TEXT_KEYS=256`/48 KB `[text]` contract is unchanged (M5 adds no text keys), and no `[options]` section is required (`options.cfg` is M12, not `data.z98`); `CostSlot` and `MaterialAmt` are identical `{kind,amt}` layouts, so no extra conversion type is needed.
+
+### M6 preflight
+
+**Authorities:** spec §25.10 (`docs/superpowers/specs/2026-11-12-undersanded-design.md:1270`)
+and ruling P23 (`:1831`); M6 milestone row (`:1759`). M6 ships the §25.10
+loader plus spec-complete T1 content: 18 creature rows with §14.2 stats, names,
+zone/phase masks and §14.4 drops (`:654`), 4 `owner=` rules, §10–§11
+tools/upgrades/cosmetics, §13 Z1–Z3 encounters, empty Z4–Z8, manual page 1
+text. Loaded tables must match the compiled-in fallback field-for-field, and
+malformed rows are rejected with line numbers.
+
+**Z98 override probe (controller-verified on seed v151; do not re-derive):**
+the P23(1) mechanism is legal — module-level `pub var content_override:
+?*Tables = null`, install `&g_tables`, read through `if (content_override) |p|`.
+Probe saw the fallback value 7, then 42 after install, rc=0. Array-of-slices
+struct fields (`[256][]const u8`) also compile and run (rc=0).
+
+**M5 baseline** (re-run 2026-11-18 from the repo root; compiler
+`/tmp/seed151_build/zig1_5_clean`, md5 `a2fc81055dc1cb7a67099fe3934d22ee`;
+base HEAD `bea1bc50`):
+
+```
+ZIG=/tmp/seed151_build/zig1_5_clean OUT=/tmp/m6t0 sh examples/z98/undersanded/tests/tier_m5_dock.sh
+...
+== tier_m5_dock summary: 57 passed, 0 failed ==
+TIER_M5 PASS 57 passed / 0 failed
+```
+
+Nested M4 result from the same run:
+
+```
+== tier_m4_loop summary: 47 passed, 0 failed, 1 evidence skips ==
+TIER_M4 PASS 47 passed / 0 failed
+```
+
+**Goldens expected to move:** only
+`examples/z98/undersanded/tests/fixtures/loop_golden.txt` — the five M2-era
+defs (Mystic Eel, Mystic Electric Eel, Steel Tuna, Anemoniacus, Freezing Perch)
+gain their §14.4 drops per P23(4), so loop fight 2 (Anemoniacus) adds kill
+parts and the `hold ...` line changes. Grep for drivers that hardcode a blank
+drop table: **none found**; the drivers derive expected drops from the
+compiled-in defs, and the `dump_grid_*`/replay goldens carry no drop text.
+
+**Recorded follow-ups:**
+- (a) Derelict kill drops are 5 lines but `MAX_DROP_LINES = 4`; recorded as
+  §39 TBD (`:1937`), resolve at M8/M11 (raise the cap to 6 or merge two lines).
+- (b) At the M7 Task 7 review, reconcile M8 plan Task 1/2 wording: M6 now
+  authors the rows/names/masks/drops, so M8 must not re-author them or assume
+  the old blank tables.
