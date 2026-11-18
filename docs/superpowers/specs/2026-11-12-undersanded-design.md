@@ -1083,6 +1083,9 @@ pub const MAX_ENCOUNTER: usize = 24;  // per zone per phase
 pub const MAX_LOG: usize = 64;
 pub const MAX_COSMETICS: usize = 12;
 pub const SUBDUE_PROMPT_BELOW: i32 = 90;
+pub const MAX_NAME_LEN: usize = 24;       // CreatureDef.name fixed ASCII buffer
+pub const MAX_TEXT_KEYS: usize = 256;     // [text] entries in data.z98
+pub const MAX_TEXT_BYTES: usize = 48 * 1024; // [text] prose bytes (arena-backed)
 ```
 
 These are fixed at M1. T1 content uses a prefix of each table; M13 fills the rest. **Never resize later** (R14: no generics, arrays are baked).
@@ -1093,8 +1096,9 @@ These are fixed at M1. T1 content uses a prefix of each table; M13 fills the res
 pub const DropLine = struct { part: i32, count: i32 };
 
 pub const CreatureDef = struct {
-    id: i32, family: i32, role: i32,
-    zone_mask: u32, phase_mask: u32,
+    id: i32, name: [MAX_NAME_LEN]u8, name_len: i32,
+    family: i32, role: i32,
+    zone_mask: u32, phase_mask: u32,    // bit z = zone index z (0..11, D=8); bit 0 = Day, bit 1 = Night (both = 3)
     hp: i32, resolve: i32, speed: i32, attack: i32,
     thrash_regen: i32, despair_regen: i32,
     armor_pct: i32, flags: u32,
@@ -1115,7 +1119,9 @@ pub const CreatureDef = struct {
 };
 ```
 
-≈200 bytes × 56 = **11.2 KB**. Loader asserts `subdue_chance == -1` iff `flags & F_BOSS`, and rejects any other value outside 0..100.
+≈240 bytes × 56 = **13.4 KB**. Loader asserts `subdue_chance == -1` iff `flags & F_BOSS`, and rejects any other value outside 0..100.
+
+`name`/`name_len` are the display identity (journal headings, `--dump-defs`, asset manifest); names are ASCII, ≤ `MAX_NAME_LEN`, unique, and **append-only** with the row order (never rename or reorder an existing row). `rule_start/rule_count` are **computed by the loader** from `[rules] owner=` blocks (§25.10); compiled-in fallback rows carry the same values.
 
 ### 25.3 Fight state — flat, never a union payload
 
@@ -1208,6 +1214,8 @@ Chosen over fn pointers because: fn pointers need exact signature matches and ca
 
 One-shot detection: fire when `prev >= threshold && now < threshold`, then set a consumed bit.
 
+The struct itself lives in `def.zig` and is re-exported as `behavior.Rule` (the op constants stay in `behavior.zig`), so `Tables` can hold rule rows without an import cycle.
+
 ### 25.7 World and cooldowns
 
 ```zig
@@ -1256,6 +1264,28 @@ Index `zone * MAX_CREATURES + def_index`. Available when `cycle > ready` or (`cy
 ### 25.9 Auto-sim policy (the §22 validator)
 
 Subdue path unless the creature has Shell: `hp > 50% → Strike, else Restrain`. Kill path: `res > 50% → Restrain, else Strike`. Reports avg actions, bar-switch %, outcome distribution, **avg surges per rare fight**, **Emergency Ascent rate**. **Gate loadout:** all gate metrics are measured at **Hull 150** (two T1 boat Hull upgrades — user-authorized; real boat state is M4). Rare-fight actions are reported per-mille (`rare_actions_pm`) so the action gate is exact: ≤12 actions ⇒ `rare_actions_pm <= 12000`.
+
+---
+
+### 25.10 `data.z98` file format (M6)
+
+ASCII text, one statement per line. The scanner enforces this grammar; any violation is a `DamagedLine` at that line number.
+
+- **Header:** the first non-blank, non-comment line is exactly `format=2`. It is published as `content_version`; the save's `data_version` must equal it (bumped only by spec amendment).
+- **Sections:** `[creatures]`, `[rules]`, `[tools]`, `[upgrades]`, `[cosmetics]`, `[encounter]`, `[zones]`, `[text]`. Unknown section → error.
+- **Comments/blank:** a line whose first non-space character is `#`, and empty lines, are ignored. Row lines longer than **4096 bytes** → error.
+- **Rows:** comma-separated `key=value` fields, order-free. Values are the text between `=` and the next `,`; surrounding ASCII spaces are trimmed, inner spaces kept. Unknown key, duplicate key, or a missing required key → error. Rows are all-or-nothing: parsed into a temp and committed only on success.
+- **`[creatures]`:** every §25.2 field by name. Array fields flattened: `sub0_part,sub0_count` … `sub3_part,sub3_count`, same for `kill*`/`over*` (omitted slot = empty); `respawn_sub,respawn_kill,respawn_over`; `flags` numeric. `zone_mask`/`phase_mask` numeric per the §25.2 comment. `name` ASCII ≤ `MAX_NAME_LEN`, unique. `rule_start/rule_count` are **not** authored.
+- **`[rules]`:** `owner,cond_op,cond_a,cond_b,effect_op,effect_a,effect_b,timing`. `owner` is a creature `id`. The loader packs blocks in owner first-appearance order and sets each creature's `rule_start/rule_count`; validation requires a complete, non-overlapping partition (no orphan rules, no gaps).
+- **`[tools]`:** `id,kind,cost0_kind,cost0_amt,cost1_kind,cost1_amt,cost2_kind,cost2_amt`; ids 1..7 unique; `kind` 0 activated / 1 rigged; cost kinds 0 (unused) or part id 1..9.
+- **`[upgrades]`:** `axis,tier,cost0_kind,cost0_amt,cost1_kind,cost1_amt,cost2_kind,cost2_amt`; the full 5×3 grid (15 rows); `axis` = `World.boat` index 0..4; `tier` 1..3; cost kinds 0 / 1..7 material / 8..9 keystone.
+- **`[cosmetics]`:** `name,price,unlock`; exactly 12 rows in item order (bit index 0..11); `unlock` is a condition id 1..4 (Z1/Z2/Z3/Derelict); `price > 0`.
+- **`[encounter]`:** `zone,phase,def_index,weight`; `zone` = index 0..11, `phase` = 0 Day / 1 Night, `def_index` = **load-order** index (not `CreatureDef.id`); `weight > 0`; weights per zone/phase sum to 100 (an empty zone/phase is allowed).
+- **`[zones]`:** `id,cost,boss`; `id` = zone index 0..11; `cost` ≥ 0; `boss` 0/1.
+- **`[text]`:** multi-line prose. `key=` starts an entry; following lines that begin with exactly one space are continuation lines (that one space is stripped), until the next `key=` or `[section]`. Keys live in the fixed vocabulary `manual.1..8`, `journal.1..19`, `legend.1..2`, `error.1..6`; caps `MAX_TEXT_KEYS` / `MAX_TEXT_BYTES`.
+- **Storage:** the file buffer and all string bytes live in the permanent arena for the process lifetime; loaded slices point into it (never into a temporary read buffer).
+
+Loader errors use the §33 copy: missing → "Content file missing. Reinstall from CD."; malformed → "Content file is damaged at line N. Reinstall from CD."
 
 ---
 
@@ -1698,7 +1728,8 @@ Pixel output under Wine is font/driver-specific: **evidence, not a pass/fail gat
 
 | Region | Size |
 | :--- | --: |
-| Permanent arena (defs, strings, save image) | 256 KB |
+| Permanent arena (`data.z98` buffer, string bytes, save image) | 256 KB |
+| Content tables `Tables` (static; defs/rules/tools/upgrades/cosmetics/encounters/zones + text index) | 32 KB |
 | Sprite arena (indexed + LUTs; creatures + font + UI + 1 resident background) | 2 MB |
 | Frame arena | 64 KB |
 | DD7 offscreen 640×480×16bpp | 600 KB |
@@ -1725,7 +1756,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | **M3** | Auto-sim + replay + `--test-rules` | `--sim`, `--replay` (v2 stream), `--test-rules`, console mode (*nix analogue first); sim policy §25.9 incl. subdue roll | **Sim gate:** avg rare-fight actions ≤12 · ascent rate ≤15% (measured at Hull 150 loadout) · bar-switch observed · decline costs no RNG · commons never prompt. Tuning levers (each = spec amendment, recorded in §38): rare chance 60→65 first; surge restore 30%→25% second. Do not tune coupling to compensate |
 | **M4** | Calendar + expedition loop | Phases, travel ladder, per-zone respawn, rare pipeline, flee, Hull-0 emergency ascent, release/sell | Full dock→travel→fight→return loop playable in terminal; empty-pool safe Rest works |
 | **M5** | Dock + economy | Refine/expertise 0–5, 5 boat axes + Heavy, tool crafting (7 tools), cosmetics (12), grudges | Real E0 walk spends **111 materials + Steel Fins ×2** and every axis buys T1–T3 behind its expertise gate; §17 table self-consistent; full-run pacing is M15; all dock actions 1 phase (refusals cost 0) |
-| **M6** | Data tables + loader | Text format, full schema, capacities §25.1; all T1 tables loaded from `data.z98`; malformed rejection | Loader goldens pass; bad sentinels (boss subdue_chance) rejected; Z4–Z8 empty-table stubs load |
+| **M6** | Data tables + loader | `data.z98` format §25.10 + loader; full schema/capacities §25.1; **spec-complete T1 content** (18 rows: §14.2 stats + names + zone/phase masks, §14.4 drops incl. the five M2-era defs, 4 rules with `owner=`, §10–§11 tools/upgrades/cosmetics, §13 Z1–Z3 encounters, empty Z4–Z8, manual page 1 text); loaded tables == compiled-in fallback field-for-field; malformed rejection | Loader goldens pass; `--dump-defs` golden; every malformed class rejected with line numbers; 56/57 capacity boundary; bad boss sentinel rejected (fixture; boss row is M8/M11) |
 | **M7** | Save system | CRC32, `data_version=2`, tmp+verify+rename+rollback, 2 slots, first-run lore page | Save round-trip golden passes; rollback path exercised; v1 save → v2 loader errors correctly |
 | **M8** | Tier-1 content authoring | 17 creature rows + 2 flex, tools, journal 19 entries, manual pages, Legends 2, zone flavor, error copy — §40 checklist | **Demo content-complete in terminal**; full T1 loop playable start→boss gate |
 | **M9** | Pixel tier | G6–G8 (`std_gfx_px`), 8×16 font atlas, bars + dotted red zone, dirty rects, surface-lost recovery | Fight renders in art mode; terminal + z9edit goldens byte-identical |
@@ -1797,6 +1828,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P20 | Fight length gates ≤12/12/14/15 (T1–T4); damage ranges never creep; **boss feasibility is a gate** (minimalist T4-proper loadout, kill-rate targets §21.3) |
 | P21 | **M3 levers pulled (user-authorized “go 1, yes lets rebalance”):** lever 1 rare subdue 60→65 (Anemoniacus + Freezing Perch); lever 2 Last Surge restore 30%→25%. Anemoniacus content rebalance Resolve 115→80 keeps the ≤12 rare-actions gate met (seed 98: 11 actions). Ascent gate is measured at **Hull 150** (two T1 Hull upgrades): seed 98 Anemoniacus 4.0% ascent, worst cross-seed 8.5% (seed 4); Freezing Perch seed 98 1.5%, worst 5.0% (seed 59). |
 | P22 | **M5 kickoff rulings (user-authorized):** (1) deep refine is legal at 0 yield and always grants +1 expertise (no clamp, no refusal) — parts are renewable so this is a setback, not a lock; (2) M5 wires only behaviours that exist after M4 (armor, shell/resist-restrain, discharge, flee, stun); blind/decoy/ink/phasing and their tool interactions move to M8; (3) Sonar lookahead peeks on a copied `FightState` (flat POD, discarded) — never mutates `GameState`/log/world; M8 extends it with ink/decoy; (4) `Expedition.hold` is the persistent dock parts store (kept across `depart`); (5) tool selection persists in `World.tool_selected` and is copied into `Expedition` at Depart (free, no extra phase); (6) failed dock actions cost no phase and no RNG; (7) the M5 economy walk starts at 0 materials / E0 and asserts materials **spent** = 111 + Steel Fins ×2 with §17 table self-consistency (full-run pacing stays M15); (8) tool effects/reveals that need blind/decoy/ink/phasing are authored and tested at M8; (9) refining a deep/rare-sourced batch (Glow Polyp, Glass Pane) needs a second confirming press whose message states the part count and the yield (including `0 materials` below E5), while common batches refine on a single press — no confirmation click on ordinary refining. |
+| P23 | **M6 kickoff rulings (user-authorized):** (1) loaded tables reach consumers through the existing accessor layer (`defAt`/`rows` + new accessor twins for the const arrays) with a static `?*Tables` override installed by the loader — verified legal in Z98; compiled-in `creatures_t1`/`tables_t1` remain the fallback/golden and tests are untouched; (2) `CreatureDef` gains `name`/`name_len` (§25.2) so names live in data, not in a `render_term` switch — this retires the "Unknown Creature" display for the 13 M4 rows; (3) `data.z98` grammar is §25.10 as written (KV rows, indexed drop/respawn keys, `format=2` header, `owner=` rules, `textGet` bool+out-param); (4) M6 ships **spec-complete** §14.4 drops for all 18 rows (not the code-state blank tables), so `loop_golden.txt` and any drop-dependent golden are re-pinned inside M6 — the M4/M5 deferral of the five M2-era drop tables is closed early; (5) `Tables` is a static (BSS) struct of ≈32 KB and the permanent arena (raised 64 KB → 256 KB per §35) holds the `data.z98` buffer, string bytes and save image; (6) `undtool` tools keep the compiled-in fallback when no file is beside the exe, while the game (`app.run*`) treats missing/damaged `data.z98` as the §33 fatal path. |
 
 ### Game design
 
@@ -1902,6 +1934,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | Cosmetic descriptions (12) | M11 |
 | T2–T4 creature rows, names, tables | M13 (authoring, rules locked in §21) |
 | Legends entries T2–T4 | M13 |
+| Derelict kill drops are 5 lines but `MAX_DROP_LINES = 4` (§14.4 vs §25.1) — boss row cannot load as written | M8/M11 (raise cap to 6 or merge two lines) |
 
 **No design questions remain open.** Everything above is authoring or measurement.
 
