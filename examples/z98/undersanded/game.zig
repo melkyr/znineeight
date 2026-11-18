@@ -44,7 +44,10 @@ pub fn zeroWorld(w: *def.World) void {
     i = 0;
     while (i < def.MAX_MATERIALS) : (i += 1) {
         w.expertise[i] = 0;
+        w.materials[i] = 0;
     }
+    w.tools_owned = 0;
+    w.tool_selected = 0;
     w.cosmetics_owned = 0;
     w.cosmetics_unlocked = 0;
     w.field_record_written = 0;
@@ -64,6 +67,9 @@ pub fn newGame(s: *def.GameState) void {
         .seed = 0,
         .hold = [def.MAX_PARTS]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
         .hold_n = 0,
+        .tool = 0,
+        .tool_charge = 0,
+        .tool_broken = 0,
     };
     s.fight.def_index = def.NO_FIGHT;
 }
@@ -76,11 +82,20 @@ pub fn startFight(s: *def.GameState, def_index: i32) void {
         .seed = EXPEDITION_SEED,
         .hold = [def.MAX_PARTS]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
         .hold_n = 0,
+        .tool = 0,
+        .tool_charge = 0,
+        .tool_broken = 0,
     };
+    // The grudge mask is run-scoped, not per-fight fixture state: capture it
+    // before zeroWorld so a standalone startFight still honours the current
+    // run's overkills. Callers must pass an initialised GameState.
+    const grudge_mask = s.world.family_overkill_mask;
     zeroWorld(&s.world);
+    s.fight.pending_stun = 0;
 
     var d = creatures.defAt(def_index);
     fight.startFightDef(s, def_index, &d, creatures.RULES[0..]);
+    fight.applyGrudge(s, &d, grudge_mask);
 }
 
 pub fn gameStep(s: *def.GameState, a: def.Action) void {

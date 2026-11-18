@@ -110,8 +110,48 @@ fn tDockLines() bool {
     if (!contains(text, "Hull 100/100")) return false;
     if (!contains(text, "Coins 0")) return false;
     if (!contains(text, "Boat: Hull T0 Speed T0 Cargo T0 Oxygen T0 Precision T0")) return false;
-    if (!contains(text, "[R]efine [U]pgrade [C]raft [B]uy [T] Rest [D]epart [Q]uit")) return false;
-    if (!contains(text, "not yet")) return false;
+    if (!contains(text, "Materials: Chitin 0(E0)")) return false;
+    if (!contains(text, "Luminescence 0(E0)")) return false;
+    if (!contains(text, "Tools owned: 0  Selected: none")) return false;
+    if (!contains(text, "[R]efine [U]pgrade [C]raft [B]uy [E]quip [T] Rest [D]epart [Q]uit")) return false;
+    if (contains(text, "not yet")) return false;
+    return true;
+}
+
+fn tDockSubmenus() bool {
+    var g = newGame();
+    var sc: render.Screen = undefined;
+    var buf: [8192]u8 = undefined;
+
+    render.renderRefine(&g, &sc);
+    var text = render.dump(&sc, buf[0..]);
+    if (!contains(text, "DOCK - REFINE")) return false;
+    if (!contains(text, "Shell Chip x0 -> 0 Chitin")) return false;
+    if (!contains(text, "[1-7] Refine material")) return false;
+
+    render.renderUpgrade(&g, &sc);
+    text = render.dump(&sc, buf[0..]);
+    if (!contains(text, "DOCK - UPGRADE")) return false;
+    if (!contains(text, "Hull T0 -> T1: Chitin x3")) return false;
+    if (!contains(text, "[1-5] Upgrade axis")) return false;
+
+    render.renderCraft(&g, &sc);
+    text = render.dump(&sc, buf[0..]);
+    if (!contains(text, "DOCK - CRAFT")) return false;
+    if (!contains(text, "Steel Plate Tool [rigged] Plate Scrap x3")) return false;
+    if (!contains(text, "[1-7] Craft tool")) return false;
+
+    render.renderBuy(&g, &sc);
+    text = render.dump(&sc, buf[0..]);
+    if (!contains(text, "DOCK - BUY")) return false;
+    if (!contains(text, "Foam White 150 (locked)")) return false;
+    if (!contains(text, "[1-9,a-c] Buy cosmetic")) return false;
+
+    render.renderTools(&g, &sc);
+    text = render.dump(&sc, buf[0..]);
+    if (!contains(text, "DOCK - EQUIP")) return false;
+    if (!contains(text, "Steel Plate Tool (not owned)")) return false;
+    if (!contains(text, "[1-7] Select tool")) return false;
     return true;
 }
 
@@ -268,6 +308,7 @@ fn tUnresolvedRenewsBoth() bool {
 
 pub fn main() void {
     report("dock_screen_key_lines", tDockLines());
+    report("dock_submenu_screens", tDockSubmenus());
     report("map_screen_ladder_locked_boss", tMapLines());
     report("map_boss_gate_six_distinct_nonboss", tBossGate());
     report("node_screen_key_lines", tNodeLines());

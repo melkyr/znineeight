@@ -232,7 +232,7 @@ fn tCouplingThrashReplace() bool {
     begin(&s, &d, noRules());
     s.fight.res = 40;
 
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_STRIKE, &d);
     return s.fight.res == 48;
 }
 
@@ -244,7 +244,7 @@ fn tCouplingThrashDefault() bool {
     begin(&s, &d, noRules());
     s.fight.res = 40;
 
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_STRIKE, &d);
     return s.fight.res == 45;
 }
 
@@ -256,7 +256,7 @@ fn tCouplingDespairReplace() bool {
     begin(&s, &d, noRules());
     s.fight.hp = 20;
 
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_RESTRAIN, &d);
     return s.fight.hp == 30;
 }
 
@@ -268,7 +268,7 @@ fn tCouplingDespairTwelve() bool {
     begin(&s, &d, noRules());
     s.fight.hp = 20;
 
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_RESTRAIN, &d);
     return s.fight.hp == 32;
 }
 
@@ -281,7 +281,7 @@ fn tCouplingAfterCreatureAttack() bool {
     begin(&s, &d, noRules());
     s.fight.res = 40;
 
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_STRIKE, &d);
 
     if (s.fight.res != 48) return false;
     if (s.fight.hull != 93) return false;
@@ -312,7 +312,7 @@ fn tCouplingExactBoundary80() bool {
     s.fight.hp = 95;
     s.fight.res = 39;
 
-    doStepWith(&s, def.ACT_EQUIP, &d, creatures.RULES[0..]);
+    doStepWith(&s, def.ACT_STRIKE, &d, creatures.RULES[0..]);
     if (s.fight.res != 49) return false;
 
     var at_gate: def.GameState = undefined;
@@ -320,7 +320,7 @@ fn tCouplingExactBoundary80() bool {
     at_gate.fight.hp = 95;
     at_gate.fight.res = 40;
 
-    doStepWith(&at_gate, def.ACT_EQUIP, &d, creatures.RULES[0..]);
+    doStepWith(&at_gate, def.ACT_STRIKE, &d, creatures.RULES[0..]);
     return at_gate.fight.res == 40;
 }
 
@@ -331,7 +331,7 @@ fn tCouplingExactBoundary95() bool {
     s.fight.hp = 28;
     s.fight.res = 115;
 
-    doStepWith(&s, def.ACT_EQUIP, &d, creatures.RULES[0..]);
+    doStepWith(&s, def.ACT_RESTRAIN, &d, creatures.RULES[0..]);
     return s.fight.hp == 33;
 }
 
@@ -547,7 +547,7 @@ fn tFreezingPerchFlee() bool {
     begin(&s, &d, creatures.RULES[0..]);
     s.fight.pending_flee = fight.PENDING_ON;
 
-    doStepWith(&s, def.ACT_EQUIP, &d, creatures.RULES[0..]);
+    doStepWith(&s, def.ACT_STRIKE, &d, creatures.RULES[0..]);
 
     if (s.fight.outcome != def.OUT_CREATURE_FLED) return false;
     if (hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
@@ -590,6 +590,32 @@ fn tCreatureDefsAndFields() bool {
 
 fn tStartFightWorldZeroed() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
+
+    // startFight reads the grudge mask before resetting, so the state must be
+    // initialised first. Poison every field this test asserts on afterwards so
+    // the assertions prove startFight reset them rather than just newGame.
+    // Z98 lowers `s.world.ready[i]` through a struct copy; use pointers.
+    const wp = &s.world;
+    wp.cycle = 7;
+    wp.phase = 1;
+    wp.ready[0] = 3;
+    wp.seen_mask[0] = 0x10;
+    wp.boat[0] = 2;
+    wp.expertise[0] = 4;
+    wp.money = 99;
+    wp.field_phases = 5;
+    wp.boss_kills = 2;
+    const ep = &s.exp;
+    ep.active = 1;
+    ep.zone = 2;
+    ep.hold_n = 3;
+    ep.hold[0] = 7;
+    const fp = &s.fight;
+    fp.hp = 99;
+    fp.pending_stun = 5;
+
+    const start_hp = creatures.defAt(0).hp;
     game.startFight(&s, 0);
 
     if (s.world.cycle != 0) return false;
@@ -599,11 +625,14 @@ fn tStartFightWorldZeroed() bool {
     if (s.world.boat[0] != 0) return false;
     if (s.world.expertise[0] != 0) return false;
     if (s.world.money != 0) return false;
+    if (s.world.field_phases != 0) return false;
     if (s.world.boss_kills != 0) return false;
     if (s.exp.active != 0) return false;
     if (s.exp.zone != 0) return false;
     if (s.exp.hold_n != 0) return false;
     if (s.exp.hold[0] != 0) return false;
+    if (s.fight.hp != start_hp) return false;
+    if (s.fight.pending_stun != 0) return false;
     return true;
 }
 
@@ -749,7 +778,7 @@ fn tCreatureFasterActsFirst() bool {
     var s: def.GameState = undefined;
     begin(&s, &d, noRules());
 
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_STRIKE, &d);
     if (s.log_n < 2) return false;
     if (s.log[0].msg_id != fight.MSG_CREATURE_ATTACK) return false;
     return true;
@@ -777,7 +806,7 @@ fn tDeclineNoRngAndGate() bool {
     s.fight.outcome = def.OUT_ONGOING;
     s.fight.hp = 100;
     s.fight.res = 0;
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_STRIKE, &d);
     if (s.screen != fight.SCREEN_FIGHT) return false;
     if (s.fight.subdue_declined != 1) return false;
 
@@ -785,7 +814,7 @@ fn tDeclineNoRngAndGate() bool {
     s.fight.subdue_declined = 0;
     s.fight.res = 0;
     s.fight.hp = 100;
-    doStep(&s, def.ACT_EQUIP, &d);
+    doStep(&s, def.ACT_STRIKE, &d);
     if (s.screen != fight.SCREEN_SUBDUE) return false;
     return true;
 }
@@ -793,10 +822,11 @@ fn tDeclineNoRngAndGate() bool {
 // Creature attack reduces Hull by its Attack value.
 fn tCreatureAttackHull() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 2);
 
     const before = s.fight.hull;
-    game.gameStep(&s, def.Action{ .kind = def.ACT_EQUIP, .arg = 0 });
+    game.gameStep(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 });
 
     if (s.fight.hull != before - 8) return false;
     if (msgA(&s, fight.MSG_CREATURE_ATTACK) != 8) return false;
@@ -807,12 +837,14 @@ fn tCreatureAttackHull() bool {
 fn tLogDeterminism() bool {
     var a: def.GameState = undefined;
     var b: def.GameState = undefined;
+    game.newGame(&a);
+    game.newGame(&b);
     game.startFight(&a, 2);
     game.startFight(&b, 2);
 
     const kinds = [10]i32{
         def.ACT_STRIKE, def.ACT_RESTRAIN, def.ACT_STRIKE, def.ACT_RESTRAIN,
-        def.ACT_EQUIP, def.ACT_STRIKE, def.ACT_RESTRAIN, def.ACT_STRIKE,
+        def.ACT_RESTRAIN, def.ACT_STRIKE, def.ACT_RESTRAIN, def.ACT_STRIKE,
         def.ACT_RESTRAIN, def.ACT_STRIKE,
     };
 
@@ -831,6 +863,7 @@ fn tLogDeterminism() bool {
 
 fn tFleeOutcome() bool {
     var s: def.GameState = undefined;
+    game.newGame(&s);
     game.startFight(&s, 0);
     game.gameStep(&s, def.Action{ .kind = def.ACT_FLEE, .arg = 0 });
     return s.fight.outcome == def.OUT_PLAYER_FLED;
@@ -886,11 +919,6 @@ fn actionFor(ch: u8, arg_out: *i32) i32 {
     switch (ch) {
         'S' => return def.ACT_STRIKE,
         'R' => return def.ACT_RESTRAIN,
-        'E' => return def.ACT_EQUIP,
-        'P' => {
-            arg_out.* = fight.TOOL_PLATE;
-            return def.ACT_EQUIP;
-        },
         'F' => return def.ACT_FLEE,
         else => return def.ACT_STRIKE,
     }
@@ -909,6 +937,7 @@ fn countMsg(s: *const def.GameState, msg_id: i32) i32 {
 // `modal_mode` decides the fixed answer (Attempt or Fight-on/Decline). The
 // pattern cycles if the fight is still live, so every run terminates.
 fn runInto(s: *def.GameState, def_index: i32, pattern: []const u8, modal_mode: i32) FightRun {
+    game.newGame(s);
     game.startFight(s, def_index);
 
     var r = FightRun{
@@ -1085,8 +1114,8 @@ const FIGHTS = [20]FightCase{
     FightCase{ .def_index = 1, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 13, .want_hull = 1, .want_declines = 0 },
     FightCase{ .def_index = 4, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 10, .want_declines = 0 },
     FightCase{ .def_index = 3, .pattern = "SRSRSR", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_KILL, .want_steps = 9, .want_hull = 18, .want_declines = 0 },
-    FightCase{ .def_index = 2, .pattern = "PSSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 7, .want_hull = 52, .want_declines = 0 },
-    FightCase{ .def_index = 0, .pattern = "ESSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 76, .want_declines = 0 },
+    FightCase{ .def_index = 2, .pattern = "SSSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 12, .want_hull = 12, .want_declines = 0 },
+    FightCase{ .def_index = 0, .pattern = "SSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 4, .want_hull = 82, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "F", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_PLAYER_FLED, .want_steps = 1, .want_hull = 100, .want_declines = 0 },
     FightCase{ .def_index = 4, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_CREATURE_FLED, .want_steps = 3, .want_hull = 80, .want_declines = 0 },
     FightCase{ .def_index = 3, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 54, .want_declines = 0 },

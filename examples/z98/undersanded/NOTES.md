@@ -773,3 +773,119 @@ derived boat tables are in `world.zig:24-28,117-139`. `NO_FIGHT` lives in
 (`game.zig:16-69`). Dock Rest is already split correctly: public `restAtDock`
 is +40 Hull, one phase, no RNG/condition (`expedition.zig:89-96`) vs node Rest
 (+30, condition roll, `expedition.zig:349-363`).
+
+### M5 preflight (2026-11-18)
+
+**Spec §38 P22 rulings (binding):**
+- Deep refine is legal at **0 yield** and still grants +1 expertise; never
+  clamp and never refuse for a 0 yield. Deep loses 1 per part below E5.
+- Tool scope split: M5 wires only post-M4 behaviors (Plate armor negation,
+  Brine Net shell/restrain bypass, Coral Shield discharge negation, Pressure
+  Hook flee prevention, Electric Gland stun). Blind/decoy/ink/phasing and
+  Lure/Sonar reveals move to **M8**; M5 only stores/passes their flags.
+- Sonar lookahead peeks on a **copied flat `FightState`**, discards it, and
+  never mutates `GameState`, log, or world; M8 extends it with ink/decoy.
+- `Expedition.hold` is the persistent dock parts store: `depart` must not
+  zero it. Craft/keystones consume the hold; Refine consumes all of one type.
+- Persistence: `World.materials`, `World.tools_owned`, `World.tool_selected`;
+  `Expedition.tool/tool_charge/tool_broken` (tool selection is free at
+  Depart; broken tools clear at the next Depart).
+- Refusals (insufficient parts/materials/coins, failed E2/E4 gate) cost **no
+  phase and no RNG**; every successful dock action costs exactly 1 phase.
+- The M5 economy walk starts at **0 materials / E0** and asserts materials
+  **spent** = 111 + Steel Fins ×2; full-run pacing stays M15.
+- Rare-batch refine warning: Glow Polyp → Luminescence and Glass Pane → Glass
+  need a second confirming press stating part count and yield (including
+  `0 materials` below E5); commons refine on one press; keystones never refine.
+
+**M5 files:** `economy.zig`, `dock.zig`, `tools.zig`; modify `def.zig`,
+`game.zig`, `expedition.zig`, `fight.zig`, `nav.zig`, `render_term.zig`,
+`tables_t1.zig`; tests `economy_test.zig`, `dock_test.zig`, `tools_test.zig`,
+`tier_m5_dock.sh`, `fixtures/economy_full.md`; dock/sub-menu goldens.
+Task 0 adds only `ToolRow`/`UpgradeRow`/`CosmeticRow` (+ local `CostSlot`) to
+`tables_t1.zig`; `MaterialAmt` belongs to Task 1's `economy.zig`.
+
+**§17 arithmetic (verified against the rows):**
+- Hull: Chitin 3 + 6 + 10 = 19; Plate 2 + 4 = 6.
+- Precision: Gland 2 + 4 + 8 = 14; Luminescence 1 + 2 + 2 = 5.
+- Cargo: Brine 3 + 6 + 10 = 19; Coral 1 + 2 + 4 = 7.
+- Oxygen: Coral 3 + 6 + 10 = 19; Brine 1 + 2 + 4 = 7.
+- Speed: Glass 2 + 2 + 4 = 8; Gland 1 + 2 + 4 = 7; Steel Fins ×2.
+- Totals: Chitin 19, Plate 6, Gland 21, Lum 5, Brine 26, Coral 26, Glass 8
+  = **111** + Steel Fins ×2.
+- Parts at E3 (deep yields 2, commons 3): Shell 19/3↑=7, Plate 6/3=2,
+  Gland 21/3=7, Glow Polyp 5/2↑=3, Brine 26/3↑=9, Coral 26/3↑=9,
+  Glass Pane 8/2=4 → **41 parts** + Steel Fins ×2.
+- Cosmetics: 12 items summing 2,100 coins (150/175/200 ×4 categories).
+
+**M4 baseline:** compiler `/tmp/seed151_build/zig1_5_clean` (md5
+`a2fc81055dc1cb7a67099fe3934d22ee`); `ZIG=… OUT=/tmp/m5_t0 sh
+tests/tier_m4_loop.sh` → `TIER_M4 PASS 47 passed / 0 failed` (1 Wine
+evidence skip).
+
+**Deliberate M4 edit (Task 2):** `depart` stops zeroing `hold`/`hold_n` so the
+dock keeps its parts store. No current M4 test depends on a fresh hold; the
+M4 tier above is the baseline to re-verify after that change.
+
+### M5 Task 5 — real-E0 economy walk + dock tier
+
+- **Walk driver:** `tests/economy_walk_test.zig` is the P22.7 walk. It starts
+  from `game.newGame` (0 materials, E0, boat 0), does four one-part refines per
+  material to reach E4, adds one measured E4 batch when the four refines are
+  short of the §17 target, grants Steel Fins ×2, then buys every axis T1→T3.
+  It asserts 111 materials **spent**, Steel Fins `hold[9] == 0`, every axis at
+  T3, no negative material/hold count, and +1 `field_phases` per successful
+  refine/upgrade. The gate is not bypassed: each purchase asserts
+  `canBuyTier`, and the same Hull T2 cost is refused at E1 with no spend and
+  no phase.
+- **Walk result:** 34 refines + 15 upgrades = 49 phases; 117 materials
+  produced, 111 spent, 6 left.
+
+  | Mat | Target | Granted | Produced | Spent | Left | Exp |
+  | :-- | --: | --: | --: | --: | --: | --: |
+  | Chitin | 19 | 8 | 20 | 19 | 1 | 5 |
+  | Steel Plate | 6 | 4 | 8 | 6 | 2 | 4 |
+  | Gland | 21 | 9 | 23 | 21 | 2 | 5 |
+  | Brine | 26 | 10 | 26 | 26 | 0 | 5 |
+  | Coral | 26 | 10 | 26 | 26 | 0 | 5 |
+  | Luminescence | 5 | 5 | 6 | 5 | 1 | 5 |
+  | Glass | 8 | 6 | 8 | 8 | 0 | 5 |
+  | **Total** | **111** | **52** | **117** | **111** | **6** | |
+
+  Table self-check: 41 parts at E3, §17 target sum 111, cosmetics 2,100.
+- **Fixture:** `tests/fixtures/economy_full.md` records the §17 table plus the
+  §21.5 full-game projection: boat cost fixed at 111 + Steel Fins ×2 (global,
+  not per-tier), T2–T4 sale bands (T2 20–80, T3 30–90, T4 40–100; envelope
+  20–100), and deep Luminescence/Glass sources per band. Projection only; M13
+  re-derives source rows and M15 measures pacing.
+- **Tier:** `tests/tier_m5_dock.sh` is FAST/native only: `economy_test`,
+  `dock_test`, `tools_test`, `grudge_test`, `economy_walk_test`, key case names
+  and exact walk totals, the fixture existence/size/marker check, and a nested
+  `tier_m4_loop.sh` (whose dock golden is byte-matched). Result:
+  `TIER_M5 PASS 56 passed / 0 failed`.
+- **§41 Q2 re-check:** Steel Plate is now **rigged/passive from fight start**
+  (`rigged_active_at_fight_start_no_charge`), so M2's "spend a tempo turn to
+  equip Plate" no longer exists. Tools still change how a fight is played via
+  passive effects (Plate armour negation, Brine Net shell/restrain bypass,
+  Pressure Hook flee prevention, Coral Shield discharge negation) and the
+  activated Electric Gland stun — not just a damage number. The M2 answer's
+  mechanism changes; the "equipment changes the action plan" conclusion still
+  holds.
+- **Pacing:** full-run pacing/day-count measurement stays **M15**; this task
+  only closes the §17 arithmetic from a cold start.
+
+### M6 amendment review (M5 Task 6)
+
+Compared M6 plan Tasks 0–4 (Global capacities, the `Tables` contract, `[tools]`/`[upgrades]`/`[cosmetics]`, validation, and the frozen ID contract) against the M5 actuals: `tables_t1.zig` `ToolRow`/`UpgradeRow`/`CosmeticRow`/`CostSlot`, `economy.zig` `MAT_*`/`MaterialAmt`/`upgradeCost`, `def.zig` §25.1 capacities + `World`/`Expedition` fields, and `expedition.zig` unlock/tool wiring.
+
+Verdict: **amendment required** — the §25.1 capacities already match and need no change, but M6's tool/upgrade/cosmetic row schema, validation, and ID contract must be pinned to the landed M5 shapes.
+
+- **M6 Task 0/Task 2 (`[tools]`).** Freeze row keys as `id,kind,cost0_kind,cost0_amt,cost1_kind,cost1_amt,cost2_kind,cost2_amt`, loading directly into `tables_t1.ToolRow { id, kind, cost: [3]CostSlot }`. `id` is a tool id **1..7, unique** (= `MAX_TOOLS-1`, since `MAX_TOOLS=8`); never 0 and never 8. `tools_owned` is a bit per id 1..7. `kind` is 0 (`TOOL_KIND_ACTIVATED`) or 1 (`TOOL_KIND_RIGGED`); cost kinds are **part ids 1..9** (0 = unused), not material ids.
+- **M6 Task 0/Task 2 (`[upgrades]`).** Freeze row keys as `axis,tier,cost0_kind,cost0_amt,cost1_kind,cost1_amt,cost2_kind,cost2_amt`, loading into `UpgradeRow { axis, tier, cost: [3]CostSlot }`. `axis` is the `World.boat` index 0..4 (`BOAT_HULL/SPEED/CARGO/OXYGEN/PRECISION`), `tier` is 1..3; require the full 5×3 grid (15 rows). Cost kinds: 0 unused, 1..7 material (`World.materials[kind]`), 8..9 keystone part (`Expedition.hold[kind]`; Speed T3 uses Steel Fins=9). Load via `CostSlot`; `economy.upgradeCost` is the only `CostSlot`→`MaterialAmt` conversion (both are `{kind,amt}`; do not add a second cost type/table).
+- **M6 Task 0/Task 2 (`[cosmetics]`).** Freeze row keys as `name,price,unlock` matching `CosmeticRow`; row order is the cosmetic item index 0..11 (the `cosmetics_owned`/`cosmetics_unlocked` bits). `unlock` is a **condition id 1..4** (Z1/Z2/Z3/Derelict), not an item index; 12 rows. Names are ASCII (spaces allowed; no commas/`=` unless the row grammar gains quoting).
+- **M6 Task 2 ID contract.** Extend the frozen append-only contract beyond creature `name`: tool ids 1..7 (bits in `tools_owned`), cosmetic row order 0..11, upgrade `(axis,tier)` keys, material ids 1..7 + keystone parts 8..9. `[encounter]` rows use the **dense `def_index`** (load order) as in `EncounterRow.def_index`, not `CreatureDef.id` (T1 `id` is not load order: e.g. the flex rows have ids 18/19 at indexes 3/4); M13 appends at the end. `[zones]` still maps to `ZONE_COST`/`ZONE_IS_BOSS` `[MAX_ZONES]`.
+- **M6 Task 2 (`CreatureDef` schema).** The `CreatureDef` row schema itself needs no amendment; only the `EncounterRow.def_index` vs `CreatureDef.id` distinction above is new.
+- **M6 Task 3 validation.** Add tool/upgrade/cosmetic checks: unique tool ids/order, kind ranges, the cost-kind ranges above, full 5×3 upgrades, 12 cosmetics with unlock 1..4, cosmetic prices >0. `MAX_MATERIALS=10` means `World.materials` is `[MAX_MATERIALS]i32` with indexes 0..9: materials use indexes 1..7; indexes 0 and 8..9 are unused (ids 8/9 keystones spend from `Expedition.hold` instead); there is no index 10. Reject kind ≥10 in upgrade costs. Tool cost part ids are 1..9 (future keystones are ids 10..12; `MAX_PARTS=14` leaves 13 as spare, and keystones are drop-only and never required by tools).
+- **M6 Task 6 (M7 review).** When checking the save-section overlap, confirm M7's already-listed fields cover the M5 persisted state: `World.materials[10]`, `World.tools_owned`, `World.tool_selected`, `Expedition.hold[14]/hold_n`, `Expedition.tool/tool_charge/tool_broken`, plus `expertise`, `boat`, `money`, and `cosmetics_owned/unlocked` (all already named in the M7 plan); the `FightState` tool fields are transient. `Tables` stays content-only; no save state in `data.z98`.
+
+Checked, no amendment needed: §25.1 capacities in M6 Global (56/12/4/8/14/10/96/24/12) match `def.zig` exactly; the `MAX_TEXT_KEYS=256`/48 KB `[text]` contract is unchanged (M5 adds no text keys), and no `[options]` section is required (`options.cfg` is M12, not `data.z98`); `CostSlot` and `MaterialAmt` are identical `{kind,amt}` layouts, so no extra conversion type is needed.

@@ -13,6 +13,8 @@ const fight = @import("fight.zig");
 const world = @import("world.zig");
 const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
+const dock = @import("dock.zig");
+const economy = @import("economy.zig");
 
 pub const COLS: usize = 80;
 pub const ROWS: usize = 30;
@@ -293,6 +295,39 @@ fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) 
     _ = s;
 }
 
+fn toolKindFor(id: i32) i32 {
+    var i: usize = 0;
+    while (i < tables.TOOLS.len) : (i += 1) {
+        if (tables.TOOLS[i].id == id) return tables.TOOLS[i].kind;
+    }
+    return -1;
+}
+
+fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
+    var x = put(sc, 0, y, "TOOL  ");
+    x = put(sc, x, y, toolName(s.fight.tool));
+    x = put(sc, x, y, "  ");
+    if (s.fight.tool == 0) {
+        x = put(sc, x, y, "none");
+    } else {
+        x = put(sc, x, y, toolKindName(toolKindFor(s.fight.tool)));
+    }
+    x = put(sc, x, y, "  charge ");
+    x = putInt(sc, x, y, s.fight.tool_charge);
+    x = put(sc, x, y, "  broken ");
+    if (s.fight.tool_broken != 0) {
+        x = put(sc, x, y, "yes");
+    } else {
+        x = put(sc, x, y, "no");
+    }
+    x = put(sc, x, y, "  active ");
+    if (s.fight.tool_active != 0) {
+        _ = put(sc, x, y, "yes");
+    } else {
+        _ = put(sc, x, y, "no");
+    }
+}
+
 pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Screen) void {
     clear(sc);
 
@@ -312,6 +347,8 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
     putBar(sc, 3, "HP     ", s.fight.hp, s.fight.max_hp);
     putBar(sc, 4, "RESOLVE", s.fight.res, s.fight.max_res);
     putBar(sc, 5, "HULL   ", s.fight.hull, s.fight.max_hull);
+
+    renderToolStatus(sc, s, 6);
 
     renderLog(sc, s, d, 7);
 
@@ -395,6 +432,104 @@ fn padTo(sc: *Screen, x: i32, y: i32, target: i32) i32 {
     return p;
 }
 
+fn materialName(m: i32) []const u8 {
+    switch (m) {
+        1 => return "Chitin",
+        2 => return "Steel Plate",
+        3 => return "Gland",
+        4 => return "Brine",
+        5 => return "Coral",
+        6 => return "Luminescence",
+        7 => return "Glass",
+        else => return "Unknown",
+    }
+}
+
+pub fn toolName(id: i32) []const u8 {
+    switch (id) {
+        1 => return "Steel Plate Tool",
+        2 => return "Brine Net",
+        3 => return "Electric Gland",
+        4 => return "Bioluminescent Lure",
+        5 => return "Pressure Hook",
+        6 => return "Sonar Ping",
+        7 => return "Coral Shield",
+        else => return "none",
+    }
+}
+
+fn toolKindName(kind: i32) []const u8 {
+    if (kind == tables.TOOL_KIND_ACTIVATED) return "activated";
+    if (kind == tables.TOOL_KIND_RIGGED) return "rigged";
+    return "unknown";
+}
+
+fn axisName(axis: i32) []const u8 {
+    switch (axis) {
+        0 => return "Hull",
+        1 => return "Speed",
+        2 => return "Cargo",
+        3 => return "Oxygen",
+        4 => return "Precision",
+        else => return "Unknown",
+    }
+}
+
+fn ownedToolCount(w: *const def.World) i32 {
+    var n: i32 = 0;
+    var id: i32 = 1;
+    while (id <= 7) : (id += 1) {
+        if (dock.toolOwned(w, id)) n += 1;
+    }
+    return n;
+}
+
+fn putCost(sc: *Screen, x: i32, y: i32, cost: [3]tables.CostSlot) i32 {
+    var p = x;
+    var any = false;
+    var i: usize = 0;
+    while (i < cost.len) : (i += 1) {
+        if (cost[i].kind <= 0 or cost[i].amt <= 0) continue;
+        if (any) p = put(sc, p, y, ", ");
+        any = true;
+        p = put(sc, p, y, partName(cost[i].kind));
+        p = put(sc, p, y, " x");
+        p = putInt(sc, p, y, cost[i].amt);
+    }
+    if (!any) p = put(sc, p, y, "free");
+    return p;
+}
+
+fn putUpgradeCost(sc: *Screen, x: i32, y: i32, cost: [3]tables.CostSlot) i32 {
+    var p = x;
+    var any = false;
+    var i: usize = 0;
+    while (i < cost.len) : (i += 1) {
+        if (cost[i].kind <= 0 or cost[i].amt <= 0) continue;
+        if (any) p = put(sc, p, y, ", ");
+        any = true;
+        if (cost[i].kind >= economy.MAT_CHITIN and cost[i].kind <= economy.MAT_GLASS) {
+            p = put(sc, p, y, materialName(cost[i].kind));
+        } else {
+            p = put(sc, p, y, partName(cost[i].kind));
+        }
+        p = put(sc, p, y, " x");
+        p = putInt(sc, p, y, cost[i].amt);
+    }
+    if (!any) p = put(sc, p, y, "free");
+    return p;
+}
+
+fn putMaterialStat(sc: *Screen, x: i32, y: i32, m: i32, w: *const def.World) i32 {
+    var p = put(sc, x, y, materialName(m));
+    p = put(sc, p, y, " ");
+    p = putInt(sc, p, y, w.materials[@intCast(usize, m)]);
+    p = put(sc, p, y, "(E");
+    p = putInt(sc, p, y, w.expertise[@intCast(usize, m)]);
+    p = put(sc, p, y, ")");
+    return p;
+}
+
 pub fn renderDock(s: *const def.GameState, sc: *Screen) void {
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK");
@@ -418,10 +553,177 @@ pub fn renderDock(s: *const def.GameState, sc: *Screen) void {
     x = put(sc, x, 4, " Precision T");
     _ = putInt(sc, x, 4, s.world.boat[world.BOAT_PRECISION]);
 
-    _ = put(sc, 0, 6, "[R]efine [U]pgrade [C]raft [B]uy [T] Rest [D]epart [Q]uit");
-    _ = put(sc, 0, 8, "Refine, Upgrade, Craft, Buy: not yet (M5).");
-    _ = put(sc, 0, 10, "Hint: Hull persists between trips; dock Rest is safe.");
+    x = put(sc, 0, 6, "Materials: ");
+    x = putMaterialStat(sc, x, 6, 1, &s.world);
+    x = put(sc, x, 6, " ");
+    x = putMaterialStat(sc, x, 6, 2, &s.world);
+    x = put(sc, x, 6, " ");
+    x = putMaterialStat(sc, x, 6, 3, &s.world);
+    x = put(sc, x, 6, " ");
+    _ = putMaterialStat(sc, x, 6, 4, &s.world);
+
+    x = put(sc, 0, 7, "           ");
+    x = putMaterialStat(sc, x, 7, 5, &s.world);
+    x = put(sc, x, 7, " ");
+    x = putMaterialStat(sc, x, 7, 6, &s.world);
+    x = put(sc, x, 7, " ");
+    _ = putMaterialStat(sc, x, 7, 7, &s.world);
+
+    x = put(sc, 0, 8, "Tools owned: ");
+    x = putInt(sc, x, 8, ownedToolCount(&s.world));
+    x = put(sc, x, 8, "  Selected: ");
+    _ = put(sc, x, 8, toolName(s.world.tool_selected));
+
+    _ = put(sc, 0, 10, "[R]efine [U]pgrade [C]raft [B]uy [E]quip [T] Rest [D]epart [Q]uit");
+    _ = put(sc, 0, 12, "Hint: Hull persists between trips; dock Rest is safe.");
 }
+
+pub fn renderRefine(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  DOCK - REFINE");
+    _ = put(sc, 0, 1, "Convert all parts of one type. Rare batches need a second press.");
+
+    var m: i32 = 1;
+    while (m <= 7) : (m += 1) {
+        const y = 3 + m - 1;
+        var x = putInt(sc, 0, y, m);
+        x = put(sc, x, y, " ");
+        x = put(sc, x, y, partName(m));
+        x = put(sc, x, y, " x");
+        x = putInt(sc, x, y, dock.refineParts(s, m));
+        x = put(sc, x, y, " -> ");
+        x = putInt(sc, x, y, dock.refineParts(s, m) * dock.refinePerPart(s, m));
+        x = put(sc, x, y, " ");
+        x = put(sc, x, y, materialName(m));
+        x = put(sc, x, y, " (E");
+        x = putInt(sc, x, y, s.world.expertise[@intCast(usize, m)]);
+        x = put(sc, x, y, ", ");
+        x = putInt(sc, x, y, dock.refinePerPart(s, m));
+        _ = put(sc, x, y, "/part)");
+    }
+
+    _ = put(sc, 0, 12, "[1-7] Refine material  [Esc] Back");
+}
+
+pub fn renderUpgrade(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  DOCK - UPGRADE");
+    _ = put(sc, 0, 1, "Buy the next tier of one axis (T2 needs E2, T3 needs E4).");
+
+    var axis: i32 = 0;
+    while (axis < 5) : (axis += 1) {
+        const y = 3 + axis;
+        const tier = s.world.boat[@intCast(usize, axis)];
+        var x = putInt(sc, 0, y, axis + 1);
+        x = put(sc, x, y, " ");
+        x = put(sc, x, y, axisName(axis));
+        x = put(sc, x, y, " T");
+        x = putInt(sc, x, y, tier);
+        if (tier >= 3) {
+            _ = put(sc, x, y, " (max)");
+        } else {
+            x = put(sc, x, y, " -> T");
+            x = putInt(sc, x, y, tier + 1);
+            x = put(sc, x, y, ": ");
+            var cost: [3]economy.MaterialAmt = [3]economy.MaterialAmt{
+                .{ .kind = 0, .amt = 0 },
+                .{ .kind = 0, .amt = 0 },
+                .{ .kind = 0, .amt = 0 },
+            };
+            economy.upgradeCost(axis, tier + 1, &cost);
+            var slots: [3]tables.CostSlot = [3]tables.CostSlot{
+                .{ .kind = 0, .amt = 0 },
+                .{ .kind = 0, .amt = 0 },
+                .{ .kind = 0, .amt = 0 },
+            };
+            var i: usize = 0;
+            while (i < 3) : (i += 1) {
+                slots[i] = tables.CostSlot{ .kind = cost[i].kind, .amt = cost[i].amt };
+            }
+            _ = putUpgradeCost(sc, x, y, slots);
+        }
+    }
+
+    _ = put(sc, 0, 10, "[1-5] Upgrade axis  [Esc] Back");
+}
+
+pub fn renderCraft(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  DOCK - CRAFT");
+    _ = put(sc, 0, 1, "Build one tool from parts; owned forever.");
+
+    var i: usize = 0;
+    while (i < tables.TOOLS.len) : (i += 1) {
+        const row = tables.TOOLS[i];
+        const y = 3 + @intCast(i32, i);
+        var x = putInt(sc, 0, y, row.id);
+        x = put(sc, x, y, " ");
+        x = put(sc, x, y, toolName(row.id));
+        x = put(sc, x, y, " [");
+        x = put(sc, x, y, toolKindName(row.kind));
+        x = put(sc, x, y, "] ");
+        x = putCost(sc, x, y, row.cost);
+        if (dock.toolOwned(&s.world, row.id)) _ = put(sc, x, y, " (owned)");
+    }
+
+    _ = put(sc, 0, 12, "[1-7] Craft tool  [Esc] Back");
+}
+
+fn cosmeticKey(index: i32) u8 {
+    if (index < 9) return @intCast(u8, '1' + index);
+    return @intCast(u8, 'a' + (index - 9));
+}
+
+pub fn renderBuy(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  DOCK - BUY");
+    var x = put(sc, 0, 1, "Coins: ");
+    _ = putInt(sc, x, 1, s.world.money);
+
+    var i: usize = 0;
+    while (i < tables.COSMETICS.len) : (i += 1) {
+        const idx: i32 = @intCast(i32, i);
+        const row = tables.COSMETICS[i];
+        const y = 3 + idx;
+        putChar(sc, 0, y, cosmeticKey(idx));
+        var p = put(sc, 2, y, row.name);
+        p = put(sc, p, y, " ");
+        p = putInt(sc, p, y, row.price);
+        if (dock.cosmeticOwned(&s.world, idx)) {
+            _ = put(sc, p, y, " (owned)");
+        } else if (!dock.cosmeticUnlocked(&s.world, idx)) {
+            _ = put(sc, p, y, " (locked)");
+        } else {
+            _ = put(sc, p, y, " (available)");
+        }
+    }
+
+    _ = put(sc, 0, 16, "[1-9,a-c] Buy cosmetic  [Esc] Back");
+}
+
+pub fn renderTools(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  DOCK - EQUIP");
+    var x = put(sc, 0, 1, "Selected: ");
+    _ = put(sc, x, 1, toolName(s.world.tool_selected));
+
+    var id: i32 = 1;
+    while (id <= 7) : (id += 1) {
+        const y = 3 + id - 1;
+        var p = putInt(sc, 0, y, id);
+        p = put(sc, p, y, " ");
+        p = put(sc, p, y, toolName(id));
+        if (s.world.tool_selected == id) {
+            p = put(sc, p, y, " *selected*");
+        }
+        if (!dock.toolOwned(&s.world, id)) {
+            _ = put(sc, p, y, " (not owned)");
+        }
+    }
+
+    _ = put(sc, 0, 12, "[1-7] Select tool  [0] None  [Esc] Back");
+}
+
 
 fn renderMapRow(s: *const def.GameState, sc: *Screen, zone: i32, y: i32) void {
     var x = put(sc, 0, y, zoneTag(zone));

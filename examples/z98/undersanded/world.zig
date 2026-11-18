@@ -196,6 +196,13 @@ pub fn markTaken(w: *def.World, zone: i32, d: i32, outcome: i32) void {
     }
 }
 
+// runReset ends a run at the Derelict kill boundary (§10 "this run"): the
+// family-overkill grudge mask is run-scoped, so the next run starts clean.
+// Other world state (calendar, renewal, boat, money) persists.
+pub fn runReset(w: *def.World) void {
+    w.family_overkill_mask = 0;
+}
+
 // ---- Release bonus / wariness / seen -------------------------------------
 
 pub fn applyRelease(w: *def.World, zone: i32, d: i32) void {
