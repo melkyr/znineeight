@@ -16,7 +16,7 @@
 
 **Test model (spec §26, binding):** tiers run natively — `undtool.nix` (COMMAND.COM-analogue console) + native test drivers are the FAST gate; Wine/DD7/DSound probes are SLOW evidence only, never the gate; operator hardware is M16-only. Logic goldens must be runnable in CI without Wine.
 
-As prior. **No autosave, ever.** `version` mismatch and `data_version` mismatch both go to the error screen with fresh / backup slot / quit options — **no auto-migration** (T3). Save contents include every §19/coreid-list field: cycle/phase/location, expedition state + hold, hull, boat axes, tools owned/equipped/charge/broken, money, cosmetics owned/unlocked, journal bits, seen array, per-zone per-species cooldowns, release counts + bonuses + wary flags, lockouts, grudge mask (cleared at run boundary — P10), expertise, boss kills, `boss_variants_seen` mask, score stats, Field Record + Last Run.
+As prior. **No autosave, ever.** `version` mismatch and `data_version` mismatch both go to the error screen with fresh / backup slot / quit options — **no auto-migration** (T3). Save contents include every §19/coreid-list field: cycle/phase/location, expedition state + hold (**the persistent dock parts store — write it at dock too**, P22.4), hull, boat axes, tools owned/equipped/charge/broken, **refined materials (`World.materials[10]`, P22)**, money, cosmetics owned/unlocked, journal bits, seen array, per-zone per-species cooldowns, release counts + bonuses + wary flags, lockouts, grudge mask (cleared at run boundary — P10), expertise, boss kills, `boss_variants_seen` mask, score stats, Field Record + Last Run.
 
 ## File Structure
 

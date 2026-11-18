@@ -688,6 +688,8 @@ wine in the native-only worktree); non-gating by design.
 
 ### M5 amendment review (M4 Task 6)
 
+Resolved at M5 kickoff (spec §38 **P22**): the M5 plan now owns `nav.zig`/`render_term.zig` dock dispatch, `World.materials`/`tools_owned`/`tool_selected`, persistent `Expedition.hold`, per-expedition tool state, the deep-refine 0-yield rule, the M8 split for blind/decoy/ink/phasing tool effects, and the real-E0 economy walk. M7's persisted-field list adds `materials` + the dock parts hold.
+
 Verdict: **amendment required** — M5's dock UI/dispatch, refined-material
 inventory, persistent craft parts, cosmetic-unlock gating, tool ownership, and
 per-expedition tool charge are not covered by M4 or by the M5 plan's file list.

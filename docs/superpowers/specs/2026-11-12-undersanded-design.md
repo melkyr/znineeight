@@ -415,7 +415,7 @@ Subdue gives full loot plus a choice. Kill gives a worse table and no choice. Ki
 
 ## 10. Equipment — One Slot
 
-Chosen before the expedition. Crafted at dock (1 phase). Owned forever. **Tools cost parts.**
+Chosen before the expedition. Crafted at dock (1 phase). Owned forever. **Tools cost parts.** Selecting the equipped tool is free — it is part of Depart, persisted in `World.tool_selected` (P22); a broken tool clears at the next Depart.
 
 | Kind | Rule |
 | :--- | :--- |
@@ -752,6 +752,8 @@ Every action costs 1 phase.
 | 5 | deep materials handled without loss |
 
 **Deep materials** (Luminescence, Glass) lose 1 material per part below Expertise 5. Commons have no loss.
+
+**A Refine always grants +1 expertise, even when the computed deep yield is 0** (P22). Refining deep parts below E5 at a loss is the intended expertise investment, never a refusal case; the yield formula is not clamped. Refusing an action (insufficient parts/materials/coins, unmet expertise gate) costs **no phase and no RNG**; a successful Refine/Upgrade/Craft/Buy costs exactly 1 phase.
 
 ---
 
@@ -1133,14 +1135,15 @@ pub const FightState = struct {
 };
 ```
 
-≈130 bytes. Copyable by value, trivially serializable, no R1 violations possible. Extended at M2 with flat effect state (no unions): `rule_consumed: u32` (one-shot bits per rule row), `pending_blind: i32`, `pending_ink: i32`, `pending_flee: i32`, `active_armor_pct: i32`, `active_resist_restrain: i32`. Field semantics: `*_below_pct` values are **percentage points added to 100** (Angler `atk_below_pct=50` → atk_pct 150; never chain multipliers). `flags` bit vocabulary (module consts): `F_BOSS=1`, `F_STATIONARY=2`, `F_SHELL=4`, `F_PHASING=8`, `F_DECOY=16`, `F_INK=32`, `F_GRUDGE_ARMOR=64`.
+≈130 bytes. Copyable by value, trivially serializable, no R1 violations possible. Extended at M2 with flat effect state (no unions): `rule_consumed: u32` (one-shot bits per rule row), `pending_blind: i32`, `pending_ink: i32`, `pending_flee: i32`, `pending_stun: i32` (Electric Gland, M5), `active_armor_pct: i32`, `active_resist_restrain: i32`. Field semantics: `*_below_pct` values are **percentage points added to 100** (Angler `atk_below_pct=50` → atk_pct 150; never chain multipliers). `flags` bit vocabulary (module consts): `F_BOSS=1`, `F_STATIONARY=2`, `F_SHELL=4`, `F_PHASING=8`, `F_DECOY=16`, `F_INK=32`, `F_GRUDGE_ARMOR=64`.
 
 **GameState** (the `gameStep` carrier; also flat): `fight: FightState`, `world: World`, `log` (fixed array of `LogEntry`, `MAX_LOG=64`, drop-oldest), `expedition` flat fields (hold `[MAX_PARTS]i32`, fight_index, travel state), `screen: i32`, `rng ok`. **`LogEntry` format** (stable, replay-goldened): `{ class: i32, msg_id: i32, a: i32, b: i32 }` — rendered via a message table, never stored as strings.
 
 ```zig
 pub const Expedition = struct {
     active: i32, zone: i32, fight_index: i32, seed: u32,
-    hold: [MAX_PARTS]i32, hold_n: i32,
+    hold: [MAX_PARTS]i32, hold_n: i32,     // parts; the persistent dock store (kept across depart, P22)
+    tool: i32, tool_charge: i32, tool_broken: i32,  // per-expedition tool state (M5)
 };
 // GameState carries: exp: Expedition, pending_cond: i32.
 pub const Effect = struct { op: i32, a: i32, b: i32 };
@@ -1222,6 +1225,9 @@ pub const World = struct {
     rng_state: u32,                                  // world RNG (encounters, rough-sleep, expedition_seed)
     boat: [5]i32, money: i32,
     expertise: [MAX_MATERIALS]i32,
+    materials: [MAX_MATERIALS]i32,          // refined materials, id 1..7 (M5)
+    tools_owned: u32,                        // bit per tool id 1..7; owned forever (M5)
+    tool_selected: i32,                      // dock tool choice carried into Depart (0 = none, M5)
     cosmetics_owned: u32, cosmetics_unlocked: u32,
     field_record_written: i32,
     boss_variants_seen: u32, boss_kills: i32,
@@ -1718,7 +1724,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | **M2** | Fight core + rule VM | Pure `game.z98` (flat structs, xorshift32, fixed-point), coupling rule §8.5, overkill margin, Attack, Hull clock, subdue roll + Last Surge, comparative Speed; 5 hardcoded creatures: Mystic Eel, Mystic Electric Eel, Steel Tuna + sim rares **Anemoniacus** and **Freezing Perch** (flex slots, subdue 60, modal path); text fight UI | Text fight playable 20×; the §41 three questions answered **yes** by hand |
 | **M3** | Auto-sim + replay + `--test-rules` | `--sim`, `--replay` (v2 stream), `--test-rules`, console mode (*nix analogue first); sim policy §25.9 incl. subdue roll | **Sim gate:** avg rare-fight actions ≤12 · ascent rate ≤15% (measured at Hull 150 loadout) · bar-switch observed · decline costs no RNG · commons never prompt. Tuning levers (each = spec amendment, recorded in §38): rare chance 60→65 first; surge restore 30%→25% second. Do not tune coupling to compensate |
 | **M4** | Calendar + expedition loop | Phases, travel ladder, per-zone respawn, rare pipeline, flee, Hull-0 emergency ascent, release/sell | Full dock→travel→fight→return loop playable in terminal; empty-pool safe Rest works |
-| **M5** | Dock + economy | Refine/expertise 0–5, 5 boat axes + Heavy, tool crafting (7 tools), cosmetics (12), grudges | Economy arithmetic closes for the **full game** (§17 + §21.5); all dock actions 1 phase |
+| **M5** | Dock + economy | Refine/expertise 0–5, 5 boat axes + Heavy, tool crafting (7 tools), cosmetics (12), grudges | Real E0 walk spends **111 materials + Steel Fins ×2** and every axis buys T1–T3 behind its expertise gate; §17 table self-consistent; full-run pacing is M15; all dock actions 1 phase (refusals cost 0) |
 | **M6** | Data tables + loader | Text format, full schema, capacities §25.1; all T1 tables loaded from `data.z98`; malformed rejection | Loader goldens pass; bad sentinels (boss subdue_chance) rejected; Z4–Z8 empty-table stubs load |
 | **M7** | Save system | CRC32, `data_version=2`, tmp+verify+rename+rollback, 2 slots, first-run lore page | Save round-trip golden passes; rollback path exercised; v1 save → v2 loader errors correctly |
 | **M8** | Tier-1 content authoring | 17 creature rows + 2 flex, tools, journal 19 entries, manual pages, Legends 2, zone flavor, error copy — §40 checklist | **Demo content-complete in terminal**; full T1 loop playable start→boss gate |
@@ -1790,6 +1796,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P19 | **No committed tooling outside Z98 + shell.** Python = transitory, uncommitted (asset translation, golden-seed generation), never a build/test dependency. `.ZSP` + SVG sources + Z98 validator are the artifacts of record. |
 | P20 | Fight length gates ≤12/12/14/15 (T1–T4); damage ranges never creep; **boss feasibility is a gate** (minimalist T4-proper loadout, kill-rate targets §21.3) |
 | P21 | **M3 levers pulled (user-authorized “go 1, yes lets rebalance”):** lever 1 rare subdue 60→65 (Anemoniacus + Freezing Perch); lever 2 Last Surge restore 30%→25%. Anemoniacus content rebalance Resolve 115→80 keeps the ≤12 rare-actions gate met (seed 98: 11 actions). Ascent gate is measured at **Hull 150** (two T1 Hull upgrades): seed 98 Anemoniacus 4.0% ascent, worst cross-seed 8.5% (seed 4); Freezing Perch seed 98 1.5%, worst 5.0% (seed 59). |
+| P22 | **M5 kickoff rulings (user-authorized):** (1) deep refine is legal at 0 yield and always grants +1 expertise (no clamp, no refusal) — parts are renewable so this is a setback, not a lock; (2) M5 wires only behaviours that exist after M4 (armor, shell/resist-restrain, discharge, flee, stun); blind/decoy/ink/phasing and their tool interactions move to M8; (3) Sonar lookahead peeks on a copied `FightState` (flat POD, discarded) — never mutates `GameState`/log/world; M8 extends it with ink/decoy; (4) `Expedition.hold` is the persistent dock parts store (kept across `depart`); (5) tool selection persists in `World.tool_selected` and is copied into `Expedition` at Depart (free, no extra phase); (6) failed dock actions cost no phase and no RNG; (7) the M5 economy walk starts at 0 materials / E0 and asserts materials **spent** = 111 + Steel Fins ×2 with §17 table self-consistency (full-run pacing stays M15); (8) tool effects/reveals that need blind/decoy/ink/phasing are authored and tested at M8. |
 
 ### Game design
 
