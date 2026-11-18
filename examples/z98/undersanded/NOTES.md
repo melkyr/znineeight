@@ -688,28 +688,54 @@ wine in the native-only worktree); non-gating by design.
 
 ### M5 amendment review (M4 Task 6)
 
-Verdict: **amendment required** — M5's dock UI/dispatch and persistent tool
-ownership are not covered by M4 or by the M5 plan's file list.
+Verdict: **amendment required** — M5's dock UI/dispatch, refined-material
+inventory, zone-reach cosmetic gating, tool ownership, and per-expedition tool
+charge are not covered by M4 or by the M5 plan's file list.
 
 - **Dock action dispatch/messages are unowned.** M4 `dockStep` handles only
   `q/d/t`; `r/u/c/b` are deliberate no-ops (`nav.zig:63-69`) and `renderDock`
-  prints `Refine, Upgrade, Craft, Buy: not yet (M5).` (`render_term.zig:421-423`).
+  prints `Refine, Upgrade, Craft, Buy: not yet (M5).` (`render_term.zig:422`).
   M5's Refine(material) / Upgrade(axis) / Craft(tool) / Buy(cosmetic) need key
   dispatch, selection sub-prompts, and result/refusal messages. Amend
   `2026-11-12-undersanded-m05-dock-economy-plan.md` File Structure and Task 2
   to add `nav.zig` + `render_term.zig` (with nav/screens test and golden
   updates); no M4 code change is needed because the stubs are intentional.
+- **No persistent refined-material inventory.** M4 stores only loot parts in
+  `Expedition.hold`, which `depart` zeroes (`expedition.zig:299-305`), so M5
+  Refine output cannot survive the return to dock. Amend
+  `examples/z98/undersanded/def.zig` §25.7 `World` with
+  `materials: [MAX_MATERIALS]i32`, reset it in `game.zeroWorld`
+  (`game.zig:16-53`), and consume it from M5 `economy.zig`/`dock.zig`. Add the
+  field to the §25.7 layout row and the M5 plan File Structure/Task 2.
+- **No zone first-arrival state for cosmetic unlocks.** `seen_mask`/
+  `journal_mask` are per-creature (`def.zig:69-70`); no existing field records
+  "Reach Z1/Z2/Z3". Amend §25.7 `World` with `zones_reached: u32` (bit per
+  zone; 12 zones fit), set on first departure/arrival in the M5-owned
+  `expedition.zig` depart hook (`expedition.zig:293-318`), reset in
+  `game.zeroWorld`, and consume it in M5 Buy gating. Add the §25.7 layout row
+  and the M5 plan File Structure/Task 2 entry.
 - **No persistent tool-ownership field.** M5 Task 2/3 craft owned-forever tools
   and equip one at depart, but `def.World` has no `tools_owned` (only
-  `cosmetics_owned`; `def.zig:66-83`) and nothing else persists ownership.
-  Amend `examples/z98/undersanded/def.zig` §25.3 `World` with
-  `tools_owned: u32` (7 tools fit `MAX_TOOLS=8`) and reset it in
-  `game.zeroWorld` (`game.zig:16-53`); consume it from M5 `dock.zig`/
-  `tools.zig`. Record the matching §25.7 layout row in the M5 notes.
+  `cosmetics_owned`; `def.zig:80`) and nothing else persists ownership. Amend
+  `examples/z98/undersanded/def.zig` §25.7 `World` with `tools_owned: u32`
+  (7 tools fit `MAX_TOOLS=8`) and reset it in `game.zeroWorld`
+  (`game.zig:16-53`); consume it from M5 `dock.zig`/`tools.zig`. Add the
+  matching §25.7 layout row.
+- **FightState tool/charge is fight-local, not per-expedition.**
+  `startFightDef` zeroes `tool`, `tool_charge`, `tool_broken`, and
+  `tool_active` on every fight (`fight.zig:136-139`), while M5 needs
+  equip-at-depart, 1 activated charge per expedition, and broken clearing only
+  at the next Depart. Amend the M5 plan Task 2/3 and `def.Expedition` (or a
+  documented World equivalent) to persist `tool`, `tool_charge`, and
+  `tool_broken` across fights, initialized/cleared by the M5-owned
+  `expedition.depart` hook (`expedition.zig:293-318`) and copied into
+  `FightState` after `startFightDef` (as `hunt` already does for Hull/cond);
+  `game.newGame` must clear them. M5 must own the `expedition.zig` depart hook
+  rather than relying on the per-fight reset.
 
 Checked, no amendment needed: `World` already carries `money`, `expertise[10]`,
-`boat[5]` tier counts, `hull`, and cosmetic masks (`def.zig:78-80`); part/
-keystone ids 1–9 exist (`creatures_t1.zig:38-47`); the derived boat tables are
+`boat[5]` tier counts, `hull`, and cosmetic masks (`def.zig:77-80`); part/
+keystone ids 1–9 exist (`creatures_t1.zig:39-47`); the derived boat tables are
 in `world.zig:24-28,117-139`. `NO_FIGHT` lives in `def.zig:116` and
 `newGame`/`zeroWorld` is the clean reset path (`game.zig:16-69`). Dock Rest is
 already split correctly: public `restAtDock` is +40 Hull, one phase, no RNG/
