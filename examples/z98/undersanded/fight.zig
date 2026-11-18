@@ -505,8 +505,9 @@ fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
         },
         def.ACT_EQUIP => {
             // The equipped tool comes from Depart (hunt copies it); the action
-            // argument is ignored. step() refuses unusable EQUIP before turn
-            // order, so reaching here means the charge is spendable.
+            // argument is ignored. Re-check at activation time: a faster
+            // creature may have broken the tool after step()'s pre-turn check.
+            if (!tools.canEquip(s, s.fight.tool)) return;
             s.fight.actions += 1;
             s.fight.tool_active = 1;
             s.fight.tool_charge -= 1;

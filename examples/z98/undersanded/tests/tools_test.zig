@@ -368,6 +368,33 @@ fn tEquipRefusalNoRoundNoRng() bool {
 
 // ---- Fragile --------------------------------------------------------------
 
+// Real ordering: the creature is faster, so its >=15 hit breaks the activated
+// tool before the player's EQUIP resolves. That EQUIP must not resurrect the
+// tool, spend the charge, or fire the stun.
+fn tCreatureFirstFragileBlocksEquip() bool {
+    var d = neutralDef();
+    d.speed = 20;
+    d.attack = 20;
+    var s: def.GameState = undefined;
+    begin(&s, &d, noRules());
+    setBoat(&s, world.BOAT_PRECISION, 2);
+    s.world.tools_owned = toolMask(fight.TOOL_ELECTRIC_GLAND);
+    setTool(&s, fight.TOOL_ELECTRIC_GLAND, 1);
+
+    fight.step(&s, def.Action{ .kind = def.ACT_EQUIP, .arg = 0 }, &d, noRules());
+
+    if (s.fight.hull != 80) return false;
+    if (s.fight.tool_broken != 1) return false;
+    if (s.exp.tool_broken != 1) return false;
+    if (s.fight.tool_active != 0) return false;
+    if (s.fight.tool_charge != 1) return false;
+    if (s.exp.tool_charge != 1) return false;
+    if (s.fight.pending_stun != 0) return false;
+    if (hasMsg(&s, fight.MSG_STUN)) return false;
+    if (hasMsg(&s, fight.MSG_EQUIP)) return false;
+    return true;
+}
+
 fn tFragileBoundary() bool {
     var g = newGame();
     setBoat(&g, world.BOAT_PRECISION, 1);
@@ -486,6 +513,7 @@ pub fn main() void {
     report("electric_gland_stun_skips_one_action", tStunSkipsOneAction());
     report("activated_tool_one_use_per_expedition", tEquipChargeOneUse());
     report("equip_refusal_no_round_no_rng", tEquipRefusalNoRoundNoRng());
+    report("creature_first_fragile_blocks_equip", tCreatureFirstFragileBlocksEquip());
     report("fragile_boundary_precision_1_2", tFragileBoundary());
     report("rigged_active_at_fight_start_no_charge", tRiggedActiveAtFightStart());
     report("break_persists_and_clears_on_depart", tBreakPersistsAcrossFightsAndClearsOnDepart());
