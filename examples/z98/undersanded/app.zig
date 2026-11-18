@@ -24,7 +24,9 @@ const arena_mod = @import("std_arena.zig");
 const buf_mod = @import("std_buf.zig");
 const file_mod = @import("std_file.zig");
 const paths = @import("paths.zig");
-const fight_console = @import("fight_console.zig");
+const def = @import("def.zig");
+const game = @import("game.zig");
+const nav = @import("nav.zig");
 
 const PATH_MAX: usize = 512;
 const ARENA_SIZE: usize = 64 * 1024;
@@ -177,6 +179,8 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     }
 
     if (fight_mode) {
-        fight_console.run();
+        var s: def.GameState = undefined;
+        game.newGame(&s);
+        nav.navRun(&s);
     }
 }

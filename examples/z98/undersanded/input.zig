@@ -7,11 +7,24 @@
 
 const def = @import("def.zig");
 const fight = @import("fight.zig");
+const io = @import("std_io.zig");
 
 pub const KEY_ESC: u8 = 27;
 pub const VK_ESC: u16 = 0x1B;
 
 pub const Key = struct { ch: u8, code: u16 };
+
+// Console key source shared by the fight and navigation loops. pal_getchar
+// returns -1 at EOF; std_io.readByte reinterprets that as 255. Treat EOF (and
+// NUL) as a clean end of input so a no-input run terminates.
+pub fn readKey() ?Key {
+    var b = io.readByte();
+    while (b == 10 or b == 13 or b == ' ') {
+        b = io.readByte();
+    }
+    if (b == 0 or b == 255) return null;
+    return Key{ .ch = b, .code = 0 };
+}
 
 fn lower(c: u8) u8 {
     if (c >= 'A' and c <= 'Z') return c + 32;

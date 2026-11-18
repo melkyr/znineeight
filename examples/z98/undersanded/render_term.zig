@@ -459,6 +459,8 @@ pub fn renderMap(s: *const def.GameState, sc: *Screen) void {
     x = putInt(sc, x, 13, seenNonBossCount(s));
     x = put(sc, x, 13, "/");
     _ = putInt(sc, x, 13, BOSS_SEEN_GATE);
+
+    _ = put(sc, 0, 15, "[1-8] Z1-Z8  [9] Boss  [Esc] Back");
 }
 
 // ---- Secured line (§7) ----------------------------------------------------
@@ -574,7 +576,11 @@ pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
         _ = put(sc, 0, 6, secured);
     }
 
-    _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
+    if (s.fight.outcome == def.OUT_SUBDUE and s.fight.def_index != def.NO_FIGHT) {
+        _ = put(sc, 0, 7, "[R]elease  [S]ell");
+    } else {
+        _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
+    }
     _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");
 }
 

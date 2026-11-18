@@ -21,6 +21,8 @@ const fight = @import("fight.zig");
 const game = @import("game.zig");
 const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
+const nav = @import("nav.zig");
+const fight_console = @import("fight_console.zig");
 const file_mod = @import("std_file");
 
 const TokenRow = struct { name: []const u8, index: i32 };
@@ -265,6 +267,9 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_replay = false;
     var have_dump_grid = false;
     var have_screen = false;
+    var have_play = false;
+    var have_fight = false;
+    var have_hull = false;
     var n_fights: i32 = 0;
     var seed0: u32 = 0;
     var hull: i32 = 100;
@@ -279,6 +284,10 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         const a = os.argv(i);
         if (eq(a, "--test-rules")) {
             have_test_rules = true;
+        } else if (eq(a, "--play")) {
+            have_play = true;
+        } else if (eq(a, "--fight")) {
+            have_fight = true;
         } else if (eq(a, "--replay")) {
             i += 1;
             if (i >= nargs) {
@@ -347,10 +356,35 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
                 fail("undtool: --hull must be greater than 0");
                 return;
             }
+            have_hull = true;
         } else if (startsFlag(a)) {
             fail("undtool: unknown flag");
             return;
         }
+    }
+
+    // Interactive play modes are exclusive: neither combines with the other nor
+    // with any tool flag.
+    if (have_play or have_fight) {
+        if (have_play and have_fight) {
+            fail("undtool: --play and --fight are mutually exclusive");
+            return;
+        }
+        if (have_test_rules or have_replay or have_dump_grid or have_screen or
+            have_sim or have_creature or have_seed or have_hull)
+        {
+            fail("undtool: --play/--fight cannot be combined with tool flags");
+            return;
+        }
+        if (have_play) {
+            var s: def.GameState = undefined;
+            game.newGame(&s);
+            nav.navRun(&s);
+        } else {
+            fight_console.run();
+        }
+        os.exit(0);
+        return;
     }
 
     if (have_test_rules) {

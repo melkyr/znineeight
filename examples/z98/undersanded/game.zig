@@ -7,6 +7,7 @@
 const def = @import("def.zig");
 const fight = @import("fight.zig");
 const creatures = @import("creatures_t1.zig");
+const std_mem = @import("std_mem.zig");
 
 // M2 hardcodes the expedition stream (spec §25.5 seed formula).
 pub const EXPEDITION_SEED: u32 = 98;
@@ -49,6 +50,22 @@ pub fn zeroWorld(w: *def.World) void {
     w.field_record_written = 0;
     w.boss_variants_seen = 0;
     w.boss_kills = 0;
+}
+
+// R8 zero-init for a fresh run: clear the whole state, install the canonical
+// zero world, then the explicit empty expedition and no-fight sentinel.
+pub fn newGame(s: *def.GameState) void {
+    std_mem.zeroU8(@ptrCast([*]u8, s), @sizeOf(def.GameState));
+    zeroWorld(&s.world);
+    s.exp = def.Expedition{
+        .active = 0,
+        .zone = 0,
+        .fight_index = 0,
+        .seed = 0,
+        .hold = [def.MAX_PARTS]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        .hold_n = 0,
+    };
+    s.fight.def_index = def.NO_FIGHT;
 }
 
 pub fn startFight(s: *def.GameState, def_index: i32) void {

@@ -24,17 +24,6 @@ fn outcomeName(o: i32) []const u8 {
     }
 }
 
-// pal_getchar returns -1 at EOF; std_io.readByte reinterprets that as 255.
-// Treat EOF (and NUL) as a clean end of input so a no-input run terminates.
-fn readKey() ?input.Key {
-    var b = io.readByte();
-    while (b == 10 or b == 13 or b == ' ') {
-        b = io.readByte();
-    }
-    if (b == 0 or b == 255) return null;
-    return input.Key{ .ch = b, .code = 0 };
-}
-
 fn printFrame(s: *const def.GameState, d: *const def.CreatureDef) void {
     var sc: render.Screen = undefined;
     render.renderFrame(s, d, &sc);
@@ -59,7 +48,7 @@ fn chooseCreature() ?i32 {
 
     var pick: i32 = -1;
     while (pick < 0) {
-        const k = readKey() orelse return null;
+        const k = input.readKey() orelse return null;
         if (k.ch >= '1' and k.ch <= '5') {
             pick = @intCast(i32, k.ch - '1');
         } else {
@@ -81,7 +70,7 @@ pub fn run() void {
     var steps: i32 = 0;
     while (s.fight.outcome == def.OUT_ONGOING) {
         io.write("> ");
-        const k = readKey() orelse {
+        const k = input.readKey() orelse {
             io.write("\nInput ended.\n");
             return;
         };

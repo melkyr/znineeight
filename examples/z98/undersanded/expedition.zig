@@ -42,7 +42,7 @@ const SEED_MASK: u32 = 0x00FFFFFF;
 // the single settled/pending marker: a pending Subdue keeps it live until
 // resolveSubdueChoice clears it; every settled outcome clears it and leaves the
 // Secured line to the CLS_SECURED log entry.
-pub const NO_FIGHT: i32 = -1;
+pub const NO_FIGHT: i32 = def.NO_FIGHT;
 
 const REST_HEAL: i32 = 30;
 const DOCK_REST_HEAL: i32 = 40;

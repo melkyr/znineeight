@@ -112,6 +112,9 @@ pub const ACT_DECLINE: i32 = 6;
 
 pub const Action = struct { kind: i32, arg: i32 };
 
+// No fight is in progress: FightState.def_index is parked at this sentinel.
+pub const NO_FIGHT: i32 = -1;
+
 pub const OUT_ONGOING: i32 = 0;
 pub const OUT_SUBDUE: i32 = 1;
 pub const OUT_KILL: i32 = 2;
