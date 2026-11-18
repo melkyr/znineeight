@@ -4,7 +4,7 @@ Mystic Eel  common  SPD 10
 HP      [##############......] 51/70
 RESOLVE [####################] 80/80
 HULL    [##################..] 94/100
-
+TOOL  none  none  charge 0  broken no  active no
 You Strike for 19 HP.
 Creature hits you for 6 Hull.
 

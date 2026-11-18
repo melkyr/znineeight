@@ -70,6 +70,7 @@ fn tDumpGridFightText() bool {
     if (!contains(text, "HP")) return false;
     if (!contains(text, "RESOLVE")) return false;
     if (!contains(text, "HULL")) return false;
+    if (!contains(text, "TOOL  none  none  charge 0  broken no  active no")) return false;
     if (!contains(text, "Strike")) return false;
     return true;
 }

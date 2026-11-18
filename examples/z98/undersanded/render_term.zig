@@ -295,6 +295,39 @@ fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) 
     _ = s;
 }
 
+fn toolKindFor(id: i32) i32 {
+    var i: usize = 0;
+    while (i < tables.TOOLS.len) : (i += 1) {
+        if (tables.TOOLS[i].id == id) return tables.TOOLS[i].kind;
+    }
+    return -1;
+}
+
+fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
+    var x = put(sc, 0, y, "TOOL  ");
+    x = put(sc, x, y, toolName(s.fight.tool));
+    x = put(sc, x, y, "  ");
+    if (s.fight.tool == 0) {
+        x = put(sc, x, y, "none");
+    } else {
+        x = put(sc, x, y, toolKindName(toolKindFor(s.fight.tool)));
+    }
+    x = put(sc, x, y, "  charge ");
+    x = putInt(sc, x, y, s.fight.tool_charge);
+    x = put(sc, x, y, "  broken ");
+    if (s.fight.tool_broken != 0) {
+        x = put(sc, x, y, "yes");
+    } else {
+        x = put(sc, x, y, "no");
+    }
+    x = put(sc, x, y, "  active ");
+    if (s.fight.tool_active != 0) {
+        _ = put(sc, x, y, "yes");
+    } else {
+        _ = put(sc, x, y, "no");
+    }
+}
+
 pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Screen) void {
     clear(sc);
 
@@ -314,6 +347,8 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
     putBar(sc, 3, "HP     ", s.fight.hp, s.fight.max_hp);
     putBar(sc, 4, "RESOLVE", s.fight.res, s.fight.max_res);
     putBar(sc, 5, "HULL   ", s.fight.hull, s.fight.max_hull);
+
+    renderToolStatus(sc, s, 6);
 
     renderLog(sc, s, d, 7);
 
