@@ -830,6 +830,21 @@ fn tSubdueSettlesBeforeChoice() bool {
     return true;
 }
 
+// A new Depart is a fresh expedition: the previous haul's Secured line must not
+// linger at the first node.
+fn tDepartClearsSecuredLog() bool {
+    var g = realSubdue(REAL_SEED);
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+
+    var buf: [256]u8 = undefined;
+    if (render.securedLine(&g, buf[0..]).len == 0) return false;
+
+    expedition.resolveSubdueChoice(&g, expedition.SUB_SELL);
+    _ = expedition.depart(&g, 1);
+    if (render.securedLine(&g, buf[0..]).len != 0) return false;
+    return true;
+}
+
 // (g) Kill path: corpse drops, the kill respawn index, and NO_FIGHT settle.
 fn tKillAwardsAndRenews() bool {
     var g = startReal(REAL_SEED, 0);
@@ -997,6 +1012,7 @@ pub fn main() void {
     report("flee_adds_no_loot", tFleeAddsNothing());
     report("secured_line_settled_kill_over_flee", tSecuredLineForSettledFights());
     report("subdue_loot_before_choice_pending_guard", tSubdueSettlesBeforeChoice());
+    report("depart_clears_previous_secured_log", tDepartClearsSecuredLog());
     report("kill_awards_drops_and_renews", tKillAwardsAndRenews());
     report("rough_sleep_carries_into_next_fight", tRoughSleepCarriesIntoFight());
     report("depart_parks_no_fight_state", tDepartParksNoFight());

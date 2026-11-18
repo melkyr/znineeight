@@ -299,6 +299,7 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     // in u32, and a full-range seed would trap under -fsafe.
     ep.seed = rng.rngNext(&g.world.rng_state) & SEED_MASK;
     ep.hold_n = 0;
+    g.log_n = 0;
     var i: usize = 0;
     while (i < def.MAX_PARTS) : (i += 1) {
         ep.hold[i] = 0;
