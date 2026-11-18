@@ -60,6 +60,8 @@ New/modified files (all existing paths except the new plan/test files):
 | `z9play-profile-report.md` (scratch, under `.superpowers/sdd/…`) | decode-cost attribution for Vorbis/FLAC (no source change) |
 | `z9play-fast-o2-report.md` (scratch) | pre/post `-ffast`+`-O2` z9play rates and callgrind attribution |
 | `z9torr-idle-report.md` (scratch) | idle CPU per-wake attribution and backoff design |
+| `z9gb-playability-report.md` (scratch, under `.superpowers/sdd/…`) | Task 18 measured throughput/fps, dynarec stats, ranked cost model (no source change) |
+| `z9edit-responsiveness-report.md` (scratch, under `.superpowers/sdd/…`) | Task 19 backend identity, per-frame cost breakdown, ranked fixes (no source change) |
 
 ---
 
@@ -523,28 +525,64 @@ git commit -m "test(z9play): fix tier_flac/tier_tui pty framing races"
 ---
 
 
-### Task 11: Verification sweep + evidence log
+### Task 18: z9gb playability investigation (Wine stats only)
 
-> **Blocked:** do not run this sweep until Task 14, Task 15, Task 16, and Task 17 have all run and the operator has reviewed the Task 15, Task 16, and Task 17 reports.
+> **Why:** z9gb is unplayable on the target while a 2004-era PC ran a GBA emulator at full speed. This is an implementation-overhead problem, not a hardware limit. Measure and rank the overhead using only the Wine builds/stats we already have. **No fixes, no source/plan edits, no era-hardware runs, no commits.**
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-11-17-example-performance-baselines.md` (after column)
-- Modify: each changed example's `NOTES.md`/`README.md` recorded `--dump-c89` md5 (re-baseline only that example's own value) and `KNOWN_GAPS.md` status
+- Read: `examples/z98/z9gb/KNOWN_GAPS.md` §3, `emu.zig`, `cpu.zig`, `mmu.zig`, `timer.zig`, `ppu.zig`, `apu.zig`, `dynarec/*.zig`, `tests/tier_perf.sh`, `tests/tier_win32.sh`
+- Create (scratch, **not committed**): `.superpowers/sdd/2026-11-17-example-performance-program/z9gb-playability-report.md`
+- Modify: none
 
-- [ ] **Step 1: Full tier sweep, sequential:**
+**Interfaces:**
+- Consumes: existing Win32 `-osw` build under Wine (`--dynarec`, `--dynarec-stats`, `--no-dynarec`), `tier_perf.sh` numbers/ROM discovery, KNOWN_GAPS measurements.
+- Produces: measured throughput/fps tables for interpreter and dynarec, per-dispatch/coverage/rejection stats, a ranked structural-cost list with code refs and estimated gains, and a verdict on reaching **30 fps at scale 1 with audio** on era hardware. No code change.
 
-```bash
-ZIG=/tmp/perf_seed/zig1_5_clean
-for t in examples/z98/z9play/tests/tier_{math,setup,info,decode,stream,audio,flac,cli,console,tui,win9x}.sh; do sh "$t"; done
-for t in examples/z98/z9gb/tests/tier_{smoke,dmg,cgb,audio,dynarec,win32,perf}.sh; do sh "$t"; done
-sh examples/z98/z9edit/tests/tier_edit.sh; sh examples/z98/z9edit/tests/tier_edit_gui.sh
-for t in examples/z98/z9torr/tests/tier{1,2,3_encrypted,4_wine,stall,fallback,safe}.sh; do sh "$t"; done
-sh examples/z98/z9git/tests/tier_git.sh; sh examples/z98/z9git/tests/unit_store.sh
-```
+- [ ] **Step 1: Build once under Wine** (`-osw` + mingw `-O2`, as `tier_win32.sh`/`tier_perf.sh` do) in a scratch dir; list the ROMs actually available (e.g. `testdata/synth/minimal.gb`, `/tmp/z9gb_roms/*`, tier harness ROM); record which are usable.
+- [ ] **Step 2: Measure** interpreter and dynarec on the best available ROM: fps, wall, T-cycles/s, and `--dynarec-stats` (blocks, executed, `tinstr`, `minstr`, rejected, coverage‰, fallback). 3 runs each where practical.
+- [ ] **Step 3: Cost model.** From the stats and code, quantify per-unit overhead: per-step `ppuSyncIn`/`ppuSyncOut` (11 writes + 2 reads, `emu.zig:215-237`), helper `syncPpuIn` per IO/VRAM access (`dynarec/helpers.zig`), `busTick` per memory access (`mmu.zig:705-712`: timer+serial+APU+DMA), 256-arm opcode switch (`cpu.zig:611-619`), block-ender policy and instructions/dispatch (`dynarec/block.zig`/`dynarec.zig`), rejected-translation retries, per-pixel render loops (`ppu.zig`), APU per-sample copies. Compare against the guest budget (~4.19 MHz, ~1M instr/s; a P4-class host has ~2–3k host cycles per guest instruction).
+- [ ] **Step 4: Rank fix candidates** by expected factor with code refs (e.g. dirty PPU sync in helpers, PPU-read block enders, negative translation cache, longer blocks, batched peripherals) and state which combination plausibly reaches 30 fps; call out anything that needs a redesign.
+- [ ] **Step 5: STOP.** Write the report; no fixes, no commits.
+---
 
-- [ ] **Step 2: Re-measure Phase 0 metrics and write the after column.** Expected: z9play decode-rate ≥3× baseline; z9gb headless fps well past 59; z9torr idle CPU ≪100%; z9git clone time down; z9edit frame work down by ~rows×.
-- [ ] **Step 3: Operator hardware verification** (not automatable): P4/Win98 — z9play CPU meter (target ≪20%), z9gb `--dynarec` boots a ROM without fault, z9edit typing/scrolling responsiveness, z9torr idle CPU.
-- [ ] **Step 4: Commit closeout docs.**
+### Task 19: z9edit responsiveness investigation (Wine stats only)
+
+> **Why:** typing in z9edit feels painfully slow on target, and undersanded uses the same `std_gfx`/`std_ddraw` stack — so this is the game's rendering path on trial. Measure under Wine only. **No fixes, no source/plan edits, no era-hardware runs, no commits.**
+
+**Files:**
+- Read: `examples/z98/z9edit/main.zig`, `ui.zig`, `buffer.zig`, `tests/tier_edit_gui.sh`, `sf/src/std_gfx.zig`, `sf/src/std_gfx_pal.zig` (or the bundled copy actually imported)
+- Create (scratch, **not committed**): `.superpowers/sdd/2026-11-17-example-performance-program/z9edit-responsiveness-report.md`
+- Modify: none
+
+**Interfaces:**
+- Consumes: the existing Wine/Xvfb GUI harness; a **normal** launch (`main.zig`, typing text — operator's run mode; not a test flag).
+- Produces: backend identity (DDraw7 vs GDI fallback), per-frame cost breakdown (paint vs present vs input poll), console-output inventory for a normal session, and a ranked fix list for 30 fps game-loop viability. No code change.
+
+- [ ] **Step 1: Reproduce a normal session under Wine/Xvfb** (launch the GUI binary normally, type text via the harness/input injection available in `tier_edit_gui.sh`). Capture stdout/stderr for the whole session and count every line: the source prints only `THEME`/`READY` at startup plus test-mode output — verify whether a normal run emits more, and whether the binary is console-subsystem (console window) or GUI-subsystem.
+- [ ] **Step 2: Backend identity.** Determine whether the runtime loads DirectDraw7 or falls back to GDI on this Wine prefix; cite the probe/log evidence.
+- [ ] **Step 3: Frame-cost breakdown.** Use a **scratch** instrumented copy of the app (build in `/tmp`, never edit/commit repo sources) to time `paintFrame` (clear + rows + runs), `gfxEndFrame`/present, event polling, and lex/status work for a typing sequence. Report per-frame ms and the split.
+- [ ] **Step 4: Static cost check.** Count per-frame `gfxClear` cells, `gfxDrawText` calls/runs, full-buffer scans, and present surface size/format for an 80x25 window; state which items dominate at 30 fps.
+- [ ] **Step 5: Rank fixes** for 30 fps viability (e.g. line-dirty repaint, avoid full clear when repainting all rows, present path/backend, console/subsystem fix) with expected gains and code refs; note what undersanded would inherit from the same stack.
+- [ ] **Step 6: STOP.** Write the report; no fixes, no commits.
+---
+
+### Task 11: Truthful close (brief)
+
+> **Operator ruling 2026-11-17:** no ceremony and no mandatory re-sweep. Close with the truth and the follow-ups. Tasks 16-19 are measurement/investigation only and were not sent through a separate review loop; their reports and /tmp artifacts are the evidence.
+
+**Files:**
+- Modify: `docs/superpowers/plans/2026-11-17-example-performance-baselines.md` (add a short "Closeout" section)
+- Modify: `examples/z98/z9gb/KNOWN_GAPS.md` only if the Task 18 verdict belongs there
+- Modify: none else
+
+**Interfaces:**
+- Consumes: recorded per-task gate results, operator target results, Task 16/17/18/19 reports.
+- Produces: one honest summary + follow-up list; no code changes.
+
+- [ ] **Step 1: Write the summary.** Achieved: z9play FLAC 28% → 11% and OGG 45% → 41–43% on target; z9gb dynarec fixed and faster than interpreter; timer/PPU host gains; z9edit host work ~10× down and idle 0; z9torr idle 99% → 55% (mostly one-time startup rehash). Unmet: z9gb playability, z9edit target responsiveness. Caveats: host `-O2` proxy not predictive of OWC; `tier_flac` count is 58; startup dropout pre-existing.
+- [ ] **Step 2: Follow-ups list.** z9play 4 s track-aware prebuffer; z9edit line-dirty repaint; z9gb playability project (30 fps target); z9torr startup rehash/backoff; z9git target test; z9play f32/fixed-point DSP as future work; D22 deferred.
+- [ ] **Step 3: Cite evidence** (task reports, baseline doc, operator numbers) rather than re-running everything; if a single quick gate is needed to avoid an unverified claim, run only that.
+- [ ] **Step 4: Commit** `docs(perf): close example performance program with target results`.
 
 ---
 
@@ -555,6 +593,7 @@ sh examples/z98/z9git/tests/tier_git.sh; sh examples/z98/z9git/tests/unit_store.
 - Task 13 (tier-harness fix) runs after Task 12 and before Task 3; it unblocks Task 2's `tier_flac` green gate evidence (58/0 current inventory). Tier scripts only.
 - Task 14 (tier_stream count) and Task 15 (z9play profiling, investigation-only) run before Task 11. Task 11 is blocked until both complete and the operator reviews the profiling report; Task 15 commits nothing.
 - Task 16 (z9play `-ffast`/`-O2` measurement) and Task 17 (z9torr idle attribution, investigation-only) run before Task 11. Run them in parallel from separate `/tmp` trees to avoid `.zig1_*.tmp` CWD collisions. Task 11 is blocked until the operator reviews both reports; Task 17 commits nothing.
+- Tasks 18/19 (Wine-only investigations) run before Task 11. No era-hardware test runs; the operator's earlier P4 observations are the only target data. Target for follow-ups is **30 fps**. Task 11 is a brief truthful close with no re-sweep; Tasks 16-19 are not separately reviewed.
 - **Not in scope:** compiler/emitter codegen changes (e.g. automatic slice→`memcpy` lowering) — that would move `--dump-c89` pins. `std_mem.copyU8` already exists; the example tasks adopt it.
 - **z9gb perf depth:** top-3 structural wins only (timer batching, dirty PPU sync, single-pass line render). KNOWN_GAPS §3.2 future work (dynarec block lengthening, negative cache, PPU-read block enders) stays out.
 - **z9gb dynarec fallback:** if Task 4 cannot establish a safe fix within this program, the acceptable closeout is fail-closed dynarec on Win9x with a clear diagnostic and the interpreter as the default — documented in KNOWN_GAPS, with a follow-up defect for the ABI fix.
