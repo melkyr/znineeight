@@ -591,6 +591,31 @@ fn tCreatureDefsAndFields() bool {
 fn tStartFightWorldZeroed() bool {
     var s: def.GameState = undefined;
     game.newGame(&s);
+
+    // startFight reads the grudge mask before resetting, so the state must be
+    // initialised first. Poison every field this test asserts on afterwards so
+    // the assertions prove startFight reset them rather than just newGame.
+    // Z98 lowers `s.world.ready[i]` through a struct copy; use pointers.
+    const wp = &s.world;
+    wp.cycle = 7;
+    wp.phase = 1;
+    wp.ready[0] = 3;
+    wp.seen_mask[0] = 0x10;
+    wp.boat[0] = 2;
+    wp.expertise[0] = 4;
+    wp.money = 99;
+    wp.field_phases = 5;
+    wp.boss_kills = 2;
+    const ep = &s.exp;
+    ep.active = 1;
+    ep.zone = 2;
+    ep.hold_n = 3;
+    ep.hold[0] = 7;
+    const fp = &s.fight;
+    fp.hp = 99;
+    fp.pending_stun = 5;
+
+    const start_hp = creatures.defAt(0).hp;
     game.startFight(&s, 0);
 
     if (s.world.cycle != 0) return false;
@@ -600,11 +625,14 @@ fn tStartFightWorldZeroed() bool {
     if (s.world.boat[0] != 0) return false;
     if (s.world.expertise[0] != 0) return false;
     if (s.world.money != 0) return false;
+    if (s.world.field_phases != 0) return false;
     if (s.world.boss_kills != 0) return false;
     if (s.exp.active != 0) return false;
     if (s.exp.zone != 0) return false;
     if (s.exp.hold_n != 0) return false;
     if (s.exp.hold[0] != 0) return false;
+    if (s.fight.hp != start_hp) return false;
+    if (s.fight.pending_stun != 0) return false;
     return true;
 }
 
