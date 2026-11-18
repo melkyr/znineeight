@@ -166,13 +166,13 @@ fn tZ1RareChanceZero() bool {
     w.cycle = 1;
     if (world.rareChance(&w, 0) != 0) return false;
 
-    // Z1 base rare is zero, so releases still accrue (capped at 40) while
+    // Z1 base rare is zero in both phases, so releases accrue no bonus while
     // rareChance stays 0.
     var k: i32 = 0;
     while (k < 6) : (k += 1) {
         world.applyRelease(&w, 0, 0);
     }
-    if (w.release_bonus[0] != 40) return false;
+    if (w.release_bonus[0] != 0) return false;
     if (world.rareChance(&w, 0) != 0) return false;
 
     // Other locked nodes cannot create rare weight in Z1 either.

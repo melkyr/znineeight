@@ -200,9 +200,12 @@ pub fn markTaken(w: *def.World, zone: i32, d: i32, outcome: i32) void {
 
 pub fn applyRelease(w: *def.World, zone: i32, d: i32) void {
     if (!validZone(zone)) return;
-    var bonus = w.release_bonus[zone] + RELEASE_BONUS_STEP;
-    if (bonus > RELEASE_BONUS_CAP) bonus = RELEASE_BONUS_CAP;
-    w.release_bonus[zone] = bonus;
+    const z: usize = @intCast(usize, zone);
+    if (BASE_RARE[z][0] != 0 or BASE_RARE[z][1] != 0) {
+        var bonus = w.release_bonus[zone] + RELEASE_BONUS_STEP;
+        if (bonus > RELEASE_BONUS_CAP) bonus = RELEASE_BONUS_CAP;
+        w.release_bonus[zone] = bonus;
+    }
     setDefBit(&w.wary_mask, d);
 }
 

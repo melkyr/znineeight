@@ -149,6 +149,7 @@ fn tReleaseBonus() bool {
     w.phase = world.PHASE_DAY;
     world.applyRelease(&w, 0, 0);
     world.applyRelease(&w, 0, 0);
+    if (w.release_bonus[0] != 0) return false;
     if (world.rareChance(&w, 0) != 0) return false;
     return true;
 }
