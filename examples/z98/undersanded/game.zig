@@ -87,6 +87,7 @@ pub fn startFight(s: *def.GameState, def_index: i32) void {
         .tool_broken = 0,
     };
     zeroWorld(&s.world);
+    s.fight.pending_stun = 0;
 
     var d = creatures.defAt(def_index);
     fight.startFightDef(s, def_index, &d, creatures.RULES[0..]);

@@ -353,6 +353,15 @@ fn tDepartToolAndCosmetics() bool {
     return true;
 }
 
+// A reused GameState must not carry stale stun state into a fresh fight.
+fn tStartFightResetsPendingStun() bool {
+    var g = newGame();
+    g.fight.pending_stun = 7;
+    game.startFight(&g, 0);
+    if (g.fight.pending_stun != 0) return false;
+    return true;
+}
+
 pub fn main() void {
     report("refine_consumes_one_type", tRefineConsumesOneType());
     report("refine_refusals_free", tRefineRefusals());
@@ -364,6 +373,7 @@ pub fn main() void {
     report("buy_cosmetic_gates", tBuyCosmetic());
     report("select_tool_free", tSelectToolFree());
     report("depart_tool_and_cosmetics", tDepartToolAndCosmetics());
+    report("start_fight_resets_pending_stun", tStartFightResetsPendingStun());
 
     if (fails != 0) os.exit(1);
     io.write("dock_test PASS\n");
