@@ -142,6 +142,20 @@ for t in core_test behavior_test fight_test ui_test world_test \
     run_driver "$t"
 done
 
+UI_LOG="$OUT/ui_test/run.log"
+if [ -f "$UI_LOG" ] && grep -qx 'ok - render_secured_msg_row_4b' "$UI_LOG"; then
+    pass_case "ui_test: render_secured_msg_row_4b"
+else
+    fail_case "ui_test: render_secured_msg_row_4b missing/failed"
+fi
+
+NAV_LOG="$OUT/nav_test/run.log"
+if [ -f "$NAV_LOG" ] && grep -qx 'ok - policy_subdue_release_surface_dock' "$NAV_LOG"; then
+    pass_case "nav_test: policy_subdue_release_surface_dock"
+else
+    fail_case "nav_test: policy_subdue_release_surface_dock missing/failed"
+fi
+
 # ---------------------------------------------------------------------------
 # FAST 4: scripted full-loop golden byte-match (committed fixture)
 # ---------------------------------------------------------------------------
@@ -159,6 +173,11 @@ if [ -f "$LOOP_LOG" ]; then
         pass_case "loop_test PASS line present"
     else
         fail_case "loop_test PASS line missing"
+    fi
+    if grep -qx 'ok - full_subdue_release_kill_surface' "$LOOP_LOG"; then
+        pass_case "loop_test: full_subdue_release_kill_surface"
+    else
+        fail_case "loop_test: full_subdue_release_kill_surface missing/failed"
     fi
 else
     fail_case "loop_test run log missing (driver build failed)"
@@ -226,7 +245,7 @@ expect_play_exit2() {
 }
 if [ "$NIX_OK" -eq 1 ]; then
     expect_play_exit2 "--play --fight" --play --fight
-    expect_play_exit2 "--play --sim" --play --sim
+    expect_play_exit2 "--play --sim" --play --sim 1
 else
     fail_case "--play exit-2 paths skipped (undtool.nix did not build)"
 fi
