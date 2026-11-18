@@ -159,7 +159,12 @@ pub fn navRun(g: *def.GameState) void {
         io.write(drawCurrent(g, buf[0..]));
         io.write("> ");
         const key = input.readKey() orelse return;
+        const was_dock = g.screen == NAV_DOCK;
         const next = navStep(g, key);
         if (next == NAV_QUIT) return;
+        if (was_dock and next == NAV_DOCK
+            and (isChar(key, 'r') or isChar(key, 'u') or isChar(key, 'c') or isChar(key, 'b'))) {
+            io.write("Refine, Upgrade, Craft, Buy: not yet (M5).\n");
+        }
     }
 }
