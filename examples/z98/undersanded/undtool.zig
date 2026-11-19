@@ -3,7 +3,8 @@
 // main_console.zig routes any argv element beginning with `--` here before the
 // playable console; tool paths never touch sample.txt or a fight UI. M3 Task 2
 // owns `--sim N --creature <token> --seed S`; later tasks extend this
-// dispatcher with --replay, --test-rules, --dump-grid and --dump-defs.
+// dispatcher with --replay, --test-rules, --dump-grid, --dump-defs and
+// --save-roundtrip.
 //
 // Token table (tooling only; CreatureDef has no name field):
 //   eel -> 0, electric_eel -> 1, steel_tuna -> 2,
@@ -30,6 +31,7 @@ const arena_mod = @import("std_arena");
 const buf_mod = @import("std_buf");
 const data = @import("data.zig");
 const content_boot = @import("content_boot.zig");
+const persist = @import("persist.zig");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
@@ -41,6 +43,10 @@ var g_dump_arena_buf: [256 * 1024]u8 = undefined;
 
 // Tool paths load data.z98 beside the exe when present; failure keeps fallback.
 var g_content_arena_buf: [256 * 1024]u8 = undefined;
+
+// --save-roundtrip keeps its own arena: the original image and the re-saved
+// temp image must both stay intact for the byte compare.
+var g_rt_arena_buf: [256 * 1024]u8 = undefined;
 
 fn tryLoadContent() void {
     var dir_buf: [512]u8 = undefined;
@@ -290,6 +296,69 @@ pub fn replayLine(path: []const u8, out: []u8) ?[]const u8 {
     return out[0..pos];
 }
 
+fn bytesEq(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+fn withSuffix(path: []const u8, suffix: []const u8, out: []u8) ?[]const u8 {
+    if (path.len + suffix.len > out.len) return null;
+    var i: usize = 0;
+    while (i < path.len) : (i += 1) out[i] = path[i];
+    var j: usize = 0;
+    while (j < suffix.len) : (j += 1) out[path.len + j] = suffix[j];
+    return out[0 .. path.len + suffix.len];
+}
+
+// --save-roundtrip: load, re-save to a distinct temp path, byte-compare. Never
+// installs content (def.content_override stays null -> content version 2) and
+// never writes the original path. 0 = identical, 1 = differs, 2 = bad input.
+fn saveRoundTrip(path: []const u8) i32 {
+    if (!file_mod.exists(path)) {
+        fail("undtool: --save-roundtrip cannot read save file");
+        return 2;
+    }
+
+    var arena = arena_mod.init(g_rt_arena_buf[0..]);
+    const before = file_mod.readAll(&arena, path) catch {
+        fail("undtool: --save-roundtrip cannot read save file");
+        return 2;
+    };
+
+    var w: def.World = undefined;
+    var exp: def.Expedition = undefined;
+    persist.saveRead(path, &w, &exp) catch {
+        fail("undtool: --save-roundtrip cannot read save file");
+        return 2;
+    };
+
+    var tmp_buf: [4096]u8 = undefined;
+    const tmp = withSuffix(path, ".rt", tmp_buf[0..]) orelse {
+        fail("undtool: --save-roundtrip path too long");
+        return 2;
+    };
+    if (file_mod.exists(tmp)) file_mod.remove(tmp) catch {};
+    persist.saveWrite(tmp, &w, &exp) catch {
+        if (file_mod.exists(tmp)) file_mod.remove(tmp) catch {};
+        fail("undtool: --save-roundtrip cannot re-save save file");
+        return 2;
+    };
+
+    const after = file_mod.readAll(&arena, tmp) catch {
+        if (file_mod.exists(tmp)) file_mod.remove(tmp) catch {};
+        fail("undtool: --save-roundtrip cannot read re-saved file");
+        return 2;
+    };
+    file_mod.remove(tmp) catch {};
+
+    if (bytesEq(before, after)) return 0;
+    return 1;
+}
+
 pub fn run(argc: i32, argv: [*][*]u8) void {
     os.initArgs(argc, argv);
 
@@ -300,6 +369,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_replay = false;
     var have_dump_grid = false;
     var have_dump_defs = false;
+    var have_save_roundtrip = false;
     var have_screen = false;
     var have_play = false;
     var have_fight = false;
@@ -311,6 +381,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var replay_path: []const u8 = "";
     var dump_path: []const u8 = "";
     var defs_path: []const u8 = "";
+    var roundtrip_path: []const u8 = "";
     var screen_id: []const u8 = "";
 
     const nargs = os.argc();
@@ -347,6 +418,14 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             }
             defs_path = os.argv(i);
             have_dump_defs = true;
+        } else if (eq(a, "--save-roundtrip")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --save-roundtrip needs a file path");
+                return;
+            }
+            roundtrip_path = os.argv(i);
+            have_save_roundtrip = true;
         } else if (eq(a, "--screen")) {
             i += 1;
             if (i >= nargs) {
@@ -406,9 +485,10 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         }
     }
 
-    // Every mode except --dump-defs runs with data.z98 beside the exe when it
-    // is there; a bad file never fails the tool (fallback stays installed).
-    if (!have_dump_defs) tryLoadContent();
+    // Every mode except --dump-defs and --save-roundtrip runs with data.z98
+    // beside the exe when it is there; a bad file never fails the tool (fallback
+    // stays installed). Both of those modes must not install content.
+    if (!have_dump_defs and !have_save_roundtrip) tryLoadContent();
 
     // Interactive play modes are exclusive: neither combines with the other nor
     // with any tool flag.
@@ -418,7 +498,8 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             return;
         }
         if (have_test_rules or have_replay or have_dump_grid or have_dump_defs or
-            have_screen or have_sim or have_creature or have_seed or have_hull)
+            have_save_roundtrip or have_screen or have_sim or have_creature or
+            have_seed or have_hull)
         {
             fail("undtool: --play/--fight cannot be combined with tool flags");
             return;
@@ -431,6 +512,11 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             fight_console.run();
         }
         os.exit(0);
+        return;
+    }
+
+    if (have_save_roundtrip) {
+        os.exit(saveRoundTrip(roundtrip_path));
         return;
     }
 
