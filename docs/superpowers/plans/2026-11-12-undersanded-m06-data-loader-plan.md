@@ -54,7 +54,7 @@ As prior. Loader must fit `MAX_CREATURES=56`, `MAX_ZONES=12`, `MAX_RULES=96`, `M
 
 ### Task 2: Scanner + scalar parsers (`data.zig`)
 
-**Interfaces:** `pub fn parseI32(s: []const u8) ?i32` (thin wrapper over `std_parse.parseInt`; no twin in `std_str`); `pub const RowField = struct { key: []const u8, val: []const u8 };` `pub const ROW_MAX = 40;` `pub fn parseRowKV(line: []const u8, out: *[ROW_MAX]RowField, n: *usize) bool`; `pub fn sectionId(name: []const u8) i32`.
+**Interfaces:** `pub fn parseI32(s: []const u8) ?i32` (thin wrapper over `std_parse.parseInt`; no twin in `std_str`); `pub const RowField = struct { key: []const u8, val: []const u8 };` `pub const ROW_MAX = 80;` (61 authored `[creatures]` keys + headroom) `pub fn parseRowKV(line: []const u8, out: *[ROW_MAX]RowField, n: *usize) bool`; `pub fn sectionId(name: []const u8) i32`.
 - [ ] Load the whole file with `std_file.readAll(&arena, path)`; split on `\n` (`\r` stripped); enforce §25.10 (header first, known sections, comments/blank, 4096-byte line cap, unknown/duplicate keys, all-or-nothing rows). Parse into a temp row then commit.
 - [ ] Unit tests: parseI32 edges (±, overflow, empty, garbage); header not `format=2` rejected; unknown section/key; duplicate key; 4097-byte line; a bad field in row N leaves `Tables` unchanged; `\r\n` accepted. PASS. Commit `example(undersanded): data scanner + row parser`.
 
