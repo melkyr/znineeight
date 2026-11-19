@@ -39,6 +39,18 @@ fn warnUnlocked(s: *core.GfxState) void {
     io.write("gfxPx: fill/blit while unlocked ignored\n");
 }
 
+fn warnPresent(s: *core.GfxState, what: []const u8) void {
+    if (s.present_failed_logged) return;
+    s.present_failed_logged = true;
+    io.write("gfxPx: present failed");
+    if (what.len != 0) {
+        io.write(" (");
+        io.write(what);
+        io.write(")");
+    }
+    io.write("\n");
+}
+
 fn bind(s: *core.GfxState, pst: *pal.State, surface: *void, owned: bool, w: u32, h: u32) void {
     s.pixels = @ptrCast([*]u8, pal.nullHandle());
     s.pitch = 0;
@@ -55,6 +67,7 @@ fn bind(s: *core.GfxState, pst: *pal.State, surface: *void, owned: bool, w: u32,
     s.owned = owned;
     s.fallback = !pal.pxPrimaryIs565(pst.primary);
     s.unlocked_logged = false;
+    s.present_failed_logged = false;
 }
 
 // Standalone fixed 640x480 px window. pal.open creates the window + DD7 +
@@ -118,7 +131,7 @@ pub fn gfxPxUnlock(g: *Gfx) void {
     const s = g.opaque;
     if (!s.opened or !s.locked) return;
     if (!s.mem_only) {
-        _ = pal.pxUnlock(s.px_surface);
+        if (!pal.pxUnlock(s.px_surface)) return;
     }
     s.locked = false;
 }
@@ -171,17 +184,25 @@ pub fn gfxPxBlitPart(g: *Gfx, dx: i32, dy: i32, sprite: *const Sprite,
 
 // Present requires an unlocked surface. DD path = one 1:1 Blt with the primary
 // clipper; any failure at >=16bpp switches to the px-only GDI fallback.
-pub fn gfxPxPresent(g: *Gfx, x: i32, y: i32, w: i32, h: i32) bool {
+pub fn gfxPxPresent(g: *Gfx, x: i32, y: i32, w: i32, h: i32) void {
     const s = g.opaque;
-    if (!s.opened or s.mem_only) return false;
-    if (s.locked) return false;
+    if (!s.opened or s.mem_only) return;
+    if (s.locked) {
+        warnPresent(s, "locked");
+        return;
+    }
     if (s.fallback) {
-        return pal.pxGdiPresent565(s.win, s.px_surface, x, y, w, h);
+        if (!pal.pxGdiPresent565(s.win, s.px_surface, x, y, w, h)) {
+            warnPresent(s, "gdi");
+        }
+        return;
     }
     const hr = pal.pxPresentRect(s.primary, s.win, s.px_surface, x, y, w, h);
-    if (hr == 0) return true;
+    if (hr == 0) return;
     s.fallback = true;
-    return pal.pxGdiPresent565(s.win, s.px_surface, x, y, w, h);
+    if (!pal.pxGdiPresent565(s.win, s.px_surface, x, y, w, h)) {
+        warnPresent(s, "dd+gdi");
+    }
 }
 
 pub fn gfxPxRestore(g: *Gfx) bool {
@@ -189,7 +210,7 @@ pub fn gfxPxRestore(g: *Gfx) bool {
     if (!s.opened) return false;
     if (s.mem_only) return true;
     if (s.locked) {
-        _ = pal.pxUnlock(s.px_surface);
+        if (!pal.pxUnlock(s.px_surface)) return false;
         s.locked = false;
     }
     var ok = pal.pxRestore(s.px_surface);

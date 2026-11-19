@@ -24,6 +24,7 @@ mkdir -p "$OUT"
 
 cat > "$OUT/px_probe.zig" <<'PROBE_EOF'
 const px = @import("std_gfx_px");
+const pal = @import("std_gfx_pal");
 const gfx = @import("std_gfx");
 const io = @import("std_io");
 const os = @import("std_os");
@@ -33,6 +34,12 @@ pub fn main() void {
         io.write("PXPROBE open-failed\n");
         return;
     };
+    if (!pal.pxWindowVisible(g.opaque.win)) {
+        io.write("PXPROBE visible=0\n");
+        px.gfxPxClose(g);
+        return;
+    }
+    io.write("PXPROBE visible=1\n");
     const sf = px.gfxPxLock(g) catch {
         io.write("PXPROBE lock-failed\n");
         px.gfxPxClose(g);
@@ -53,13 +60,21 @@ pub fn main() void {
         }
     }
     px.gfxPxUnlock(g);
-    if (!px.gfxPxPresent(g, 0, 0, 640, 480)) {
-        io.write("PXPROBE present-failed\n");
-        px.gfxPxClose(g);
-        return;
+    if (pal.pxGdiPresent565(g.opaque.win, g.opaque.px_surface, 32, 16, 64, 32)) {
+        io.write("PXPROBE gdi-present=1\n");
+    } else {
+        io.write("PXPROBE gdi-present=0\n");
     }
+    px.gfxPxPresent(g, 0, 0, 640, 480);
     var ev: gfx.Event = undefined;
     while (px.gfxPxPollEvent(g, &ev)) {}
+    const mem = gfx.gfxOpenMemory(80, 30) catch return;
+    if (px.gfxPxAttach(mem) != null) {
+        io.write("PXPROBE memattach=non-null\n");
+    } else {
+        io.write("PXPROBE memattach=null\n");
+    }
+    gfx.gfxClose(mem);
     io.write("PXPROBE ok 640x480 ramp presented\n");
     io.sleepMs(250);
     px.gfxPxClose(g);
@@ -94,7 +109,7 @@ for tool in wine wineserver Xvfb xdpyinfo; do
 done
 if [ -n "$MISSING" ]; then
     echo "EVIDENCE-SKIP: LOUD SKIP — px probe Wine/Xvfb run not executed (missing:$MISSING)"
-    echo "operator-hardware: run px_probe.exe on Win98 and confirm 'PXPROBE ok' plus a visible ramp"
+    echo "operator-hardware: run px_probe.exe on Win98 and confirm 'PXPROBE visible=1' plus 'PXPROBE ok'"
     exit 0
 fi
 if [ -z "${HOME:-}" ]; then
@@ -134,8 +149,13 @@ kill "$XVFB_PID" 2>/dev/null || true
 wait "$XVFB_PID" 2>/dev/null || true
 wineserver -k >/dev/null 2>&1 || true
 
-if [ "$PROBE_RC" -eq 0 ] && grep -q 'PXPROBE ok' "$OUT/probe.log"; then
-    echo "EVIDENCE-PASS: px probe opened 640x480, filled ramp, presented (log $OUT/probe.log)"
+if [ "$PROBE_RC" -eq 0 ] \
+    && grep -q 'PXPROBE visible=1' "$OUT/probe.log" \
+    && grep -q 'PXPROBE memattach=null' "$OUT/probe.log" \
+    && grep -q 'PXPROBE gdi-present=1' "$OUT/probe.log" \
+    && grep -q 'PXPROBE ok' "$OUT/probe.log" \
+    && ! grep -q 'gfxPx: present failed' "$OUT/probe.log"; then
+    echo "EVIDENCE-PASS: px probe visible, opened 640x480, filled ramp, presented (log $OUT/probe.log)"
 else
     echo "EVIDENCE-FAIL: px probe rc=$PROBE_RC (see $OUT/probe.log)"
     tail -20 "$OUT/probe.log" | sed 's/^/       /'

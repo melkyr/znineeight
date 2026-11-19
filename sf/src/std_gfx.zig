@@ -141,6 +141,7 @@ pub fn gfxOpenMemory(cols: u32, rows: u32) GfxError!*Gfx {
     s.ch = MEM_CH;
     s.mem_only = true;
     s.theme = 0;
+    pal.clearState(&s.st);
     g_opened = true;
     g_mem_only = true;
     g_gfx.opaque = s;

@@ -35,6 +35,7 @@ const SW_RESTORE: i32 = 9;
 const SWP_NOMOVE: u32 = 0x0002;
 const SWP_NOZORDER: u32 = 0x0004;
 const SWP_NOACTIVATE: u32 = 0x0010;
+const SWP_FRAMECHANGED: u32 = 0x0020;
 const WM_DESTROY: u32 = 0x0002;
 const WM_CLOSE: u32 = 0x0010;
 const WM_QUIT: u32 = 0x0012;
@@ -76,7 +77,8 @@ const WS_OVERLAPPED: u32 = 0x00000000;
 const WS_CAPTION: u32 = 0x00C00000;
 const WS_SYSMENU: u32 = 0x00080000;
 const WS_MINIMIZEBOX: u32 = 0x00020000;
-const PX_WINDOW_STYLE: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+const WS_VISIBLE: u32 = 0x10000000;
+const PX_WINDOW_STYLE: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE;
 const BI_RGB: u32 = 0;
 const DIB_RGB_COLORS: u32 = 0;
 const PX_MAX_W: u32 = 640;
@@ -500,7 +502,7 @@ const Surface7Vtbl = struct {
     GetOverlayPosition: extern "stdcall" fn() void,
     GetPalette: extern "stdcall" fn() void,
     GetPixelFormat: extern "stdcall" fn(iface: *void, fmt: *void) u32,
-    GetSurfaceDesc: extern "stdcall" fn() void,
+    GetSurfaceDesc: extern "stdcall" fn(iface: *void, desc: *void) u32,
     Initialize: extern "stdcall" fn() void,
     IsLost: extern "stdcall" fn() void,
     Lock: extern "stdcall" fn(iface: *void, dest: *void, desc: *void, flags: u32, event: *void) u32,
@@ -547,6 +549,7 @@ pub extern "stdcall" fn LoadLibraryA(name: [*]const u8) *void;
 pub extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
 pub extern "stdcall" fn FreeLibrary(mod: *void) i32;
 pub extern "stdcall" fn IsWindow(hwnd: *void) i32;
+pub extern "stdcall" fn IsWindowVisible(hwnd: *void) i32;
 pub extern "stdcall" fn RegisterClassA(wc: *void) u16;
 pub extern "stdcall" fn CreateWindowExA(ex_style: u32, cls: *void, title: *void, style: u32, x: i32, y: i32, w: i32, h: i32, parent: *void, menu: *void, inst: *void, param: *void) *void;
 pub extern "stdcall" fn DefWindowProcA(hwnd: *void, msg: u32, wparam: u32, lparam: i32) i32;
@@ -722,13 +725,21 @@ pub fn pxDepthOk() bool {
 pub fn pxFixClient(st: *State, w: u32, h: u32) bool {
     if (isNull(st.hwnd)) return false;
     if (w == 0 or h == 0) return false;
-    _ = SetWindowLongA(st.hwnd, GWL_STYLE, @bitCast(i32, PX_WINDOW_STYLE));
+    // The previous style is nonzero (caption/sysmenu), so a 0 return is a
+    // SetWindowLongA failure. PX_WINDOW_STYLE keeps WS_VISIBLE so the window
+    // that ShowWindow(SW_SHOW) already made visible stays visible.
+    if (SetWindowLongA(st.hwnd, GWL_STYLE, @bitCast(i32, PX_WINDOW_STYLE)) == 0) return false;
     var rc = Rect{ .left = 0, .top = 0, .right = @intCast(i32, w), .bottom = @intCast(i32, h) };
     if (AdjustWindowRect(@ptrCast(*void, &rc), PX_WINDOW_STYLE, 0) == 0) return false;
     const ow: i32 = rc.right - rc.left;
     const oh: i32 = rc.bottom - rc.top;
-    const flags: u32 = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
+    const flags: u32 = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED;
     return SetWindowPos(st.hwnd, nullVoid(), 0, 0, ow, oh, flags) != 0;
+}
+
+pub fn pxWindowVisible(hwnd: *void) bool {
+    if (isNull(hwnd)) return false;
+    return IsWindowVisible(hwnd) != 0;
 }
 
 pub fn pxCreate565(dd7: *void, w: u32, h: u32) *void {
@@ -826,22 +837,41 @@ pub fn pxPresentRect(primary: *void, hwnd: *void, src: *void, x: i32, y: i32, w:
 pub fn pxGdiPresent565(hwnd: *void, src: *void, x: i32, y: i32, w: i32, h: i32) bool {
     if (isNull(hwnd) or isNull(src)) return false;
     if (w <= 0 or h <= 0) return true;
-    if (w > @intCast(i32, PX_MAX_W) or h > @intCast(i32, PX_MAX_H)) return false;
-    const uw: usize = @intCast(usize, w);
-    const uh: usize = @intCast(usize, h);
+    var ddsd = zeroDesc();
+    if (surfaceVtbl(src).GetSurfaceDesc(src, @ptrCast(*void, &ddsd)) != S_OK) return false;
+    if (ddsd.dwWidth == 0 or ddsd.dwHeight == 0) return false;
+    const sw: i32 = @intCast(i32, ddsd.dwWidth);
+    const sh: i32 = @intCast(i32, ddsd.dwHeight);
+    // The rect is both the source offset and the 1:1 destination offset. Clip
+    // it to the source surface so a dirty rect at (x,y) samples (x+col,y+row).
+    var left = x;
+    var top = y;
+    var right = x + w;
+    var bottom = y + h;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > sw) right = sw;
+    if (bottom > sh) bottom = sh;
+    if (right <= left or bottom <= top) return true;
+    const dw: i32 = right - left;
+    const dh: i32 = bottom - top;
+    const uw: usize = @intCast(usize, dw);
+    const uh: usize = @intCast(usize, dh);
     const stride: usize = (uw * 3 + 3) & ~@intCast(usize, 3);
     if (stride * uh > PX_DIB_BYTES_MAX) return false;
     var pixels: *void = nullVoid();
     var pitch: i32 = 0;
     if (!pxLock(src, &pixels, &pitch)) return false;
     const base: [*]u8 = @ptrCast([*]u8, pixels);
+    const sx0: usize = @intCast(usize, left);
+    const sy0: usize = @intCast(usize, top);
     var row: usize = 0;
     while (row < uh) : (row += 1) {
         const dbase = (uh - 1 - row) * stride;
-        const sbase = row * @intCast(usize, pitch);
+        const sbase = (sy0 + row) * @intCast(usize, pitch);
         var col: usize = 0;
         while (col < uw) : (col += 1) {
-            const so = sbase + col * 2;
+            const so = sbase + (sx0 + col) * 2;
             const c: u16 = @intCast(u16, base[so]) | (@intCast(u16, base[so + 1]) << 8);
             const r: u8 = @intCast(u8, (c >> 11) & 31);
             const g: u8 = @intCast(u8, (c >> 5) & 63);
@@ -855,8 +885,8 @@ pub fn pxGdiPresent565(hwnd: *void, src: *void, x: i32, y: i32, w: i32, h: i32) 
     if (!pxUnlock(src)) return false;
     var bmi = BitmapInfoHeader{
         .biSize = 40,
-        .biWidth = w,
-        .biHeight = h,
+        .biWidth = dw,
+        .biHeight = dh,
         .biPlanes = 1,
         .biBitCount = 24,
         .biCompression = BI_RGB,
@@ -868,7 +898,7 @@ pub fn pxGdiPresent565(hwnd: *void, src: *void, x: i32, y: i32, w: i32, h: i32) 
     };
     const dc = GetDC(hwnd);
     if (isNull(dc)) return false;
-    const rc = StretchDIBits(dc, x, y, w, h, 0, 0, w, h,
+    const rc = StretchDIBits(dc, left, top, dw, dh, 0, 0, dw, dh,
         @ptrCast(*void, &g_px_dib[0]), @ptrCast(*void, &bmi), DIB_RGB_COLORS, SRCCOPY);
     _ = ReleaseDC(hwnd, dc);
     return rc > 0;
@@ -882,6 +912,29 @@ pub fn guiProcess() bool {
 
 pub fn nullHandle() *void {
     return nullVoid();
+}
+
+// A memory std_gfx Gfx never opens a window. Clear the cell PAL handle/backend
+// fields so gfxPxAttach can inspect a memory Gfx safely and reject it.
+pub fn clearState(st: *State) void {
+    st.hwnd = nullVoid();
+    st.hinst = nullVoid();
+    st.dd = nullVoid();
+    st.dd7 = nullVoid();
+    st.dd_lib = nullVoid();
+    st.dd_create = nullVoid();
+    st.primary = nullVoid();
+    st.back = nullVoid();
+    st.clipper = nullVoid();
+    st.gdi_bmp = nullVoid();
+    st.gdi_dc = nullVoid();
+    st.gdi_old = nullVoid();
+    st.hdc = nullVoid();
+    st.font = nullVoid();
+    st.backend = BACKEND_NONE;
+    st.window_gone = false;
+    var i: usize = 0;
+    while (i < 16) : (i += 1) st.brushes[i] = nullVoid();
 }
 
 pub fn isWindowOpen(st: *State) bool {

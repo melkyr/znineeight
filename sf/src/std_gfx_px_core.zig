@@ -54,6 +54,7 @@ pub const GfxState = struct {
     owned: bool,
     fallback: bool,
     unlocked_logged: bool,
+    present_failed_logged: bool,
 };
 
 pub const Gfx = struct { opaque: *GfxState };
@@ -224,6 +225,7 @@ pub fn gfxPxOpenMemory(w: u32, h: u32) PxError!*Gfx {
     s.owned = false;
     s.fallback = false;
     s.unlocked_logged = false;
+    s.present_failed_logged = false;
     g_gfx.opaque = s;
     return &g_gfx;
 }

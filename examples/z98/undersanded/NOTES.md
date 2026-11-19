@@ -1584,8 +1584,10 @@ Kickoff rulings (spec §38 P27; user-authorized "3. A"):
   if the fixed-size path needs it) — recorded here when implemented and gated
   by `check_win9x_imports.sh`. **Recorded M9 Task 2 delta:** GDI32 adds
   `StretchDIBits` (24-bit DIB px fallback), USER32 adds `SetWindowLongA`
-  (standalone px fixed-size frame). No `CreateDIBSection` was needed: the DIB
-  pixels are a fixed module buffer passed to `StretchDIBits`.
+  (standalone px fixed-size frame) and `IsWindowVisible` (probe visibility
+  evidence). No `CreateDIBSection` was needed: the DIB pixels are a fixed
+  module buffer passed to `StretchDIBits`. The typed surface `GetSurfaceDesc`
+  query is a COM vtable slot, not a PE import.
 - **D24/D25:** new atlas/table data uses explicit `[N]T{...}` literals; no
   array-returning APIs. (`examples/torrent_example_defects.md` D24/D25).
 - **Tier split:** native core/art/loop tests + `tier_edit.sh` (byte-identical)
