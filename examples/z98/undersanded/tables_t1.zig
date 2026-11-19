@@ -89,7 +89,7 @@ pub const Z3_NIGHT = [_]EncounterRow{
     EncounterRow{ .def_index = 4, .weight = 10 }, // Freezing Perch (rare)
 };
 
-pub fn rows(zone: i32, phase: i32) []const EncounterRow {
+pub fn fallbackRows(zone: i32, phase: i32) []const EncounterRow {
     switch (zone) {
         0 => {
             if (phase == PHASE_NIGHT) return Z1_NIGHT[0..];
@@ -105,6 +105,20 @@ pub fn rows(zone: i32, phase: i32) []const EncounterRow {
         },
         else => return EMPTY[0..],
     }
+}
+
+pub fn rows(zone: i32, phase: i32) []const EncounterRow {
+    if (def.content_override) |t| {
+        if (zone < 0 or zone >= def.MAX_ZONES or phase < 0 or phase > 1) {
+            return EMPTY[0..];
+        }
+        const ci: usize = @intCast(usize, zone) * 2 + @intCast(usize, phase);
+        const base: usize = @intCast(usize, zone) * 2 * def.MAX_ENCOUNTER +
+            @intCast(usize, phase) * def.MAX_ENCOUNTER;
+        const n: usize = @intCast(usize, t.enc_count[ci]);
+        return t.encounters[base .. base + n];
+    }
+    return fallbackRows(zone, phase);
 }
 
 // ---- §10 tools -----------------------------------------------------------

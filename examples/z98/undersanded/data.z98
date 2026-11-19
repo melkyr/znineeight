@@ -1,0 +1,130 @@
+# UNDERSANDED T1 content (spec §25.10, format 2).
+# Creature rows are load-order = def_index; never reorder an existing row.
+format=2
+
+[creatures]
+id=1,name=Mystic Eel,family=1,role=1,zone_mask=3,phase_mask=3,hp=70,resolve=80,speed=10,attack=6,thrash_regen=0,despair_regen=8,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=1,sub0_count=3,sub1_part=3,sub1_count=1,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=1,kill0_count=2,kill1_part=0,kill1_count=0,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=1,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=20,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=0
+id=2,name=Mystic Electric Eel,family=1,role=1,zone_mask=3,phase_mask=2,hp=80,resolve=100,speed=16,attack=7,thrash_regen=8,despair_regen=0,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=2,discharge_th=50,discharge_dmg=8,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=3,sub0_count=3,sub1_part=1,sub1_count=1,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=3,kill0_count=1,kill1_part=1,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=3,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=30,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=0
+id=4,name=Steel Tuna,family=2,role=1,zone_mask=3,phase_mask=3,hp=120,resolve=70,speed=6,attack=8,thrash_regen=0,despair_regen=0,armor_pct=60,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=1,speed_below_th=30,speed_below_add=4,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=2,sub0_count=3,sub1_part=1,sub1_count=1,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=2,kill0_count=2,kill1_part=0,kill1_count=0,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=2,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=20,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=0
+id=18,name=Anemoniacus,family=10,role=3,zone_mask=2,phase_mask=3,hp=95,resolve=80,speed=7,attack=9,thrash_regen=10,despair_regen=0,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=65,discharge_stat=1,discharge_th=48,discharge_dmg=10,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=6,sub0_count=2,sub1_part=5,sub1_count=2,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=3,kill0_count=1,kill1_part=5,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=5,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=50,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=0
+id=19,name=Freezing Perch,family=11,role=3,zone_mask=4,phase_mask=3,hp=105,resolve=95,speed=13,attack=10,thrash_regen=0,despair_regen=8,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=65,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=1,flee_th=20,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=4,sub0_count=3,sub1_part=2,sub1_count=1,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=4,kill0_count=1,kill1_part=2,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=4,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=55,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=0
+id=5,name=Rust Tuna,family=2,role=1,zone_mask=7,phase_mask=3,hp=80,resolve=60,speed=8,attack=7,thrash_regen=0,despair_regen=0,armor_pct=80,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=2,sub0_count=2,sub1_part=1,sub1_count=2,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=1,kill0_count=2,kill1_part=0,kill1_count=0,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=1,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=15,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=5
+id=7,name=Kelp Crab,family=3,role=1,zone_mask=7,phase_mask=3,hp=100,resolve=90,speed=8,attack=7,thrash_regen=6,despair_regen=0,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=5,sub0_count=2,sub1_part=1,sub1_count=2,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=5,kill0_count=1,kill1_part=1,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=1,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=20,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=2
+id=8,name=Brine Jelly,family=4,role=1,zone_mask=6,phase_mask=2,hp=60,resolve=110,speed=10,attack=6,thrash_regen=0,despair_regen=10,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=4,sub0_count=3,sub1_part=1,sub1_count=1,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=4,kill0_count=1,kill1_part=1,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=4,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=20,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=3
+id=9,name=Chitin Barnacle,family=5,role=1,zone_mask=6,phase_mask=3,hp=130,resolve=50,speed=3,attack=6,thrash_regen=0,despair_regen=0,armor_pct=100,flags=2,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=50,armor_below_pct=70,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=1,sub0_count=4,sub1_part=5,sub1_count=1,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=1,kill0_count=2,kill1_part=0,kill1_count=0,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=1,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=15,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=1
+id=10,name=Spark Anemone,family=10,role=1,zone_mask=3,phase_mask=3,hp=90,resolve=70,speed=4,attack=6,thrash_regen=0,despair_regen=0,armor_pct=100,flags=2,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=1,discharge_th=45,discharge_dmg=10,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=3,sub0_count=2,sub1_part=1,sub1_count=1,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=3,kill0_count=1,kill1_part=1,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=3,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=20,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=7
+id=3,name=Mileel,family=1,role=2,zone_mask=2,phase_mask=1,hp=80,resolve=140,speed=12,attack=8,thrash_regen=0,despair_regen=10,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=80,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=1,flee_th=30,grudge_family=1,grudge_kind=1,grudge_value=30,sub0_part=3,sub0_count=4,sub1_part=1,sub1_count=2,sub2_part=8,sub2_count=1,sub3_part=0,sub3_count=0,kill0_part=3,kill0_count=2,kill1_part=1,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=3,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=40,respawn_sub=4,respawn_kill=12,respawn_over=20,counter_tool=5
+id=6,name=Tunisteel,family=2,role=2,zone_mask=2,phase_mask=1,hp=140,resolve=100,speed=5,attack=9,thrash_regen=0,despair_regen=0,armor_pct=50,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=80,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=1,speed_below_th=30,speed_below_add=6,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=2,grudge_kind=2,grudge_value=30,sub0_part=2,sub0_count=4,sub1_part=1,sub1_count=2,sub2_part=9,sub2_count=2,sub3_part=0,sub3_count=0,kill0_part=2,kill0_count=2,kill1_part=1,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=2,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=40,respawn_sub=4,respawn_kill=12,respawn_over=20,counter_tool=1
+id=11,name=Coral Crab,family=3,role=3,zone_mask=6,phase_mask=3,hp=160,resolve=120,speed=5,attack=10,thrash_regen=12,despair_regen=0,armor_pct=100,flags=4,resist_restrain_pct=50,blind_chance=0,subdue_chance=60,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=5,sub0_count=3,sub1_part=1,sub1_count=2,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=5,kill0_count=1,kill1_part=1,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=1,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=55,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=2
+id=12,name=Abyssal Lantern-Jelly,family=4,role=3,zone_mask=4,phase_mask=2,hp=90,resolve=130,speed=11,attack=9,thrash_regen=0,despair_regen=12,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=50,subdue_chance=60,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=6,sub0_count=2,sub1_part=4,sub1_count=3,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=6,kill0_count=1,kill1_part=4,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=4,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=55,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=4
+id=13,name=Neon Ghost-Ray,family=7,role=3,zone_mask=4,phase_mask=2,hp=100,resolve=110,speed=18,attack=10,thrash_regen=0,despair_regen=0,armor_pct=100,flags=8,resist_restrain_pct=100,blind_chance=0,subdue_chance=60,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=6,sub0_count=4,sub1_part=4,sub1_count=2,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=6,kill0_count=1,kill1_part=4,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=4,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=60,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=6
+id=14,name=Glass Squid,family=8,role=3,zone_mask=4,phase_mask=2,hp=100,resolve=130,speed=14,attack=9,thrash_regen=0,despair_regen=0,armor_pct=100,flags=32,resist_restrain_pct=100,blind_chance=0,subdue_chance=60,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=2,speed_below_th=50,speed_below_add=6,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=7,sub0_count=4,sub1_part=4,sub1_count=2,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=7,kill0_count=1,kill1_part=4,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=4,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=65,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=6
+id=15,name=Brine Angler,family=9,role=3,zone_mask=4,phase_mask=2,hp=110,resolve=100,speed=9,attack=10,thrash_regen=0,despair_regen=0,armor_pct=100,flags=16,resist_restrain_pct=100,blind_chance=0,subdue_chance=60,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=50,atk_below_pct=50,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=6,sub0_count=2,sub1_part=4,sub1_count=2,sub2_part=0,sub2_count=0,sub3_part=0,sub3_count=0,kill0_part=6,kill0_count=1,kill1_part=4,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=4,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=50,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=4
+id=16,name=Ironclad Wrasse,family=12,role=3,zone_mask=4,phase_mask=1,hp=150,resolve=140,speed=7,attack=11,thrash_regen=0,despair_regen=0,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=60,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=30,armor_below_pct=50,speed_below_stat=1,speed_below_th=30,speed_below_add=4,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=2,sub0_count=3,sub1_part=5,sub1_count=2,sub2_part=7,sub2_count=2,sub3_part=0,sub3_count=0,kill0_part=2,kill0_count=2,kill1_part=5,kill1_count=1,kill2_part=0,kill2_count=0,kill3_part=0,kill3_count=0,over0_part=2,over0_count=1,over1_part=0,over1_count=0,over2_part=0,over2_count=0,over3_part=0,over3_count=0,sale=70,respawn_sub=6,respawn_kill=18,respawn_over=30,counter_tool=1
+
+[rules]
+owner=2,cond_op=2,cond_a=50,cond_b=0,effect_op=3,effect_a=8,effect_b=0,timing=0
+owner=18,cond_op=1,cond_a=48,cond_b=0,effect_op=3,effect_a=10,effect_b=0,timing=0
+owner=5,cond_op=1,cond_a=24,cond_b=0,effect_op=5,effect_a=1,effect_b=0,timing=0
+owner=10,cond_op=1,cond_a=45,cond_b=0,effect_op=3,effect_a=10,effect_b=0,timing=0
+
+[tools]
+id=1,kind=1,cost0_kind=2,cost0_amt=3,cost1_kind=0,cost1_amt=0,cost2_kind=0,cost2_amt=0
+id=2,kind=1,cost0_kind=4,cost0_amt=2,cost1_kind=1,cost1_amt=1,cost2_kind=0,cost2_amt=0
+id=3,kind=0,cost0_kind=3,cost0_amt=3,cost1_kind=0,cost1_amt=0,cost2_kind=0,cost2_amt=0
+id=4,kind=0,cost0_kind=6,cost0_amt=2,cost1_kind=7,cost1_amt=1,cost2_kind=0,cost2_amt=0
+id=5,kind=1,cost0_kind=8,cost0_amt=1,cost1_kind=1,cost1_amt=2,cost2_kind=5,cost2_amt=1
+id=6,kind=0,cost0_kind=7,cost0_amt=2,cost1_kind=3,cost1_amt=1,cost2_kind=0,cost2_amt=0
+id=7,kind=1,cost0_kind=5,cost0_amt=2,cost1_kind=2,cost1_amt=1,cost2_kind=0,cost2_amt=0
+
+[upgrades]
+axis=0,tier=1,cost0_kind=1,cost0_amt=3,cost1_kind=0,cost1_amt=0,cost2_kind=0,cost2_amt=0
+axis=0,tier=2,cost0_kind=1,cost0_amt=6,cost1_kind=2,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=0,tier=3,cost0_kind=1,cost0_amt=10,cost1_kind=2,cost1_amt=4,cost2_kind=0,cost2_amt=0
+axis=4,tier=1,cost0_kind=3,cost0_amt=2,cost1_kind=6,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=4,tier=2,cost0_kind=3,cost0_amt=4,cost1_kind=6,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=4,tier=3,cost0_kind=3,cost0_amt=8,cost1_kind=6,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=2,tier=1,cost0_kind=4,cost0_amt=3,cost1_kind=5,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=2,tier=2,cost0_kind=4,cost0_amt=6,cost1_kind=5,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=2,tier=3,cost0_kind=4,cost0_amt=10,cost1_kind=5,cost1_amt=4,cost2_kind=0,cost2_amt=0
+axis=3,tier=1,cost0_kind=5,cost0_amt=3,cost1_kind=4,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=3,tier=2,cost0_kind=5,cost0_amt=6,cost1_kind=4,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=3,tier=3,cost0_kind=5,cost0_amt=10,cost1_kind=4,cost1_amt=4,cost2_kind=0,cost2_amt=0
+axis=1,tier=1,cost0_kind=7,cost0_amt=2,cost1_kind=3,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=1,tier=2,cost0_kind=7,cost0_amt=2,cost1_kind=3,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=1,tier=3,cost0_kind=7,cost0_amt=4,cost1_kind=3,cost1_amt=4,cost2_kind=9,cost2_amt=2
+
+[cosmetics]
+name=Foam White,price=150,unlock=1
+name=Abyss Teal,price=175,unlock=2
+name=Leviathan Black,price=200,unlock=3
+name=Gull Skull,price=150,unlock=1
+name=Lantern Jaw,price=175,unlock=2
+name=Derelict Cog,price=200,unlock=4
+name=Patched Pennant,price=150,unlock=1
+name=Reef Signal,price=175,unlock=3
+name=Trench Mark,price=200,unlock=4
+name=Barnacle Stamp,price=150,unlock=2
+name=Glass Squid,price=175,unlock=3
+name=Boss Sigil,price=200,unlock=4
+
+[encounter]
+zone=0,phase=0,def_index=0,weight=30
+zone=0,phase=0,def_index=2,weight=30
+zone=0,phase=0,def_index=5,weight=20
+zone=0,phase=0,def_index=6,weight=10
+zone=0,phase=0,def_index=9,weight=10
+zone=0,phase=1,def_index=1,weight=40
+zone=0,phase=1,def_index=0,weight=30
+zone=0,phase=1,def_index=5,weight=15
+zone=0,phase=1,def_index=6,weight=10
+zone=0,phase=1,def_index=9,weight=5
+zone=1,phase=0,def_index=11,weight=15
+zone=1,phase=0,def_index=0,weight=15
+zone=1,phase=0,def_index=2,weight=10
+zone=1,phase=0,def_index=5,weight=10
+zone=1,phase=0,def_index=10,weight=10
+zone=1,phase=0,def_index=6,weight=10
+zone=1,phase=0,def_index=8,weight=10
+zone=1,phase=0,def_index=9,weight=5
+zone=1,phase=0,def_index=12,weight=5
+zone=1,phase=0,def_index=3,weight=10
+zone=1,phase=1,def_index=1,weight=20
+zone=1,phase=1,def_index=7,weight=15
+zone=1,phase=1,def_index=0,weight=15
+zone=1,phase=1,def_index=5,weight=10
+zone=1,phase=1,def_index=6,weight=10
+zone=1,phase=1,def_index=8,weight=10
+zone=1,phase=1,def_index=12,weight=10
+zone=1,phase=1,def_index=3,weight=10
+zone=2,phase=0,def_index=17,weight=20
+zone=2,phase=0,def_index=12,weight=15
+zone=2,phase=0,def_index=5,weight=20
+zone=2,phase=0,def_index=6,weight=20
+zone=2,phase=0,def_index=8,weight=15
+zone=2,phase=0,def_index=4,weight=10
+zone=2,phase=1,def_index=12,weight=10
+zone=2,phase=1,def_index=13,weight=15
+zone=2,phase=1,def_index=14,weight=15
+zone=2,phase=1,def_index=15,weight=10
+zone=2,phase=1,def_index=16,weight=15
+zone=2,phase=1,def_index=7,weight=15
+zone=2,phase=1,def_index=8,weight=10
+zone=2,phase=1,def_index=4,weight=10
+
+[zones]
+id=0,cost=1,boss=0
+id=1,cost=2,boss=0
+id=2,cost=3,boss=0
+id=3,cost=3,boss=0
+id=4,cost=4,boss=0
+id=5,cost=4,boss=0
+id=6,cost=5,boss=0
+id=7,cost=5,boss=0
+id=8,cost=5,boss=1
+id=9,cost=0,boss=0
+id=10,cost=0,boss=0
+id=11,cost=0,boss=0
+
+[text]
+manual.1=The Undersanded is a place of pressure and patience. Read the current before you commit the hook, keep one eye on your Hull, and remember that every creature you release is one you may meet again.

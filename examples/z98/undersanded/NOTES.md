@@ -938,3 +938,19 @@ compiled-in defs, and the `dump_grid_*`/replay goldens carry no drop text.
 - (b) At the M7 Task 7 review, reconcile M8 plan Task 1/2 wording: M6 now
   authors the rows/names/masks/drops, so M8 must not re-author them or assume
   the old blank tables.
+
+### M6 Task 3 loader
+
+`data.loadFile(arena, path, tables) LoadErr!void` reads the whole file with
+`std_file.readAll(arena, path)` and commits `tables.*` only after the whole
+parse succeeds. `data.err_line` is the 1-based line for
+`DamagedLine`/`BadRef`/`Overflow`/`TooMany` failures. All `std_file` errors
+(`OpenFailed`, `ReadFailed`, `SizeFailed`, `OutOfMemory`, ...) are
+`catch`-mapped to `LoadErr.Io`; `Missing` remains in the set for the Task 5
+startup path. Unknown sections are `sectionId == -1`; unknown/duplicate/missing
+row keys reject at the row line; the header is compared raw (no surrounding
+spaces). `[text]` values are compacted in place and stored as slices of the
+arena file buffer; `manual.1` is required. `[rules]` packs by owner
+first-appearance order and writes each creature's `rule_start/rule_count`.
+`dumpDefs` is field-by-field text (never struct bytes); its committed golden is
+`tests/fixtures/defs_golden.txt`.

@@ -702,10 +702,17 @@ pub const DEFS = [18]def.CreatureDef{
 };
 
 pub fn defCount() i32 {
+    if (def.content_override) |t| return t.def_count;
     return @intCast(i32, DEFS.len);
 }
 
 pub fn defAt(index: i32) def.CreatureDef {
+    if (def.content_override) |t| {
+        if (index < 0 or index >= t.def_count) {
+            @panic("defAt: invalid creature index");
+        }
+        return t.defs[@intCast(usize, index)];
+    }
     switch (index) {
         0 => return DEFS[0],
         1 => return DEFS[1],
