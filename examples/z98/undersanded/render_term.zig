@@ -15,6 +15,7 @@ const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
 const dock = @import("dock.zig");
 const economy = @import("economy.zig");
+const save_ux = @import("save_ux.zig");
 
 pub const COLS: usize = 80;
 pub const ROWS: usize = 30;
@@ -570,6 +571,12 @@ pub fn renderDock(s: *const def.GameState, sc: *Screen) void {
 
     _ = put(sc, 0, 10, "[R]efine [U]pgrade [C]raft [B]uy [E]quip [T] Rest [D]epart [Q]uit");
     _ = put(sc, 0, 12, "Hint: Hull persists between trips; dock Rest is safe.");
+    if (save_ux.canSave(s)) |reason| {
+        var sx = put(sc, 0, 13, "[Esc] Save - ");
+        _ = put(sc, sx, 13, reason);
+    } else {
+        _ = put(sc, 0, 13, "[Esc] Save");
+    }
 }
 
 pub fn renderRefine(s: *const def.GameState, sc: *Screen) void {

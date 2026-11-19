@@ -22,6 +22,16 @@ pub const OPTIONS_FILE: []const u8 = "options.cfg";
 pub const FIRST_RUN_DONE_SCREEN: i32 = 10;
 
 pub const SaveOutcome = struct { ok: bool, text: []const u8 };
+pub const QuitOutcome = struct { quit: bool, saved: bool, text: []const u8 };
+
+pub const ERR_KIND_NONE: i32 = 0;
+pub const ERR_KIND_MISSING: i32 = 1;
+pub const ERR_KIND_BAD_VERSION: i32 = 2;
+pub const ERR_KIND_BAD_DATA_VERSION: i32 = 3;
+pub const ERR_KIND_BAD_HASH: i32 = 4;
+pub const ERR_KIND_BAD_ID: i32 = 5;
+pub const ERR_KIND_DAMAGED: i32 = 6;
+pub const ERR_KIND_IO: i32 = 7;
 
 fn eql(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
@@ -30,6 +40,11 @@ fn eql(a: []const u8, b: []const u8) bool {
         if (a[i] != b[i]) return false;
     }
     return true;
+}
+
+fn lower(c: u8) u8 {
+    if (c >= 'A' and c <= 'Z') return c + 32;
+    return c;
 }
 
 fn trim(s: []const u8) []const u8 {
@@ -80,6 +95,29 @@ fn join(dir: []const u8, name: []const u8, out: []u8) ?[]const u8 {
     return out[0..need];
 }
 
+fn withTrailingSep(dir: []const u8, out: []u8) ?[]const u8 {
+    var sep: u8 = '/';
+    if (@isWindows()) sep = '\\';
+
+    var add_sep = true;
+    if (dir.len > 0) {
+        const last = dir[dir.len - 1];
+        if (last == '\\' or last == '/') add_sep = false;
+    }
+
+    var need: usize = dir.len;
+    if (add_sep) need += 1;
+    if (need > out.len) return null;
+
+    var i: usize = 0;
+    while (i < dir.len) : (i += 1) out[i] = dir[i];
+    if (add_sep) {
+        out[dir.len] = sep;
+        return out[0..need];
+    }
+    return out[0..dir.len];
+}
+
 fn isPending(g: *const def.GameState) bool {
     return g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != def.NO_FIGHT;
 }
@@ -99,16 +137,33 @@ pub fn quitPromptNeeded(g: *const def.GameState) bool {
     return canSave(g) == null;
 }
 
-pub fn saveErrText(e: persist.SaveErr) []const u8 {
+pub fn saveErrKind(e: persist.SaveErr) i32 {
     switch (e) {
-        error.Missing => return "Save file is missing.",
-        error.BadVersion => return "Save is from a different version.",
-        error.BadDataVersion => return "Save is from different content.",
-        error.BadHash => return "Save file is damaged.",
-        error.BadId => return "Save file references unknown content.",
-        error.Damaged => return "Save file is damaged.",
-        else => return SAVE_FAILED,
+        error.Missing => return ERR_KIND_MISSING,
+        error.BadVersion => return ERR_KIND_BAD_VERSION,
+        error.BadDataVersion => return ERR_KIND_BAD_DATA_VERSION,
+        error.BadHash => return ERR_KIND_BAD_HASH,
+        error.BadId => return ERR_KIND_BAD_ID,
+        error.Damaged => return ERR_KIND_DAMAGED,
+        else => return ERR_KIND_IO,
     }
+}
+
+pub fn saveErrTextKind(kind: i32) []const u8 {
+    switch (kind) {
+        ERR_KIND_MISSING => return "Save file is missing.",
+        ERR_KIND_BAD_VERSION => return "Save is from a different version.",
+        ERR_KIND_BAD_DATA_VERSION => return "Save is from different content.",
+        ERR_KIND_BAD_HASH => return "Save file is damaged.",
+        ERR_KIND_BAD_ID => return "Save file references unknown content.",
+        ERR_KIND_DAMAGED => return "Save file is damaged.",
+        ERR_KIND_IO => return SAVE_FAILED,
+        else => return "Save file is damaged.",
+    }
+}
+
+pub fn saveErrText(e: persist.SaveErr) []const u8 {
+    return saveErrTextKind(saveErrKind(e));
 }
 
 // M6 authors manual.1; M7 only consumes the installed Tables.
@@ -174,13 +229,24 @@ pub fn readSaveSlot(dir: []const u8) i32 {
     return slot;
 }
 
-// Esc at the dock: save to the active slot. Blocked/failed saves leave state
-// untouched and return the reason/message.
+// Esc at the dock: save to the active slot. Slot 1 is the manual backup slot,
+// so it must never run the save0 rollback path that rotates save.bak.
 pub fn saveTo(g: *const def.GameState, dir: []const u8) SaveOutcome {
     if (canSave(g)) |reason| return SaveOutcome{ .ok = false, .text = reason };
 
+    if (readSaveSlot(dir) == 1) {
+        var backup_dir_buf: [4096]u8 = undefined;
+        const backup_dir = withTrailingSep(dir, backup_dir_buf[0..]) orelse {
+            return SaveOutcome{ .ok = false, .text = SAVE_FAILED };
+        };
+        persist.saveBackupSlot(backup_dir, &g.world, &g.exp) catch |e| {
+            return SaveOutcome{ .ok = false, .text = saveErrText(e) };
+        };
+        return SaveOutcome{ .ok = true, .text = SAVE_OK };
+    }
+
     var path_buf: [4096]u8 = undefined;
-    const path = activeSavePath(dir, path_buf[0..]) orelse {
+    const path = saveSlotPath(dir, 0, path_buf[0..]) orelse {
         return SaveOutcome{ .ok = false, .text = SAVE_FAILED };
     };
     persist.saveWrite(path, &g.world, &g.exp) catch |e| {
@@ -189,12 +255,36 @@ pub fn saveTo(g: *const def.GameState, dir: []const u8) SaveOutcome {
     return SaveOutcome{ .ok = true, .text = SAVE_OK };
 }
 
+pub fn dockSave(g: *const def.GameState, dir: []const u8) SaveOutcome {
+    return saveTo(g, dir);
+}
+
+// Same Y/N/Cancel behavior navRun uses. Y saves then quits on success; N quits
+// without saving; anything else is Cancel and stays at the dock.
+pub fn quitDecision(g: *const def.GameState, dir: []const u8, key_ch: u8) QuitOutcome {
+    const c = lower(key_ch);
+    if (c == 'y') {
+        const save = dockSave(g, dir);
+        return QuitOutcome{ .quit = save.ok, .saved = save.ok, .text = save.text };
+    }
+    if (c == 'n') {
+        return QuitOutcome{ .quit = true, .saved = false, .text = "" };
+    }
+    return QuitOutcome{ .quit = false, .saved = false, .text = "" };
+}
+
 // Fresh install: page 1 -> [Enter] Begin -> world init -> initial save -> dock.
 // The save is world initialization, not an autosave, and no menu is shown.
 pub fn firstRunBegin(g: *def.GameState, dir: []const u8) persist.SaveErr!void {
     game.newGame(g);
-    var path_buf: [4096]u8 = undefined;
-    const path = activeSavePath(dir, path_buf[0..]) orelse return persist.SaveErr.Io;
-    try persist.saveWrite(path, &g.world, &g.exp);
+    if (readSaveSlot(dir) == 1) {
+        var backup_dir_buf: [4096]u8 = undefined;
+        const backup_dir = withTrailingSep(dir, backup_dir_buf[0..]) orelse return persist.SaveErr.Io;
+        try persist.saveBackupSlot(backup_dir, &g.world, &g.exp);
+    } else {
+        var path_buf: [4096]u8 = undefined;
+        const path = saveSlotPath(dir, 0, path_buf[0..]) orelse return persist.SaveErr.Io;
+        try persist.saveWrite(path, &g.world, &g.exp);
+    }
     g.screen = FIRST_RUN_DONE_SCREEN;
 }

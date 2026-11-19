@@ -148,6 +148,8 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
     var s: def.GameState = undefined;
     sim.zeroState(&s);
     game.zeroWorld(&s.world);
+    s.fight.def_index = def.NO_FIGHT;
+    s.fight.outcome = def.OUT_ONGOING;
     s.exp.seed = DUMP_SEED;
 
     var sc: render.Screen = undefined;

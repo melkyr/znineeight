@@ -41,6 +41,7 @@ pub const NAV_RESULT_PREVIEW: i32 = -101;
 pub const NavState = struct {
     armed: i32,
     last: i32,
+    save_err_kind: i32,
 };
 
 fn lower(c: u8) u8 {
@@ -245,7 +246,7 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     }
 }
 
-fn drawCurrent(g: *def.GameState, out: []u8) []const u8 {
+pub fn drawCurrent(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
     var sc: render.Screen = undefined;
     if (expedition.isInFight(g)) {
         var d = creatures.defAt(g.fight.def_index);
@@ -260,7 +261,7 @@ fn drawCurrent(g: *def.GameState, out: []u8) []const u8 {
         NAV_TOOLS => render.renderTools(g, &sc),
         NAV_LORE => render.renderLore(save_ux.manualPageOne(), &sc),
         NAV_MENU => render.renderMenu(&sc),
-        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrText(error.Damaged), &sc),
+        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), &sc),
         else => render.renderDock(g, &sc),
     }
     return render.dump(&sc, out);
@@ -287,17 +288,17 @@ pub fn navRun(g: *def.GameState) void {
 
     var dir_buf: [4096]u8 = undefined;
     const dir = paths.dataDirOrFallback(dir_buf[0..]);
-    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE };
+    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE, .save_err_kind = save_ux.ERR_KIND_NONE };
     var buf: [8192]u8 = undefined;
 
     while (true) {
-        io.write(drawCurrent(g, buf[0..]));
+        io.write(drawCurrent(g, &st, buf[0..]));
         io.write("> ");
         const key = input.readKey() orelse return;
 
         if (g.screen == NAV_DOCK) {
             if (isEsc(key)) {
-                const save = save_ux.saveTo(g, dir);
+                const save = save_ux.dockSave(g, dir);
                 io.write(save.text);
                 io.write("\n");
                 continue;
@@ -306,14 +307,12 @@ pub fn navRun(g: *def.GameState) void {
                 io.write(save_ux.QUIT_PROMPT);
                 io.write("\n");
                 const answer = input.readKey() orelse return;
-                if (isChar(answer, 'y')) {
-                    const save = save_ux.saveTo(g, dir);
-                    io.write(save.text);
+                const decision = save_ux.quitDecision(g, dir, answer.ch);
+                if (decision.text.len > 0) {
+                    io.write(decision.text);
                     io.write("\n");
-                    if (save.ok) return;
-                } else if (isChar(answer, 'n')) {
-                    return;
                 }
+                if (decision.quit) return;
                 continue;
             }
         }

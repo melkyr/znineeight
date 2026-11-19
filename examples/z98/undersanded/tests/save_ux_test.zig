@@ -198,7 +198,7 @@ fn seedState(g: *def.GameState) void {
     game.newGame(g);
     g.world.cycle = 7;
     g.world.phase = 1;
-    g.world.hull = 120;
+    g.world.hull = 100;
     g.world.money = 42;
 }
 
@@ -235,6 +235,18 @@ fn tSaveErrorVersionOne() bool {
     if (!contains(text, "Save is from a different version.")) return false;
     if (!contains(text, "[F]resh  [B]ackup slot  [Q]uit")) return false;
     if (contains(text, "Continue")) return false;
+
+    g.screen = nav.NAV_SAVE_ERR;
+    var st = nav.NavState{
+        .armed = 0,
+        .last = nav.NAV_RESULT_NONE,
+        .save_err_kind = save_ux.saveErrKind(err),
+    };
+    var nav_buf: [8192]u8 = undefined;
+    const nav_text = nav.drawCurrent(&g, &st, nav_buf[0..]);
+    if (!contains(nav_text, "Save is from a different version.")) return false;
+    if (!contains(nav_text, "[F]resh  [B]ackup slot  [Q]uit")) return false;
+    if (contains(nav_text, "Save file is damaged.")) return false;
     return true;
 }
 
@@ -410,6 +422,122 @@ fn tMenuScreen() bool {
     return true;
 }
 
+fn tDockSaveEsc() bool {
+    var buf: [256]u8 = undefined;
+    removeIfExists(filePath("save0.dat", buf[0..]));
+    removeIfExists(filePath("save1.dat", buf[0..]));
+    removeIfExists(filePath("save.tmp", buf[0..]));
+    removeIfExists(filePath("save.bak", buf[0..]));
+    removeIfExists(filePath("options.cfg", buf[0..]));
+
+    var g: def.GameState = undefined;
+    seedState(&g);
+    const out = save_ux.dockSave(&g, prefix);
+    if (!out.ok) return false;
+    if (!eq(out.text, "Saved.")) return false;
+
+    const path = filePath("save0.dat", buf[0..]);
+    if (!file_mod.exists(path)) return false;
+    var w: def.World = undefined;
+    var exp: def.Expedition = undefined;
+    persist.saveRead(path, &w, &exp) catch return false;
+    return w.cycle == 7;
+}
+
+fn tDockSaveBlocked() bool {
+    var buf: [256]u8 = undefined;
+    removeIfExists(filePath("save0.dat", buf[0..]));
+    removeIfExists(filePath("save1.dat", buf[0..]));
+    removeIfExists(filePath("options.cfg", buf[0..]));
+
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    g.fight.def_index = 0;
+    g.fight.outcome = def.OUT_ONGOING;
+    const out = save_ux.dockSave(&g, prefix);
+    if (out.ok) return false;
+    if (!eq(out.text, "Cannot save during a fight.")) return false;
+    if (file_mod.exists(filePath("save0.dat", buf[0..]))) return false;
+    if (file_mod.exists(filePath("save1.dat", buf[0..]))) return false;
+    return true;
+}
+
+fn tQuitDecisions() bool {
+    var buf: [256]u8 = undefined;
+    removeIfExists(filePath("save0.dat", buf[0..]));
+    removeIfExists(filePath("save1.dat", buf[0..]));
+    removeIfExists(filePath("save.bak", buf[0..]));
+    removeIfExists(filePath("options.cfg", buf[0..]));
+
+    var g: def.GameState = undefined;
+    seedState(&g);
+
+    const yes = save_ux.quitDecision(&g, prefix, 'Y');
+    if (!yes.quit or !yes.saved) return false;
+    if (!eq(yes.text, "Saved.")) return false;
+    if (!file_mod.exists(filePath("save0.dat", buf[0..]))) return false;
+
+    removeIfExists(filePath("save0.dat", buf[0..]));
+    removeIfExists(filePath("save.bak", buf[0..]));
+    const no = save_ux.quitDecision(&g, prefix, 'N');
+    if (!no.quit or no.saved) return false;
+    if (no.text.len != 0) return false;
+    if (file_mod.exists(filePath("save0.dat", buf[0..]))) return false;
+
+    const cancel = save_ux.quitDecision(&g, prefix, 'X');
+    if (cancel.quit or cancel.saved) return false;
+    if (cancel.text.len != 0) return false;
+    if (file_mod.exists(filePath("save0.dat", buf[0..]))) return false;
+    return true;
+}
+
+fn tSlotOneBackup() bool {
+    var b0: [256]u8 = undefined;
+    var b1: [256]u8 = undefined;
+    var bb: [256]u8 = undefined;
+    var bo: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    const save1 = filePath("save1.dat", b1[0..]);
+    const bak = filePath("save.bak", bb[0..]);
+    const options = filePath("options.cfg", bo[0..]);
+    removeIfExists(save0);
+    removeIfExists(save1);
+    removeIfExists(bak);
+    removeIfExists(options);
+
+    var g: def.GameState = undefined;
+    seedState(&g);
+    g.world.cycle = 11;
+    persist.saveWrite(save0, &g.world, &g.exp) catch return false;
+    g.world.cycle = 22;
+    persist.saveWrite(save0, &g.world, &g.exp) catch return false;
+
+    if (!writeFile(options, "save_slot=1\n")) return false;
+
+    var h: def.GameState = undefined;
+    seedState(&h);
+    h.world.cycle = 44;
+    const out = save_ux.dockSave(&h, prefix);
+    if (!out.ok) return false;
+    if (!eq(out.text, "Saved.")) return false;
+
+    if (!file_mod.exists(save1)) return false;
+    if (!file_mod.exists(save0)) return false;
+    if (!file_mod.exists(bak)) return false;
+
+    var w: def.World = undefined;
+    var exp: def.Expedition = undefined;
+    persist.saveRead(save0, &w, &exp) catch return false;
+    if (w.cycle != 22) return false;
+    persist.saveRead(bak, &w, &exp) catch return false;
+    if (w.cycle != 11) return false;
+    persist.saveRead(save1, &w, &exp) catch return false;
+    if (w.cycle != 44) return false;
+
+    removeIfExists(options);
+    return true;
+}
+
 pub fn main() void {
     initPrefix();
     _ = ensureDir(prefix);
@@ -424,6 +552,10 @@ pub fn main() void {
     report("node_save_load_round_trip", tNodeRoundTrip());
     report("lore_render_deterministic", tLoreDeterministic());
     report("menu_screen", tMenuScreen());
+    report("dock_save_esc_success", tDockSaveEsc());
+    report("dock_save_blocked_reason", tDockSaveBlocked());
+    report("quit_decisions", tQuitDecisions());
+    report("slot_one_manual_backup", tSlotOneBackup());
 
     cleanAll();
     removeDir(prefix);
