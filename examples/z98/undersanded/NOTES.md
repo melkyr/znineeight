@@ -1187,3 +1187,128 @@ Controller calls (not user-facing) folded into the same amendments:
 - D18: nested array-field writes (`w.field_record.boat[i]`, `.expertise[i]`) must use a
   pointer or a whole-struct assignment; plain nested indexed writes silently
   miscompile.
+
+### M7 Task 0 preflight (frozen)
+
+**Save grammar (spec §32, frozen for Tasks 1–4).**
+
+- Header: `version=2`, then `data_version=2`.
+- Save-local section order: `[world]`, `[boat]`, `[cooldowns]`, `[journal]`,
+  `[expedition]`, `[score]`, reserved `[options]`, `[crc32]`.
+- **One scalar `key=value` per line**; arrays are **one line each** as
+  `name=i,i,i`; no multi-key lines, no prose/continuation lines.
+- `[crc32] hash=0xXXXXXXXX` is last; **nothing may follow it**. The CRC covers
+  the file start through the newline immediately before the `[crc32]` section
+  line; nothing after `hash=` is covered.
+- Unknown key = `Damaged`, except inside the reserved `[options]` section
+  (skipped; M12 fills it).
+- Line buffer **8192 B** (worst-case `ready[672]`); whole-file cap **64 KiB**.
+- Save-local line scanner (`\n`, strip one trailing `\r`) and save-local array
+  parser (`name=v[,v...]`); never `data.zig`'s §25.10 parser.
+- **`save_slot` lives only in `options.cfg`** beside the saves, read at boot
+  before any save; M7 adds a read-only parser (`save_slot=0|1`, default 0 when
+  absent/damaged), M12 owns writing it.
+- Load check order: `version` → `data_version` → CRC → IDs; no auto-migration.
+
+**Persisted-field checklist (Task 1 must cover every item).**
+
+World (P25/R2 structs are flat scalars, zeroed by `zeroWorld`):
+
+- [ ] `cycle`, `phase`
+- [ ] `ready[672]`
+- [ ] `seen_mask[2]`
+- [ ] `journal_mask[2]`
+- [ ] `tooltip_shown`
+- [ ] `field_phases`
+- [ ] `hull`
+- [ ] `release_bonus[12]`
+- [ ] `lockout_until[12]`
+- [ ] `family_overkill_mask`
+- [ ] `wary_mask[2]`
+- [ ] `rng_state`
+- [ ] `boat[5]`
+- [ ] `money`
+- [ ] `expertise[10]`
+- [ ] `materials[10]`
+- [ ] `tools_owned`, `tool_selected`
+- [ ] `cosmetics_owned`, `cosmetics_unlocked`
+- [ ] `field_record_written`
+- [ ] `boss_variants_seen`, `boss_kills`
+- [ ] P25 `FieldRecord`: `cycles`, `field_phases`, `creatures_seen`,
+      `rares_seen`, `bosses_killed`, `final_phase2`, `subdued`, `killed`,
+      `overkilled`, `expertise[10]`, `money_earned`, `cosmetics`, `boat[5]`
+- [ ] P25 `LastRun`: `cycles`, `phase2`, `outcome`, `actions`, `hull_spent`,
+      `boss_kills`
+- [ ] P25 lifetime `score_*`: `score_subdued`, `score_killed`,
+      `score_overkilled`, `score_money_earned`
+
+Expedition:
+
+- [ ] `active`, `zone`, `fight_index`, `seed`
+- [ ] `hold[14]`, `hold_n`
+- [ ] `tool`, `tool_charge`, `tool_broken`
+- [ ] `pending_cond`
+
+**P25 rulings (verbatim).**
+
+- **R1** — `canSave` blocks mid-fight **AND** while a subdue Release/Sell
+  choice is pending.
+- **R2** — `FieldRecord`/`LastRun`/`score_*` counters added to `World` now,
+  zeroed by `zeroWorld`, persisted, save stays `version=2`, M11 populates only.
+- **R3** — fresh install follows spec §20 (page 1 → world init → dock, no
+  menu), start menu only when a save exists.
+- **R4** — New Game asks `Erase this save? [Y] [N]` then re-inits without
+  page 1.
+
+**M6 handoff facts.**
+
+- Load-order `def_index` order:
+  `[1,2,4,18,19,5,7,8,9,10,3,6,11,12,13,14,15,16]`.
+- M8's Derelict appends at index 18.
+- `BadId` validates against `creatures.defCount()`, never `CreatureDef.id`.
+- `manual.1` is authored by M6 and only **consumed** here.
+- `data_version` compares to the installed `Tables.content_version`
+  (`def.content_override` else 2).
+
+**Controller calls (binding).**
+
+- NAV ids: `NAV_LORE=19`, `NAV_MENU=20`, `NAV_SAVE_ERR=21`.
+- Files: `save0.dat`/`save1.dat`/`save.bak`/`save.tmp` in
+  `dataDirOrFallback`; `options.cfg` in the same dir with read-only
+  `save_slot=0|1` (`save1.dat` is manual only, never auto-written).
+- CRC range: file start through the newline immediately before the `[crc32]`
+  section; nothing after `hash=` is covered.
+- Menu keys `[C]ontinue [N]ew [O]ptions [Q]uit`; New Game confirm
+  `Erase this save? [Y] [N]`; Options greyed until M12.
+- `SaveErr.Io` catch-maps `FileError` via the shared M6 mapping.
+- Fault-injection seam: module-level plain fn fields `fs_rename`/`fs_remove`
+  (defaults `std_file`; no `?fn` call-throughs).
+- D18: nested-array writes must go through a pointer or whole-struct
+  assignment.
+
+**Error surfaces + log helper.**
+
+- §33 fatal screen: full-screen text, `[Enter] Quit`, for content/crash
+  failures.
+- Save-error screen: `[F]resh  [B]ackup slot  [Q]uit`, for load-check failures
+  (exists / `version` / `data_version` / CRC / IDs).
+- `errors.log` append helper writes recovery/warning lines to the writable dir
+  (`dataDirOrFallback`, beside the saves).
+
+**Baseline + files.**
+
+- Compiler: `/tmp/seed151_build/zig1_5_clean` (seed v151, md5
+  `a2fc81055dc1cb7a67099fe3934d22ee`).
+- `ZIG=/tmp/seed151_build/zig1_5_clean OUT=/tmp/m7_t0/baseline sh
+  examples/z98/undersanded/tests/tier_m6_data.sh` → **`TIER_M6 PASS 90 passed /
+  0 failed`** (nests M5 57/0, M4 47/0, M3 65/0); `TIER_M1 PASS 41/0`.
+- M7 files: `def.zig`, `expedition.zig`, `persist.zig`, `save_ux.zig`,
+  `nav.zig`, `render_term.zig`, `undtool.zig`, `app.zig`, `game.zig`,
+  `paths.zig`; tests `tests/persist_test.zig`, `tests/bind_test.zig`,
+  `tests/tier_m7_save.sh`, `tests/fixtures/save_v1_bad.sav`; docs `NOTES.md`.
+  No other files.
+
+**D18 hazard.** `FieldRecord.boat[i]` / `FieldRecord.expertise[i]` and other
+nested array-field writes must go through a pointer (for example
+`var fr: *FieldRecord = &w.field_record; fr.boat[i] = v;`) or a whole-struct
+assignment; plain nested indexed writes silently miscompile (D18).
