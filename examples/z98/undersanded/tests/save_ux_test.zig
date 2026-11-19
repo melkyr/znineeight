@@ -21,6 +21,7 @@ const file_mod = @import("std_file");
 const def = @import("../def.zig");
 const game = @import("../game.zig");
 const nav = @import("../nav.zig");
+const input = @import("../input.zig");
 const persist = @import("../persist.zig");
 const render = @import("../render_term.zig");
 const save_ux = @import("../save_ux.zig");
@@ -538,6 +539,211 @@ fn tSlotOneBackup() bool {
     return true;
 }
 
+fn key(c: u8) input.Key {
+    return input.Key{ .ch = c, .code = 0 };
+}
+
+fn tBootRouting() bool {
+    if (nav.bootStartScreen(true) != nav.NAV_MENU) return false;
+    if (nav.bootStartScreen(false) != nav.NAV_LORE) return false;
+    if (nav.menuAction(key('c')) != nav.BOOT_ACT_CONTINUE) return false;
+    if (nav.menuAction(key('N')) != nav.BOOT_ACT_NEW) return false;
+    if (nav.menuAction(key('o')) != nav.BOOT_ACT_OPTIONS) return false;
+    if (nav.menuAction(key('q')) != nav.BOOT_ACT_QUIT) return false;
+    if (nav.menuAction(key('x')) != nav.BOOT_ACT_NONE) return false;
+    if (nav.confirmAction(key('Y')) != nav.BOOT_ACT_YES) return false;
+    if (nav.confirmAction(key('n')) != nav.BOOT_ACT_NO) return false;
+    if (nav.confirmAction(key('x')) != nav.BOOT_ACT_NONE) return false;
+    if (nav.errorAction(key('f')) != nav.BOOT_ACT_FRESH) return false;
+    if (nav.errorAction(key('b')) != nav.BOOT_ACT_BACKUP) return false;
+    if (nav.errorAction(key('q')) != nav.BOOT_ACT_QUIT) return false;
+    if (nav.errorAction(key('x')) != nav.BOOT_ACT_NONE) return false;
+    if (!nav.firstRunAdvance(key(10))) return false;
+    if (!nav.firstRunAdvance(key(13))) return false;
+    if (nav.firstRunAdvance(key('x'))) return false;
+    if (!eq(save_ux.NEW_GAME_CONFIRM, "Erase this save? [Y] [N]")) return false;
+    return true;
+}
+
+fn tBootFreshFirstRun() bool {
+    var b0: [256]u8 = undefined;
+    var bb: [256]u8 = undefined;
+    var bo: [256]u8 = undefined;
+    var b1: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    const bak = filePath("save.bak", bb[0..]);
+    const options = filePath("options.cfg", bo[0..]);
+    const save1 = filePath("save1.dat", b1[0..]);
+    removeIfExists(save0);
+    removeIfExists(save1);
+    removeIfExists(bak);
+    removeIfExists(options);
+
+    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != nav.NAV_LORE) return false;
+    if (!nav.firstRunAdvance(key(13))) return false;
+
+    var g: def.GameState = undefined;
+    save_ux.firstRunBeginSlot(&g, prefix, 0) catch return false;
+    if (g.screen != nav.NAV_DOCK) return false;
+    if (g.screen == nav.NAV_MENU) return false;
+    if (!file_mod.exists(save0)) return false;
+    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != nav.NAV_MENU) return false;
+
+    var w: def.World = undefined;
+    var exp: def.Expedition = undefined;
+    persist.saveRead(save0, &w, &exp) catch return false;
+    return w.money == 0 and w.cycle == 0 and exp.active == 0;
+}
+
+fn tBootContinueLoads() bool {
+    var b0: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    removeIfExists(save0);
+
+    var seed: def.GameState = undefined;
+    seedState(&seed);
+    seed.world.cycle = 77;
+    seed.world.money = 123;
+    persist.saveWrite(save0, &seed.world, &seed.exp) catch return false;
+
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    g.world.money = 999;
+    save_ux.loadSlot(&g, prefix, 0) catch return false;
+    if (g.world.cycle != 77) return false;
+    if (g.world.money != 123) return false;
+    if (g.screen != nav.NAV_DOCK) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
+    return true;
+}
+
+fn tBootNewGameConfirm() bool {
+    var b0: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    removeIfExists(save0);
+
+    var old: def.GameState = undefined;
+    seedState(&old);
+    old.world.cycle = 55;
+    old.world.money = 9;
+    persist.saveWrite(save0, &old.world, &old.exp) catch return false;
+
+    if (nav.confirmAction(key('n')) != nav.BOOT_ACT_NO) return false;
+    var w: def.World = undefined;
+    var exp: def.Expedition = undefined;
+    persist.saveRead(save0, &w, &exp) catch return false;
+    if (w.cycle != 55) return false;
+
+    if (nav.confirmAction(key('y')) != nav.BOOT_ACT_YES) return false;
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    const out = save_ux.saveToSlot(&g, prefix, 0);
+    if (!out.ok) return false;
+
+    persist.saveRead(save0, &w, &exp) catch return false;
+    if (w.cycle != 0) return false;
+    if (w.money != 0) return false;
+    return true;
+}
+
+fn tBootBadVersionFresh() bool {
+    var b0: [256]u8 = undefined;
+    var bb: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    const bak = filePath("save.bak", bb[0..]);
+    removeIfExists(save0);
+    removeIfExists(bak);
+
+    var seed: def.GameState = undefined;
+    seedState(&seed);
+    persist.saveWrite(save0, &seed.world, &seed.exp) catch return false;
+
+    var storage: [16384]u8 = undefined;
+    const raw = readInto(save0, storage[0..]);
+    if (raw.len == 0) return false;
+    if (!replaceOnce(storage[0..raw.len], "version=2", "version=1")) return false;
+    if (!writeFile(save0, raw)) return false;
+
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    g.world.money = 999;
+    var got: ?persist.SaveErr = null;
+    save_ux.loadSlot(&g, prefix, 0) catch |e| {
+        got = e;
+    };
+    const err = got orelse return false;
+    if (err != error.BadVersion) return false;
+    if (g.world.money != 999) return false;
+    if (!eq(save_ux.saveErrText(err), "Save is from a different version.")) return false;
+
+    if (nav.errorAction(key('f')) != nav.BOOT_ACT_FRESH) return false;
+    save_ux.eraseSlot(prefix, 0);
+    if (file_mod.exists(save0)) return false;
+    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != nav.NAV_LORE) return false;
+
+    var fresh: def.GameState = undefined;
+    save_ux.firstRunBeginSlot(&fresh, prefix, 0) catch return false;
+    if (fresh.screen != nav.NAV_DOCK) return false;
+    if (!file_mod.exists(save0)) return false;
+    return true;
+}
+
+fn tBootBackupSlot() bool {
+    var b0: [256]u8 = undefined;
+    var b1: [256]u8 = undefined;
+    var bo: [256]u8 = undefined;
+    var bb: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    const save1 = filePath("save1.dat", b1[0..]);
+    const options = filePath("options.cfg", bo[0..]);
+    const bak = filePath("save.bak", bb[0..]);
+    removeIfExists(save0);
+    removeIfExists(save1);
+    removeIfExists(options);
+    removeIfExists(bak);
+
+    var seed: def.GameState = undefined;
+    seedState(&seed);
+    seed.world.cycle = 11;
+    seed.world.money = 10;
+    persist.saveWrite(save0, &seed.world, &seed.exp) catch return false;
+
+    var storage: [16384]u8 = undefined;
+    const raw = readInto(save0, storage[0..]);
+    if (raw.len == 0) return false;
+    if (!replaceOnce(storage[0..raw.len], "version=2", "version=1")) return false;
+    if (!writeFile(save0, raw)) return false;
+
+    var backup: def.GameState = undefined;
+    seedState(&backup);
+    backup.world.cycle = 22;
+    backup.world.money = 20;
+    const out = save_ux.saveToSlot(&backup, prefix, 1);
+    if (!out.ok) return false;
+    if (!file_mod.exists(save1)) return false;
+
+    if (save_ux.readSaveSlot(prefix) != 0) return false;
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    g.world.money = 999;
+    var failed = false;
+    save_ux.loadSlot(&g, prefix, 0) catch {
+        failed = true;
+    };
+    if (!failed) return false;
+    if (g.world.money != 999) return false;
+
+    if (nav.errorAction(key('b')) != nav.BOOT_ACT_BACKUP) return false;
+    const slot = save_ux.otherSlot(0);
+    save_ux.loadSlot(&g, prefix, slot) catch return false;
+    if (g.world.cycle != 22) return false;
+    if (g.world.money != 20) return false;
+    if (g.screen != nav.NAV_DOCK) return false;
+
+    if (nav.errorAction(key('q')) != nav.BOOT_ACT_QUIT) return false;
+    return true;
+}
+
 pub fn main() void {
     initPrefix();
     _ = ensureDir(prefix);
@@ -556,6 +762,12 @@ pub fn main() void {
     report("dock_save_blocked_reason", tDockSaveBlocked());
     report("quit_decisions", tQuitDecisions());
     report("slot_one_manual_backup", tSlotOneBackup());
+    report("boot_routing_and_keys", tBootRouting());
+    report("boot_fresh_first_run_no_menu", tBootFreshFirstRun());
+    report("boot_continue_loads_slot", tBootContinueLoads());
+    report("boot_new_game_confirm", tBootNewGameConfirm());
+    report("boot_bad_version_fresh", tBootBadVersionFresh());
+    report("boot_backup_slot", tBootBackupSlot());
 
     cleanAll();
     removeDir(prefix);

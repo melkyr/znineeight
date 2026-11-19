@@ -20,6 +20,8 @@ const dock = @import("dock.zig");
 const render = @import("render_term.zig");
 const paths = @import("paths.zig");
 const save_ux = @import("save_ux.zig");
+const game = @import("game.zig");
+const persist = @import("persist.zig");
 
 pub const NAV_DOCK: i32 = 10;
 pub const NAV_MAP: i32 = 11;
@@ -38,6 +40,18 @@ pub const NAV_QUIT: i32 = -1;
 pub const NAV_RESULT_NONE: i32 = -100;
 pub const NAV_RESULT_PREVIEW: i32 = -101;
 
+// Boot action ids: pure menu/confirm/error decisions shared by tests and the
+// nav.boot I/O loop.
+pub const BOOT_ACT_NONE: i32 = 0;
+pub const BOOT_ACT_CONTINUE: i32 = 1;
+pub const BOOT_ACT_NEW: i32 = 2;
+pub const BOOT_ACT_OPTIONS: i32 = 3;
+pub const BOOT_ACT_QUIT: i32 = 4;
+pub const BOOT_ACT_FRESH: i32 = 5;
+pub const BOOT_ACT_BACKUP: i32 = 6;
+pub const BOOT_ACT_YES: i32 = 7;
+pub const BOOT_ACT_NO: i32 = 8;
+
 pub const NavState = struct {
     armed: i32,
     last: i32,
@@ -51,6 +65,37 @@ fn lower(c: u8) u8 {
 
 fn isChar(k: input.Key, c: u8) bool {
     return lower(k.ch) == c;
+}
+
+// Boot routing is pure: the caller decides whether the active slot save exists.
+pub fn bootStartScreen(save_exists: bool) i32 {
+    if (save_exists) return NAV_MENU;
+    return NAV_LORE;
+}
+
+pub fn menuAction(k: input.Key) i32 {
+    if (isChar(k, 'c')) return BOOT_ACT_CONTINUE;
+    if (isChar(k, 'n')) return BOOT_ACT_NEW;
+    if (isChar(k, 'o')) return BOOT_ACT_OPTIONS;
+    if (isChar(k, 'q')) return BOOT_ACT_QUIT;
+    return BOOT_ACT_NONE;
+}
+
+pub fn confirmAction(k: input.Key) i32 {
+    if (isChar(k, 'y')) return BOOT_ACT_YES;
+    if (isChar(k, 'n')) return BOOT_ACT_NO;
+    return BOOT_ACT_NONE;
+}
+
+pub fn errorAction(k: input.Key) i32 {
+    if (isChar(k, 'f')) return BOOT_ACT_FRESH;
+    if (isChar(k, 'b')) return BOOT_ACT_BACKUP;
+    if (isChar(k, 'q')) return BOOT_ACT_QUIT;
+    return BOOT_ACT_NONE;
+}
+
+pub fn firstRunAdvance(k: input.Key) bool {
+    return k.ch == 10 or k.ch == 13 or k.ch == ' ' or k.code == 10 or k.code == 13;
 }
 
 fn isEsc(k: input.Key) bool {
@@ -326,4 +371,92 @@ pub fn navRun(g: *def.GameState) void {
             writeRarePreview(g, &st);
         }
     }
+}
+
+// Boot entry: recovery -> options.cfg slot -> menu when that slot has a save,
+// else the §20 first-run flow. Returns true when the dock was reached (the
+// caller then runs navRun) and false when the player quits or input ends.
+pub fn boot(g: *def.GameState, dir: []const u8) bool {
+    persist.recoverAtBoot(dir);
+
+    var slot = save_ux.readSaveSlot(dir);
+    var screen = bootStartScreen(save_ux.saveSlotExists(dir, slot));
+    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE, .save_err_kind = save_ux.ERR_KIND_NONE };
+    var buf: [8192]u8 = undefined;
+
+    while (true) {
+        g.screen = screen;
+        io.write(drawCurrent(g, &st, buf[0..]));
+
+        if (screen == NAV_MENU) {
+            io.write("> ");
+            const key = input.readKey() orelse return false;
+            const act = menuAction(key);
+            if (act == BOOT_ACT_CONTINUE) {
+                save_ux.loadSlot(g, dir, slot) catch |e| {
+                    st.save_err_kind = save_ux.saveErrKind(e);
+                    screen = NAV_SAVE_ERR;
+                    continue;
+                };
+                g.screen = NAV_DOCK;
+                return true;
+            }
+            if (act == BOOT_ACT_NEW) {
+                io.write(save_ux.NEW_GAME_CONFIRM);
+                io.write("\n");
+                const answer = input.readKey() orelse return false;
+                if (confirmAction(answer) != BOOT_ACT_YES) continue;
+                game.newGame(g);
+                const out = save_ux.saveToSlot(g, dir, slot);
+                if (!out.ok) {
+                    st.save_err_kind = save_ux.ERR_KIND_IO;
+                    screen = NAV_SAVE_ERR;
+                    continue;
+                }
+                g.screen = NAV_DOCK;
+                return true;
+            }
+            if (act == BOOT_ACT_OPTIONS) continue;
+            if (act == BOOT_ACT_QUIT) return false;
+            continue;
+        }
+
+        if (screen == NAV_LORE) {
+            io.write("> ");
+            const key = input.readKeyRaw() orelse return false;
+            if (!firstRunAdvance(key)) continue;
+            save_ux.firstRunBeginSlot(g, dir, slot) catch |e| {
+                st.save_err_kind = save_ux.saveErrKind(e);
+                screen = NAV_SAVE_ERR;
+                continue;
+            };
+            return true;
+        }
+
+        if (screen == NAV_SAVE_ERR) {
+            io.write("> ");
+            const key = input.readKey() orelse return false;
+            const act = errorAction(key);
+            if (act == BOOT_ACT_FRESH) {
+                save_ux.eraseSlot(dir, slot);
+                screen = NAV_LORE;
+                continue;
+            }
+            if (act == BOOT_ACT_BACKUP) {
+                slot = save_ux.otherSlot(slot);
+                save_ux.loadSlot(g, dir, slot) catch |e| {
+                    st.save_err_kind = save_ux.saveErrKind(e);
+                    screen = NAV_SAVE_ERR;
+                    continue;
+                };
+                g.screen = NAV_DOCK;
+                return true;
+            }
+            if (act == BOOT_ACT_QUIT) return false;
+            continue;
+        }
+
+        screen = bootStartScreen(save_ux.saveSlotExists(dir, slot));
+    }
+    return false;
 }

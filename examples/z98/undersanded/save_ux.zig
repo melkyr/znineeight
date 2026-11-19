@@ -11,6 +11,7 @@ const game = @import("game.zig");
 const persist = @import("persist.zig");
 
 pub const QUIT_PROMPT: []const u8 = "Save before quitting? [Y] [N] [Cancel]";
+pub const NEW_GAME_CONFIRM: []const u8 = "Erase this save? [Y] [N]";
 pub const SAVE_ERROR_KEYS: []const u8 = "[F]resh  [B]ackup slot  [Q]uit";
 pub const SAVE_OK: []const u8 = "Saved.";
 pub const SAVE_FAILED: []const u8 = "Save failed.";
@@ -190,6 +191,41 @@ pub fn activeSavePath(dir: []const u8, out: []u8) ?[]const u8 {
     return saveSlotPath(dir, readSaveSlot(dir), out);
 }
 
+pub fn saveSlotExists(dir: []const u8, slot: i32) bool {
+    var path_buf: [4096]u8 = undefined;
+    const path = saveSlotPath(dir, slot, path_buf[0..]) orelse return false;
+    return file_mod.exists(path);
+}
+
+pub fn otherSlot(slot: i32) i32 {
+    if (slot == 1) return 0;
+    return 1;
+}
+
+// Boot load: all-or-nothing into the game state. saveRead fills zeroed temps,
+// so a failed load leaves the caller's state untouched.
+pub fn loadSlot(g: *def.GameState, dir: []const u8, slot: i32) persist.SaveErr!void {
+    var path_buf: [4096]u8 = undefined;
+    const path = saveSlotPath(dir, slot, path_buf[0..]) orelse return persist.SaveErr.Io;
+
+    var w: def.World = undefined;
+    var exp: def.Expedition = undefined;
+    try persist.saveRead(path, &w, &exp);
+
+    game.newGame(g);
+    g.world = w;
+    g.exp = exp;
+    g.screen = FIRST_RUN_DONE_SCREEN;
+}
+
+// Bad-save [F]resh: erase only the active slot file, then the §20 flow decides
+// whether a save exists (it never autosaves over the other slot).
+pub fn eraseSlot(dir: []const u8, slot: i32) void {
+    var path_buf: [4096]u8 = undefined;
+    const path = saveSlotPath(dir, slot, path_buf[0..]) orelse return;
+    file_mod.remove(path) catch {};
+}
+
 // Read-only options.cfg key save_slot=0|1. Absent/damaged defaults to slot 0;
 // M12 owns writing this file.
 pub fn readSaveSlot(dir: []const u8) i32 {
@@ -229,12 +265,12 @@ pub fn readSaveSlot(dir: []const u8) i32 {
     return slot;
 }
 
-// Esc at the dock: save to the active slot. Slot 1 is the manual backup slot,
-// so it must never run the save0 rollback path that rotates save.bak.
-pub fn saveTo(g: *const def.GameState, dir: []const u8) SaveOutcome {
+// Save to an explicit slot. Slot 1 is the manual backup slot, so it must never
+// run the save0 rollback path that rotates save.bak.
+pub fn saveToSlot(g: *const def.GameState, dir: []const u8, slot: i32) SaveOutcome {
     if (canSave(g)) |reason| return SaveOutcome{ .ok = false, .text = reason };
 
-    if (readSaveSlot(dir) == 1) {
+    if (slot == 1) {
         var backup_dir_buf: [4096]u8 = undefined;
         const backup_dir = withTrailingSep(dir, backup_dir_buf[0..]) orelse {
             return SaveOutcome{ .ok = false, .text = SAVE_FAILED };
@@ -253,6 +289,11 @@ pub fn saveTo(g: *const def.GameState, dir: []const u8) SaveOutcome {
         return SaveOutcome{ .ok = false, .text = saveErrText(e) };
     };
     return SaveOutcome{ .ok = true, .text = SAVE_OK };
+}
+
+// Esc at the dock: save to the active slot from options.cfg.
+pub fn saveTo(g: *const def.GameState, dir: []const u8) SaveOutcome {
+    return saveToSlot(g, dir, readSaveSlot(dir));
 }
 
 pub fn dockSave(g: *const def.GameState, dir: []const u8) SaveOutcome {
@@ -275,9 +316,9 @@ pub fn quitDecision(g: *const def.GameState, dir: []const u8, key_ch: u8) QuitOu
 
 // Fresh install: page 1 -> [Enter] Begin -> world init -> initial save -> dock.
 // The save is world initialization, not an autosave, and no menu is shown.
-pub fn firstRunBegin(g: *def.GameState, dir: []const u8) persist.SaveErr!void {
+pub fn firstRunBeginSlot(g: *def.GameState, dir: []const u8, slot: i32) persist.SaveErr!void {
     game.newGame(g);
-    if (readSaveSlot(dir) == 1) {
+    if (slot == 1) {
         var backup_dir_buf: [4096]u8 = undefined;
         const backup_dir = withTrailingSep(dir, backup_dir_buf[0..]) orelse return persist.SaveErr.Io;
         try persist.saveBackupSlot(backup_dir, &g.world, &g.exp);
@@ -287,4 +328,8 @@ pub fn firstRunBegin(g: *def.GameState, dir: []const u8) persist.SaveErr!void {
         try persist.saveWrite(path, &g.world, &g.exp);
     }
     g.screen = FIRST_RUN_DONE_SCREEN;
+}
+
+pub fn firstRunBegin(g: *def.GameState, dir: []const u8) persist.SaveErr!void {
+    return firstRunBeginSlot(g, dir, readSaveSlot(dir));
 }
