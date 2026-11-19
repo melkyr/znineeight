@@ -1215,6 +1215,7 @@ Shifts and XOR only — no overflow trap. Seed per fight: `expedition_seed + fig
 | Subdue roll | 1 | success iff `rngRange(1, 100) <= subdue_chance` |
 | Decline / F / Esc | 0 | — |
 | Ink randomization | 1 | `rngRange(0, 2)` → Strike/Restrain/Equipment (never Flee) |
+| Blind roll | 1 | at Strike time, miss iff `rngRange(1, 100) <= pending_blind`; clear after |
 | Rough-sleep condition | 1 | `rngRange(0, 2)` → Drowsy/Shaky/Exposed |
 | Encounter weighted roll | 1 | `rngRange(1, total_weight)` across the apportioned table |
 | Strike / Restrain damage | 1 | `rngRange(15, 25)` / `rngRange(10, 18)` |
@@ -1239,7 +1240,7 @@ Chosen over fn pointers because: fn pointers need exact signature matches and ca
 
 One-shot detection: fire when `prev >= threshold && now < threshold`, then set a consumed bit.
 
-**Every effect op executes — no silent no-ops.** `ADD_SPEED`/`MULT_ATK` adjust the computed speed/attack on top of the field-driven baseline (fields set the base; rules add/multiply, applied once per §25.4); `SET_BLIND`/`MISS_STRIKE` arm a strike latch consumed by the next Strike; `SET_INK` arms the next-action randomiser (never Flee). A periodic trigger is `ROUND_MOD` + persistent timing: the condition holds on the matching rounds and the latch makes it fire once per matching round. **Phasing is the only behaviour not expressible as a rule** — §25.8 defines it as an algorithm (`floor((round-1)/2)%2`, Phase lock <30%) and the vocabulary has no phase op; it is driven by `F_PHASING` + `phase_state`.
+**Every effect op executes — no silent no-ops.** `ADD_SPEED`/`MULT_ATK` adjust the computed speed/attack on top of the field-driven baseline (fields set the base; rules add/multiply, applied once per §25.4); `SET_BLIND`/`MISS_STRIKE` arm a strike latch consumed by the next Strike (blind rolls its chance then, 1 draw per §25.5; decoy misses deterministically); `SET_INK` arms the next-action randomiser (never Flee). A periodic trigger is `ROUND_MOD` + persistent timing: the condition holds on the matching rounds and the latch makes it fire once per matching round. **Phasing is the only behaviour not expressible as a rule** — §25.8 defines it as an algorithm (`floor((round-1)/2)%2`, Phase lock <30%) and the vocabulary has no phase op; it is driven by `F_PHASING` + `phase_state`.
 
 The struct itself lives in `def.zig` and is re-exported as `behavior.Rule` (the op constants stay in `behavior.zig`), so `Tables` can hold rule rows without an import cycle.
 
