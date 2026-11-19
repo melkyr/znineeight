@@ -1469,3 +1469,17 @@ Plate×5/Gland×3/Glow×3/Glass×2/Coral×2; over = Plate×2/Gland×1.
 (pages 2–8 here); `error.*` is not authored (M7 owns the copy); journal key =
 `journal.<def_index+1>` (boss = 19); H4 uses `journal_mask`, not a
 `spd_revealed` field; zone flavour vocabulary added.
+
+**Baseline (`0a0f8b9b`):** measured at this HEAD with seed v151
+(`/tmp/seed151_build/zig1_5_clean`, md5 `a2fc81055dc1cb7a67099fe3934d22ee`):
+
+```
+ZIG=/tmp/seed151_build/zig1_5_clean OUT=/tmp/m8_t0 sh examples/z98/undersanded/tests/tier_m7_save.sh
+```
+
+`TIER_M7 PASS 126 passed / 0 failed`. M7 nests M1–M6, so `tier_m1_std.sh`
+was not run separately. Nested: `TIER_M6 PASS 90 passed / 0 failed`;
+`TIER_M5 PASS 57 passed / 0 failed`; `TIER_M4 PASS 47 passed / 0 failed`
+(47/0, 1 evidence skip); `TIER_M3 PASS 65 passed / 0 failed` (65/0, 1
+evidence skip); `TIER_M2 PASS 29 passed / 0 failed`; `TIER_M1 PASS`
+(41/0, 0 evidence skips; the M1 line itself carries no counts).
