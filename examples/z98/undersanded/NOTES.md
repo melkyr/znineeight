@@ -1354,7 +1354,7 @@ ships, its Derelict row cannot load under the current validator and
 - §14.4 gives the Derelict **5** kill-drop lines (Plate ×5, Gland ×3, Glow ×3,
   Glass ×2, Coral ×2) but `MAX_DROP_LINES=4` (`def.zig:10`; spec:1079; §39
   says M8/M11). The loader's drop key tables are 4-wide
-  (`data.zig:533-545`) and the fallback rows are 4-wide, so "raise to 6"
+  (`data.zig:540-545`) and the fallback rows are 4-wide, so "raise to 6"
   means `def.zig` + `data.zig` + `creatures_t1.zig` + dump goldens; merging
   lines changes §14.4. Resolve before appending the boss row (or defer the
   row to M11 explicitly).
@@ -1363,14 +1363,15 @@ ships, its Derelict row cannot load under the current validator and
   (`validate.zig:12-13,89-92`); `family` must be 1..12
   (`validate.zig:14-15,85-88`) and no boss family id is defined; `sale<=0`
   is rejected (`validate.zig:119-122`) although §14.2 shows "—"; `resolve`
-  is a required i32 although §14.2 shows "—"; and `subdue_chance=-1` must
-  pair with `flags&F_BOSS` (`validate.zig:108-117`). Pin role/family/sale/
-  resolve (or add boss exemptions) at M8.
+  is a required data key (`data.zig:622`) but `resolve=0` is not rejected by
+  validation, so §14.2's "—" still needs a numeric row value; and
+  `subdue_chance=-1` must pair with `flags&F_BOSS` (`validate.zig:108-117`).
+  Pin role/family/sale/resolve (or add boss exemptions) at M8.
 
 **(d) Ownership — amendment required to Task 3 wording.**
 
 - `manual.1` stays **M6-author / M7-consume** (`data.z98:130`;
-  `save_ux.zig:170-178`; NOTES P25). M8 authors `manual.2..8` only.
+  `save_ux.zig:171-179`; NOTES P25). M8 authors `manual.2..8` only.
 - M7 already owns and shipped the save/crash copy as code constants
   (`content_boot.zig:15-17`; `save_ux.zig:155-162`). `[text]` accepts
   `error.1..6` (`data.zig:799-802`) but **no code reads them**. Task 3's
@@ -1384,26 +1385,34 @@ ships, its Derelict row cannot load under the current validator and
    `spd_revealed` bit (`m08 plan:56`) that does not exist. `World.journal_mask`
    is the persisted per-def bit set (`def.zig:151`; `persist.zig:326-327`),
    and `render_term.effectiveSpeed` currently always prints Speed
-   (`render_term.zig:139,339`). Key the reveal off the journal bit for
-   `def_index`; seen (`seen_mask`, fight start, §8.8) is separate from journal
+   (`render_term.zig:139,340`; `:339` is the SPD label). Key the reveal off
+   the journal bit for `def_index`; seen (`seen_mask`, fight start, §8.8) is
+   separate from journal
    (first fight end, §18).
 2. **Message table completion.** M8's blind/ink/decoy/phase/Lure/Sonar logs
    have no ids/text; `def.MESSAGES` has three rows (`def.zig:252-265`) and
    `msgLine` lacks these cases (`render_term.zig:235-260`), so new logs would
    render "Log N.". Add msg ids, `MESSAGES` rows and/or switch copy with the
    fight wiring.
-3. **Lure/Sonar tool constants.** `TOOL_LURE` (4) and `TOOL_SONAR` (6) exist
-   in content (`data.z98:34,36`) and names (`render_term.zig:448,450`) but
-   not in `fight.zig` (only 1/2/3/5/7 at `fight.zig:57-61`). Add them and
-   wire the counters/reveals; `peekCreatureAction` still says M5-only
-   (`fight.zig:65,296`).
+3. **Unwired M8 fight behaviors + Lure/Sonar constants.** The flags/fields
+   exist but no behavior is wired: `F_PHASING`/`F_INK`/`F_DECOY` and
+   `blind_chance` (`def.zig:35,230-232`), `pending_blind`/`pending_ink` are
+   only initialized/set (`fight.zig:160-161,391-400`), and neither the strike
+   path nor `peekCreatureAction` consumes them (`fight.zig:65,296`). Also
+   `TOOL_LURE` (4) and `TOOL_SONAR` (6) exist in content
+   (`data.z98:35,37`) and names (`render_term.zig:448,450`) but not in
+   `fight.zig` (only 1/2/3/5/7 at `fight.zig:57-61`). Add the constants and
+   wire phasing/ink/decoy/blind plus the counters/reveals; `peekCreatureAction`
+   still says M5-only.
 4. **Journal/help need UI wiring.** `journal.zig`/`help.zig` do not exist and
    the M8 file list omits `nav.zig`/`render_term.zig` (`m08 plan:22-26`).
    `?` manual, the Esc-menu Journal/"New entry" indicator, and hidden Speed
-   all need screen/key handling; `nav.zig` today has only the start menu and
-   lore screen (`nav.zig:26-38,280-309`; spec:1447-1456). Add those files to
-   the M8 structure and pin screen ids/keys; the indicator also needs a
-   viewed marker (journal_mask only records unlocks).
+   all need new screen/key handling; `nav.zig` already has
+   dock/map/node/settle/refine/upgrade/craft/buy/tools/lore/menu/save-error
+   screens (`nav.zig:26-38,280-309`; spec:1447-1456) but lacks the M8
+   journal/help screens. Add those screens to the M8 structure and pin their
+   ids/keys; do not rebuild the existing navigation. The indicator also needs
+   a viewed marker (journal_mask only records unlocks).
 5. **Zone flavor has no text vocabulary.** `textKeyKnown` accepts only
    `manual.*`, `journal.*`, `legend.*`, `error.*` (`data.zig:786-804`;
    spec:1307), so the four zone paragraphs cannot be authored as planned
