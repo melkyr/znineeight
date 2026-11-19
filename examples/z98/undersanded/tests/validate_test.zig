@@ -40,6 +40,7 @@ const P_TOOL8 = "examples/z98/undersanded/tests/fixtures/data_bad_tool_id8.z98";
 const P_TOOL_DUP = "examples/z98/undersanded/tests/fixtures/data_bad_dup_tool_id.z98";
 const P_TOOL_COST = "examples/z98/undersanded/tests/fixtures/data_bad_tool_cost_kind.z98";
 const P_TOOL_COST_DUP = "examples/z98/undersanded/tests/fixtures/data_bad_tool_cost_dup.z98";
+const P_TOOL_COST_NEG = "examples/z98/undersanded/tests/fixtures/data_bad_tool_cost_neg.z98";
 const P_TOOL_KIND = "examples/z98/undersanded/tests/fixtures/data_bad_tool_kind.z98";
 const P_ENC_REF = "examples/z98/undersanded/tests/fixtures/data_bad_encounter_ref.z98";
 const P_ENC_WEIGHT = "examples/z98/undersanded/tests/fixtures/data_bad_encounter_weight.z98";
@@ -49,6 +50,8 @@ const P_ENC_PHASE = "examples/z98/undersanded/tests/fixtures/data_bad_encounter_
 const P_ZONE_COST = "examples/z98/undersanded/tests/fixtures/data_bad_zone_cost.z98";
 const P_ZONE_BOSS = "examples/z98/undersanded/tests/fixtures/data_bad_zone_boss.z98";
 const P_TEXT_MISSING = "examples/z98/undersanded/tests/fixtures/data_bad_text_manual_missing.z98";
+const P_TEXT_EMPTY = "examples/z98/undersanded/tests/fixtures/data_bad_text_manual_empty.z98";
+const P_TEXT_BYTES = "examples/z98/undersanded/tests/fixtures/data_bad_text_bytes.z98";
 const P_CONTENT = "examples/z98/undersanded/tests/fixtures/data_bad_content_version.z98";
 const P_COS_COUNT = "examples/z98/undersanded/tests/fixtures/data_bad_cosmetic_count.z98";
 const P_COS_UNLOCK0 = "examples/z98/undersanded/tests/fixtures/data_bad_cosmetic_unlock0.z98";
@@ -161,6 +164,30 @@ fn tTextUnknownKeySynthetic() bool {
     return false;
 }
 
+fn tContentVersionSynthetic() bool {
+    resetArena();
+    var t: def.Tables = undefined;
+    data.buildFallback(&t);
+    data.resetLines();
+    t.content_version = 1;
+    validate.validateAll(&t) catch |e| {
+        return e == error.DamagedLine and data.err_line == 0;
+    };
+    return false;
+}
+
+fn tDefCountOverflowSynthetic() bool {
+    resetArena();
+    var t: def.Tables = undefined;
+    data.buildFallback(&t);
+    data.resetLines();
+    t.def_count = 57;
+    validate.validateAll(&t) catch |e| {
+        return e == error.Overflow and data.err_line == 0;
+    };
+    return false;
+}
+
 fn loadPartition(t: *def.Tables) bool {
     resetArena();
     data.buildFallback(t);
@@ -237,6 +264,7 @@ pub fn main() void {
     report("tool_id_duplicate", expectErr(P_TOOL_DUP, error.BadRef, 4));
     report("tool_cost_kind_10", expectErr(P_TOOL_COST, error.BadRef, 3));
     report("tool_cost_kind_duplicate", expectErr(P_TOOL_COST_DUP, error.BadRef, 3));
+    report("tool_cost_kind_negative", expectErr(P_TOOL_COST_NEG, error.BadRef, 3));
     report("tool_kind_out_of_range", expectErr(P_TOOL_KIND, error.BadRef, 3));
 
     report("encounter_def_index_bad", expectErr(P_ENC_REF, error.BadRef, 5));
@@ -248,7 +276,11 @@ pub fn main() void {
     report("zone_boss_not_bit", expectErr(P_ZONE_BOSS, error.BadRef, 3));
 
     report("manual1_missing_when_text", expectErr(P_TEXT_MISSING, error.DamagedLine, 2));
+    report("manual1_empty_when_text", expectErr(P_TEXT_EMPTY, error.DamagedLine, 2));
+    report("text_bytes_over_cap", expectErr(P_TEXT_BYTES, error.Overflow, 2));
     report("content_version_not_2", expectErr(P_CONTENT, error.DamagedLine, 1));
+    report("content_version_not_2_synthetic", tContentVersionSynthetic());
+    report("def_count_over_capacity_synthetic", tDefCountOverflowSynthetic());
     report("text_caps_257_keys_synthetic", tTextCapsSynthetic());
     report("manual1_empty_synthetic", tManualEmptySynthetic());
     report("text_unknown_key_synthetic", tTextUnknownKeySynthetic());
