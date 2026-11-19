@@ -846,6 +846,8 @@ Closing line: *"Thank you for playing. The ocean is still there."*
 
 Initial save creation is **world initialization**, not an autosave. There is no autosave at any point.
 
+Fresh install never shows the start menu: page 1 goes straight to world init, then the dock (P25/R3). The start menu (`Continue / New Game / Options / Quit`) appears only on a boot where a save exists; `Options` stays greyed until M12. `New Game` on an existing save asks *"Erase this save? [Y] [N]"*; confirming runs world initialization again without repeating page 1 (P25/R4).
+
 ---
 
 ## 21. Full-Game Content Model (T2–T4)
@@ -1238,8 +1240,28 @@ pub const World = struct {
     tool_selected: i32,                      // dock tool choice carried into Depart (0 = none, M5)
     cosmetics_owned: u32, cosmetics_unlocked: u32,
     field_record_written: i32,
+    field_record: FieldRecord,               // frozen at the first Derelict kill (P25/R2)
+    last_run: LastRun,                       // overwritten each engagement (P25/R2)
+    score_subdued: i32, score_killed: i32, score_overkilled: i32,
+    score_money_earned: i32,                 // lifetime counters feeding Field Record
     boss_variants_seen: u32, boss_kills: i32,
-    // + frozen Field Record and Last Run flat structs
+};
+
+// P25/R2 — flat scalar snapshots (no prose, no slices). Zeroed by zeroWorld;
+// Field Record is copied once from the live World at the first Derelict kill,
+// Last Run is overwritten at the end of every engagement.
+pub const FieldRecord = struct {
+    cycles: i32, field_phases: i32,
+    creatures_seen: i32, rares_seen: i32, bosses_killed: i32,
+    final_phase2: i32,
+    subdued: i32, killed: i32, overkilled: i32,
+    expertise: [MAX_MATERIALS]i32,
+    money_earned: i32, cosmetics: i32,
+    boat: [5]i32,
+};
+pub const LastRun = struct {
+    cycles: i32, phase2: i32, outcome: i32,
+    actions: i32, hull_spent: i32, boss_kills: i32,
 };
 ```
 
@@ -1604,7 +1626,7 @@ All 22.05 kHz mono, static buffers at startup, `Play(0)`, overlap allowed. **Ove
 
 ## 32. Save System
 
-**Text, not binary.** Same parser as the data tables, human-readable, diffable.
+**Text, not binary.** Same `key=value` family as the data tables, human-readable, diffable — but a **save-local scanner and section vocabulary** (`version` / `data_version`, `[world]` … `[crc32]`), not `data.zig`'s §25.10 parser (P25).
 
 ```
 version=2
@@ -1626,6 +1648,8 @@ hash=0x........
 
 `version` = format layout. `data_version` = content IDs. `hash` = CRC32 of everything above `[crc32]`.
 
+Grammar rules (P25): one scalar `key=value` per line; arrays are one line each, `name=i,i,i`; the line buffer is 8192 bytes so the worst-case `ready[672]` line always fits, and the whole file is capped at 64 KiB. `[crc32]` is last and nothing may follow it. Unknown keys are `Damaged`, except inside the reserved `[options]` section, which skips them (M12 fills it). `[score]` carries the P25 `FieldRecord` / `LastRun` flat fields and lifetime counters; `[expedition]` carries the active expedition including `pending_cond`.
+
 ### Load checks
 
 | Check | On failure |
@@ -1635,6 +1659,8 @@ hash=0x........
 | `data_version` matches | error screen → same options. **No auto-migration.** |
 | CRC32 matches | error screen → backup slot / fresh |
 | all IDs resolve | error screen → same options |
+
+Two error surfaces (P25): content/crash failures use the §33 fatal screen (`[Enter] Quit`); a failed save load-check uses a save-error screen with `[F]resh  [B]ackup slot  [Q]uit`. `version` / `data_version` / CRC / ID checks run in that order, and a load that fails any check leaves the in-memory world untouched.
 
 ### Write path (with rollback)
 
@@ -1655,7 +1681,7 @@ Step 4's delete is **mandatory on Win9x** — `MoveFileA` fails when the destina
 
 ### Save UX
 
-Esc → Save, unavailable only mid-fight (travel is instantaneous at depart/return; there is no persistent in-transit state). Greyed with the reason otherwise. Quit prompts *"Save before quitting? [Y] [N] [Cancel]"* if unsaved. **No autosave.**
+Esc → Save, unavailable mid-fight **or while a subdue Release/Sell choice is pending** (P25/R1; travel is instantaneous at depart/return; there is no persistent in-transit state). Greyed with the reason otherwise. Quit prompts *"Save before quitting? [Y] [N] [Cancel]"* if unsaved. **No autosave.**
 
 ### Data directory
 
@@ -1830,6 +1856,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P22 | **M5 kickoff rulings (user-authorized):** (1) deep refine is legal at 0 yield and always grants +1 expertise (no clamp, no refusal) — parts are renewable so this is a setback, not a lock; (2) M5 wires only behaviours that exist after M4 (armor, shell/resist-restrain, discharge, flee, stun); blind/decoy/ink/phasing and their tool interactions move to M8; (3) Sonar lookahead peeks on a copied `FightState` (flat POD, discarded) — never mutates `GameState`/log/world; M8 extends it with ink/decoy; (4) `Expedition.hold` is the persistent dock parts store (kept across `depart`); (5) tool selection persists in `World.tool_selected` and is copied into `Expedition` at Depart (free, no extra phase); (6) failed dock actions cost no phase and no RNG; (7) the M5 economy walk starts at 0 materials / E0 and asserts materials **spent** = 111 + Steel Fins ×2 with §17 table self-consistency (full-run pacing stays M15); (8) tool effects/reveals that need blind/decoy/ink/phasing are authored and tested at M8; (9) refining a deep/rare-sourced batch (Glow Polyp, Glass Pane) needs a second confirming press whose message states the part count and the yield (including `0 materials` below E5), while common batches refine on a single press — no confirmation click on ordinary refining. |
 | P23 | **M6 kickoff rulings (user-authorized):** (1) loaded tables reach consumers through the existing accessor layer (`defAt`/`rows` + new accessor twins for the const arrays) with a static `?*Tables` override installed by the loader — verified legal in Z98; compiled-in `creatures_t1`/`tables_t1` remain the fallback/golden and tests are untouched; (2) `CreatureDef` gains `name`/`name_len` (§25.2) so names live in data, not in a `render_term` switch — this retires the "Unknown Creature" display for the 13 M4 rows; (3) `data.z98` grammar is §25.10 as written (KV rows, indexed drop/respawn keys, `format=2` header, `owner=` rules, `textGet` bool+out-param); (4) M6 ships **spec-complete** §14.4 drops for all 18 rows (not the code-state blank tables), so `loop_golden.txt` and any drop-dependent golden are re-pinned inside M6 — the M4/M5 deferral of the five M2-era drop tables is closed early; (5) `Tables` is a static (BSS) struct of ≈32 KB and the permanent arena (raised 64 KB → 256 KB per §35) holds the `data.z98` buffer, string bytes and save image; (6) `undtool` tools keep the compiled-in fallback when no file is beside the exe, while the game (`app.run*`) treats missing/damaged `data.z98` as the §33 fatal path. |
 | P24 | **M6 loader follow-ups (user-authorized):** (1) the compiled-in fallback is **tables-only** (`text_count = 0`) because `data.z98` is a shipped asset; validation requires `manual.1` in any loaded file but exempts the fallback builder, and the transcription test compares every table field and asserts the loaded text separately (has `manual.1`, non-empty, within caps). (2) `[text]` keeps paragraph breaks: a continuation line of exactly one space is a retained blank line, comment/blank rules do not apply inside an entry, and a `#` after the leading space is prose (§25.10). |
+| P25 | **M7 kickoff rulings (user-authorized "R1–R4 yes"):** (R1) `canSave` blocks mid-fight **and** while a subdue Release/Sell choice is pending (settle state), with a greyed reason; nothing is lost because no other action is legal there. (R2) `FieldRecord` (frozen at the first Derelict kill), `LastRun` (overwritten each engagement) and lifetime score counters are added to `World` **now**, zeroed by `zeroWorld`, and persisted; M11 only populates them, so `version=2` never needs a format bump. (R3) fresh install follows §20 exactly (page 1 → world init → dock; no menu); the start menu appears only when a save exists. (R4) `New Game` on an existing save asks `Erase this save? [Y] [N]` and re-inits without repeating page 1. Also pinned: save-local scanner/sections (not the §25.10 parser), `data_version` compares to installed `Tables.content_version`, `manual.1` is consumed (M6 authors it), `pending_cond` moves into `Expedition` and is persisted, `World.rng_state` is persisted, `options.cfg` holds `save_slot` only (read-only reader in M7), save lines 8192 B / file 64 KiB, two error surfaces (§33 fatal vs save-load menu), and `errors.log` receives recovery/warning lines. |
 
 ### Game design
 

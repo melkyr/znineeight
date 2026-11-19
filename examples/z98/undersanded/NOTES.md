@@ -1144,3 +1144,46 @@ upgrades, 12 cosmetics, Z1–Z3 encounters, the zone ladder incl. boss zone D, a
   error copy; it must not re-author `manual.1` (M6 ships it; M7 consumes it).
 - Align M8's "19 rows" goal wording with the split: M6 ships 18 (all non-boss);
   M8 adds the boss row.
+
+### M7 kickoff rulings (P25)
+
+User-authorized R1–R4 ("lets do the ammendments, R1. yes. R2. yes R3. yes R4. Yes."),
+applied to spec §20/§25.7/§32/§38 P25 and the M7 plan:
+
+- **R1** — `canSave` blocks mid-fight **and** while a subdue Release/Sell choice
+  is pending; spec §32 amended. Nothing is lost: no other action is legal in
+  that state.
+- **R2** — `FieldRecord`, `LastRun` and lifetime
+  `score_subdued/score_killed/score_overkilled/score_money_earned` are added to
+  `World` **now** (flat scalars, zeroed by `zeroWorld`); M11 populates them and
+  the save stays `version=2` with no format bump.
+- **R3** — fresh install follows §20 exactly (page 1 → world init → dock, no
+  menu); the start menu appears only on a boot where a save exists.
+- **R4** — `New Game` on an existing save asks `Erase this save? [Y] [N]`, then
+  re-inits the world without repeating page 1.
+
+Controller calls (not user-facing) folded into the same amendments:
+
+- `pending_cond` moves from `GameState` to `Expedition` (cleared at `depart`,
+  set by rough-sleep Rest, read+cleared at fight start) and is persisted in
+  `[expedition]`; all call sites update.
+- Save-local scanner and section vocabulary (`version`/`data_version`,
+  `[world] … [crc32]`), never the §25.10 parser; `std_crypto.crc32`;
+  `data_version` compares to installed `Tables.content_version`.
+- `manual.1` is authored by M6 and only consumed by M7; M7 authors the
+  save/crash error copy.
+- `options.cfg` holds `save_slot` only; M7 adds a read-only reader (default 0),
+  M12 owns writing it.
+- Save lines 8192 B, file cap 64 KiB, arrays one line each, `[crc32]` last with
+  nothing after it; unknown keys strict except inside `[options]`.
+- Two error surfaces: §33 fatal screen (`[Enter] Quit`) for content/crash; a
+  save-error screen (`[F]resh [B]ackup slot [Q]uit`) for load checks.
+- Load is all-or-nothing into a zeroed temp `World`/`Expedition`; range checks
+  beyond ID resolution (hull ≤ boat max, phase 0/1, boat tiers 0..3, expertise
+  0..5, masks < `defCount()`).
+- `errors.log` append helper (recovery/warning lines) and startup recovery runs
+  before any fresh-install decision.
+- `tier_m7_save.sh` nests `tier_m6_data.sh`.
+- D18: nested array-field writes (`w.field_record.boat[i]`, `.expertise[i]`) must use a
+  pointer or a whole-struct assignment; plain nested indexed writes silently
+  miscompile.
