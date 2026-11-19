@@ -1312,3 +1312,103 @@ Expedition:
 nested array-field writes must go through a pointer (for example
 `var fr: *FieldRecord = &w.field_record; fr.boat[i] = v;`) or a whole-struct
 assignment; plain nested indexed writes silently miscompile (D18).
+
+### M8 amendment review (M7 Task 5)
+
+Read `2026-11-12-undersanded-m08-t1-content-plan.md` against the landed M6
+content and the M7 save/UI surfaces. Verdict: **amendment required** — the M8
+design is still sound, but its Task 1/2/3 wording re-authors content M6 already
+ships, its Derelict row cannot load under the current validator and
+`MAX_DROP_LINES`, and the journal/help/message/error-copy wiring is stale.
+
+**(a) `[text]` capacity — no amendment needed.**
+
+- Keys: `manual.1..8` (8) + `journal.1..19` (19) + `legend.1..2` (2) +
+  `error.1..6` (6) = **35** vs `MAX_TEXT_KEYS=256` (`def.zig:20`;
+  spec:1089). Zone-flavor keys, if added, still leave ~215 free.
+- Bytes: the whole T1 prose set is roughly 8–14 KB worst case (19 journal
+  paragraphs, 7 manual pages, 2 legends, 4 zone paragraphs, 6 short errors)
+  vs `MAX_TEXT_BYTES=48 KiB` (`def.zig:21`; spec:1090; the loader counts
+  `text_val` bytes, `validate.zig:331-341`). `data.z98` currently carries one
+  text value (`manual.1`, `data.z98:130`). No capacity amendment.
+
+**(b) Task 1/2/3 wording is stale — amendment required.**
+
+- M6 already ships **18** creature rows with names/stats/masks/§14.4 drops
+  (`data.z98:6-23`), 4 `[rules]` (`data.z98:25-29`), 7 tools
+  (`data.z98:31-38`), 15 upgrades (`data.z98:40-55`), 12 cosmetics
+  (`data.z98:57-69`), Z1–Z3 encounters (`data.z98:71-113`), the full zone
+  ladder including boss zone D (`data.z98:115-127`, D at `:124`), and
+  `manual.1` (`data.z98:129-132`). The M6 preflight records the same split.
+- Task 1 must not "move rows from `tables_t1.zig`" or re-author those 18
+  rows: it appends **one** Derelict row at load-order index **18** (`id=17`;
+  current def_indexes 0..17) and completes only the remaining §14.3 behavior
+  encoding. Task 2 verifies the already-shipped drops/tools/upgrades/
+  cosmetics/encounters/zone D and adds only Derelict drop rows/content M6 did
+  not ship; gate/telegraph are code constants, not `[zones]` rows. Task 3
+  must not re-author `manual.1`; pages 2..8 only. The plan goal/manual line
+  "17 rows + 2 flex" and "page 1 at M7" (`m08 plan:5`) are stale.
+
+**(c) Derelict drops and row validity — amendment required.**
+
+- §14.4 gives the Derelict **5** kill-drop lines (Plate ×5, Gland ×3, Glow ×3,
+  Glass ×2, Coral ×2) but `MAX_DROP_LINES=4` (`def.zig:10`; spec:1079; §39
+  says M8/M11). The loader's drop key tables are 4-wide
+  (`data.zig:533-545`) and the fallback rows are 4-wide, so "raise to 6"
+  means `def.zig` + `data.zig` + `creatures_t1.zig` + dump goldens; merging
+  lines changes §14.4. Resolve before appending the boss row (or defer the
+  row to M11 explicitly).
+- The boss row also trips current validation even before drops: `role`
+  "boss" = 4 (`render_term.zig:357`) exceeds `ROLE_MAX=3`
+  (`validate.zig:12-13,89-92`); `family` must be 1..12
+  (`validate.zig:14-15,85-88`) and no boss family id is defined; `sale<=0`
+  is rejected (`validate.zig:119-122`) although §14.2 shows "—"; `resolve`
+  is a required i32 although §14.2 shows "—"; and `subdue_chance=-1` must
+  pair with `flags&F_BOSS` (`validate.zig:108-117`). Pin role/family/sale/
+  resolve (or add boss exemptions) at M8.
+
+**(d) Ownership — amendment required to Task 3 wording.**
+
+- `manual.1` stays **M6-author / M7-consume** (`data.z98:130`;
+  `save_ux.zig:170-178`; NOTES P25). M8 authors `manual.2..8` only.
+- M7 already owns and shipped the save/crash copy as code constants
+  (`content_boot.zig:15-17`; `save_ux.zig:155-162`). `[text]` accepts
+  `error.1..6` (`data.zig:799-802`) but **no code reads them**. Task 3's
+  "error copy 6 messages … M7 consumes the keys" (`m08 plan:56`) is stale:
+  either keep M7 ownership and drop error copy from M8, or name the exact
+  remaining messages and add a reader; do not ship dead `error.*` keys.
+
+**Other concrete amendments M8 needs.**
+
+1. **H4 uses `journal_mask`, not `spd_revealed`.** The plan names a
+   `spd_revealed` bit (`m08 plan:56`) that does not exist. `World.journal_mask`
+   is the persisted per-def bit set (`def.zig:151`; `persist.zig:326-327`),
+   and `render_term.effectiveSpeed` currently always prints Speed
+   (`render_term.zig:139,339`). Key the reveal off the journal bit for
+   `def_index`; seen (`seen_mask`, fight start, §8.8) is separate from journal
+   (first fight end, §18).
+2. **Message table completion.** M8's blind/ink/decoy/phase/Lure/Sonar logs
+   have no ids/text; `def.MESSAGES` has three rows (`def.zig:252-265`) and
+   `msgLine` lacks these cases (`render_term.zig:235-260`), so new logs would
+   render "Log N.". Add msg ids, `MESSAGES` rows and/or switch copy with the
+   fight wiring.
+3. **Lure/Sonar tool constants.** `TOOL_LURE` (4) and `TOOL_SONAR` (6) exist
+   in content (`data.z98:34,36`) and names (`render_term.zig:448,450`) but
+   not in `fight.zig` (only 1/2/3/5/7 at `fight.zig:57-61`). Add them and
+   wire the counters/reveals; `peekCreatureAction` still says M5-only
+   (`fight.zig:65,296`).
+4. **Journal/help need UI wiring.** `journal.zig`/`help.zig` do not exist and
+   the M8 file list omits `nav.zig`/`render_term.zig` (`m08 plan:22-26`).
+   `?` manual, the Esc-menu Journal/"New entry" indicator, and hidden Speed
+   all need screen/key handling; `nav.zig` today has only the start menu and
+   lore screen (`nav.zig:26-38,280-309`; spec:1447-1456). Add those files to
+   the M8 structure and pin screen ids/keys; the indicator also needs a
+   viewed marker (journal_mask only records unlocks).
+5. **Zone flavor has no text vocabulary.** `textKeyKnown` accepts only
+   `manual.*`, `journal.*`, `legend.*`, `error.*` (`data.zig:786-804`;
+   spec:1307), so the four zone paragraphs cannot be authored as planned
+   without extending the key vocabulary/validation (and spec §25.10) or
+   deferring/deleting that item. No renderer reads zone flavor today.
+6. **Boss journal trigger timing.** M8 authors all 19 entries, but the boss
+   fight is M11; only `journalOnBossKill`/its trigger test can ship in M8.
+   Do not claim an end-to-end boss-kill journal test in M8.
