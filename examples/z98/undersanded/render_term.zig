@@ -129,15 +129,8 @@ fn putBar(sc: *Screen, y: i32, label: []const u8, value: i32, max: i32) void {
     _ = putInt(sc, x, y, max);
 }
 
-pub fn creatureName(id: i32) []const u8 {
-    switch (id) {
-        1 => return "Mystic Eel",
-        2 => return "Mystic Electric Eel",
-        4 => return "Steel Tuna",
-        18 => return "Anemoniacus",
-        19 => return "Freezing Perch",
-        else => return "Unknown Creature",
-    }
+pub fn creatureName(d: *const def.CreatureDef) []const u8 {
+    return d.name[0..@intCast(usize, d.name_len)];
 }
 
 // Effective Speed for display: base + stat-threshold bonus + Last Surge
@@ -194,14 +187,14 @@ fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
         },
         fight.MSG_SUBDUE_OK => {
             p = copyInto(out, p, "Subdued ");
-            p = copyInto(out, p, creatureName(d.id));
+            p = copyInto(out, p, creatureName(d));
             p = copyInto(out, p, " (");
             p = intInto(out, p, d.subdue_chance);
             p = copyInto(out, p, "%).");
         },
         fight.MSG_SUBDUE_FAIL => {
             p = copyInto(out, p, "Subdue failed - ");
-            p = copyInto(out, p, creatureName(d.id));
+            p = copyInto(out, p, creatureName(d));
             p = copyInto(out, p, " surges! (");
             p = intInto(out, p, d.subdue_chance);
             p = copyInto(out, p, "%).");
@@ -282,7 +275,7 @@ fn renderLog(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef, y0
 
 fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) void {
     _ = put(sc, 2, 2, "SUBDUE ATTEMPT");
-    var x = put(sc, 2, 3, creatureName(d.id));
+    var x = put(sc, 2, 3, creatureName(d));
     x = put(sc, x, 3, " - ");
     x = putInt(sc, x, 3, d.subdue_chance);
     _ = put(sc, x, 3, "% chance");
@@ -338,7 +331,7 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
 
     _ = put(sc, 0, 0, "UNDERSANDED  FIGHT");
 
-    var x = put(sc, 0, 1, creatureName(d.id));
+    var x = put(sc, 0, 1, creatureName(d));
     x = put(sc, x, 1, "  ");
     x = put(sc, x, 1, roleName(d.role));
     x = put(sc, x, 1, "  SPD ");

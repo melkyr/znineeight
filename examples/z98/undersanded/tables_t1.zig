@@ -8,7 +8,7 @@
 const def = @import("def.zig");
 const world = @import("world.zig");
 
-pub const EncounterRow = struct { def_index: i32, weight: i32 };
+pub const EncounterRow = def.EncounterRow;
 
 pub const PHASE_DAY: i32 = 0;
 pub const PHASE_NIGHT: i32 = 1;
@@ -117,13 +117,9 @@ pub const TOOL_KIND_RIGGED: i32 = 1;
 
 // Two-field cost slot local to the dock/M6 tables. `kind` 0 = unused slot;
 // otherwise a part id (1..9). Task 1's `MaterialAmt` is a separate type.
-pub const CostSlot = struct { kind: i32, amt: i32 };
+pub const CostSlot = def.CostSlot;
 
-pub const ToolRow = struct {
-    id: i32,
-    kind: i32,
-    cost: [3]CostSlot,
-};
+pub const ToolRow = def.ToolRow;
 
 fn slot(kind: i32, amt: i32) CostSlot {
     return CostSlot{ .kind = kind, .amt = amt };
@@ -155,11 +151,7 @@ pub const TOOLS = [_]ToolRow{
 // Plate, 3 Gland, 4 Brine, 5 Coral, 6 Luminescence, 7 Glass; 8/9 are the
 // Hooked Barbel / Steel Fins keystone parts.
 
-pub const UpgradeRow = struct {
-    axis: i32,
-    tier: i32,
-    cost: [3]CostSlot,
-};
+pub const UpgradeRow = def.UpgradeRow;
 
 pub const UPGRADES = [_]UpgradeRow{
     // Hull
@@ -194,11 +186,7 @@ pub const UNLOCK_Z2: i32 = 2;
 pub const UNLOCK_Z3: i32 = 3;
 pub const UNLOCK_DERELICT: i32 = 4;
 
-pub const CosmeticRow = struct {
-    name: []const u8,
-    price: i32,
-    unlock: i32,
-};
+pub const CosmeticRow = def.CosmeticRow;
 
 pub const COSMETICS = [_]CosmeticRow{
     .{ .name = "Foam White", .price = 150, .unlock = UNLOCK_Z1 },

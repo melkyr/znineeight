@@ -16,13 +16,17 @@ pub const MAX_ENCOUNTER: usize = 24;
 pub const MAX_LOG: usize = 64;
 pub const MAX_COSMETICS: usize = 12;
 pub const SUBDUE_PROMPT_BELOW: i32 = 90;
+pub const MAX_NAME_LEN: usize = 24;
+pub const MAX_TEXT_KEYS: usize = 256;
+pub const MAX_TEXT_BYTES: usize = 48 * 1024;
 
 // ---- §25.2 Static definition ---------------------------------------------
 
 pub const DropLine = struct { part: i32, count: i32 };
 
 pub const CreatureDef = struct {
-    id: i32, family: i32, role: i32,
+    id: i32, name: [MAX_NAME_LEN]u8, name_len: i32,
+    family: i32, role: i32,
     zone_mask: u32, phase_mask: u32,
     hp: i32, resolve: i32, speed: i32, attack: i32,
     thrash_regen: i32, despair_regen: i32,
@@ -42,6 +46,65 @@ pub const CreatureDef = struct {
     sale: i32, respawn: [3]i32, counter_tool: i32,
     rule_start: i32, rule_count: i32,
 };
+
+// ---- §25.2 Content tables -------------------------------------------------
+
+pub const CostSlot = struct { kind: i32, amt: i32 };
+
+pub const ToolRow = struct {
+    id: i32,
+    kind: i32,
+    cost: [3]CostSlot,
+};
+
+pub const UpgradeRow = struct {
+    axis: i32,
+    tier: i32,
+    cost: [3]CostSlot,
+};
+
+pub const CosmeticRow = struct {
+    name: []const u8,
+    price: i32,
+    unlock: i32,
+};
+
+pub const EncounterRow = struct { def_index: i32, weight: i32 };
+
+pub const TextEntry = struct { key: []const u8, val: []const u8 };
+
+pub const Rule = struct {
+    cond_op: i32,
+    cond_a: i32,
+    cond_b: i32,
+    effect_op: i32,
+    effect_a: i32,
+    effect_b: i32,
+    timing: i32,
+};
+
+pub const Tables = struct {
+    defs: [MAX_CREATURES]CreatureDef,
+    def_count: i32,
+    rules: [MAX_RULES]Rule,
+    rule_count: i32,
+    tools: [MAX_TOOLS]ToolRow,
+    tool_count: i32,
+    upgrades: [15]UpgradeRow,
+    upgrade_count: i32,
+    cosmetics: [MAX_COSMETICS]CosmeticRow,
+    cosmetic_count: i32,
+    encounters: [MAX_ZONES * 2 * MAX_ENCOUNTER]EncounterRow,
+    enc_count: [MAX_ZONES * 2]i32,
+    zone_cost: [MAX_ZONES]i32,
+    zone_boss: [MAX_ZONES]i32,
+    text_key: [MAX_TEXT_KEYS][]const u8,
+    text_val: [MAX_TEXT_KEYS][]const u8,
+    text_count: i32,
+    content_version: i32,
+};
+
+pub var content_override: ?*Tables = null;
 
 // ---- §25.3 Fight state ----------------------------------------------------
 

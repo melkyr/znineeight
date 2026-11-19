@@ -15,6 +15,7 @@ const behavior = @import("../behavior.zig");
 const fight = @import("../fight.zig");
 const game = @import("../game.zig");
 const creatures = @import("../creatures_t1.zig");
+const render = @import("../render_term.zig");
 
 var fails: usize = 0;
 
@@ -1081,17 +1082,6 @@ fn outcomeName(o: i32) []const u8 {
     }
 }
 
-fn creatureName(id: i32) []const u8 {
-    switch (id) {
-        1 => return "Mystic Eel",
-        2 => return "Mystic Electric Eel",
-        4 => return "Steel Tuna",
-        18 => return "Anemoniacus",
-        19 => return "Freezing Perch",
-        else => return "unknown",
-    }
-}
-
 const FightCase = struct {
     def_index: i32,
     pattern: []const u8,
@@ -1132,7 +1122,7 @@ fn printFightRow(n: usize, c: FightCase, r: FightRun) void {
     io.printInt(@intCast(i32, n));
     io.write(" ");
     const d = creatures.defAt(c.def_index);
-    io.write(creatureName(d.id));
+    io.write(render.creatureName(&d));
     io.write(" outcome=");
     io.write(outcomeName(r.outcome));
     io.write(" steps=");

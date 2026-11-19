@@ -1,5 +1,5 @@
 full phases_out=3 f1=1 f1_actions=10 bonus=8 f2=2 f2_actions=16 hull=55 money=0
-hold p1=2 p5=2
+hold p1=2 p3=1 p5=3
 ok - full_subdue_release_kill_surface
 ascent hold_kept=1 hull=0
 ok - ascent_keeps_fight1_loot

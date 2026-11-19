@@ -39,7 +39,7 @@ fn chooseCreature() ?i32 {
         io.write("  ");
         io.printInt(i + 1);
         io.write(") ");
-        io.write(render.creatureName(d.id));
+        io.write(render.creatureName(&d));
         io.write(" (");
         io.write(render.roleName(d.role));
         io.write(")\n");
