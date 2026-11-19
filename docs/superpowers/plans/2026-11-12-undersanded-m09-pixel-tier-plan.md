@@ -2,70 +2,89 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** The art-mode renderer: `std_gfx_px` (16bpp 565 windowed sibling module), bitmap font atlas, bars with dotted red zone + inline numerics, dirty-rect widget rendering, surface-lost recovery — a full fight rendered in art mode with terminal/z9edit goldens unchanged.
+**Goal:** The art-mode renderer plus a playable `under.exe`: `std_gfx_px` (16bpp 565 over the shared `std_gfx_pal` window/pump), bitmap font atlas, bars with dotted red zone + inline numerics, dirty-rect widget rendering, surface-lost recovery — dock/map/node stay cell-rendered, a fight renders in art mode, and the whole loop is playable in one window with a <16bpp all-cell fallback.
 
-**Architecture:** `std_gfx_px` (in `sf/src/`, the one std exception beyond M1) shares std_gfx's window/pump but never touches the cell contract. **Vtable truth = the typed ddraw vtable in `sf/src/std_ddraw_pal.zig:199-301`** (Lock :277, Unlock :284, Restore :279, Blt :257 typed) — the z9gb *probe* has no vtables. `std_gfx_pal.zig:435-462` `Lock`/`Unlock`/`BltFast` are `fn() void` placeholders and **must be typed before sharing** (spec §23.1: sibling module, not a fork — z9edit goldens byte-identical is the acceptance test). `render_art.zig` implements the §27 layout (640×480 fixed) over `Widget[64]` with dirty rects; sprites arrive M10 — this milestone draws with `gfxPxFill` rectangles + font glyphs as stand-ins.
+**Architecture:** `std_gfx_px` is split: **`sf/src/std_gfx_px_core.zig`** is pure (no Windows includes; Surface/fill/blit/LUT/clip/dirty merge/bar math/framebuffer dump **+ the memory-target API**) and is the native gate; **`sf/src/std_gfx_px.zig`** re-exports those symbols and adds the thin Windows path over `std_gfx_pal` (spec §23.1 is literal: it shares `std_gfx`'s window/pump; `std_ddraw_pal.zig:199-301` is only the typed-signature source). `std_gfx` gains one accessor, `gfxNativeState(g) *pal.State` (cell contract untouched); `under.exe` opens `std_gfx` once and `gfxPxAttach(cell)` borrows that window/clipper/pump for the 16bpp surface — one window total. `std_gfx_pal.zig:435-462` `Lock`/`Unlock`/`BltFast` are `fn() void` placeholders and must be typed before use (z9edit goldens byte-identical is the acceptance test). Cell screens are the existing 80×30 `render_term` Screens; the fight presents px on the same window and switches only at fight boundaries. `render_art.zig` implements §27 over `Widget[64]`; sprites arrive M10 — M9 draws with rectangles + font glyphs.
 
-**Tech Stack:** Z98 → C89 `-fsafe`; DirectDraw7 windowed (`DDSCL_NORMAL`), offscreen 16bpp 640×480, per-sprite 256-entry u16 LUT; GDI `StretchDIBits` fallback; bitmap font 95 glyphs 8×16 (period ROM, public domain).
+**Tech Stack:** Z98 → C89 `-fsafe`; DirectDraw7 windowed (`DDSCL_NORMAL`), 16bpp 565 `DDSCAPS_SYSTEMMEMORY` offscreen, per-sprite 256-entry u16 LUT; px-only GDI `StretchDIBits` fallback (24-bit DIB); bitmap font 95 glyphs 8×16 (1bpp rows; period ROM, public domain).
 
-**Spec:** `docs/superpowers/specs/2026-11-12-undersanded-design.md` §23.1 (px tier API + PAL notes incl. present contract), §26 (presentation modes), §27 (render engine: widgets, bars, text, layout), §28 (Event.px/py hit-testing), §29 (tween accumulator — visual only), §34 (z9edit golden row), §35 (perf target), §36 (M9 row).
+**Spec:** `docs/superpowers/specs/2026-11-12-undersanded-design.md` §23.1 (px API, module split, present/depth contract, G7/G8), §26 (mode table, one window, --perf), §27 (render engine), §28 (Event.px/py hit-testing), §29 (tween), §33 (errors.log), §34 (z9edit row), §35 (perf target), §36 (M9 row), §38 P27.
 
 **Sequence:** PREVIOUS: `2026-11-12-undersanded-m08-t1-content-plan.md`. NEXT: `2026-11-12-undersanded-m10-assets-pipeline-plan.md`.
 
 ## Global Constraints
 
-**Test model (spec §26, binding):** tiers run natively — `undtool.nix` (COMMAND.COM-analogue console) + native test drivers are the FAST gate; Wine/DD7/DSound probes are SLOW evidence only, never the gate; operator hardware is M16-only. Logic goldens must be runnable in CI without Wine.
+**Test model (spec §26, binding):** native drivers + `undtool.nix` are the FAST gate; art framebuffer goldens are **core** framebuffer dumps; Wine/DD7/px probe/`tier_edit_gui.sh` are SLOW evidence only, never the gate; operator hardware is M16-only. `<windows.h>` never enters a native test TU.
 
-As prior. std changes confined to `sf/src/std_gfx_px.zig` **plus** the smallest possible additions to shared headers — the cell contract, themes, glyph atlas, `gfxDumpGrid` untouched. **Depth fallback cascade:** desktop <16bpp (incl. 256-colour 8bpp) → refuse art mode → terminal mode; GDI `StretchDIBits` (24-bit DIB) covers DD-present failure at ≥16bpp only. Query `GetPixelFormat` masks at open (565 vs 555 skew). `DDERR_SURFACELOST` → `Restore()` → re-lock → **full widget repaint** (VRAM content gone). Software clip before locked-pixel writes. COM calls through `extern "stdcall"` fn-pointer types with convention-qualified casts; slot order copied from `std_ddraw_pal.zig`'s typed table, unused slots preserved (wrong order fails silently — spec §37 risk). **Windowed present contract (spec §23.1, binding):** `Blt` to primary — **never `BltFast`** (it ignores clippers; `std_ddraw_pal.zig:9-11` bans it) — dest rect in screen coords (`ClientToScreen`, `std_ddraw_pal.zig:636-654`), clipper on primary, `DDBLT_WAIT`. Blit/Fill require held lock; Present requires surface **unlocked** (`DDERR_SURFACEBUSY` otherwise). Offscreen = `DDSCAPS_SYSTEMMEMORY` (never VRAM — 4 MB cards).
+As prior. std changes confined to `sf/src/std_gfx_px_core.zig`, `sf/src/std_gfx_px.zig` **plus** the smallest additions to `sf/src/std_gfx_pal.zig` (typing `Lock`/`Unlock`/`BltFast`, a px-surface helper, fixed-size window sizing) — the cell contract, themes, glyph atlas, `gfxDumpGrid` untouched. **Depth fallback cascade:** desktop <16bpp (incl. 256-colour 8bpp) → refuse art mode → all-cell terminal mode; px GDI `StretchDIBits` covers DD-present failure at ≥16bpp only. Query `GetPixelFormat` masks at open (565 vs 555 skew). `DDERR_SURFACELOST` → `Restore()` → re-lock → **full widget repaint**. Software clip before locked-pixel writes. COM calls through `extern "stdcall"` fn-pointer types; slot order copied from `std_ddraw_pal.zig`'s typed table, unused slots preserved (wrong order fails silently). **Present contract (spec §23.1):** `Blt` to primary — never `BltFast` — dest rect in screen coords (`ClientToScreen`), clipper on primary, `DDBLT_WAIT`; Blit/Fill require held lock, Present requires unlocked. Offscreen = 16bpp 565 `DDSCAPS_SYSTEMMEMORY`. **New data/atlas code uses explicit `[N]T{...}` literals and no array-returning APIs (D24/D25).** Allowlist additions (`StretchDIBits`, `SetWindowLongA` only if used) are recorded in NOTES and gated by `check_win9x_imports.sh`.
 
 ## File Structure
 
-- `sf/src/std_gfx_px.zig` — API exactly spec §23.1 (`gfxPxOpen/Lock/Unlock/Blit/BlitPart/Fill/Present`, `Sprite`/`Surface`, `PxError`).
-- `examples/z98/undersanded/render_art.zig` — Widget system (§27), bars, layout, hit-test rects, screen shake hook (M12 uses it).
-- `examples/z98/undersanded/font8x16.zig` — glyph atlas data (95 glyphs).
+- `sf/src/std_gfx_px_core.zig` — pure pixel core: `Surface`, `Sprite` conversion math, fill/blit/blitPart with clip, dirty-rect merge, bar geometry, framebuffer dump, **memory-target API** (`gfxPxOpenMemory`, `gfxPxDump`, memory `gfxPxFill/Blit/BlitPart`). Native gate.
+- `sf/src/std_gfx_px.zig` — Windows wrapper: re-exports the core memory symbols, adds `gfxPxOpen/Attach/Close/Lock/Unlock/Present/PollEvent/WaitEvent`, `Sprite`/`Surface`/`PxError`, `gfxPxTestRestore`.
+- `sf/src/std_gfx.zig` — one addition: `pub fn gfxNativeState(g: *Gfx) *pal.State` (used only by `gfxPxAttach`; cell contract untouched).
+- `sf/src/std_gfx_pal.zig` — typed `Lock`/`Unlock`/`BltFast`; px 16bpp surface helper; fixed-size window sizing; `GetPixelFormat` used.
+- `examples/z98/undersanded/render_art.zig` — Widget system, layout, bars, hit-test rects, art modal/help, screen-shake hook (M12 uses it).
+- `examples/z98/undersanded/font8x16.zig` — 95 glyphs, 1bpp 8×16 rows, order ASCII 32..126.
 - `examples/z98/undersanded/tween.zig` — `tweenAdvance` (§29 raw-tick accumulator, TWEEN_MS 180).
-- `examples/z98/undersanded/tests/px_test.zig`, `tests/tier_m9_px.sh`, `tests/run_px_probe.sh` (pattern after z9gb `run_ddraw_probe.sh`).
+- `examples/z98/undersanded/render_term.zig` — export `msgLine` (parity), add `blitToGfx(g, screen)` (80×30 cells).
+- `examples/z98/undersanded/input.zig` — add `keyFromEvent(ev) ?Key` (same mapping as stdin).
+- `examples/z98/undersanded/nav.zig` — add `navRunGfx(g, s)`: gfx events, cell screens, art fight at fight boundaries.
+- `examples/z98/undersanded/app.zig` + `main.zig` — `--perf`, mode select/depth fallback, call `navRunGfx`.
+- `examples/z98/undersanded/tests/px_core_test.zig`, `tests/px_test.zig`, `tests/art_test.zig`, `tests/tier_m9_px.sh`, `tests/run_px_probe.sh` (pattern after z9gb `run_ddraw_probe.sh`), `tests/fixtures/art_fight.golden` (565 dump checksum), `tests/fixtures/perf_log.golden` (shape only).
 
 ## Review Focus
 
-- COM vtable slot order wrong → silent failure on real hardware, maybe not under Wine → minimal blit probe first (Task 1) and slot list copied from `ddraw.h` with review.
-- Surface-lost path never triggered in CI → `gfxTestFocus`-style injection or forced `Restore()` exercise in the tier (spec §34 row).
-- Bar math off-by-one at empty/full (fill width `hp*bar_w/max_hp`, red zone `clamp((25-margin)*bar_w/max_hp,0,bar_w)`) → pixel-level unit tests on the widget draw helpers.
-- Color-blind safety regressions (red zone must keep 1px dotted border **and** inline numeric `HP 42/70`) → golden asserts both markers present in the bar widget.
-- Tween accumulator using `delta_ms` division (never advances on short intervals) → unit test with equal `highRes()` samples.
+- COM slot order wrong → silent failure on real hardware, may pass under Wine → typed table copied from `std_ddraw_pal.zig`, minimal blit probe first.
+- px surface lost/restored but widgets not repainted → force `gfxPxTestRestore` in tier and assert full repaint.
+- Bar math at empty/full and `max <= 0` (boss Resolve) → clamp, dotted border + inline numeric in every bar, coupling tags only when live.
+- Mode switch at fight boundaries corrupts one renderer's surface/palette → one window, explicit mode owner per frame, cell and px never present the same frame.
+- Dirty coalescing wrong → merged rects must cover union, overflow → full-frame, pitch-padded surface.
+- Hidden SPD leak in art (`journal_mask`/Sonar) and art modal/help/tool-status parity with `render_term`.
 
 ---
 
 ### Task 0: Preflight
 
-- [ ] Run z9edit tiers green as baseline (byte-diff goldens saved). Copy the vtable slot discipline from **`sf/src/std_ddraw_pal.zig:199-301`** (typed, proven); type the `std_gfx_pal.zig` Lock/Unlock/BltFast placeholders as part of Task 1.
+- [ ] Baseline: `tier_m8_content.sh` PASS and `z9edit/tests/tier_edit.sh` PASS (lexer md5) saved. Record in NOTES: P27 rulings, the pal surface to extend, `Lock`/`Unlock`/`BltFast` placeholder lines, the exact allowlist delta actually needed, D24/D25 guard, and `render_term` art facts (six M8 items). Commit `example(undersanded): M9 preflight`.
 
-### Task 1: `std_gfx_px` open/lock/fill/present (blit probe)
+### Task 1: Pure px core + memory target (native gate)
 
-**Interfaces:** exactly spec §23.1 signatures. `gfxPxOpen(title, 640, 480)`; `gfxPxLock` → `Surface{pixels, pitch, w, h}`; `gfxPxFill(x,y,w,h,rgb565)`; `gfxPxPresent(x,y,w,h)` (contract above); plus **headless memory target** `gfxPxOpenMemory()` → draw helpers operate on a plain `Surface` with no window — ALL unit tests and goldens run through it (native, the gate).
-- [ ] Minimal probe (`run_px_probe.sh`): open, lock, fill a 640×480 test pattern (ramp 0→15 columns), present, exit. PASS on host software path (gate) + Wine run recorded as evidence only; slots reviewed against `std_ddraw_pal.zig`. Commit `feat(std): std_gfx_px open/lock/fill/present`.
+**Interfaces:** `Surface{pixels:[*]u8,pitch:i32,w:u32,h:u32}`; `Sprite{w,h,idx,lut,key}`; `pxCoreFill(sf,x,y,w,h,px)`; `pxCoreBlit(sf,dx,dy,s)`; `pxCoreBlitPart(sf,dx,dy,s,sx,sy,sw,sh)`; `pxCoreBar(width,value,max,margin) struct{fill,red}`; `pxCoreDump(sf,out)` (pitch-tight rows); plus the memory-target API `gfxPxOpenMemory(w,h) PxError!*Gfx`, `gfxPxDump(g) []const u8`, `gfxPxFill/Blit/BlitPart` operating on the memory Gfx. All pure, no gfx/pal imports; native tests compile THIS module directly (the Windows wrapper does not exist yet).
 
-### Task 2: Blit + LUT + surface-lost
+- [ ] Native tests: exact 565 LUT values at palette anchors, key skip, negative/partial clip, pitch > w*2, dump row order, bar 0/half/max with margins 10/25, red-zone clamp, `max<=0` guard. Golden: one 320×200 core framebuffer checksum. Commit `feat(std): px core + headless memory target`.
 
-**Interfaces:** `Sprite{w,h,idx,lut,key}`; `gfxPxBlit`/`gfxPxBlitPart` convert indexed→565 via 256-entry u16 LUT at blit; key byte skipped; software clip. Handle `DDERR_SURFACELOST` → `Restore()` → re-lock (expose `pub fn pxRestore(g) bool`).
-- [ ] Unit tests: LUT conversion (index→565 exact values from palette anchors), key skip, clip edges (negative dx/dy), partial blit rect. Forced-restore exercise in tier. PASS. Commit `feat(std): std_gfx_px blit + surface-lost recovery`.
+### Task 2: Windows binding — open/lock/fill/present
 
-### Task 3: Font + bars + widgets (`render_art.zig`)
+**Interfaces:** spec §23.1 signatures. `gfxPxOpen(title,640,480)` = standalone fixed 640×480 window (AdjustWindowRect; no resize/scale); `gfxPxAttach(cell:*std_gfx.Gfx) ?*Gfx` borrows the open cell window via `std_gfx.gfxNativeState` and creates the 16bpp 565 SYSTEMMEMORY offscreen + px clipper; types `GetPixelFormat` and follows 565/555. `gfxPxLock` returns `Surface`; `gfxPxUnlock`; `gfxPxFill`; `gfxPxPresent(x,y,w,h)` = `Blt` primary, screen-coord dest, clipper, `DDBLT_WAIT`; `gfxPxPollEvent/WaitEvent` delegate to `pal.pollEvent/waitEvent` (same `Event` incl. `px/py`/focus). px GDI fallback = 24-bit DIB + `StretchDIBits` at ≥16bpp only; <16bpp returns OpenFailed (caller falls back to cell). `pxClose`.
 
-**Interfaces:** `Widget{x,y,w,h,kind,dirty,a,b,c,text_off,sprite}` flat (R1); `pub fn layoutFight(s: *GameState) void` (§27 geometry: HUD 32, sprite+stats 200, log 140, buttons 56); `pub fn renderDirty(g, s)` — mark → lock → repaint dirty rects only → unlock → present coalesced; bar draw helpers per §27 (fill, red zone with **1px dotted border**, inline numerics, coupling tags only when live); `tweenAdvance` per §29.
-- [ ] Unit tests: bar widths at hp=0/half/max with margin 10/25; red-zone clamp; dotted border present (golden of a bar widget dump); dirty-rect **area** after one action ≈15% of screen (assert area bounds — not rect count); coalescing = bounded rect list (max 32, merge when bounding boxes overlap/touch, overflow → full-frame present); pitch-padded surface case (pitch > w*2) covered; tween equal-samples no-advance. Implement. PASS. Commit `example(undersanded): art widgets, bars, font, dirty rects`.
+- [ ] Type `std_gfx_pal` `Lock`/`Unlock`/`BltFast`; add px surface helper/fixed-size sizing and `GetPixelFormat`; add only the allowlist symbols used (`StretchDIBits`, `SetWindowLongA` if required) and record them. `run_px_probe.sh`: standalone open, ramp fill, present; native gate = Task 1 core tests; Wine run recorded as evidence. PASS also requires `tier_edit.sh` byte-identical lexer md5. Commit `feat(std): px window binding`.
 
-### Task 4: Art fight screen + hit-testing + mode fallback
+### Task 3: Sprites, LUT blit, surface-lost
 
-- [ ] Wire art fight screen (fill-rect stand-ins for the M10 sprite slot), mouse `Event.px/py` hit-tests on button rects → same Action as hotkeys (§28), `gfxSetFixedSize(640,480)` (G7), `gfxPxPresent` per coalesced rect (G8). Desktop depth <16bpp → terminal fallback (log reason). GDI fallback path builds 24-bit DIB + `StretchDIBits` (≥16bpp present failure only). Commit `example(undersanded): art fight screen + hit-testing`.
+- [ ] `gfxPxBlit/BlitPart` index→565 via 256-entry u16 LUT, key skip, software clip; `pxRestore` on `DDERR_SURFACELOST`; `gfxPxTestRestore` seam for the tier; re-lock and full repaint after restore. Unit tests (core) + forced restore in Task 6. Commit `feat(std): px blit + surface-lost recovery`.
 
-### Task 5: `tier_m9_px.sh` + goldens
+### Task 4: Art fight frame (font, widgets, bars, tween)
 
-- [ ] Implement `--perf`: when enabled, append frame-timing percentiles to `errors.log` (consumed by M16). PASS. Commit `example(undersanded): --perf timing log`.
-- [ ] Tier: px unit tests + `--dump-grid` terminal goldens **byte-identical to M8** + z9edit `tier_edit.sh`/`tier_edit_gui.sh` **byte-identical** + surface-lost exercise + **art frame golden = pre-present in-memory framebuffer dump checksum** (software compose, native — never post-present readback) + probe harness run as SLOW evidence. Non-vacuous. Run PASS. Commit `example(undersanded): M9 pixel tier`.
+**Interfaces:** `Widget{x,y,w,h,kind,dirty,a,b,c,text_off,sprite}` flat; `layoutFight(s:*GameState)` (§27: HUD 32, sprite+stats 200, log 140, buttons 56); `renderDirty(g,s)` mark→lock→repaint dirty→unlock→present coalesced (max 32, merge overlap/touch, overflow full frame); bar helpers per §27; `tweenAdvance(tw,now,freq)` per §29 using `std_time.highRes` (u64 locals only).
 
-**Gate:** fight renders in art mode; terminal + z9edit goldens unchanged (acceptance for the std work); dirty-rect path exercised.
+- [ ] Font `font8x16.zig`: 95 glyphs, 1bpp 8×16 rows, ASCII 32..126, source/licence line in NOTES.
+- [ ] Art fight must render the six M8 facts: hidden `SPD ??` unless journal bit or active Sonar (reveal paths shared with `render_term.speedRevealed`), full tool status line (`TOOL <name> <kind> charge N broken/active`, 80-col safe), mid-fight `?` help (art overlay, or documented terminal fallback), `max_res==0` boss bar guarded, art subdue modal (`SCREEN_SUBDUE`/`_POST`) with same key semantics, `msgLine` exported and shared with a parity test (no duplicated copy table).
+- [ ] Tests: bar geometry incl. zero-max, dotted 1px border + inline numeric present, dirty area bounds after one action (~15%, area not count), coalescing order/overflow, pitch-padded, tween equal samples no-advance, message parity. Golden: art fight core framebuffer checksum. Commit `example(undersanded): art fight frame`.
 
-### Task 6: Next-milestone amendment review (M10)
+### Task 5: `under.exe` playable loop (cell screens + art fight + fallback)
 
-- [ ] Read `2026-11-12-undersanded-m10-assets-pipeline-plan.md`; judge `Sprite`/LUT shape vs `.ZSP` decode (§30) — decoder must produce exactly `Sprite`. Amendment or "no amendment needed" in NOTES.md.
+**Interfaces:** `input.keyFromEvent(ev)*?Key` reuses existing mapping; `render_term.blitToGfx(g,screen)` draws the 80×30 `Screen` through `gfx.gfxDrawText`; `nav.navRunGfx(g,s)` runs the same `navStep` state machine driven by `gfxPollEvent/gfxWaitEvent`, cell-presenting dock/map/node/journal/help and switching to px only while `expedition.isInFight` (and art subdue modal). Mouse `px/py` hit-tests the four fight buttons → same Action. Depth <16bpp → all-cell mode (log reason). `--perf` appends p50/p95/p99 to `errors.log`.
+
+- [ ] `under.exe` opens `std_gfx` once (80×30), `gfxPxAttach` it, and keeps one window for the whole session (`gfxPxAttach` null → all-cell fallback). Keep behaviour identical to `navRun` (keys, pending settle, quit prompt, help overlay owning a key, mid-fight `J` inert). Art mode does not init RNG or advance phases. README documents art/terminal/fallback and `--perf`.
+- [ ] Native walk test: scripted event stream dock→map→node→fight→settle→dock renders no crash and matches state; `--perf` writes the pinned shape. Commit `example(undersanded): playable under.exe loop`.
+
+### Task 6: `tier_m9_px.sh` + goldens
+
+- [ ] Tier (native, cwd-independent, nests `tier_m8_content.sh`): `px_core_test` + `art_test` + loop walk; art framebuffer golden (core dump checksum) byte-exact; terminal `--dump-grid --screen fight|dock|map|node|lore|menu|journal|help` **byte-identical to M8**; `tier_edit.sh` byte-identical lexer md5; forced surface-lost full-repaint case; `--perf` shape; any Wine/probe/`tier_edit_gui.sh` runs are SLOW evidence with loud skip. Non-vacuity: mutate a copy of the art golden → tier fails. PASS. Commit `example(undersanded): M9 pixel tier`.
+
+**Gate:** fight renders in art mode; dock→fight→dock playable in `under.exe`; terminal + z9edit goldens byte-identical; surface-lost repaint exercised.
+
+### Task 7: Next-milestone amendment review (M10)
+
+- [ ] Read `2026-11-12-undersanded-m10-assets-pipeline-plan.md`; judge `Sprite`/LUT/`gfxPxBlit` shape vs `.ZSP` decode (§30) — decoder must produce exactly `Sprite` + core-decoded pixels. Amendment or "no amendment needed" in NOTES.md.

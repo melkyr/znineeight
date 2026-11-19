@@ -1004,8 +1004,8 @@ while (running) {
 | G4 | P0 | `gfxWaitEvent(g, timeoutMs) bool` | the pump is polling; a turn-based game must not spin. `MsgWaitForMultipleObjectsEx`. |
 | G5 | P0 | `Event.px`, `Event.py` (u32) | art-mode mouse hit-testing; cell coords are useless at 640×480 |
 | G6 | P1 | **Pixel surface tier** `std_gfx_px` (§23.1) | the entire art renderer |
-| G7 | P1 | `gfxSetFixedSize(g,w,h)` | art layout is fixed; cell grid is resizable |
-| G8 | P1 | `gfxPresentRect(g,x,y,w,h)` | dirty-rect present |
+| G7 | P1 | **folded into `gfxPxOpen`** — the px window is fixed 640×480 client size at open (no resize, no scaling); no separate call | art layout is fixed; cell grid stays resizable |
+| G8 | P1 | `gfxPxPresent(g,x,y,w,h)` (§23.1) | dirty-rect present |
 | G9 | P5b/M12 | `std_audio` — DirectSound **buffers, WAV load, play/stop/volume** (static buffers; distinct from the existing streaming dsound) | ambient + cues |
 | G10 | P0 | path join + 8.3 validation | Win98 MAX_PATH / short names |
 | G11 | P0 | crc32 — **PARTIAL: incremental API already in `std_crypto` (`crc32Init/Update/Final`); add only the one-shot `crc32(data)` there** (no duplicate table) | save integrity |
@@ -1032,6 +1032,7 @@ pub const Sprite  = struct { w: u32, h: u32, idx: [*]const u8,
                              lut: [*]const u16, key: u8 };
 
 pub fn gfxPxOpen(title: []const u8, w: u32, h: u32) PxError!*Gfx;
+pub fn gfxPxAttach(cell: *CellGfx) ?*Gfx;  // borrow an open std_gfx window (under.exe)
 pub fn gfxPxLock(g: *Gfx) PxError!Surface;
 pub fn gfxPxUnlock(g: *Gfx) void;
 pub fn gfxPxBlit(g: *Gfx, dx: i32, dy: i32, s: *const Sprite) void;
@@ -1039,7 +1040,36 @@ pub fn gfxPxBlitPart(g: *Gfx, dx: i32, dy: i32, s: *const Sprite,
                      sx: i32, sy: i32, sw: i32, sh: i32) void;
 pub fn gfxPxFill(g: *Gfx, x: i32, y: i32, w: i32, h: i32, rgb565: u16) void;
 pub fn gfxPxPresent(g: *Gfx, x: i32, y: i32, w: i32, h: i32) void;
+
+// Headless/test tier (native gate symbol): no window, no DirectDraw.
+pub fn gfxPxOpenMemory(w: u32, h: u32) PxError!*Gfx;
+pub fn gfxPxDump(g: *Gfx) []const u8;  // 565 rows, pitch-tight, pre-present
+// Events come from the shared window/pump (std_gfx_pal), same Event shape.
+pub fn gfxPxPollEvent(g: *Gfx, ev: *Event) bool;
+pub fn gfxPxWaitEvent(g: *Gfx, timeout_ms: u32) bool;
 ```
+
+`Gfx` here is the px module's own opaque type (same name as the cell tier's
+type, module-scoped). `gfxPxOpen(title, 640, 480)` creates a window at a
+**fixed 640×480 client size** and stores no scale (standalone probe/demo path).
+`under.exe` instead opens `std_gfx` once at 80×30 cells and calls
+`gfxPxAttach(cell)`: `std_gfx` exposes `gfxNativeState(g) *pal.State`
+(a read-only handle; the cell contract is untouched) and px creates its 16bpp
+565 surface on that same window/clipper/pump — one window total. Non-fight
+screens present the cell grid, the fight presents the px surface, and mode
+switching never changes game behaviour. `gfxPxOpenMemory` performs every draw
+op on a plain in-RAM `Surface` with no Windows includes — it is what the
+native art goldens run through. Module split is binding: the pixel math
+(surface/fill/blit/LUT/clip/dirty merge/bar math/framebuffer dump) and the
+memory-target API live in a pure `sf/src/std_gfx_px_core.zig`; the thin
+Windows wrapper `sf/src/std_gfx_px.zig` re-exports those symbols and adds
+`gfxPxOpen/Attach/Close` + the present path, and is Wine/hardware evidence
+only. The 16bpp offscreen is created with an explicit
+`DDSD_PIXELFORMAT` 565 descriptor plus `DDSCAPS_SYSTEMMEMORY`; `GetPixelFormat`
+is typed and queried at open for the 565/555 skew. GDI present failure at
+≥16bpp falls back to a 24-bit DIB + `StretchDIBits` (px-only path; the cell
+tier's GDI backend is separate). `--perf` (under.exe only) appends
+frame-timing percentiles to `errors.log`; it is evidence, never a gate.
 
 PAL notes: vtable slot order is taken from the **typed ddraw vtable in `sf/src/std_ddraw_pal.zig`** (the z9gb-proven code) — `std_gfx_pal.zig`'s `Lock`/`Unlock`/`BltFast` placeholders must be typed first; unused slots preserved; a wrong order fails silently. Every COM call through `extern "stdcall"` fn-pointer types with the convention-qualified cast. **Windowed present contract:** `Blt` (never `BltFast` — it ignores clippers) to primary with a clipper attached, dest rect in **screen coords** (`ClientToScreen`), `DDBLT_WAIT`. Blit/Fill require a held lock; Present requires the surface **unlocked** (`DDERR_SURFACEBUSY` otherwise). `DDERR_SURFACELOST` → `Restore()` → re-lock → **full widget repaint** (VRAM content is gone). Offscreen surface is `DDSCAPS_SYSTEMMEMORY`. Clip in software before touching locked pixels. **Depth rule:** query `GetPixelFormat` masks at open (565 vs 555 skew is real on VxD-era cards); desktop depth **below 16bpp (including 256-colour 8bpp) refuses art mode → terminal mode**; GDI fallback (24-bit DIB + `StretchDIBits`) covers DD-present failure at ≥16bpp only.
 
@@ -1357,6 +1387,13 @@ All three consume the same `*GameState` read-only. **Switching modes must never 
 | `undtool.exe` | `WINDOWS_CUI` | Console only |
 
 One source tree, two link configs, both no-CRT, both must pass `check_win9x_imports.sh <exe> 9x`.
+
+`under.exe` opens **one** window: the shared window/pump from `std_gfx_pal`.
+Dock/map/node/journal/help (and the whole game on a <16bpp desktop) present the
+cell grid; a fight presents the `std_gfx_px` 640×480 surface over the same
+window. Mode switching happens only at fight boundaries and never changes game
+behaviour. `under.exe --perf` turns on the frame-timing log (percentiles appended
+to `errors.log`; M16 consumes it — evidence only, never a gate).
 
 ```
 undtool.exe --sim 200 --creature ghostray --seed 98
@@ -1732,7 +1769,7 @@ Error screen: full-screen text, 640×480, era-authentic, `[Enter] Quit`.
 
 ### Non-fatal
 
-Warnings go to `errors.log` beside the exe and never interrupt play: missing sprite → placeholder; missing cosmetic overlay; backup slot written.
+Warnings go to `errors.log` beside the exe and never interrupt play: missing sprite → placeholder; missing cosmetic overlay; backup slot written. With `--perf` on, `errors.log` also receives per-session frame-timing percentiles (p50/p95/p99 in ms); this is measurement evidence for M16, not a gate.
 
 ### Crash — three files, not one
 
@@ -1811,7 +1848,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | **M6** | Data tables + loader | `data.z98` format §25.10 + loader; full schema/capacities §25.1; **spec-complete T1 content** (18 rows: §14.2 stats + names + zone/phase masks, §14.4 drops incl. the five M2-era defs, 4 rules with `owner=`, §10–§11 tools/upgrades/cosmetics, §13 Z1–Z3 encounters, empty Z4–Z8, manual page 1 text); loaded tables == compiled-in fallback field-for-field; malformed rejection | Loader goldens pass; `--dump-defs` golden; every malformed class rejected with line numbers; 56/57 capacity boundary; bad boss sentinel rejected (fixture; boss row is M8/M11) |
 | **M7** | Save system | CRC32, `data_version=2`, tmp+verify+rename+rollback, 2 slots, first-run lore page | Save round-trip golden passes; rollback path exercised; v1 save → v2 loader errors correctly |
 | **M8** | Tier-1 content authoring | Verify M6's 18 rows/drops/tools/tables/zones/`manual.1`; append the Derelict row; wire blind/ink/decoy/phasing + Lure/Sonar; journal 19, manual 2–8, Legends 2, zone flavour 4 — §40 checklist | **Demo content-complete in terminal**; full T1 loop playable start→boss gate |
-| **M9** | Pixel tier | G6–G8 (`std_gfx_px`), 8×16 font atlas, bars + dotted red zone, dirty rects, surface-lost recovery | Fight renders in art mode; terminal + z9edit goldens byte-identical |
+| **M9** | Pixel tier | `std_gfx_px` split into pure native core + thin `std_gfx_pal`-backed wrapper (fixed 640×480 window), typed Lock/Unlock/BltFast, 16bpp 565 SYSTEMMEMORY offscreen, 8×16 font atlas, bars + dotted red zone, dirty rects, surface-lost recovery, art fight (modal/help/tool status/hidden SPD), playable `under.exe` loop (cell screens + art fight + <16bpp fallback), `--perf` | Fight renders in art mode; dock→fight→dock playable in `under.exe`; terminal `--dump-grid` + z9edit goldens byte-identical |
 | **M10** | Asset pipeline + art | Palette lock, transitory SVG→`.ZSP` conversion (uncommitted, P19), committed Z98 `--validate-assets`, 11 bases + 6 recolors + 5 boss ramps, 5 demo backgrounds, boat, 9 overlays | Demo asset budget met (≤1.35 MB indexed, backgrounds ≤120 KB each); all 11 bases reviewed side-by-side as one set |
 | **M11** | Boss + score screen — **DEMO GATE** | The Derelict §15 (3 phases), 5 Phase-2 adaptive variants, credits, 3-panel score screen, cosmetics render on boat | Full boss loop completable; all 5 variants triggerable from a save; Field Record written once; demo shippable |
 | **M12** | Audio + options | Ambient + 4 cues (§31), options (volume, keys, save slot, colour-blind), pause-on-focus + audio Stop | Alt-tab pauses and silences; options persist; audio plays with no callback thread |
@@ -1884,6 +1921,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P24 | **M6 loader follow-ups (user-authorized):** (1) the compiled-in fallback is **tables-only** (`text_count = 0`) because `data.z98` is a shipped asset; validation requires `manual.1` in any loaded file but exempts the fallback builder, and the transcription test compares every table field and asserts the loaded text separately (has `manual.1`, non-empty, within caps). (2) `[text]` keeps paragraph breaks: a continuation line of exactly one space is a retained blank line, comment/blank rules do not apply inside an entry, and a `#` after the leading space is prose (§25.10). |
 | P25 | **M7 kickoff rulings (user-authorized "R1–R4 yes"):** (R1) `canSave` blocks mid-fight **and** while a subdue Release/Sell choice is pending (settle state), with a greyed reason; nothing is lost because no other action is legal there. (R2) `FieldRecord` (frozen at the first Derelict kill), `LastRun` (overwritten each engagement) and lifetime score counters are added to `World` **now**, zeroed by `zeroWorld`, and persisted; M11 only populates them, so `version=2` never needs a format bump. (R3) fresh install follows §20 exactly (page 1 → world init → dock; no menu); the start menu appears only when a save exists. (R4) `New Game` on an existing save asks `Erase this save? [Y] [N]` and re-inits without repeating page 1. Also pinned: save-local scanner/sections (not the §25.10 parser), `data_version` compares to installed `Tables.content_version`, `manual.1` is consumed (M6 authors it), `pending_cond` moves into `Expedition` and is persisted, `World.rng_state` is persisted, `options.cfg` holds `save_slot` only (read-only reader in M7), save lines 8192 B / file 64 KiB, two error surfaces (§33 fatal vs save-load menu), and `errors.log` receives recovery/warning lines. |
 | P26 | **M8 kickoff rulings (user-authorized):** (C1) the Derelict row lands in **M8** — `MAX_DROP_LINES` 4→6, `ROLE_BOSS=4`/`FAMILY_BOSS=13` (+validator ranges), `sale=0`/`resolve=0` boss exemptions, `subdue_chance=-1` with `F_BOSS`; the 5-line kill table is the reason the cap moves, and the frozen 6-slot layout raises the §35 `Tables` budget 32→36 KB (`CreatureDef` ≈324 B). (C2) the "New entry" marker is a persisted **additive optional save key** `journal_viewed` (absent = 0; §32). (C3) keep M7's Esc-at-dock = Save / `q` = Quit; M8 adds `J` (Journal) and a dock "New entry" line, and defers the Esc menu. (C4) zone flavor is authored **now**: `[text]` vocabulary gains `zone.1..9`, rendered on the node screen. (B) behavior driver table (§25.2) is binding: **rule rows** for discharge, Rust flee, blind, ink and decoy (every §25.6 effect op executes, incl. `ADD_SPEED`/`MULT_ATK`, so the VM is never silently incomplete); named fields for coupling/armor/speed/attack/flee-hit/grudge/resist; **phasing is the sole VM exception** (`F_PHASING` + §25.8 algorithm, no phase op — the vocab never claimed it). Thresholds are absolute precomputed integers. `error.1..6` stay accepted but unread (M7 owns the copy). |
+| P27 | **M9 kickoff rulings (user-authorized, option A for under.exe scope):** (1) px builds on **`std_gfx_pal`'s window/pump** (spec §23.1 sentence is literal); `std_ddraw_pal:199-301` is the typed-signature source only. Lock/Unlock/BltFast get typed in `std_gfx_pal`. px owns its own opaque `Gfx` and a 16bpp 565 `DDSCAPS_SYSTEMMEMORY` offscreen alongside the shared window/clipper. (2) Native gate requires a **pure `std_gfx_px_core.zig`** (no Windows includes) + thin Windows wrapper; art goldens are core framebuffer dumps, and `<windows.h>`/Wine never enter the gate. (3) **`under.exe` becomes playable in M9**: one window, gfx `Event`→`Key` adapter, existing 80×30 `render_term` Screens cell-blitted for dock/map/node/journal/help, art px fight, switch at fight boundaries, <16bpp → all-cell fallback. `std_gfx` gains `gfxNativeState` and px gains `gfxPxAttach` so the single cell window/clipper/pump is shared (no second window). (4) G7 folds into `gfxPxOpen` (fixed 640×480, no resize/scale); G8 is `gfxPxPresent`; `gfxPxOpenMemory`/`gfxPxDump`/px event calls are added to §23.1. (5) `--perf` lives on `under.exe` and writes percentiles to `errors.log` (evidence only). (6) M8's six art-fight facts are binding in M9 (hidden SPD/Sonar, tool status line, mid-fight help overlay, zero-max Resolve guard, art subdue modal, shared `msgLine` parity). (7) New data/atlas code uses explicit `[N]T{...}` literals and no array-returning APIs (D24/D25). |
 
 ### Game design
 

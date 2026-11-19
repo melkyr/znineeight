@@ -1547,3 +1547,45 @@ Checked, no amendment needed:
 - **Sonar / Lure / blind / ink / decoy / phase copy.** These M8 messages are
   already encoded in `MSG_*`/`msgLine` (`render_term.zig:253-295`), so no
   art-only text or width is required.
+
+### M9 preflight (P27 amendments applied)
+
+Kickoff rulings (spec §38 P27; user-authorized "3. A"):
+
+- **PAL base = `std_gfx_pal` window/pump** (spec §23.1 is literal). px owns its
+  own opaque `Gfx`, a 16bpp 565 `DDSCAPS_SYSTEMMEMORY` offscreen and a px-only
+  GDI `StretchDIBits` fallback. `std_ddraw_pal.zig:199-301` is the typed
+  signature source only; `std_gfx_pal` `Lock`/`Unlock`/`BltFast` placeholders
+  (`:455`/`:462`/`:437`) get typed. `GetPixelFormat` is typed and 565/555 is
+  queried at open.
+- **Native gate split.** `sf/src/std_gfx_px_core.zig` is pure (no Windows
+  includes): Surface/fill/blit/LUT/clip/dirty merge/bar math/framebuffer dump.
+  `sf/src/std_gfx_px.zig` is the thin `std_gfx_pal` wrapper. Art goldens are
+  core dumps; `<windows.h>` never enters a native TU (M3 proved the PAL is
+  unlinkable with `-osl`).
+- **`under.exe` becomes playable (option A).** One window. Dock/map/node/
+  journal/help keep the existing 80×30 `render_term` Screens and are
+  cell-blitted via `std_gfx`; the fight presents the px surface on the same
+  window; switching happens only at fight boundaries. `std_gfx` gains
+  `gfxNativeState` and px gains `gfxPxAttach` so the cell window/clipper/pump
+  is shared (no second window). New `input.keyFromEvent`,
+  `render_term.blitToGfx`, `nav.navRunGfx`. Desktop <16bpp → all-cell fallback
+  (logged).
+- **G7 folded into `gfxPxOpen`** (fixed 640×480 client, no resize/scale);
+  **G8 = `gfxPxPresent`**. Spec §23.1 adds `gfxPxOpenMemory`,
+  `gfxPxDump`, `gfxPxPollEvent/WaitEvent`.
+- **`under.exe --perf`** writes frame-timing percentiles to `errors.log` (M16
+  evidence; never a gate).
+- **M8's six art facts are binding in M9:** hidden `SPD ??` unless journal bit
+  or active Sonar (shared reveal helper), full tool status line, mid-fight `?`
+  help overlay (or documented terminal fallback), zero-max boss Resolve guard,
+  art subdue modal, exported `msgLine` + parity test.
+- **Allowlist delta only what is used** (`StretchDIBits`; `SetWindowLongA` only
+  if the fixed-size path needs it) — recorded here when implemented and gated
+  by `check_win9x_imports.sh`.
+- **D24/D25:** new atlas/table data uses explicit `[N]T{...}` literals; no
+  array-returning APIs. (`examples/torrent_example_defects.md` D24/D25).
+- **Tier split:** native core/art/loop tests + `tier_edit.sh` (byte-identical)
+  = gate; px probe, `tier_edit_gui.sh`, Wine runs = SLOW evidence, loud skip.
+
+Task 0 records the M8/`tier_edit` baseline at the amended HEAD before code.
