@@ -703,6 +703,14 @@ fn textKeyKnown(k: []const u8) bool {
     return false;
 }
 
+fn equalsIndex(line: []const u8) i32 {
+    var i: usize = 0;
+    while (i < line.len) : (i += 1) {
+        if (line[i] == '=') return @intCast(i32, i);
+    }
+    return -1;
+}
+
 fn finishTextValue(content: []u8, t: *def.Tables, val_start: usize, val_end: usize) void {
     const idx: usize = @intCast(usize, t.text_count);
     var read: usize = val_start;
@@ -720,6 +728,24 @@ fn finishTextValue(content: []u8, t: *def.Tables, val_start: usize, val_end: usi
     }
     t.text_val[idx] = content[val_start..write];
     t.text_count = @intCast(i32, idx + 1);
+}
+
+fn beginTextEntry(content: []u8, t: *def.Tables, line: []const u8, pos: usize, eq: usize, line_no: i32, active: *bool, val_start: *usize, val_end: *usize) LoadErr!void {
+    if (active.*) {
+        finishTextValue(content, t, val_start.*, val_end.*);
+        active.* = false;
+    }
+    const key = trimSpaces(line[0..eq]);
+    if (key.len == 0 or !textKeyKnown(key)) return failLine(line_no);
+    const tcount: usize = @intCast(usize, t.text_count);
+    if (tcount >= def.MAX_TEXT_KEYS) {
+        err_line = line_no;
+        return error.TooMany;
+    }
+    t.text_key[tcount] = key;
+    val_start.* = pos + eq + 1;
+    val_end.* = pos + line.len;
+    active.* = true;
 }
 
 fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [def.MAX_RULES]def.Rule, n: usize) LoadErr!void {
@@ -806,12 +832,12 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
         line_no += 1;
 
         const t = trimSpaces(line);
-        if (t.len == 0 or t[0] == '#') {
-            pos = if (eol < content.len) eol + 1 else content.len;
-            continue;
-        }
 
         if (!header_ok) {
+            if (t.len == 0 or t[0] == '#') {
+                pos = if (eol < content.len) eol + 1 else content.len;
+                continue;
+            }
             if (eql(line, "format=2")) {
                 header_ok = true;
                 tmp.content_version = 2;
@@ -822,38 +848,42 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
             continue;
         }
 
-        // [text] owns all lines until the next section; continuation lines
-        // begin with exactly one space and have that space stripped.
-        if (section == 7) {
-            if (line[0] == ' ') {
+        // Inside a [text] entry the global comment/blank rules do not apply.
+        // The entry ends only at the next key= line or [section]. A one-space
+        // continuation line is a retained blank paragraph break.
+        if (section == 7 and text_active) {
+            if (line.len > 0 and line[0] == ' ') {
                 if (line.len > 1 and line[1] == ' ') return failLine(line_no);
-                if (!text_active) return failLine(line_no);
                 text_val_end = pos + line.len;
                 pos = if (eol < content.len) eol + 1 else content.len;
                 continue;
             }
+            if (t.len == 0) return failLine(line_no);
             if (t[0] != '[') {
-                var eq: usize = 0;
-                var found: bool = false;
-                while (eq < line.len and !found) : (eq += 1) {
-                    if (line[eq] == '=') found = true;
-                }
-                if (!found) return failLine(line_no);
-                if (text_active) {
-                    finishTextValue(content, &tmp, text_val_start, text_val_end);
-                    text_active = false;
-                }
-                const key = trimSpaces(line[0 .. eq - 1]);
-                if (key.len == 0 or !textKeyKnown(key)) return failLine(line_no);
-                const tcount: usize = @intCast(usize, tmp.text_count);
-                if (tcount >= def.MAX_TEXT_KEYS) {
-                    err_line = line_no;
-                    return error.TooMany;
-                }
-                tmp.text_key[tcount] = key;
-                text_val_start = pos + eq;
-                text_val_end = pos + line.len;
-                text_active = true;
+                const ei = equalsIndex(line);
+                if (ei < 0) return failLine(line_no);
+                try beginTextEntry(content, &tmp, line, pos, @intCast(usize, ei), line_no, &text_active, &text_val_start, &text_val_end);
+                pos = if (eol < content.len) eol + 1 else content.len;
+                continue;
+            }
+            finishTextValue(content, &tmp, text_val_start, text_val_end);
+            text_active = false;
+        }
+
+        if (t.len == 0 or t[0] == '#') {
+            pos = if (eol < content.len) eol + 1 else content.len;
+            continue;
+        }
+
+        if (section == 7) {
+            if (line[0] == ' ') {
+                if (line.len > 1 and line[1] == ' ') return failLine(line_no);
+                return failLine(line_no);
+            }
+            if (t[0] != '[') {
+                const ei = equalsIndex(line);
+                if (ei < 0) return failLine(line_no);
+                try beginTextEntry(content, &tmp, line, pos, @intCast(usize, ei), line_no, &text_active, &text_val_start, &text_val_end);
                 pos = if (eol < content.len) eol + 1 else content.len;
                 continue;
             }

@@ -25,6 +25,7 @@ const TMP_BAD = "/tmp/m6t3_bad.z98";
 const TMP_UNKNOWN_SECTION = "/tmp/m6t3_unknown_section.z98";
 const TMP_UNKNOWN_KEY = "/tmp/m6t3_unknown_key.z98";
 const TMP_BAD_HEADER = "/tmp/m6t3_bad_header.z98";
+const TMP_TEXT = "/tmp/m6t3_text_paragraphs.z98";
 
 var fails: usize = 0;
 var arena_buf: [256 * 1024]u8 = undefined;
@@ -52,6 +53,24 @@ fn bytesEq(a: []const u8, b: []const u8) bool {
         if (a[i] != b[i]) return false;
     }
     return true;
+}
+
+fn contains(a: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (a.len < needle.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= a.len) : (i += 1) {
+        if (bytesEq(a[i .. i + needle.len], needle)) return true;
+    }
+    return false;
+}
+
+fn textFind(t: *const def.Tables, key: []const u8) ?[]const u8 {
+    var i: usize = 0;
+    while (i < @intCast(usize, t.text_count)) : (i += 1) {
+        if (bytesEq(t.text_key[i], key)) return t.text_val[i];
+    }
+    return null;
 }
 
 fn dropEq(a: def.DropLine, b: def.DropLine) bool {
@@ -205,9 +224,39 @@ fn tLoadMatchesFallback() bool {
     data.buildFallback(&fb);
     var loaded: def.Tables = undefined;
     data.loadFile(&arena, DATA_PATH, &loaded) catch return false;
+
+    if (fb.text_count != 0) return false;
     if (loaded.text_count != 1) return false;
     if (!bytesEq(loaded.text_key[0], "manual.1")) return false;
+
+    var text_bytes: usize = 0;
+    var ti: usize = 0;
+    while (ti < @intCast(usize, loaded.text_count)) : (ti += 1) {
+        if (loaded.text_val[ti].len == 0) return false;
+        text_bytes += loaded.text_val[ti].len;
+    }
+    if (loaded.text_count > @intCast(i32, def.MAX_TEXT_KEYS)) return false;
+    if (text_bytes > def.MAX_TEXT_BYTES) return false;
+    if (!contains(loaded.text_val[0], "\n\n")) return false;
+
     return tablesMatch(&loaded, &fb);
+}
+
+fn tTextParagraphs() bool {
+    data.uninstall();
+    resetArena();
+    const text = "format=2\n[text]\nmanual.1=First paragraph.\n \n #Hash prose retained.\nmanual.2=Second entry.\n";
+    file_mod.writeAll(TMP_TEXT, text) catch return false;
+
+    var t: def.Tables = undefined;
+    data.loadFile(&arena, TMP_TEXT, &t) catch return false;
+    if (t.text_count != 2) return false;
+
+    const p1 = textFind(&t, "manual.1") orelse return false;
+    const p2 = textFind(&t, "manual.2") orelse return false;
+    if (!bytesEq(p1, "First paragraph.\n\n#Hash prose retained.")) return false;
+    if (!bytesEq(p2, "Second entry.")) return false;
+    return true;
 }
 
 fn tDumpGolden() bool {
@@ -321,6 +370,7 @@ fn tOverrideLifecycle() bool {
 
 pub fn main() void {
     report("load_data_matches_fallback", tLoadMatchesFallback());
+    report("text_paragraphs_and_hash_prose", tTextParagraphs());
     report("dump_defs_golden_byte_exact", tDumpGolden());
     report("reject_unknown_section_line", tRejectUnknownSection());
     report("reject_unknown_key_line", tRejectUnknownKey());
