@@ -38,7 +38,7 @@ fn eq(a: []const u8, b: []const u8) bool {
 fn tCapacities() bool {
     if (def.MAX_CREATURES != 56) return false;
     if (def.MAX_ZONES != 12) return false;
-    if (def.MAX_DROP_LINES != 4) return false;
+    if (def.MAX_DROP_LINES != 6) return false;
     if (def.MAX_TOOLS != 8) return false;
     if (def.MAX_PARTS != 14) return false;
     if (def.MAX_MATERIALS != 10) return false;

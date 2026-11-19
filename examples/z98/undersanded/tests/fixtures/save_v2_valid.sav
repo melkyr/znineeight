@@ -24,6 +24,7 @@ release_bonus=0,2,4,6,8,10,12,14,16,18,20,22
 lockout_until=100,101,102,103,104,105,106,107,108,109,110,111
 [journal]
 journal_mask=3,0
+journal_viewed=1,0
 tooltip_shown=11259375
 [expedition]
 active=1
@@ -48,4 +49,4 @@ score_overkilled=13
 score_money_earned=14
 [options]
 [crc32]
-hash=0x842fa755
+hash=0x49ca62fe

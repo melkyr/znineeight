@@ -23,6 +23,7 @@ const game = @import("game.zig");
 const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const nav = @import("nav.zig");
+const journal = @import("journal.zig");
 const save_ux = @import("save_ux.zig");
 const fight_console = @import("fight_console.zig");
 const paths = @import("paths.zig");
@@ -169,6 +170,12 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
         render.renderLore(save_ux.manualPageOne(), &sc);
     } else if (eq(screen_id, "menu")) {
         render.renderMenu(&sc);
+    } else if (eq(screen_id, "help")) {
+        // Canonical `?` page from the dock (nav.NAV_DOCK = 10 -> manual.1).
+        render.renderHelp(journal.helpPage(10) orelse "(manual text unavailable)", &sc);
+    } else if (eq(screen_id, "journal")) {
+        // Fresh install: every entry is still "- unrecorded -".
+        render.renderJournal(&s, 0, &sc);
     } else {
         return null;
     }

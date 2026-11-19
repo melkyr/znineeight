@@ -30,6 +30,7 @@ const P_ROLL = "/tmp/m7t2_roll_save0.dat";
 const P_MISSING = "/tmp/m7t1_does_not_exist.dat";
 const P_RESAVE = "/tmp/m7t1_fixture_resave.sav";
 const FIXTURE_V2 = "examples/z98/undersanded/tests/fixtures/save_v2_valid.sav";
+const FIXTURE_V2_OLD = "examples/z98/undersanded/tests/fixtures/save_v2_no_journal_viewed.sav";
 
 var fails: usize = 0;
 var file_buf: [256 * 1024]u8 = undefined;
@@ -215,6 +216,8 @@ fn richState(g: *def.GameState) void {
     w.seen_mask[1] = 0;
     w.journal_mask[0] = 0x00000003;
     w.journal_mask[1] = 0;
+    w.journal_viewed[0] = 0x00000001;
+    w.journal_viewed[1] = 0;
     w.tooltip_shown = 0xABCDEF;
     w.field_phases = 23;
     w.hull = 150;
@@ -611,6 +614,7 @@ fn tFixtureCanonicalResave() bool {
     var arena = arena_mod.init(file_buf[0..]);
     const raw = file_mod.readAll(&arena, FIXTURE_V2) catch return false;
     if (raw.len == 0) return false;
+    if (!contains(raw, "journal_viewed=1,0")) return false;
 
     var w: def.World = undefined;
     var e: def.Expedition = undefined;
@@ -624,6 +628,28 @@ fn tFixtureCanonicalResave() bool {
     if (e.pending_cond != def.COND_SHAKY) return false;
     if (e.zone != 2 or e.tool != 4 or e.hold[7] != 6) return false;
     return w.cycle == 7 and w.boss_variants_seen == 0x1F;
+}
+
+// Additive optional key: an M7-era save with no [journal] journal_viewed line
+// still loads, defaulting the mask to zero. The current writer always emits it.
+fn tOldSaveWithoutJournalViewedLoads() bool {
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    game.zeroWorld(&w);
+    persist.saveRead(FIXTURE_V2_OLD, &w, &e) catch return false;
+    if (w.journal_viewed[0] != 0 or w.journal_viewed[1] != 0) return false;
+    if (w.journal_mask[0] != 0x00000003 or w.journal_mask[1] != 0) return false;
+    if (w.cycle != 7 or w.boss_variants_seen != 0x1F) return false;
+
+    var arena = arena_mod.init(file_buf[0..]);
+    const raw = file_mod.readAll(&arena, FIXTURE_V2_OLD) catch return false;
+    if (contains(raw, "journal_viewed=")) return false;
+
+    // The current writer upgrades the old image by adding the key.
+    persist.saveWrite(P_RESAVE, &w, &e) catch return false;
+    const saved = fileContains(P_RESAVE, "journal_viewed=0,0");
+    removeIfExists(P_RESAVE);
+    return saved;
 }
 
 fn craftedBad(kind: i32) bool {
@@ -862,6 +888,7 @@ pub fn main() void {
     report("startup_recovery_precedes_fresh_install", tRecoveryPrecedesFreshInstall());
     report("backup_slot_writes_save1_manually", tBackupSlotManual());
     report("fixture_v2_canonical_resave", tFixtureCanonicalResave());
+    report("old_save_without_journal_viewed_loads", tOldSaveWithoutJournalViewedLoads());
     report("crafted_crc_valid_rejected", tCraftedCrcValidRejected());
     report("options_unknown_keys_skipped", tOptionsUnknownSkipped());
     report("trailing_content_after_crc_rejected", tTrailingAfterCrcRejected());

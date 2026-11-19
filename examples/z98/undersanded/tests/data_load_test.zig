@@ -232,7 +232,7 @@ fn tLoadMatchesFallback() bool {
     if (loaded.loaded != 1) return false;
 
     if (fb.text_count != 0) return false;
-    if (loaded.text_count != 1) return false;
+    if (loaded.text_count != 33) return false;
     if (!bytesEq(loaded.text_key[0], "manual.1")) return false;
 
     var text_bytes: usize = 0;
@@ -399,7 +399,7 @@ fn tOverrideLifecycle() bool {
     const text = "format=2\n[creatures]\nid=1,name=Mystic Eel,family=1,role=1,zone_mask=3,phase_mask=3,hp=71,resolve=80,speed=10,attack=6,thrash_regen=0,despair_regen=8,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sale=21,respawn_sub=3,respawn_kill=9,respawn_over=15,counter_tool=0\n[encounter]\nzone=0,phase=0,def_index=0,weight=31\n[text]\nmanual.1=Changed.\n";
     file_mod.writeAll(TMP_OVERRIDE, text) catch return false;
 
-    if (creatures.defCount() != 18) return false;
+    if (creatures.defCount() != 19) return false;
     if (creatures.defAt(0).hp != 70) return false;
     const fb_rows = tables.rows(0, 0);
     if (fb_rows.len != 5) return false;
@@ -417,7 +417,7 @@ fn tOverrideLifecycle() bool {
     if (ov_rows[0].weight != 31) return false;
 
     data.uninstall();
-    if (creatures.defCount() != 18) return false;
+    if (creatures.defCount() != 19) return false;
     if (creatures.defAt(0).hp != 70) return false;
     const back = tables.rows(0, 0);
     if (back.len != 5) return false;

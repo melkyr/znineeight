@@ -1,6 +1,6 @@
-// data_content_test.zig — native Linux assertions for the shipped M6
+// data_content_test.zig — native Linux assertions for the shipped M6/M8
 // data.z98 content: table counts, Z1-Z3 encounter sums, empty Z4-Z8 phases,
-// the 12-zone cost/boss ladder, and manual.1 (P24).
+// the 12-zone cost/boss ladder, the Derelict row, and manual.1 (P24/P26).
 //
 // Build/run (repo root):
 //   "$ZIG" -fsafe -W -osl --output-dir "$OUT" \
@@ -99,6 +99,28 @@ fn manualPresentNonEmpty(t: *const def.Tables) bool {
     return v.len > 0;
 }
 
+fn bossRowFields(t: *const def.Tables) bool {
+    if (t.def_count != 19) return false;
+    const d = t.defs[18];
+    if (d.id != 17) return false;
+    if (d.family != 13 or d.role != 4) return false;
+    if (d.zone_mask != 256 or d.phase_mask != 3) return false;
+    if (d.hp != 300 or d.resolve != 0) return false;
+    if (d.speed != 7 or d.attack != 10) return false;
+    if (d.subdue_chance != -1 or d.flags != def.F_BOSS) return false;
+    if (d.sale != 0) return false;
+    if (d.respawn[0] != 20 or d.respawn[1] != 20 or d.respawn[2] != 40) return false;
+    if (d.counter_tool != 1) return false;
+    if (d.kill[0].part != 2 or d.kill[0].count != 5) return false;
+    if (d.kill[1].part != 3 or d.kill[1].count != 3) return false;
+    if (d.kill[2].part != 6 or d.kill[2].count != 3) return false;
+    if (d.kill[3].part != 7 or d.kill[3].count != 2) return false;
+    if (d.kill[4].part != 5 or d.kill[4].count != 2) return false;
+    if (d.over[0].part != 2 or d.over[0].count != 2) return false;
+    if (d.over[1].part != 3 or d.over[1].count != 1) return false;
+    return true;
+}
+
 pub fn main() void {
     var arena = arena_mod.init(arena_buf[0..]);
     var t: def.Tables = undefined;
@@ -117,8 +139,8 @@ pub fn main() void {
     }
     report("shipped_data_validates_clean", valid);
 
-    report("defs_18", loaded and t.def_count == 18);
-    report("rules_4", loaded and t.rule_count == 4);
+    report("defs_19", loaded and t.def_count == 19);
+    report("rules_7", loaded and t.rule_count == 7);
     report("tools_7", loaded and t.tool_count == 7);
     report("upgrades_15", loaded and t.upgrade_count == 15);
     report("cosmetics_12", loaded and t.cosmetic_count == 12);
@@ -133,6 +155,7 @@ pub fn main() void {
 
     report("zones_12_cost_ladder", loaded and zoneCostLadder(&t));
     report("zone8_boss_only", loaded and zone8BossOnly(&t));
+    report("boss_row_fields", loaded and bossRowFields(&t));
     report("manual_1_present_nonempty", loaded and manualPresentNonEmpty(&t));
 
     if (fails != 0) os.exit(1);

@@ -16,6 +16,8 @@ const tables = @import("tables_t1.zig");
 const dock = @import("dock.zig");
 const economy = @import("economy.zig");
 const save_ux = @import("save_ux.zig");
+const journal = @import("journal.zig");
+const data = @import("data.zig");
 
 pub const COLS: usize = 80;
 pub const ROWS: usize = 30;
@@ -101,6 +103,25 @@ fn copyInto(out: []u8, start: usize, text: []const u8) usize {
     return p;
 }
 
+fn keyIntInto(prefix: []const u8, n: i32, out: []u8) []const u8 {
+    var p = copyInto(out, 0, prefix);
+    p = intInto(out, p, n);
+    return out[0..p];
+}
+
+fn journalMaskHas(s: *const def.GameState, d: i32) bool {
+    if (d < 0 or d >= 64) return false;
+    const word: usize = @intCast(usize, d / 32);
+    const bit: u32 = @intCast(u32, d % 32);
+    const m: u32 = @intCast(u32, 1) << bit;
+    return (s.world.journal_mask[word] & m) != 0;
+}
+
+fn speedRevealed(s: *const def.GameState) bool {
+    if (journalMaskHas(s, s.fight.def_index)) return true;
+    return s.fight.tool_active != 0 and s.fight.tool == fight.TOOL_SONAR;
+}
+
 fn barFill(value: i32, max: i32, width: i32) i32 {
     if (max <= 0 or width <= 0) return 0;
     if (value <= 0) return 0;
@@ -134,28 +155,10 @@ pub fn creatureName(d: *const def.CreatureDef) []const u8 {
     return d.name[0..@intCast(usize, d.name_len)];
 }
 
-// Effective Speed for display: base + stat-threshold bonus + Last Surge
-// (+2/surge, capped +6), matching fight.effectiveSpeed for the M2 rows. The
-// journal-based hiding rule (§8.8) arrives with journal entries at M8.
+// Effective Speed for display: delegate to the fight math so field-driven
+// bonuses, Last Surge, and rule ADD_SPEED rows agree exactly (Sonar reveal).
 pub fn effectiveSpeed(s: *const def.GameState, d: *const def.CreatureDef) i32 {
-    var sp = d.speed;
-
-    if (d.speed_below_th > 0) {
-        var below: bool = false;
-        if (d.speed_below_stat == fight.STAT_RES) {
-            below = s.fight.res * 100 < s.fight.max_res * d.speed_below_th;
-        } else {
-            below = s.fight.hp * 100 < s.fight.max_hp * d.speed_below_th;
-        }
-        if (below) sp += d.speed_below_add;
-    }
-
-    if (s.fight.surge_count > 0) {
-        var bonus = s.fight.surge_count * fight.LAST_SURGE_SPEED_ADD;
-        if (bonus > fight.LAST_SURGE_SPEED_CAP) bonus = fight.LAST_SURGE_SPEED_CAP;
-        sp += bonus;
-    }
-    return sp;
+    return fight.effectiveSpeed(s, d, creatures.rules());
 }
 
 pub fn roleName(role: i32) []const u8 {
@@ -247,6 +250,49 @@ fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " Hull.");
         },
+        fight.MSG_BLIND => {
+            p = copyInto(out, p, "Blinded - the next Strike misses.");
+        },
+        fight.MSG_INK => {
+            p = copyInto(out, p, "Ink clouds the water - your action is chosen for you.");
+        },
+        fight.MSG_DECOY => {
+            p = copyInto(out, p, "Your Strike tears through a decoy.");
+        },
+        fight.MSG_PHASE => {
+            p = copyInto(out, p, "The ray phases - your Strike passes through it.");
+        },
+        fight.MSG_LURE => {
+            p = copyInto(out, p, "The lure reveals ");
+            if (e.a == fight.LURE_REVEAL_DECOY) {
+                p = copyInto(out, p, "the real target - the decoy cannot hide.");
+            } else if (e.a == fight.PHASE_PHASED) {
+                p = copyInto(out, p, "Phase.");
+            } else {
+                p = copyInto(out, p, "Solid.");
+            }
+        },
+        fight.MSG_SONAR => {
+            const next = e.b % 10;
+            const phase = e.b / 10;
+            p = copyInto(out, p, "Sonar: Speed ");
+            p = intInto(out, p, e.a);
+            p = copyInto(out, p, ", next action ");
+            if (next == fight.CREATURE_ACT_FLEE) {
+                p = copyInto(out, p, "flee");
+            } else {
+                p = copyInto(out, p, "attack");
+            }
+            if ((d.flags & def.F_PHASING) != 0) {
+                if (phase == fight.PHASE_PHASED) {
+                    p = copyInto(out, p, ", Phase.");
+                } else {
+                    p = copyInto(out, p, ", Solid.");
+                }
+            } else {
+                p = copyInto(out, p, ".");
+            }
+        },
         else => {
             if (def.messageText(e.msg_id)) |text| {
                 p = copyInto(out, p, text);
@@ -337,7 +383,11 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
     x = put(sc, x, 1, "  ");
     x = put(sc, x, 1, roleName(d.role));
     x = put(sc, x, 1, "  SPD ");
-    _ = putInt(sc, x, 1, effectiveSpeed(s, d));
+    if (speedRevealed(s)) {
+        _ = putInt(sc, x, 1, effectiveSpeed(s, d));
+    } else {
+        _ = put(sc, x, 1, "??");
+    }
 
     putBar(sc, 3, "HP     ", s.fight.hp, s.fight.max_hp);
     putBar(sc, 4, "RESOLVE", s.fight.res, s.fight.max_res);
@@ -570,6 +620,9 @@ pub fn renderDock(s: *const def.GameState, sc: *Screen) void {
     _ = put(sc, x, 8, toolName(s.world.tool_selected));
 
     _ = put(sc, 0, 10, "[R]efine [U]pgrade [C]raft [B]uy [E]quip [T] Rest [D]epart [Q]uit");
+    if (journal.journalHasNew(&s.world)) {
+        _ = put(sc, 0, 11, "New journal entry - [J]ournal");
+    }
     _ = put(sc, 0, 12, "Hint: Hull persists between trips; dock Rest is safe.");
     if (save_ux.canSave(s)) |reason| {
         var sx = put(sc, 0, 13, "[Esc] Save - ");
@@ -862,6 +915,111 @@ pub fn securedLine(g: *const def.GameState, out: []u8) []const u8 {
     return out[0..p];
 }
 
+// Plain text block: '\n' is one line break, '\n\n' one blank row. Long lines
+// clip at the frame edge; authored prose wraps well below 80 columns.
+fn putTextBlock(sc: *Screen, y0: i32, text: []const u8, y_limit: i32) void {
+    const width: usize = 78;
+    var i: usize = 0;
+    var y = y0;
+    while (i < text.len and y < y_limit) {
+        if (text[i] == '\n') {
+            if (i + 1 < text.len and text[i + 1] == '\n') {
+                y += 2;
+                i += 2;
+            } else {
+                y += 1;
+                i += 1;
+            }
+            continue;
+        }
+
+        var line_end = i;
+        while (line_end < text.len and text[line_end] != '\n') : (line_end += 1) {}
+        var pos = i;
+        while (pos < line_end and y < y_limit) {
+            var take = line_end - pos;
+            if (take > width) take = width;
+            var has_break = false;
+            if (pos + take < line_end) {
+                var k = take;
+                while (k > 0) : (k -= 1) {
+                    if (text[pos + k - 1] == ' ') {
+                        take = k - 1;
+                        has_break = true;
+                        break;
+                    }
+                }
+            }
+            var k: usize = 0;
+            while (k < take) : (k += 1) {
+                const c = text[pos + k];
+                if (c != '\r') putChar(sc, @intCast(i32, k), y, c);
+            }
+            pos += take;
+            if (has_break and pos < line_end and text[pos] == ' ') pos += 1;
+            y += 1;
+        }
+        i = line_end;
+    }
+}
+
+// Journal list: entry i uses key i+1 (digit 1-9, then a-j). Locked entries
+// stay unnamed; unlocked-but-unviewed entries carry a '*'.
+pub fn renderJournal(s: *const def.GameState, sel: i32, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  JOURNAL");
+
+    if (sel > 0) {
+        const d = sel - 1;
+        var x = put(sc, 0, 1, "Entry ");
+        x = putInt(sc, x, 1, sel);
+        x = put(sc, x, 1, ": ");
+        if (d >= 0 and d < creatures.defCount()) {
+            var cdef = creatures.defAt(d);
+            _ = put(sc, x, 1, creatureName(&cdef));
+        }
+        var key_buf: [24]u8 = undefined;
+        const key = journal.journalKey(d, key_buf[0..]);
+        if (data.textFind(key)) |text| {
+            putTextBlock(sc, 3, text, ROWS - 2);
+        } else {
+            _ = put(sc, 0, 3, "(entry text unavailable)");
+        }
+        _ = put(sc, 0, ROWS - 1, "[Esc] Back to journal");
+        return;
+    }
+
+    var d: i32 = 0;
+    while (d < creatures.defCount() and d < 19) : (d += 1) {
+        const y = 2 + d;
+        var x: i32 = 0;
+        if (d < 9) {
+            putChar(sc, 0, y, @intCast(u8, '1' + d));
+        } else {
+            putChar(sc, 0, y, @intCast(u8, 'a' + (d - 9)));
+        }
+        x = put(sc, 2, y, " ");
+        if (journal.journalUnlocked(&s.world, d)) {
+            var cdef = creatures.defAt(d);
+            x = put(sc, x, y, creatureName(&cdef));
+            if (!journal.journalViewed(&s.world, d)) {
+                _ = put(sc, x, y, "  *NEW*");
+            }
+        } else {
+            _ = put(sc, x, y, "- unrecorded -");
+        }
+    }
+
+    _ = put(sc, 0, ROWS - 1, "[1-9,a-j] Read  [Esc] Back");
+}
+
+pub fn renderHelp(text: []const u8, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  HELP");
+    putTextBlock(sc, 2, text, ROWS - 2);
+    _ = put(sc, 0, ROWS - 1, "[Any key] Back");
+}
+
 pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  NODE");
@@ -887,6 +1045,12 @@ pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
         _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
     }
     _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");
+
+    var zkey: [24]u8 = undefined;
+    const ztext = keyIntInto("zone.", s.exp.zone + 1, zkey[0..]);
+    if (data.textFind(ztext)) |flavour| {
+        putTextBlock(sc, 11, flavour, ROWS - 1);
+    }
 }
 
 // ---- First run / menu / save error (§20, §32, §33) ------------------------

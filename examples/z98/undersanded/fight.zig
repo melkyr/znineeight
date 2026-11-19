@@ -57,12 +57,27 @@ pub const GRUDGE_ARMOR_PCT: i32 = 30;
 pub const TOOL_PLATE: i32 = 1;
 pub const TOOL_BRINE_NET: i32 = 2;
 pub const TOOL_ELECTRIC_GLAND: i32 = 3;
+pub const TOOL_LURE: i32 = 4;
 pub const TOOL_PRESSURE_HOOK: i32 = 5;
+pub const TOOL_SONAR: i32 = 6;
 pub const TOOL_CORAL_SHIELD: i32 = 7;
 
 pub const FLEE_HIT_PCT: i32 = 1;
 
-// Sonar lookahead vocabulary (M5: no ink/decoy yet).
+// Phasing (§25.8): Solid/Phase every 2 rounds, locked Phase below 30% HP.
+pub const PHASE_SOLID: i32 = 0;
+pub const PHASE_PHASED: i32 = 1;
+pub const PHASE_ROUND_SPAN: i32 = 2;
+pub const PHASE_LOCK_PCT: i32 = 30;
+pub const PHASE_SOLID_RESIST_PCT: i32 = 50;
+// MSG_LURE reveal kind for decoy/target creatures (0/1 are Solid/Phase).
+pub const LURE_REVEAL_DECOY: i32 = 2;
+
+// Ink (§25.5/§25.6): one draw maps to Strike/Restrain/Equipment, never Flee.
+pub const INK_ACT_MIN: i32 = 0;
+pub const INK_ACT_MAX: i32 = 2;
+
+// Sonar lookahead vocabulary (M8: latch-aware attack/flee prediction).
 pub const CREATURE_ACT_ATTACK: i32 = 1;
 pub const CREATURE_ACT_FLEE: i32 = 2;
 
@@ -86,6 +101,12 @@ pub const MSG_CREATURE_FLED: i32 = 12;
 pub const MSG_EQUIP: i32 = 13;
 pub const MSG_DISCHARGE: i32 = 14;
 pub const MSG_STUN: i32 = 17;
+pub const MSG_BLIND: i32 = 18;
+pub const MSG_INK: i32 = 19;
+pub const MSG_DECOY: i32 = 20;
+pub const MSG_PHASE: i32 = 21;
+pub const MSG_LURE: i32 = 22;
+pub const MSG_SONAR: i32 = 23;
 
 // ---- Log ------------------------------------------------------------------
 
@@ -160,10 +181,14 @@ pub fn startFightDef(s: *def.GameState, def_index: i32, cdef: *const def.Creatur
     s.fight.pending_blind = 0;
     s.fight.pending_ink = 0;
     s.fight.pending_flee = 0;
+    s.fight.pending_miss = 0;
     s.fight.pending_stun = 0;
     s.fight.active_armor_pct = cdef.armor_pct;
     s.fight.active_resist_restrain = cdef.resist_restrain_pct;
+    s.fight.rule_speed_add = 0;
+    s.fight.rule_atk_pct_add = 0;
     s.fight.cond = def.COND_NONE;
+    refreshPhase(s, cdef);
 
     const fi: u32 = @intCast(u32, s.exp.fight_index);
     const off: u32 = fi * @intCast(u32, 77);
@@ -229,6 +254,68 @@ fn surgeSpeedBonus(count: i32) i32 {
     return b;
 }
 
+// Persistent ADD_SPEED/MULT_ATK rows are evaluated on demand against the
+// current state (one-shot rows are latched into FightState by applyEffect).
+fn persistentSpeedAdd(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
+    var total: i32 = 0;
+    var dummy = s.fight.rule_consumed;
+    var ri: i32 = cdef.rule_start;
+    const end: i32 = cdef.rule_start + cdef.rule_count;
+    while (ri < end) : (ri += 1) {
+        if (ri < 0) continue;
+        const u: usize = @intCast(usize, ri);
+        if (u >= rules.len) continue;
+        if (rules[u].timing != behavior.TIMING_PERSISTENT) continue;
+        const fired = behavior.ruleFire(rules[u], s.fight.hp, s.fight.hp, s.fight.res, s.fight.res, s.fight.round, &dummy, ri);
+        if (fired) |e| {
+            if (e.op == behavior.ADD_SPEED) total += e.a;
+        }
+    }
+    return total;
+}
+
+fn persistentAtkPctAdd(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
+    var total: i32 = 0;
+    var dummy = s.fight.rule_consumed;
+    var ri: i32 = cdef.rule_start;
+    const end: i32 = cdef.rule_start + cdef.rule_count;
+    while (ri < end) : (ri += 1) {
+        if (ri < 0) continue;
+        const u: usize = @intCast(usize, ri);
+        if (u >= rules.len) continue;
+        if (rules[u].timing != behavior.TIMING_PERSISTENT) continue;
+        const fired = behavior.ruleFire(rules[u], s.fight.hp, s.fight.hp, s.fight.res, s.fight.res, s.fight.round, &dummy, ri);
+        if (fired) |e| {
+            if (e.op == behavior.MULT_ATK) total += e.a - PERCENT_BASE;
+        }
+    }
+    return total;
+}
+
+// §25.8 phasing: Solid/Phase alternates every two rounds; below 30% HP the
+// creature stays Phase. The flag is the sole VM exception (no phase op).
+pub fn phaseState(s: *const def.GameState) i32 {
+    if ((s.fight.flags & def.F_PHASING) == 0) return PHASE_SOLID;
+    if (belowPct(s.fight.hp, s.fight.max_hp, PHASE_LOCK_PCT)) return PHASE_PHASED;
+    var r = s.fight.round - 1;
+    if (r < 0) r = 0;
+    const half = r / PHASE_ROUND_SPAN;
+    return half % 2;
+}
+
+fn phasingResist(s: *const def.GameState) i32 {
+    if ((s.fight.flags & def.F_PHASING) == 0) return 0;
+    if (phaseState(s) == PHASE_SOLID) return PHASE_SOLID_RESIST_PCT;
+    return PERCENT_BASE;
+}
+
+fn refreshPhase(s: *def.GameState, cdef: *const def.CreatureDef) void {
+    s.fight.phase_state = phaseState(s);
+    if ((cdef.flags & def.F_PHASING) != 0) {
+        s.fight.active_resist_restrain = phasingResist(s);
+    }
+}
+
 pub fn effectiveSpeed(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
     var sp = cdef.speed;
 
@@ -243,19 +330,8 @@ pub fn effectiveSpeed(s: *const def.GameState, cdef: *const def.CreatureDef, rul
     }
 
     sp += surgeSpeedBonus(s.fight.surge_count);
-
-    var dummy = s.fight.rule_consumed;
-    var ri: i32 = cdef.rule_start;
-    const end: i32 = cdef.rule_start + cdef.rule_count;
-    while (ri < end) : (ri += 1) {
-        if (ri < 0) continue;
-        const u: usize = @intCast(usize, ri);
-        if (u >= rules.len) continue;
-        const fired = behavior.ruleFire(rules[u], s.fight.hp, s.fight.hp, s.fight.res, s.fight.res, s.fight.round, &dummy, ri);
-        if (fired) |e| {
-            if (e.op == behavior.ADD_SPEED) sp += e.a;
-        }
-    }
+    sp += persistentSpeedAdd(s, cdef, rules);
+    sp += s.fight.rule_speed_add;
 
     return sp;
 }
@@ -269,19 +345,8 @@ pub fn effectiveAttack(s: *const def.GameState, cdef: *const def.CreatureDef, ru
         }
     }
     if (s.fight.surge_atk_applied != 0) pct += LAST_SURGE_ATK_PP;
-
-    var dummy = s.fight.rule_consumed;
-    var ri: i32 = cdef.rule_start;
-    const end: i32 = cdef.rule_start + cdef.rule_count;
-    while (ri < end) : (ri += 1) {
-        if (ri < 0) continue;
-        const u: usize = @intCast(usize, ri);
-        if (u >= rules.len) continue;
-        const fired = behavior.ruleFire(rules[u], s.fight.hp, s.fight.hp, s.fight.res, s.fight.res, s.fight.round, &dummy, ri);
-        if (fired) |e| {
-            if (e.op == behavior.MULT_ATK) pct += e.a - PERCENT_BASE;
-        }
-    }
+    pct += persistentAtkPctAdd(s, cdef, rules);
+    pct += s.fight.rule_atk_pct_add;
 
     if (s.fight.cond == def.COND_EXPOSED) pct = math.applyPct(pct, EXPOSED_INCOMING_PCT);
 
@@ -293,7 +358,8 @@ pub fn creatureFirst(s: *const def.GameState, cdef: *const def.CreatureDef, rule
 }
 
 // Sonar lookahead (P22.3): copy the flat FightState, decide on the copy, and
-// discard it. M5 reports only attack/flee; M8 extends it with ink/decoy.
+// discard it. M8 extends the latch-aware view: pending ink/decoy/blind and the
+// phasing flip never mutate the real state, so repeated peeks are stable.
 pub fn peekCreatureAction(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
     var copy: def.GameState = undefined;
     copy.fight = s.fight;
@@ -336,6 +402,7 @@ pub fn effectiveArmorPct(s: *const def.GameState, cdef: *const def.CreatureDef, 
 
 pub fn effectiveResistRestrain(s: *const def.GameState) i32 {
     var r = s.fight.active_resist_restrain;
+    if ((s.fight.flags & def.F_PHASING) != 0) r = phasingResist(s);
     if (r <= 0) r = PERCENT_BASE;
     if (s.fight.tool_active != 0 and s.fight.tool == TOOL_BRINE_NET) r = PERCENT_BASE;
     return r;
@@ -349,14 +416,27 @@ fn shieldActive(s: *const def.GameState) bool {
     return s.fight.tool_active != 0 and s.fight.tool == TOOL_CORAL_SHIELD;
 }
 
+fn lureActive(s: *const def.GameState) bool {
+    return s.fight.tool_active != 0 and s.fight.tool == TOOL_LURE;
+}
+
+fn sonarActive(s: *const def.GameState) bool {
+    return s.fight.tool_active != 0 and s.fight.tool == TOOL_SONAR;
+}
+
 fn resetActive(s: *def.GameState, cdef: *const def.CreatureDef) void {
     s.fight.active_armor_pct = cdef.armor_pct;
-    s.fight.active_resist_restrain = cdef.resist_restrain_pct;
+    if ((cdef.flags & def.F_PHASING) != 0) {
+        s.fight.active_resist_restrain = phasingResist(s);
+    } else {
+        s.fight.active_resist_restrain = cdef.resist_restrain_pct;
+    }
+    s.fight.phase_state = phaseState(s);
 }
 
 // ---- Rule VM dispatch -----------------------------------------------------
 
-fn applyEffect(s: *def.GameState, e: def.Effect) void {
+fn applyEffect(s: *def.GameState, e: def.Effect, timing: i32) void {
     switch (e.op) {
         behavior.REGEN_RES => {
             s.fight.res = std_math.min(s.fight.max_res, s.fight.res + e.a);
@@ -387,23 +467,51 @@ fn applyEffect(s: *def.GameState, e: def.Effect) void {
             }
         },
         behavior.SET_BLIND => {
-            if (e.b != 0) {
-                s.fight.pending_blind = e.b;
-            } else {
-                s.fight.pending_blind = e.a;
-            }
+            // Lure reveals the true shape and suppresses blind (§10/§14.5).
+            if (lureActive(s)) return;
+            const chance = if (e.b != 0) e.b else e.a;
+            s.fight.pending_blind = chance;
         },
         behavior.SET_INK => {
-            if (e.b != 0) {
-                s.fight.pending_ink = e.b;
-            } else {
-                s.fight.pending_ink = e.a;
-            }
+            // Sonar prevents ink (§10/§14.5).
+            if (sonarActive(s)) return;
+            const v = if (e.b != 0) e.b else e.a;
+            s.fight.pending_ink = if (v != 0) v else PENDING_ON;
         },
-        behavior.ADD_SPEED => {},
-        behavior.MULT_ATK => {},
-        behavior.MISS_STRIKE => {},
+        behavior.ADD_SPEED => {
+            // One-shot rows latch their bonus; persistent rows are folded by
+            // effectiveSpeed against the current state (§25.6 applied once).
+            if (timing == behavior.TIMING_ONESHOT) s.fight.rule_speed_add += e.a;
+        },
+        behavior.MULT_ATK => {
+            // One-shot rows latch their pp; persistent rows are folded by
+            // effectiveAttack (single applyPct after all multipliers).
+            if (timing == behavior.TIMING_ONESHOT) s.fight.rule_atk_pct_add += e.a - PERCENT_BASE;
+        },
+        behavior.MISS_STRIKE => {
+            // Decoy: the next Strike misses deterministically unless Lure.
+            if (lureActive(s)) return;
+            s.fight.pending_miss = PENDING_ON;
+        },
         else => {},
+    }
+}
+
+// FIRST_ROUND decoy rows must arm before the player's round-1 action, so this
+// pre-action pass evaluates only MISS_STRIKE rows (and honours their consumed
+// bit). The regular post-action applyRules pass then sees the bit set.
+fn armStrikeRules(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
+    var ri: i32 = cdef.rule_start;
+    const end: i32 = cdef.rule_start + cdef.rule_count;
+    while (ri < end) : (ri += 1) {
+        if (ri < 0) continue;
+        const u: usize = @intCast(usize, ri);
+        if (u >= rules.len) continue;
+        if (rules[u].effect_op != behavior.MISS_STRIKE) continue;
+        const fired = behavior.ruleFire(rules[u], s.fight.hp, s.fight.hp, s.fight.res, s.fight.res, s.fight.round, &s.fight.rule_consumed, ri);
+        if (fired) |e| {
+            applyEffect(s, e, rules[u].timing);
+        }
     }
 }
 
@@ -417,7 +525,7 @@ fn applyRules(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const be
         if (u >= rules.len) continue;
         const fired = behavior.ruleFire(rules[u], s.fight.prev_hp, s.fight.hp, s.fight.prev_res, s.fight.res, s.fight.round, &s.fight.rule_consumed, ri);
         if (fired) |e| {
-            applyEffect(s, e);
+            applyEffect(s, e, rules[u].timing);
         }
     }
 }
@@ -495,6 +603,43 @@ pub fn strikePct(cond: i32, armor_pct: i32) i32 {
 }
 
 fn strike(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
+    // Phasing: a Phase Strike misses deterministically (§25.8).
+    var phase_miss = false;
+    if ((s.fight.flags & def.F_PHASING) != 0) {
+        if (phaseState(s) == PHASE_PHASED) phase_miss = true;
+    }
+
+    // Blind rolls exactly one draw at Strike time (Lure suppresses; §25.5).
+    var blind_miss = false;
+    if (s.fight.pending_blind != 0) {
+        const chance = s.fight.pending_blind;
+        if (!lureActive(s)) {
+            const roll = rng.rngRange(&s.fight.rng_state, SUBDUE_ROLL_MIN, SUBDUE_ROLL_MAX);
+            blind_miss = roll <= chance;
+        }
+        s.fight.pending_blind = 0;
+    }
+
+    // Decoy misses deterministically (no draw); Lure suppresses it.
+    var decoy_miss = false;
+    if (s.fight.pending_miss != 0) {
+        if (!lureActive(s)) decoy_miss = true;
+        s.fight.pending_miss = 0;
+    }
+
+    if (phase_miss) {
+        log(s, def.LOG_NORMAL, MSG_PHASE, 0, 0);
+        return;
+    }
+    if (decoy_miss) {
+        log(s, def.LOG_NORMAL, MSG_DECOY, 0, 0);
+        return;
+    }
+    if (blind_miss) {
+        log(s, def.LOG_NORMAL, MSG_BLIND, 0, 0);
+        return;
+    }
+
     var dmg = rng.rngRange(&s.fight.rng_state, STRIKE_MIN, STRIKE_MAX);
     dmg = math.applyPct(dmg, strikePct(s.fight.cond, effectiveArmorPct(s, cdef, rules)));
     if (dmg < 0) dmg = 0;
@@ -542,6 +687,23 @@ fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
             s.exp.tool_charge = s.fight.tool_charge;
             log(s, def.LOG_NORMAL, MSG_EQUIP, s.fight.tool, 0);
             if (s.fight.tool == TOOL_ELECTRIC_GLAND) s.fight.pending_stun = 1;
+            if (s.fight.tool == TOOL_LURE) {
+                // Lure reveals only creatures whose identity is concealed:
+                // Solid/Phase for a phaser, the true target for a decoy.
+                if ((cdef.flags & def.F_PHASING) != 0) {
+                    log(s, def.LOG_NORMAL, MSG_LURE, phaseState(s), 0);
+                } else if ((cdef.flags & def.F_DECOY) != 0) {
+                    log(s, def.LOG_NORMAL, MSG_LURE, LURE_REVEAL_DECOY, 0);
+                }
+            }
+            if (s.fight.tool == TOOL_SONAR) {
+                var reveal = peekCreatureAction(s, cdef, rules);
+                // Sonar also shows the Ghost-Ray phase flip (encoded as tens).
+                if ((cdef.flags & def.F_PHASING) != 0) {
+                    reveal += phaseState(s) * 10;
+                }
+                log(s, def.LOG_NORMAL, MSG_SONAR, effectiveSpeed(s, cdef, rules), reveal);
+            }
         },
         def.ACT_FLEE => {
             s.fight.outcome = def.OUT_PLAYER_FLED;
@@ -647,14 +809,35 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
         return;
     }
 
+    refreshPhase(s, cdef);
+    armStrikeRules(s, cdef, rules);
+
     switch (a.kind) {
         def.ACT_STRIKE, def.ACT_RESTRAIN, def.ACT_EQUIP, def.ACT_FLEE => {},
         else => return,
     }
 
+    // Ink: the next combat action is randomised with one draw (never Flee).
+    // Sonar suppresses the effect; the latch is cleared either way.
+    var act = a;
+    if (s.fight.pending_ink != 0) {
+        s.fight.pending_ink = 0;
+        if (!sonarActive(s)) {
+            const roll = rng.rngRange(&s.fight.rng_state, INK_ACT_MIN, INK_ACT_MAX);
+            var forced = def.ACT_STRIKE;
+            if (roll == 1) {
+                forced = def.ACT_RESTRAIN;
+            } else if (roll == 2) {
+                forced = def.ACT_EQUIP;
+            }
+            act = def.Action{ .kind = forced, .arg = 0 };
+            log(s, def.LOG_NORMAL, MSG_INK, forced, 0);
+        }
+    }
+
     // EQUIP is refused before turn order: no round, no creature action, no RNG.
     // The equipped tool comes from Depart; the action arg is never consulted.
-    if (a.kind == def.ACT_EQUIP) {
+    if (act.kind == def.ACT_EQUIP) {
         const equipped = if (s.fight.tool != 0) s.fight.tool else s.exp.tool;
         if (!tools.canEquip(s, equipped)) return;
         if (s.fight.tool == 0) {
@@ -675,7 +858,7 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
 
     s.fight.prev_hp = s.fight.hp;
     s.fight.prev_res = s.fight.res;
-    playerAction(s, a, cdef, rules);
+    playerAction(s, act, cdef, rules);
     if (s.fight.outcome != def.OUT_ONGOING) return;
 
     // Exactly one rule evaluation per action, using the pre-action values.

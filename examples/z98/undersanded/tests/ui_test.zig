@@ -108,6 +108,15 @@ fn dumpScreen(sc: *const render.Screen, out: []u8) []const u8 {
     return render.dump(sc, out);
 }
 
+fn revealJournal(s: *def.GameState, d: i32) void {
+    if (d < 0 or d >= 64) return;
+    const word: usize = @intCast(usize, d / 32);
+    const bit: u32 = @intCast(u32, d % 32);
+    const mask = &s.world.journal_mask;
+    const old: u32 = mask[word];
+    mask[word] = old | (@intCast(u32, 1) << bit);
+}
+
 fn tRenderFightFrame() bool {
     var s: def.GameState = undefined;
     game.newGame(&s);
@@ -118,7 +127,7 @@ fn tRenderFightFrame() bool {
     render.renderFrame(&s, &d, &sc);
 
     var buf: [4096]u8 = undefined;
-    const text = dumpScreen(&sc, buf[0..]);
+    var text = dumpScreen(&sc, buf[0..]);
 
     if (!contains(text, "HP")) return false;
     if (!contains(text, "RESOLVE")) return false;
@@ -128,9 +137,13 @@ fn tRenderFightFrame() bool {
     if (!contains(text, "100/100")) return false;
     if (!contains(text, "Steel Tuna")) return false;
     if (!contains(text, "common")) return false;
-    if (!contains(text, "SPD 6")) return false;
+    if (!contains(text, "SPD ??")) return false;
     if (!contains(text, "[S]trike [R]estrain [E]quipment [F]lee")) return false;
-    return true;
+
+    revealJournal(&s, 2);
+    render.renderFrame(&s, &d, &sc);
+    text = dumpScreen(&sc, buf[0..]);
+    return contains(text, "SPD 6");
 }
 
 fn tRenderNoMutation() bool {
@@ -207,6 +220,7 @@ fn tRenderEffectiveSpeed() bool {
     game.newGame(&s);
     game.startFight(&s, 2);
     const d = creatures.defAt(2);
+    revealJournal(&s, 2);
 
     var sc: render.Screen = undefined;
     var buf: [4096]u8 = undefined;
@@ -226,6 +240,7 @@ fn tRenderSurgedSpeed() bool {
     game.newGame(&s);
     game.startFight(&s, 0);
     const d = creatures.defAt(0);
+    revealJournal(&s, 0);
 
     fight.lastSurge(&s);
     fight.lastSurge(&s);
@@ -303,7 +318,7 @@ fn tRenderModal() bool {
 // ---- Creature table completeness (spec §14.2/§14.3) -----------------------
 
 fn tCreatureTable() bool {
-    if (creatures.DEFS.len != 18) return false;
+    if (creatures.DEFS.len != 19) return false;
 
     const ids = [5]i32{ 1, 2, 4, 18, 19 };
     const hps = [5]i32{ 70, 80, 120, 95, 105 };
@@ -364,7 +379,7 @@ fn tCreatureBehaviors() bool {
     if (perch.flee_kind != fight.FLEE_HIT_PCT) return false;
     if (perch.flee_th != 20) return false;
 
-    if (creatures.RULES.len != 4) return false;
+    if (creatures.RULES.len != 7) return false;
     const r0 = creatures.RULES[0];
     if (r0.cond_op != behavior.RES_BELOW or r0.cond_a != 50) return false;
     if (r0.effect_op != behavior.HULL_DMG or r0.effect_a != 8) return false;

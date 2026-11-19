@@ -24,6 +24,8 @@ fn knownState(g: *def.GameState) void {
     w.seen_mask[1] = 0;
     w.journal_mask[0] = 0x00000003;
     w.journal_mask[1] = 0;
+    w.journal_viewed[0] = 0x00000001;
+    w.journal_viewed[1] = 0;
     w.tooltip_shown = 0xABCDEF;
     w.field_phases = 23;
     w.hull = 150;

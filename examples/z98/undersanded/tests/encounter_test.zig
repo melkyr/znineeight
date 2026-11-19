@@ -121,8 +121,8 @@ fn poolWeightOf(defs: *const [def.MAX_ENCOUNTER]i32, weights: *const [def.MAX_EN
 }
 
 fn tDefsGrown() bool {
-    if (creatures.defCount() != 18) return false;
-    if (creatures.DEFS.len != 18) return false;
+    if (creatures.defCount() != 19) return false;
+    if (creatures.DEFS.len != 19) return false;
     if (creatures.defAt(0).id != 1) return false;
     if (creatures.defAt(1).id != 2) return false;
     if (creatures.defAt(2).id != 4) return false;

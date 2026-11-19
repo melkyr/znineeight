@@ -242,6 +242,9 @@ fn tSaveErrorVersionOne() bool {
         .armed = 0,
         .last = nav.NAV_RESULT_NONE,
         .save_err_kind = save_ux.saveErrKind(err),
+        .help_page = nav.HELP_PAGE_NONE,
+        .tip = nav.TIP_NONE,
+        .journal_sel = 0,
     };
     var nav_buf: [8192]u8 = undefined;
     const nav_text = nav.drawCurrent(&g, &st, nav_buf[0..]);

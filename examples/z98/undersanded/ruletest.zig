@@ -46,7 +46,9 @@ fn fixtureFight() def.FightState {
         .rng_state = 0,
         .rule_consumed = 0,
         .pending_blind = 0, .pending_ink = 0, .pending_flee = 0,
+        .pending_miss = 0,
         .active_armor_pct = 100, .active_resist_restrain = 100,
+        .rule_speed_add = 0, .rule_atk_pct_add = 0,
         .cond = def.COND_NONE,
         .pending_stun = 0,
     };
