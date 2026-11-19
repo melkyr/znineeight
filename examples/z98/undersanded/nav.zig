@@ -424,6 +424,13 @@ pub fn navRun(g: *def.GameState) void {
         io.write("> ");
         const key = input.readKey() orelse return;
 
+        // A help overlay owns the next key: dismiss it and consume the key
+        // before the dock save/quit intercept or any field action can run.
+        if (st.help_page != HELP_PAGE_NONE) {
+            st.help_page = HELP_PAGE_NONE;
+            continue;
+        }
+
         if (g.screen == NAV_DOCK) {
             if (isEsc(key)) {
                 const save = save_ux.dockSave(g, dir);
