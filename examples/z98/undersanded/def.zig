@@ -7,7 +7,7 @@
 
 pub const MAX_CREATURES: usize = 56;
 pub const MAX_ZONES: usize = 12;
-pub const MAX_DROP_LINES: usize = 4;
+pub const MAX_DROP_LINES: usize = 6;
 pub const MAX_TOOLS: usize = 8;
 pub const MAX_PARTS: usize = 14;
 pub const MAX_MATERIALS: usize = 10;
@@ -124,7 +124,9 @@ pub const FightState = struct {
     rng_state: u32,
     rule_consumed: u32,
     pending_blind: i32, pending_ink: i32, pending_flee: i32,
+    pending_miss: i32,
     active_armor_pct: i32, active_resist_restrain: i32,
+    rule_speed_add: i32, rule_atk_pct_add: i32,
     cond: i32,
     pending_stun: i32,
 };
@@ -261,6 +263,30 @@ pub const MESSAGES = [_]MsgRow{
     MsgRow{
         .id = 17,
         .text = "The creature is stunned and loses its action.",
+    },
+    MsgRow{
+        .id = 18,
+        .text = "Blinded - the next Strike misses.",
+    },
+    MsgRow{
+        .id = 19,
+        .text = "Ink clouds the water - your action is chosen for you.",
+    },
+    MsgRow{
+        .id = 20,
+        .text = "Your Strike tears through a decoy.",
+    },
+    MsgRow{
+        .id = 21,
+        .text = "The ray phases - your Strike passes through it.",
+    },
+    MsgRow{
+        .id = 22,
+        .text = "The lure reveals the creature's true shape.",
+    },
+    MsgRow{
+        .id = 23,
+        .text = "Sonar: speed and next action revealed.",
     },
 };
 

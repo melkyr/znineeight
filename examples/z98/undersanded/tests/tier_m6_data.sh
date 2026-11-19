@@ -12,8 +12,8 @@
 #     committed tests/fixtures/defs_golden.txt, rerun for determinism, prove a
 #     missing arg exits 2, and prove two different input files dump differently
 #     (dump uses the argument, never the installed/fallback tables)
-#   * load the shipped data.z98 through data_content_test and assert 18 defs,
-#     4 rules, 7 tools, 15 upgrades, 12 cosmetics, Z1-Z3 encounter sums 100,
+#   * load the shipped data.z98 through data_content_test and assert 19 defs,
+#     7 rules, 7 tools, 15 upgrades, 12 cosmetics, Z1-Z3 encounter sums 100,
 #     Z4-Z8 phases empty, the 12-zone ladder with zone 8 boss=1, and manual.1
 #   * 56-creature boundary (accept) / 57 (reject) from /tmp fixtures generated
 #     in shell from the real shipped creature rows (no 57-row file committed)
@@ -110,7 +110,8 @@ done
 
 CONTENT_TEST_LOG="$OUT/content_test/run.log"
 for c in creature_names_nonempty_unique_24 creature_masks_match_s14_2 \
-    creature_drops_match_s14_4 tables_size_within_32k_budget; do
+    creature_drops_match_s14_4 boss_row_pins_s14_2_fields \
+    tables_size_within_budget; do
     require_case "$CONTENT_TEST_LOG" "$c"
 done
 
@@ -145,13 +146,13 @@ done
 # ---------------------------------------------------------------------------
 echo "== FAST: shipped data.z98 content =="
 CONTENT_LOG="$OUT/data_content_test/run.log"
-for c in shipped_data_loads shipped_data_validates_clean defs_18 rules_4 \
+for c in shipped_data_loads shipped_data_validates_clean defs_19 rules_7 \
     tools_7 upgrades_15 cosmetics_12 \
     encounters_z1_day_sum_100 encounters_z1_night_sum_100 \
     encounters_z2_day_sum_100 encounters_z2_night_sum_100 \
     encounters_z3_day_sum_100 encounters_z3_night_sum_100 \
     encounters_z4_z8_phases_empty zones_12_cost_ladder zone8_boss_only \
-    manual_1_present_nonempty; do
+    boss_row_fields manual_1_present_nonempty; do
     require_case "$CONTENT_LOG" "$c"
 done
 
@@ -282,10 +283,10 @@ while IFS= read -r line; do
     esac
 done <"$DATA" >"$ROW_SRC"
 REAL_ROWS="$(grep -c '^id=' "$ROW_SRC" || true)"
-if [ "$REAL_ROWS" -eq 18 ]; then
-    pass_case "extracted 18 real creature rows from data.z98"
+if [ "$REAL_ROWS" -eq 19 ]; then
+    pass_case "extracted 19 real creature rows from data.z98"
 else
-    fail_case "expected 18 real creature rows, got $REAL_ROWS"
+    fail_case "expected 19 real creature rows, got $REAL_ROWS"
 fi
 
 CAP56="$OUT/cap56.z98"
@@ -293,14 +294,13 @@ CAP57="$OUT/cap57.z98"
 {
     printf 'format=2\n[creatures]\n'
     n=0
-    while [ "$n" -lt 3 ]; do cat "$ROW_SRC"; n=$((n + 1)); done
-    head -n 2 "$ROW_SRC"
+    while [ "$n" -lt 2 ]; do cat "$ROW_SRC"; n=$((n + 1)); done
+    head -n 18 "$ROW_SRC"
 } >"$CAP56"
 {
     printf 'format=2\n[creatures]\n'
     n=0
     while [ "$n" -lt 3 ]; do cat "$ROW_SRC"; n=$((n + 1)); done
-    head -n 3 "$ROW_SRC"
 } >"$CAP57"
 
 C56="$(grep -c '^id=' "$CAP56" || true)"

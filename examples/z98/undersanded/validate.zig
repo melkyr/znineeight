@@ -10,9 +10,9 @@ const def = @import("def.zig");
 const data = @import("data.zig");
 
 const ROLE_MIN: i32 = 1;
-const ROLE_MAX: i32 = 3;
+const ROLE_MAX: i32 = 4;
 const FAMILY_MIN: i32 = 1;
-const FAMILY_MAX: i32 = 12;
+const FAMILY_MAX: i32 = 13;
 const COND_MIN: i32 = 1;
 const COND_MAX: i32 = 5;
 const EFFECT_MIN: i32 = 1;
@@ -116,7 +116,21 @@ pub fn validateAll(t: *const def.Tables) data.LoadErr!void {
             }
         }
 
-        if (d.sale <= 0) {
+        // P26/C1: the Derelict boss is the only row allowed a zero sale price
+        // or zero Resolve. Negative values remain invalid for every row.
+        if (d.sale < 0) {
+            at(line);
+            return error.BadRef;
+        }
+        if (d.sale == 0 and !is_boss) {
+            at(line);
+            return error.BadRef;
+        }
+        if (d.resolve < 0) {
+            at(line);
+            return error.BadRef;
+        }
+        if (d.resolve == 0 and !is_boss) {
             at(line);
             return error.BadRef;
         }

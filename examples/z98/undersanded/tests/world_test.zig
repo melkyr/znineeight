@@ -374,15 +374,15 @@ fn tFleeOngoingNoop() bool {
     return true;
 }
 
-// A def row not yet authored (index 18, beyond the roster) is a no-op, not a
-// defAt panic.
+// A def row not yet authored (index 19, beyond the 19-row roster) is a no-op,
+// not a defAt panic.
 fn tUndefinedDefNoop() bool {
-    if (creatures.defCount() != 18) return false;
+    if (creatures.defCount() != 19) return false;
     var w = blankWorld();
     w.cycle = 3;
-    w.ready[18] = 42;
-    world.markTaken(&w, 0, 18, def.OUT_OVERKILL);
-    if (w.ready[18] != 42) return false;
+    w.ready[19] = 42;
+    world.markTaken(&w, 0, 19, def.OUT_OVERKILL);
+    if (w.ready[19] != 42) return false;
     if (w.lockout_until[0] != 0) return false;
     if (w.family_overkill_mask != 0) return false;
     return true;

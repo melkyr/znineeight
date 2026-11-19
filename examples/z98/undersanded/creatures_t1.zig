@@ -2,8 +2,9 @@
 //
 // The fight resolver reads this table by dense index. Indices 0..4 are the
 // original M2 rows (M3's token table and its tests depend on them); M4 appends
-// rows 5..17, the 13 missing non-boss T1 creatures. All fields are explicit
-// (R8) and every numeric literal mirrors spec §14.2/§14.3/§14.4.
+// rows 5..17, the 13 missing non-boss T1 creatures; M8 appends index 18, the
+// Derelict boss sentinel. All fields are explicit (R8) and every numeric
+// literal mirrors spec §14.2/§14.3/§14.4.
 
 const def = @import("def.zig");
 const behavior = @import("behavior.zig");
@@ -12,6 +13,7 @@ const behavior = @import("behavior.zig");
 pub const ROLE_COMMON: i32 = 1;
 pub const ROLE_NAMED: i32 = 2;
 pub const ROLE_RARE: i32 = 3;
+pub const ROLE_BOSS: i32 = 4;
 
 // `speed_below_stat` / `discharge_stat` vocabulary (fight.zig consumes these).
 pub const STAT_HP: i32 = 1;
@@ -30,6 +32,7 @@ pub const FAMILY_ANGLER: i32 = 9;
 pub const FAMILY_ANEMONE: i32 = 10;
 pub const FAMILY_PERCH: i32 = 11;
 pub const FAMILY_WRASSE: i32 = 12;
+pub const FAMILY_BOSS: i32 = 13;
 
 // Grudge vocabulary (§10; applied from M5).
 pub const GRUDGE_RES: i32 = 1;
@@ -116,14 +119,20 @@ fn blank() def.CreatureDef {
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
         },
         .kill = [def.MAX_DROP_LINES]def.DropLine{
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
         },
         .over = [def.MAX_DROP_LINES]def.DropLine{
+            def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
@@ -553,6 +562,8 @@ fn abyssalLanternJelly() def.CreatureDef {
     d.kill[0] = drop(PART_GLOW_POLYP, 1);
     d.kill[1] = drop(PART_BRINE_VIAL, 1);
     d.over[0] = drop(PART_BRINE_VIAL, 1);
+    d.rule_start = 4;
+    d.rule_count = 1;
     return d;
 }
 
@@ -612,6 +623,8 @@ fn glassSquid() def.CreatureDef {
     d.kill[0] = drop(PART_GLASS_PANE, 1);
     d.kill[1] = drop(PART_BRINE_VIAL, 1);
     d.over[0] = drop(PART_BRINE_VIAL, 1);
+    d.rule_start = 5;
+    d.rule_count = 1;
     return d;
 }
 
@@ -642,6 +655,8 @@ fn brineAngler() def.CreatureDef {
     d.kill[0] = drop(PART_GLOW_POLYP, 1);
     d.kill[1] = drop(PART_BRINE_VIAL, 1);
     d.over[0] = drop(PART_BRINE_VIAL, 1);
+    d.rule_start = 6;
+    d.rule_count = 1;
     return d;
 }
 
@@ -677,10 +692,40 @@ fn ironcladWrasse() def.CreatureDef {
     return d;
 }
 
+// Index 18 — The Derelict boss sentinel row (§14.2/§14.4, P26/C1).
+// The Phase 1/2/3 fight itself is M11; M8 pins the load-order row only.
+fn derelict() def.CreatureDef {
+    var d = named(blank(), "The Derelict");
+    d.id = 17;
+    d.family = FAMILY_BOSS;
+    d.role = ROLE_BOSS;
+    d.zone_mask = 256;
+    d.phase_mask = 3;
+    d.hp = 300;
+    d.resolve = 0;
+    d.speed = 7;
+    d.attack = 10;
+    d.subdue_chance = -1;
+    d.flags = def.F_BOSS;
+    d.sale = 0;
+    d.respawn[0] = 20;
+    d.respawn[1] = 20;
+    d.respawn[2] = 40;
+    d.counter_tool = TOOL_PLATE;
+    d.kill[0] = drop(PART_PLATE_SCRAP, 5);
+    d.kill[1] = drop(PART_GLAND_SAC, 3);
+    d.kill[2] = drop(PART_GLOW_POLYP, 3);
+    d.kill[3] = drop(PART_GLASS_PANE, 2);
+    d.kill[4] = drop(PART_CORAL_BUD, 2);
+    d.over[0] = drop(PART_PLATE_SCRAP, 2);
+    d.over[1] = drop(PART_GLAND_SAC, 1);
+    return d;
+}
+
 // Single source of truth for the T1 rows. Indices 0..4 are the M2/M3 sim
 // creatures and must not move (the token table and their tests depend on it);
-// indices 5..17 are the 13 M4 rows in dense order.
-pub const DEFS = [18]def.CreatureDef{
+// indices 5..17 are the 13 M4 rows in dense order; index 18 is the Derelict.
+pub const DEFS = [19]def.CreatureDef{
     mysticEel(),
     mysticElectricEel(),
     steelTuna(),
@@ -699,6 +744,7 @@ pub const DEFS = [18]def.CreatureDef{
     glassSquid(),
     brineAngler(),
     ironcladWrasse(),
+    derelict(),
 };
 
 pub fn defCount() i32 {
@@ -732,6 +778,7 @@ pub fn defAt(index: i32) def.CreatureDef {
         15 => return DEFS[15],
         16 => return DEFS[16],
         17 => return DEFS[17],
+        18 => return DEFS[18],
         else => @panic("defAt: invalid creature index"),
     }
 }
@@ -779,6 +826,33 @@ pub const RULES = [_]behavior.Rule{
         .cond_b = 0,
         .effect_op = behavior.HULL_DMG,
         .effect_a = 10,
+        .effect_b = 0,
+        .timing = behavior.TIMING_ONESHOT,
+    },
+    behavior.Rule{
+        .cond_op = behavior.RES_BELOW,
+        .cond_a = 65,
+        .cond_b = 0,
+        .effect_op = behavior.SET_BLIND,
+        .effect_a = 0,
+        .effect_b = 50,
+        .timing = behavior.TIMING_PERSISTENT,
+    },
+    behavior.Rule{
+        .cond_op = behavior.ROUND_MOD,
+        .cond_a = 3,
+        .cond_b = 0,
+        .effect_op = behavior.SET_INK,
+        .effect_a = 0,
+        .effect_b = 0,
+        .timing = behavior.TIMING_PERSISTENT,
+    },
+    behavior.Rule{
+        .cond_op = behavior.FIRST_ROUND,
+        .cond_a = 0,
+        .cond_b = 0,
+        .effect_op = behavior.MISS_STRIKE,
+        .effect_a = 0,
         .effect_b = 0,
         .timing = behavior.TIMING_ONESHOT,
     },

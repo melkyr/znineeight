@@ -303,7 +303,7 @@ fn tRenderModal() bool {
 // ---- Creature table completeness (spec §14.2/§14.3) -----------------------
 
 fn tCreatureTable() bool {
-    if (creatures.DEFS.len != 18) return false;
+    if (creatures.DEFS.len != 19) return false;
 
     const ids = [5]i32{ 1, 2, 4, 18, 19 };
     const hps = [5]i32{ 70, 80, 120, 95, 105 };
@@ -364,7 +364,7 @@ fn tCreatureBehaviors() bool {
     if (perch.flee_kind != fight.FLEE_HIT_PCT) return false;
     if (perch.flee_th != 20) return false;
 
-    if (creatures.RULES.len != 4) return false;
+    if (creatures.RULES.len != 7) return false;
     const r0 = creatures.RULES[0];
     if (r0.cond_op != behavior.RES_BELOW or r0.cond_a != 50) return false;
     if (r0.effect_op != behavior.HULL_DMG or r0.effect_a != 8) return false;

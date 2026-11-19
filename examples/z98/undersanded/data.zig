@@ -16,7 +16,8 @@ const tables_t1 = @import("tables_t1.zig");
 // §25.10 row-line cap (bytes, \r excluded).
 pub const MAX_LINE: usize = 4096;
 
-// Broadest authored row is [creatures] at 61 keys; 80 leaves headroom.
+// Broadest authored row is [creatures] at 73 keys (MAX_DROP_LINES=6); 80
+// leaves headroom.
 pub const ROW_MAX: usize = 80;
 
 pub const RowField = struct { key: []const u8, val: []const u8 };
@@ -351,14 +352,20 @@ fn zeroDef() def.CreatureDef {
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
         },
         .kill = [def.MAX_DROP_LINES]def.DropLine{
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
         },
         .over = [def.MAX_DROP_LINES]def.DropLine{
+            def.DropLine{ .part = 0, .count = 0 },
+            def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
             def.DropLine{ .part = 0, .count = 0 },
@@ -520,7 +527,7 @@ pub fn buildFallback(out: *def.Tables) void {
 
 // ---- schemas --------------------------------------------------------------
 
-const CREATURE_KEYS = [61][]const u8{
+const CREATURE_KEYS = [73][]const u8{
     "id", "name", "family", "role", "zone_mask", "phase_mask", "hp", "resolve",
     "speed", "attack", "thrash_regen", "despair_regen", "armor_pct", "flags",
     "resist_restrain_pct", "blind_chance", "subdue_chance", "discharge_stat",
@@ -530,19 +537,22 @@ const CREATURE_KEYS = [61][]const u8{
     "grudge_value",
     "sub0_part", "sub0_count", "sub1_part", "sub1_count",
     "sub2_part", "sub2_count", "sub3_part", "sub3_count",
+    "sub4_part", "sub4_count", "sub5_part", "sub5_count",
     "kill0_part", "kill0_count", "kill1_part", "kill1_count",
     "kill2_part", "kill2_count", "kill3_part", "kill3_count",
+    "kill4_part", "kill4_count", "kill5_part", "kill5_count",
     "over0_part", "over0_count", "over1_part", "over1_count",
     "over2_part", "over2_count", "over3_part", "over3_count",
+    "over4_part", "over4_count", "over5_part", "over5_count",
     "sale", "respawn_sub", "respawn_kill", "respawn_over", "counter_tool",
 };
 
-const SUB_PART = [def.MAX_DROP_LINES][]const u8{ "sub0_part", "sub1_part", "sub2_part", "sub3_part" };
-const SUB_COUNT = [def.MAX_DROP_LINES][]const u8{ "sub0_count", "sub1_count", "sub2_count", "sub3_count" };
-const KILL_PART = [def.MAX_DROP_LINES][]const u8{ "kill0_part", "kill1_part", "kill2_part", "kill3_part" };
-const KILL_COUNT = [def.MAX_DROP_LINES][]const u8{ "kill0_count", "kill1_count", "kill2_count", "kill3_count" };
-const OVER_PART = [def.MAX_DROP_LINES][]const u8{ "over0_part", "over1_part", "over2_part", "over3_part" };
-const OVER_COUNT = [def.MAX_DROP_LINES][]const u8{ "over0_count", "over1_count", "over2_count", "over3_count" };
+const SUB_PART = [def.MAX_DROP_LINES][]const u8{ "sub0_part", "sub1_part", "sub2_part", "sub3_part", "sub4_part", "sub5_part" };
+const SUB_COUNT = [def.MAX_DROP_LINES][]const u8{ "sub0_count", "sub1_count", "sub2_count", "sub3_count", "sub4_count", "sub5_count" };
+const KILL_PART = [def.MAX_DROP_LINES][]const u8{ "kill0_part", "kill1_part", "kill2_part", "kill3_part", "kill4_part", "kill5_part" };
+const KILL_COUNT = [def.MAX_DROP_LINES][]const u8{ "kill0_count", "kill1_count", "kill2_count", "kill3_count", "kill4_count", "kill5_count" };
+const OVER_PART = [def.MAX_DROP_LINES][]const u8{ "over0_part", "over1_part", "over2_part", "over3_part", "over4_part", "over5_part" };
+const OVER_COUNT = [def.MAX_DROP_LINES][]const u8{ "over0_count", "over1_count", "over2_count", "over3_count", "over4_count", "over5_count" };
 
 const RULE_KEYS = [8][]const u8{
     "owner", "cond_op", "cond_a", "cond_b", "effect_op", "effect_a", "effect_b", "timing",

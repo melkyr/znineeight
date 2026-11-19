@@ -134,28 +134,10 @@ pub fn creatureName(d: *const def.CreatureDef) []const u8 {
     return d.name[0..@intCast(usize, d.name_len)];
 }
 
-// Effective Speed for display: base + stat-threshold bonus + Last Surge
-// (+2/surge, capped +6), matching fight.effectiveSpeed for the M2 rows. The
-// journal-based hiding rule (§8.8) arrives with journal entries at M8.
+// Effective Speed for display: delegate to the fight math so field-driven
+// bonuses, Last Surge, and rule ADD_SPEED rows agree exactly (Sonar reveal).
 pub fn effectiveSpeed(s: *const def.GameState, d: *const def.CreatureDef) i32 {
-    var sp = d.speed;
-
-    if (d.speed_below_th > 0) {
-        var below: bool = false;
-        if (d.speed_below_stat == fight.STAT_RES) {
-            below = s.fight.res * 100 < s.fight.max_res * d.speed_below_th;
-        } else {
-            below = s.fight.hp * 100 < s.fight.max_hp * d.speed_below_th;
-        }
-        if (below) sp += d.speed_below_add;
-    }
-
-    if (s.fight.surge_count > 0) {
-        var bonus = s.fight.surge_count * fight.LAST_SURGE_SPEED_ADD;
-        if (bonus > fight.LAST_SURGE_SPEED_CAP) bonus = fight.LAST_SURGE_SPEED_CAP;
-        sp += bonus;
-    }
-    return sp;
+    return fight.effectiveSpeed(s, d, creatures.rules());
 }
 
 pub fn roleName(role: i32) []const u8 {
@@ -246,6 +228,47 @@ fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
             p = copyInto(out, p, "Discharge: ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " Hull.");
+        },
+        fight.MSG_BLIND => {
+            p = copyInto(out, p, "Blinded - the next Strike misses.");
+        },
+        fight.MSG_INK => {
+            p = copyInto(out, p, "Ink clouds the water - your action is chosen for you.");
+        },
+        fight.MSG_DECOY => {
+            p = copyInto(out, p, "Your Strike tears through a decoy.");
+        },
+        fight.MSG_PHASE => {
+            p = copyInto(out, p, "The ray phases - your Strike passes through it.");
+        },
+        fight.MSG_LURE => {
+            p = copyInto(out, p, "The lure reveals: ");
+            if (e.a == fight.PHASE_PHASED) {
+                p = copyInto(out, p, "Phase.");
+            } else {
+                p = copyInto(out, p, "Solid.");
+            }
+        },
+        fight.MSG_SONAR => {
+            const next = e.b % 10;
+            const phase = e.b / 10;
+            p = copyInto(out, p, "Sonar: Speed ");
+            p = intInto(out, p, e.a);
+            p = copyInto(out, p, ", next action ");
+            if (next == fight.CREATURE_ACT_FLEE) {
+                p = copyInto(out, p, "flee");
+            } else {
+                p = copyInto(out, p, "attack");
+            }
+            if ((d.flags & def.F_PHASING) != 0) {
+                if (phase == fight.PHASE_PHASED) {
+                    p = copyInto(out, p, ", Phase.");
+                } else {
+                    p = copyInto(out, p, ", Solid.");
+                }
+            } else {
+                p = copyInto(out, p, ".");
+            }
         },
         else => {
             if (def.messageText(e.msg_id)) |text| {

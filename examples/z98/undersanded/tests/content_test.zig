@@ -29,7 +29,7 @@ fn report(name: []const u8, ok: bool) void {
 // Expected rows are transcribed from §14.2 (names, zones, phase) and §14.4
 // (drops) in DEFS order, not derived from the table under test.
 
-const EXPECTED_NAMES = [18][]const u8{
+const EXPECTED_NAMES = [19][]const u8{
     "Mystic Eel",
     "Mystic Electric Eel",
     "Steel Tuna",
@@ -48,20 +48,21 @@ const EXPECTED_NAMES = [18][]const u8{
     "Glass Squid",
     "Brine Angler",
     "Ironclad Wrasse",
+    "The Derelict",
 };
 
-const EXPECTED_ZONE = [18]u32{
+const EXPECTED_ZONE = [19]u32{
     3, 3, 3, 2, 4,
     7, 7, 6, 6, 3,
     2, 2, 6, 4, 4,
-    4, 4, 4,
+    4, 4, 4, 256,
 };
 
-const EXPECTED_PHASE = [18]u32{
+const EXPECTED_PHASE = [19]u32{
     3, 2, 3, 3, 3,
     3, 3, 2, 3, 3,
     1, 1, 3, 2, 2,
-    2, 2, 1,
+    2, 2, 1, 3,
 };
 
 const D = def.DropLine;
@@ -73,68 +74,72 @@ fn ln(part: i32, count: i32) D {
 const Z = D{ .part = 0, .count = 0 };
 const L = def.MAX_DROP_LINES;
 
-const SUB = [18][L]D{
-    [L]D{ ln(1, 3), ln(3, 1), Z, Z },
-    [L]D{ ln(3, 3), ln(1, 1), Z, Z },
-    [L]D{ ln(2, 3), ln(1, 1), Z, Z },
-    [L]D{ ln(6, 2), ln(5, 2), Z, Z },
-    [L]D{ ln(4, 3), ln(2, 1), Z, Z },
-    [L]D{ ln(2, 2), ln(1, 2), Z, Z },
-    [L]D{ ln(5, 2), ln(1, 2), Z, Z },
-    [L]D{ ln(4, 3), ln(1, 1), Z, Z },
-    [L]D{ ln(1, 4), ln(5, 1), Z, Z },
-    [L]D{ ln(3, 2), ln(1, 1), Z, Z },
-    [L]D{ ln(3, 4), ln(1, 2), ln(8, 1), Z },
-    [L]D{ ln(2, 4), ln(1, 2), ln(9, 2), Z },
-    [L]D{ ln(5, 3), ln(1, 2), Z, Z },
-    [L]D{ ln(6, 2), ln(4, 3), Z, Z },
-    [L]D{ ln(6, 4), ln(4, 2), Z, Z },
-    [L]D{ ln(7, 4), ln(4, 2), Z, Z },
-    [L]D{ ln(6, 2), ln(4, 2), Z, Z },
-    [L]D{ ln(2, 3), ln(5, 2), ln(7, 2), Z },
+const SUB = [19][L]D{
+    [L]D{ ln(1, 3), ln(3, 1), Z, Z, Z, Z },
+    [L]D{ ln(3, 3), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(2, 3), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(6, 2), ln(5, 2), Z, Z, Z, Z },
+    [L]D{ ln(4, 3), ln(2, 1), Z, Z, Z, Z },
+    [L]D{ ln(2, 2), ln(1, 2), Z, Z, Z, Z },
+    [L]D{ ln(5, 2), ln(1, 2), Z, Z, Z, Z },
+    [L]D{ ln(4, 3), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(1, 4), ln(5, 1), Z, Z, Z, Z },
+    [L]D{ ln(3, 2), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(3, 4), ln(1, 2), ln(8, 1), Z, Z, Z },
+    [L]D{ ln(2, 4), ln(1, 2), ln(9, 2), Z, Z, Z },
+    [L]D{ ln(5, 3), ln(1, 2), Z, Z, Z, Z },
+    [L]D{ ln(6, 2), ln(4, 3), Z, Z, Z, Z },
+    [L]D{ ln(6, 4), ln(4, 2), Z, Z, Z, Z },
+    [L]D{ ln(7, 4), ln(4, 2), Z, Z, Z, Z },
+    [L]D{ ln(6, 2), ln(4, 2), Z, Z, Z, Z },
+    [L]D{ ln(2, 3), ln(5, 2), ln(7, 2), Z, Z, Z },
+    [L]D{ Z, Z, Z, Z, Z, Z },
 };
 
-const KILL = [18][L]D{
-    [L]D{ ln(1, 2), Z, Z, Z },
-    [L]D{ ln(3, 1), ln(1, 1), Z, Z },
-    [L]D{ ln(2, 2), Z, Z, Z },
-    [L]D{ ln(3, 1), ln(5, 1), Z, Z },
-    [L]D{ ln(4, 1), ln(2, 1), Z, Z },
-    [L]D{ ln(1, 2), Z, Z, Z },
-    [L]D{ ln(5, 1), ln(1, 1), Z, Z },
-    [L]D{ ln(4, 1), ln(1, 1), Z, Z },
-    [L]D{ ln(1, 2), Z, Z, Z },
-    [L]D{ ln(3, 1), ln(1, 1), Z, Z },
-    [L]D{ ln(3, 2), ln(1, 1), Z, Z },
-    [L]D{ ln(2, 2), ln(1, 1), Z, Z },
-    [L]D{ ln(5, 1), ln(1, 1), Z, Z },
-    [L]D{ ln(6, 1), ln(4, 1), Z, Z },
-    [L]D{ ln(6, 1), ln(4, 1), Z, Z },
-    [L]D{ ln(7, 1), ln(4, 1), Z, Z },
-    [L]D{ ln(6, 1), ln(4, 1), Z, Z },
-    [L]D{ ln(2, 2), ln(5, 1), Z, Z },
+const KILL = [19][L]D{
+    [L]D{ ln(1, 2), Z, Z, Z, Z, Z },
+    [L]D{ ln(3, 1), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(2, 2), Z, Z, Z, Z, Z },
+    [L]D{ ln(3, 1), ln(5, 1), Z, Z, Z, Z },
+    [L]D{ ln(4, 1), ln(2, 1), Z, Z, Z, Z },
+    [L]D{ ln(1, 2), Z, Z, Z, Z, Z },
+    [L]D{ ln(5, 1), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(4, 1), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(1, 2), Z, Z, Z, Z, Z },
+    [L]D{ ln(3, 1), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(3, 2), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(2, 2), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(5, 1), ln(1, 1), Z, Z, Z, Z },
+    [L]D{ ln(6, 1), ln(4, 1), Z, Z, Z, Z },
+    [L]D{ ln(6, 1), ln(4, 1), Z, Z, Z, Z },
+    [L]D{ ln(7, 1), ln(4, 1), Z, Z, Z, Z },
+    [L]D{ ln(6, 1), ln(4, 1), Z, Z, Z, Z },
+    [L]D{ ln(2, 2), ln(5, 1), Z, Z, Z, Z },
+    [L]D{ ln(2, 5), ln(3, 3), ln(6, 3), ln(7, 2), ln(5, 2), Z },
 };
 
-const OVER = [18][L]D{
-    [L]D{ ln(1, 1), Z, Z, Z },
-    [L]D{ ln(3, 1), Z, Z, Z },
-    [L]D{ ln(2, 1), Z, Z, Z },
-    [L]D{ ln(5, 1), Z, Z, Z },
-    [L]D{ ln(4, 1), Z, Z, Z },
-    [L]D{ ln(1, 1), Z, Z, Z },
-    [L]D{ ln(1, 1), Z, Z, Z },
-    [L]D{ ln(4, 1), Z, Z, Z },
-    [L]D{ ln(1, 1), Z, Z, Z },
-    [L]D{ ln(3, 1), Z, Z, Z },
-    [L]D{ ln(3, 1), Z, Z, Z },
-    [L]D{ ln(2, 1), Z, Z, Z },
-    [L]D{ ln(1, 1), Z, Z, Z },
-    [L]D{ ln(4, 1), Z, Z, Z },
-    [L]D{ ln(4, 1), Z, Z, Z },
-    [L]D{ ln(4, 1), Z, Z, Z },
-    [L]D{ ln(4, 1), Z, Z, Z },
-    [L]D{ ln(2, 1), Z, Z, Z },
+const OVER = [19][L]D{
+    [L]D{ ln(1, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(3, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(2, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(5, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(4, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(1, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(1, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(4, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(1, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(3, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(3, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(2, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(1, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(4, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(4, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(4, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(4, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(2, 1), Z, Z, Z, Z, Z },
+    [L]D{ ln(2, 2), ln(3, 1), Z, Z, Z, Z },
 };
+
 
 fn nameIs(d: *const def.CreatureDef, want: []const u8) bool {
     if (d.name_len != @intCast(i32, want.len)) return false;
@@ -171,11 +176,11 @@ fn tableMatches(actual: []const D, expected: []const D) bool {
 }
 
 fn tNames() bool {
-    if (creatures.DEFS.len != 18) return false;
-    if (EXPECTED_NAMES.len != 18) return false;
+    if (creatures.DEFS.len != 19) return false;
+    if (EXPECTED_NAMES.len != 19) return false;
 
     var i: usize = 0;
-    while (i < 18) : (i += 1) {
+    while (i < 19) : (i += 1) {
         const d = creatures.DEFS[i];
         const want = EXPECTED_NAMES[i];
         if (want.len == 0) return false;
@@ -189,7 +194,7 @@ fn tNames() bool {
         }
 
         var k: usize = i + 1;
-        while (k < 18) : (k += 1) {
+        while (k < 19) : (k += 1) {
             const other = creatures.DEFS[k];
             if (namesEqual(&d, &other)) return false;
         }
@@ -198,10 +203,10 @@ fn tNames() bool {
 }
 
 fn tMasks() bool {
-    if (creatures.DEFS.len != 18) return false;
+    if (creatures.DEFS.len != 19) return false;
 
     var i: usize = 0;
-    while (i < 18) : (i += 1) {
+    while (i < 19) : (i += 1) {
         const d = creatures.DEFS[i];
         if (d.zone_mask != EXPECTED_ZONE[i]) return false;
         if (d.phase_mask != EXPECTED_PHASE[i]) return false;
@@ -213,10 +218,10 @@ fn tMasks() bool {
 }
 
 fn tDrops() bool {
-    if (creatures.DEFS.len != 18) return false;
+    if (creatures.DEFS.len != 19) return false;
 
     var i: usize = 0;
-    while (i < 18) : (i += 1) {
+    while (i < 19) : (i += 1) {
         const d = creatures.DEFS[i];
         if (!tableMatches(d.sub[0..], SUB[i][0..])) return false;
         if (!tableMatches(d.kill[0..], KILL[i][0..])) return false;
@@ -225,9 +230,34 @@ fn tDrops() bool {
     return true;
 }
 
+fn tBossRow() bool {
+    if (creatures.DEFS.len != 19) return false;
+    const d = creatures.DEFS[18];
+    if (d.id != 17) return false;
+    if (d.family != creatures.FAMILY_BOSS) return false;
+    if (d.role != creatures.ROLE_BOSS) return false;
+    if (d.zone_mask != 256) return false;
+    if (d.phase_mask != 3) return false;
+    if (d.hp != 300) return false;
+    if (d.resolve != 0) return false;
+    if (d.speed != 7) return false;
+    if (d.attack != 10) return false;
+    if (d.subdue_chance != -1) return false;
+    if (d.flags != def.F_BOSS) return false;
+    if (d.sale != 0) return false;
+    if (d.respawn[0] != 20) return false;
+    if (d.respawn[1] != 20) return false;
+    if (d.respawn[2] != 40) return false;
+    if (d.counter_tool != creatures.TOOL_PLATE) return false;
+    if (d.rule_count != 0) return false;
+    return true;
+}
+
 fn tTablesBudget() bool {
-    if (@sizeOf(def.Tables) > 32 * 1024) return false;
-    if (@sizeOf(def.CreatureDef) > 288) return false;
+    // P26/C1 raises MAX_DROP_LINES 4 -> 6 (three 6-slot tables per row), so
+    // the fixed 56-row Tables image grows from ≈32 KB to ≈34 KB.
+    if (@sizeOf(def.Tables) > 36 * 1024) return false;
+    if (@sizeOf(def.CreatureDef) > 332) return false;
     return true;
 }
 
@@ -235,7 +265,8 @@ pub fn main() void {
     report("creature_names_nonempty_unique_24", tNames());
     report("creature_masks_match_s14_2", tMasks());
     report("creature_drops_match_s14_4", tDrops());
-    report("tables_size_within_32k_budget", tTablesBudget());
+    report("boss_row_pins_s14_2_fields", tBossRow());
+    report("tables_size_within_budget", tTablesBudget());
 
     if (fails != 0) os.exit(1);
     io.write("content_test PASS\n");
