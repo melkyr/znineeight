@@ -242,8 +242,10 @@ fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
             p = copyInto(out, p, "The ray phases - your Strike passes through it.");
         },
         fight.MSG_LURE => {
-            p = copyInto(out, p, "The lure reveals: ");
-            if (e.a == fight.PHASE_PHASED) {
+            p = copyInto(out, p, "The lure reveals ");
+            if (e.a == fight.LURE_REVEAL_DECOY) {
+                p = copyInto(out, p, "the real target - the decoy cannot hide.");
+            } else if (e.a == fight.PHASE_PHASED) {
                 p = copyInto(out, p, "Phase.");
             } else {
                 p = copyInto(out, p, "Solid.");

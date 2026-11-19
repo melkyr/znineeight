@@ -70,6 +70,8 @@ pub const PHASE_PHASED: i32 = 1;
 pub const PHASE_ROUND_SPAN: i32 = 2;
 pub const PHASE_LOCK_PCT: i32 = 30;
 pub const PHASE_SOLID_RESIST_PCT: i32 = 50;
+// MSG_LURE reveal kind for decoy/target creatures (0/1 are Solid/Phase).
+pub const LURE_REVEAL_DECOY: i32 = 2;
 
 // Ink (§25.5/§25.6): one draw maps to Strike/Restrain/Equipment, never Flee.
 pub const INK_ACT_MIN: i32 = 0;
@@ -686,7 +688,13 @@ fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
             log(s, def.LOG_NORMAL, MSG_EQUIP, s.fight.tool, 0);
             if (s.fight.tool == TOOL_ELECTRIC_GLAND) s.fight.pending_stun = 1;
             if (s.fight.tool == TOOL_LURE) {
-                log(s, def.LOG_NORMAL, MSG_LURE, phaseState(s), 0);
+                // Lure reveals only creatures whose identity is concealed:
+                // Solid/Phase for a phaser, the true target for a decoy.
+                if ((cdef.flags & def.F_PHASING) != 0) {
+                    log(s, def.LOG_NORMAL, MSG_LURE, phaseState(s), 0);
+                } else if ((cdef.flags & def.F_DECOY) != 0) {
+                    log(s, def.LOG_NORMAL, MSG_LURE, LURE_REVEAL_DECOY, 0);
+                }
             }
             if (s.fight.tool == TOOL_SONAR) {
                 var reveal = peekCreatureAction(s, cdef, rules);

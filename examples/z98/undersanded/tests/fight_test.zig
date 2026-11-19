@@ -116,6 +116,19 @@ fn msgB(s: *const def.GameState, msg_id: i32) i32 {
     return -99999;
 }
 
+fn textHas(text: []const u8, needle: []const u8) bool {
+    if (needle.len == 0 or needle.len > text.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= text.len) : (i += 1) {
+        var j: usize = 0;
+        while (j < needle.len) : (j += 1) {
+            if (text[i + j] != needle[j]) break;
+        }
+        if (j == needle.len) return true;
+    }
+    return false;
+}
+
 fn logsEqual(a: *const def.GameState, b: *const def.GameState) bool {
     if (a.log_n != b.log_n) return false;
     var i: usize = 0;
@@ -1175,17 +1188,33 @@ fn tLureSonarReveals() bool {
     d.speed = 9;
     d.attack = 0;
 
+    // Other creatures print no new Lure line even when the tool is active.
+    var plain: def.GameState = undefined;
+    begin(&plain, &d, noRules());
+    plain.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_LURE);
+    plain.fight.tool = fight.TOOL_LURE;
+    plain.fight.tool_charge = 1;
+    plain.exp.tool = fight.TOOL_LURE;
+    plain.exp.tool_charge = 1;
+    plain.exp.tool_broken = 0;
+    doStepWith(&plain, def.ACT_EQUIP, &d, noRules());
+    if (hasMsg(&plain, fight.MSG_LURE)) return false;
+
+    // Phasing keeps the Solid/Phase reveal.
+    var ghost = creatures.defAt(14);
+    ghost.attack = 0;
     var lure: def.GameState = undefined;
-    begin(&lure, &d, noRules());
+    begin(&lure, &ghost, noRules());
+    lure.fight.round = 3;
     lure.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_LURE);
     lure.fight.tool = fight.TOOL_LURE;
     lure.fight.tool_charge = 1;
     lure.exp.tool = fight.TOOL_LURE;
     lure.exp.tool_charge = 1;
     lure.exp.tool_broken = 0;
-    doStepWith(&lure, def.ACT_EQUIP, &d, noRules());
+    doStepWith(&lure, def.ACT_EQUIP, &ghost, noRules());
     if (!hasMsg(&lure, fight.MSG_LURE)) return false;
-    if (msgA(&lure, fight.MSG_LURE) != fight.phaseState(&lure)) return false;
+    if (msgA(&lure, fight.MSG_LURE) != fight.PHASE_PHASED) return false;
 
     var sonar: def.GameState = undefined;
     begin(&sonar, &d, noRules());
@@ -1201,10 +1230,10 @@ fn tLureSonarReveals() bool {
     if (msgA(&sonar, fight.MSG_SONAR) != 9) return false;
 
     // Ghost-Ray flip: Sonar encodes Phase as the tens digit of the action code.
-    var ghost = creatures.defAt(14);
-    ghost.attack = 0;
+    var ghost_flip = creatures.defAt(14);
+    ghost_flip.attack = 0;
     var flip: def.GameState = undefined;
-    begin(&flip, &ghost, noRules());
+    begin(&flip, &ghost_flip, noRules());
     flip.fight.round = 3;
     flip.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_SONAR);
     flip.fight.tool = fight.TOOL_SONAR;
@@ -1212,9 +1241,44 @@ fn tLureSonarReveals() bool {
     flip.exp.tool = fight.TOOL_SONAR;
     flip.exp.tool_charge = 1;
     flip.exp.tool_broken = 0;
-    doStepWith(&flip, def.ACT_EQUIP, &ghost, noRules());
+    doStepWith(&flip, def.ACT_EQUIP, &ghost_flip, noRules());
     if (!hasMsg(&flip, fight.MSG_SONAR)) return false;
     if (msgB(&flip, fight.MSG_SONAR) != 11) return false;
+    return true;
+}
+
+// Lure reveals the decoy's real target; no Lure line appears without Lure.
+fn tLureDecoyTrueTargetCopy() bool {
+    var d = creatures.defAt(16);
+    d.attack = 0;
+
+    var plain: def.GameState = undefined;
+    begin(&plain, &d, creatures.RULES[0..]);
+    doStepWith(&plain, def.ACT_STRIKE, &d, creatures.RULES[0..]);
+    if (hasMsg(&plain, fight.MSG_LURE)) return false;
+    var plain_sc: render.Screen = undefined;
+    render.renderFrame(&plain, &d, &plain_sc);
+    var plain_buf: [4096]u8 = undefined;
+    const plain_text = render.dump(&plain_sc, plain_buf[0..]);
+    if (textHas(plain_text, "real target")) return false;
+
+    var lure: def.GameState = undefined;
+    begin(&lure, &d, creatures.RULES[0..]);
+    lure.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_LURE);
+    lure.fight.tool = fight.TOOL_LURE;
+    lure.fight.tool_charge = 1;
+    lure.exp.tool = fight.TOOL_LURE;
+    lure.exp.tool_charge = 1;
+    lure.exp.tool_broken = 0;
+    doStepWith(&lure, def.ACT_EQUIP, &d, creatures.RULES[0..]);
+    if (!hasMsg(&lure, fight.MSG_LURE)) return false;
+    if (msgA(&lure, fight.MSG_LURE) != fight.LURE_REVEAL_DECOY) return false;
+
+    var lure_sc: render.Screen = undefined;
+    render.renderFrame(&lure, &d, &lure_sc);
+    var lure_buf: [4096]u8 = undefined;
+    const lure_text = render.dump(&lure_sc, lure_buf[0..]);
+    if (!textHas(lure_text, "real target")) return false;
     return true;
 }
 
@@ -1648,6 +1712,7 @@ pub fn main() void {
     report("blind_roll_and_lure", tBlindRollAndLure());
     report("ink_cadence_and_consumer", tInkCadenceAndConsumer());
     report("lure_sonar_reveals", tLureSonarReveals());
+    report("lure_decoy_true_target_copy", tLureDecoyTrueTargetCopy());
     report("peek_stable_with_latches", tPeekStableWithLatches());
     report("boss_behaviour_rules_pinned", tBossBehaviourRulesPinned());
     report("derelict_boss_row_loads", tDerelictBossRowLoads());
