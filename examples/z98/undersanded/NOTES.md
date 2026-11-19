@@ -1491,7 +1491,7 @@ fight surface (`render_term.zig:112-401`, `nav.zig:261-388`,
 `data.z98:133-182`) and spec §8.8/§26/§27/§36. Verdict: **amendment required**
 — M9 is still fight-only (spec §36; plan Goal/Task 4), so the M8
 dock/map/node/journal/help screens, zone flavour, and boss telegraph remain
-terminal and need no art layout now. But the art fight screen must render four
+terminal and need no art layout now. But the art fight screen must render six
 M8 fight-surface facts the plan does not pin.
 
 - **Hidden Speed / Sonar reveal.** M8 prints `SPD ??` unless
@@ -1517,14 +1517,24 @@ M8 fight-surface facts the plan does not pin.
   before `value * width / max` (`render_term.zig:125-133`). M9 Task 3's
   fill/red-zone formulas and hp 0/half/max tests omit `max_res == 0`; add the
   guard and a boss-row bar case so the art Resolve bar cannot divide by zero.
+- **Art subdue modal.** The fight surface early-returns into `renderModal` for
+  `SCREEN_SUBDUE`/`SCREEN_SUBDUE_POST` (`render_term.zig:375-377`, copy/actions
+  at `:323-345`). M9 Task 4 says only "wire art fight screen" and Task 3 only
+  defines `layoutFight`; nothing pins an art modal layout or a terminal
+  fallback. M9 must pin an art modal layout (or explicitly reuse the terminal
+  modal) and test it.
+- **`msgLine` sharing.** `msgLine` is private (`render_term.zig:174`), so the
+  art renderer cannot call the terminal formatter directly. M9 must
+  export/share the message text or duplicate the copy mapping
+  deterministically, with a parity test/golden against `render_term`.
 
 Checked, no amendment needed:
 
 - **Fight log line lengths.** M9's 8 lines at 8×16 = 128 px inside the 140 px
   log band; 640 px = 80 glyph columns. All authored/dynamic M8 fight lines fit
   (longest fixed line 57 chars: Lure true-target; longest dynamic subdue line
-  52; Ink 53), so art can reuse the terminal `msgLine` text without wrapping
-  or a taller log band.
+  52; Ink 53), so the art log needs no wrapping or taller band once the
+  message text is shared/duplicated (see `msgLine` sharing above).
 - **Dock/map/node/journal/help geometry and zone flavour.** These M8 screens
   stay terminal in M9, and Task 5's M8 byte-identical `--dump-grid` goldens
   protect them. M9 implies no art dimensions for them; no layout change is
