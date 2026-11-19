@@ -201,20 +201,24 @@ pub fn gfxPxPresent(g: *Gfx, x: i32, y: i32, w: i32, h: i32) void {
         warnPresent(s, "locked");
         return;
     }
+    var restored = false;
     if (core.pxCoreSurfaceLost(s)) {
+        restored = true;
         if (!gfxPxRestore(g)) {
             warnPresent(s, "restore");
             return;
         }
     }
     if (s.fallback) {
+        // GDI ignores the primary, and the px offscreen is system memory (it
+        // does not become lost), so this path needs no DDERR retry.
         if (!pal.pxGdiPresent565(s.win, s.px_surface, x, y, w, h)) {
             warnPresent(s, "gdi");
         }
         return;
     }
     var hr = pal.pxPresentRect(s.primary, s.win, s.px_surface, x, y, w, h);
-    if (hr == pal.DDERR_SURFACELOST) {
+    if (hr == pal.DDERR_SURFACELOST and !restored) {
         core.pxCoreMarkSurfaceLost(s);
         if (!gfxPxRestore(g)) {
             warnPresent(s, "restore");
@@ -229,31 +233,40 @@ pub fn gfxPxPresent(g: *Gfx, x: i32, y: i32, w: i32, h: i32) void {
     }
 }
 
-// Restore a lost px/primary pair once, re-creating the offscreen if the driver
-// rejects Restore. Success clears the lost flag and arms a full repaint; the
-// caller re-locks through gfxPxLock for the next frame.
+// Restore once, touching only surfaces that actually need it. Win9x Restore()
+// can return DDERR_NOTLOST for an already-valid surface, and MinGW's ddraw.h
+// does not define that code, so after a failed Restore we trust IsLost rather
+// than guessing the numeric value. Re-create the offscreen only if it is still
+// lost; a non-lost primary is never required, and a primary failure is non-fatal
+// while the GDI fallback is active. Success clears the lost flag and arms a
+// full repaint; the caller re-locks through gfxPxLock for the next frame.
 pub fn gfxPxRestore(g: *Gfx) bool {
     const s = g.opaque;
     if (!s.opened) return false;
     if (s.mem_only) return true;
-    if (!core.pxCoreSurfaceLost(s) and !pal.pxIsLost(s.px_surface) and
-        !pal.pxIsLost(s.primary)) {
-        return true;
-    }
+    const px_lost = core.pxCoreSurfaceLost(s) or pal.pxIsLost(s.px_surface);
+    const primary_lost = pal.pxIsLost(s.primary);
+    if (!px_lost and !primary_lost) return true;
     core.pxCoreMarkSurfaceLost(s);
     if (s.locked) {
         if (!pal.pxUnlock(s.px_surface)) return false;
         s.locked = false;
     }
-    if (!pal.pxRestore(s.px_surface)) {
-        pal.pxRelease(s.px_surface);
-        s.px_surface = pal.nullHandle();
-        const recreated = pal.pxCreate565(s.dd7, s.w, s.h);
-        if (@ptrToInt(recreated) == 0) return false;
-        s.px_surface = recreated;
+    if (px_lost) {
+        if (!pal.pxRestore(s.px_surface) and pal.pxIsLost(s.px_surface)) {
+            pal.pxRelease(s.px_surface);
+            s.px_surface = pal.nullHandle();
+            const recreated = pal.pxCreate565(s.dd7, s.w, s.h);
+            if (@ptrToInt(recreated) == 0) return false;
+            s.px_surface = recreated;
+        }
     }
-    if (!pal.pxRestore(s.primary)) return false;
-    s.fallback = !pal.pxPrimaryIs565(s.primary);
+    var primary_ok = true;
+    if (primary_lost) {
+        primary_ok = pal.pxRestore(s.primary);
+        if (!primary_ok and !s.fallback) return false;
+    }
+    if (primary_ok) s.fallback = !pal.pxPrimaryIs565(s.primary);
     core.pxCoreMarkRestored(s);
     return true;
 }
@@ -267,10 +280,15 @@ pub fn gfxPxClearFullRepaint(g: *Gfx) void {
 }
 
 // Test seam: mark the live px surface lost without a driver event so the tier
-// and probe can drive restore -> re-lock -> full-repaint deterministically.
+// and probe can drive restore -> re-lock -> full-repaint deterministically. A
+// real loss invalidates the lock, so unlock here if the caller was locked.
 pub fn gfxPxTestRestore(g: *Gfx) bool {
     const s = g.opaque;
     if (!s.opened or s.mem_only) return false;
+    if (s.locked) {
+        if (!pal.pxUnlock(s.px_surface)) return false;
+        s.locked = false;
+    }
     core.pxCoreMarkSurfaceLost(s);
     return true;
 }
