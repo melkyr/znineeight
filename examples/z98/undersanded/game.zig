@@ -24,6 +24,8 @@ pub fn zeroWorld(w: *def.World) void {
     w.seen_mask[1] = 0;
     w.journal_mask[0] = 0;
     w.journal_mask[1] = 0;
+    w.journal_viewed[0] = 0;
+    w.journal_viewed[1] = 0;
     w.tooltip_shown = 0;
     w.field_phases = 0;
     i = 0;

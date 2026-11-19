@@ -22,6 +22,8 @@ const paths = @import("paths.zig");
 const save_ux = @import("save_ux.zig");
 const game = @import("game.zig");
 const persist = @import("persist.zig");
+const journal = @import("journal.zig");
+const fight = @import("fight.zig");
 
 pub const NAV_DOCK: i32 = 10;
 pub const NAV_MAP: i32 = 11;
@@ -35,10 +37,15 @@ pub const NAV_TOOLS: i32 = 18;
 pub const NAV_LORE: i32 = 19;
 pub const NAV_MENU: i32 = 20;
 pub const NAV_SAVE_ERR: i32 = 21;
+pub const NAV_JOURNAL: i32 = 22;
+pub const NAV_HELP: i32 = 23;
 pub const NAV_QUIT: i32 = -1;
 
 pub const NAV_RESULT_NONE: i32 = -100;
 pub const NAV_RESULT_PREVIEW: i32 = -101;
+
+pub const HELP_PAGE_NONE: i32 = 0;
+pub const TIP_NONE: i32 = 0;
 
 // Boot action ids: pure menu/confirm/error decisions shared by tests and the
 // nav.boot I/O loop.
@@ -56,6 +63,9 @@ pub const NavState = struct {
     armed: i32,
     last: i32,
     save_err_kind: i32,
+    help_page: i32,
+    tip: i32,
+    journal_sel: i32,
 };
 
 fn lower(c: u8) u8 {
@@ -248,19 +258,72 @@ fn nodeStep(g: *def.GameState, key: input.Key) i32 {
     return setScreen(g, NAV_NODE);
 }
 
+fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    if (st.journal_sel > 0) {
+        if (isEsc(key)) st.journal_sel = 0;
+        return setScreen(g, NAV_JOURNAL);
+    }
+    if (isEsc(key)) {
+        st.journal_sel = 0;
+        return setScreen(g, deriveScreen(g));
+    }
+
+    var idx: i32 = -1;
+    if (key.ch >= '1' and key.ch <= '9') {
+        idx = @intCast(i32, key.ch - '1');
+    } else {
+        const c = lower(key.ch);
+        if (c >= 'a' and c <= 'j') idx = 9 + @intCast(i32, c - 'a');
+    }
+    if (idx >= 0 and idx < creatures.defCount()) {
+        if (journal.journalOpen(&g.world, idx)) st.journal_sel = idx + 1;
+    }
+    return setScreen(g, NAV_JOURNAL);
+}
+
 // Next screen id for one key. Mutates game state only via dock/expedition.
 pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     st.last = NAV_RESULT_NONE;
+    st.tip = TIP_NONE;
+
+    // (0) Help overlay: `?` works on every screen (including mid-fight) and
+    // never forwards an action or draws RNG. Any key dismisses the page.
+    if (st.help_page != HELP_PAGE_NONE) {
+        st.help_page = HELP_PAGE_NONE;
+        return setScreen(g, g.screen);
+    }
+    if (key.ch == '?') {
+        st.help_page = journal.helpPageNumber(g.screen);
+        return setScreen(g, g.screen);
+    }
 
     // (1) A live fight consumes the key through the fight key map, then the
     // post-fight state decides which nav screen comes next.
     if (expedition.isInFight(g)) {
         if (input.mapKey(g.screen, key)) |act| {
+            if (act.kind == def.ACT_RESTRAIN) {
+                if (journal.tooltipShow(&g.world, journal.TOOLTIP_RESTRAIN) != null) {
+                    st.tip = journal.TOOLTIP_RESTRAIN + 1;
+                }
+            }
             expedition.expeditionStep(g, act.kind);
+        }
+        if (expedition.isInFight(g) and st.tip == TIP_NONE) {
+            if (g.fight.hp <= fight.dangerHp(&g.fight)) {
+                if (journal.tooltipShow(&g.world, journal.TOOLTIP_RED_ZONE) != null) {
+                    st.tip = journal.TOOLTIP_RED_ZONE + 1;
+                }
+            }
         }
         // Keep fight.zig's SCREEN_* while the fight runs; only an ended fight
         // hands the screen back to nav.
         return setScreen(g, screenAfterField(g));
+    }
+
+    // `J` opens the Journal everywhere but mid-fight (including settle/submenus).
+    if (isChar(key, 'j') and g.screen != NAV_JOURNAL) {
+        st.journal_sel = 0;
+        return setScreen(g, NAV_JOURNAL);
     }
 
     // (2) A pending Subdue choice must be settled before anything else.
@@ -287,12 +350,19 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         NAV_LORE => return setScreen(g, NAV_LORE),
         NAV_MENU => return setScreen(g, NAV_MENU),
         NAV_SAVE_ERR => return setScreen(g, NAV_SAVE_ERR),
+        NAV_JOURNAL => return journalStep(g, st, key),
+        NAV_HELP => return setScreen(g, NAV_HELP),
         else => return dockStep(g, st, key),
     }
 }
 
 pub fn drawCurrent(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
     var sc: render.Screen = undefined;
+    if (st.help_page != HELP_PAGE_NONE) {
+        const page = journal.helpPage(g.screen) orelse "(manual text unavailable)";
+        render.renderHelp(page, &sc);
+        return render.dump(&sc, out);
+    }
     if (expedition.isInFight(g)) {
         var d = creatures.defAt(g.fight.def_index);
         render.renderFrame(g, &d, &sc);
@@ -307,6 +377,11 @@ pub fn drawCurrent(g: *def.GameState, st: *const NavState, out: []u8) []const u8
         NAV_LORE => render.renderLore(save_ux.manualPageOne(), &sc),
         NAV_MENU => render.renderMenu(&sc),
         NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), &sc),
+        NAV_JOURNAL => render.renderJournal(g, st.journal_sel, &sc),
+        NAV_HELP => {
+            const page = journal.helpPage(g.screen) orelse "(manual text unavailable)";
+            render.renderHelp(page, &sc);
+        },
         else => render.renderDock(g, &sc),
     }
     return render.dump(&sc, out);
@@ -327,13 +402,21 @@ pub fn navRun(g: *def.GameState) void {
     if (g.screen != NAV_MAP and g.screen != NAV_NODE and g.screen != NAV_SETTLE
         and g.screen != NAV_REFINE and g.screen != NAV_UPGRADE
         and g.screen != NAV_CRAFT and g.screen != NAV_BUY and g.screen != NAV_TOOLS
-        and g.screen != NAV_LORE and g.screen != NAV_MENU and g.screen != NAV_SAVE_ERR) {
+        and g.screen != NAV_LORE and g.screen != NAV_MENU and g.screen != NAV_SAVE_ERR
+        and g.screen != NAV_JOURNAL and g.screen != NAV_HELP) {
         g.screen = NAV_DOCK;
     }
 
     var dir_buf: [4096]u8 = undefined;
     const dir = paths.dataDirOrFallback(dir_buf[0..]);
-    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE, .save_err_kind = save_ux.ERR_KIND_NONE };
+    var st = NavState{
+        .armed = 0,
+        .last = NAV_RESULT_NONE,
+        .save_err_kind = save_ux.ERR_KIND_NONE,
+        .help_page = HELP_PAGE_NONE,
+        .tip = TIP_NONE,
+        .journal_sel = 0,
+    };
     var buf: [8192]u8 = undefined;
 
     while (true) {
@@ -364,6 +447,12 @@ pub fn navRun(g: *def.GameState) void {
 
         const next = navStep(g, &st, key);
         if (next == NAV_QUIT) return;
+        if (st.tip != TIP_NONE) {
+            if (journal.tooltip(st.tip - 1)) |tip| {
+                io.write(tip);
+                io.write("\n");
+            }
+        }
         if (st.last >= 0) {
             io.write(dock.resultText(st.last));
             io.write("\n");
@@ -383,16 +472,36 @@ pub fn boot(g: *def.GameState, dir: []const u8) bool {
 
     var slot = save_ux.readSaveSlot(dir);
     var screen = bootStartScreen(save_ux.saveSlotExists(dir, slot));
-    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE, .save_err_kind = save_ux.ERR_KIND_NONE };
+    var st = NavState{
+        .armed = 0,
+        .last = NAV_RESULT_NONE,
+        .save_err_kind = save_ux.ERR_KIND_NONE,
+        .help_page = HELP_PAGE_NONE,
+        .tip = TIP_NONE,
+        .journal_sel = 0,
+    };
     var buf: [8192]u8 = undefined;
 
     while (true) {
         g.screen = screen;
         io.write(drawCurrent(g, &st, buf[0..]));
 
+        // `?` works on the boot screens too; any key dismisses the page and
+        // returns to the same screen without taking a menu/first-run action.
+        if (st.help_page != HELP_PAGE_NONE) {
+            io.write("> ");
+            _ = input.readKey() orelse return false;
+            st.help_page = HELP_PAGE_NONE;
+            continue;
+        }
+
         if (screen == NAV_MENU) {
             io.write("> ");
             const key = input.readKey() orelse return false;
+            if (key.ch == '?') {
+                st.help_page = journal.helpPageNumber(screen);
+                continue;
+            }
             const act = menuAction(key);
             if (act == BOOT_ACT_CONTINUE) {
                 save_ux.loadSlot(g, dir, slot) catch |e| {
@@ -426,6 +535,10 @@ pub fn boot(g: *def.GameState, dir: []const u8) bool {
         if (screen == NAV_LORE) {
             io.write("> ");
             const key = input.readKeyRaw() orelse return false;
+            if (key.ch == '?') {
+                st.help_page = journal.helpPageNumber(screen);
+                continue;
+            }
             if (!firstRunAdvance(key)) continue;
             save_ux.firstRunBeginSlot(g, dir, slot) catch |e| {
                 st.save_err_kind = save_ux.saveErrKind(e);
@@ -438,6 +551,10 @@ pub fn boot(g: *def.GameState, dir: []const u8) bool {
         if (screen == NAV_SAVE_ERR) {
             io.write("> ");
             const key = input.readKey() orelse return false;
+            if (key.ch == '?') {
+                st.help_page = journal.helpPageNumber(screen);
+                continue;
+            }
             const act = errorAction(key);
             if (act == BOOT_ACT_FRESH) {
                 save_ux.eraseSlot(dir, slot);

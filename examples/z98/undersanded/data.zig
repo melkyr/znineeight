@@ -806,11 +806,30 @@ pub fn textKeyKnown(k: []const u8) bool {
         const n = parseI32(k[7..]) orelse return false;
         return n >= 1 and n <= 2;
     }
+    if (k.len > 5 and eql(k[0..5], "zone.")) {
+        const n = parseI32(k[5..]) orelse return false;
+        return n >= 1 and n <= 9;
+    }
     if (k.len > 6 and eql(k[0..6], "error.")) {
         const n = parseI32(k[6..]) orelse return false;
         return n >= 1 and n <= 6;
     }
     return false;
+}
+
+// Text lookup against the installed content override. Returns null when no
+// content has been installed (the compiled-in fallback ships no [text]).
+pub fn textFind(key: []const u8) ?[]const u8 {
+    const t = def.content_override orelse return null;
+    return textFindIn(t, key);
+}
+
+pub fn textFindIn(t: *const def.Tables, key: []const u8) ?[]const u8 {
+    var i: usize = 0;
+    while (i < @intCast(usize, t.text_count)) : (i += 1) {
+        if (eql(t.text_key[i], key)) return t.text_val[i];
+    }
+    return null;
 }
 
 fn equalsIndex(line: []const u8) i32 {

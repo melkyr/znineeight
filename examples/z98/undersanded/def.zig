@@ -151,6 +151,7 @@ pub const World = struct {
     ready: [MAX_ZONES * MAX_CREATURES]i32,
     seen_mask: [2]u32,
     journal_mask: [2]u32,
+    journal_viewed: [2]u32,
     tooltip_shown: u32,
     field_phases: i32,
     release_bonus: [MAX_ZONES]i32,

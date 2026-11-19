@@ -351,6 +351,7 @@ fn writeCooldowns(out: *buf_mod.Buf, w: *const def.World) void {
 fn writeJournal(out: *buf_mod.Buf, w: *const def.World) void {
     wSection(out, "journal");
     wArrU32(out, "journal_mask", w.journal_mask[0..]);
+    wArrU32(out, "journal_viewed", w.journal_viewed[0..]);
     wKVUint(out, "tooltip_shown", w.tooltip_shown);
 }
 
@@ -719,6 +720,7 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
     at = 0;
     section = -1;
     var seen: [6]u32 = [6]u32{ 0, 0, 0, 0, 0, 0 };
+    var saw_journal_viewed = false;
 
     while (nextLine(content, &at, &line)) {
         const t = stripCR(content[line.start..line.end]);
@@ -817,6 +819,11 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
                 const val = trim(t[eq + 1 ..]);
                 if (!parseU32Array(val, tw.journal_mask[0..])) return error.Damaged;
                 if (!markSeen(&seen, 3, 0)) return error.Damaged;
+            } else if (eql(raw_key, "journal_viewed")) {
+                const val = trim(t[eq + 1 ..]);
+                if (saw_journal_viewed) return error.Damaged;
+                if (!parseU32Array(val, tw.journal_viewed[0..])) return error.Damaged;
+                saw_journal_viewed = true;
             } else {
                 var key: []const u8 = "";
                 var val: []const u8 = "";
@@ -960,6 +967,7 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
 
     if (!maskBitsValid(&tw.seen_mask, def_count)) return error.BadId;
     if (!maskBitsValid(&tw.journal_mask, def_count)) return error.BadId;
+    if (!maskBitsValid(&tw.journal_viewed, def_count)) return error.BadId;
     if (!maskBitsValid(&tw.wary_mask, def_count)) return error.BadId;
 
     var z: usize = 0;

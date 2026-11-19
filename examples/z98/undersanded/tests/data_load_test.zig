@@ -232,7 +232,7 @@ fn tLoadMatchesFallback() bool {
     if (loaded.loaded != 1) return false;
 
     if (fb.text_count != 0) return false;
-    if (loaded.text_count != 1) return false;
+    if (loaded.text_count != 33) return false;
     if (!bytesEq(loaded.text_key[0], "manual.1")) return false;
 
     var text_bytes: usize = 0;

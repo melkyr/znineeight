@@ -23,6 +23,7 @@ const tables = @import("tables_t1.zig");
 const fight = @import("fight.zig");
 const tools = @import("tools.zig");
 const game = @import("game.zig");
+const journal = @import("journal.zig");
 
 // ---- Field actions --------------------------------------------------------
 //
@@ -204,6 +205,7 @@ fn postFight(g: *def.GameState) bool {
     // Hull 0 is checked before outcome: M2's creatureAct zeroes Hull but leaves
     // the fight OUT_ONGOING, and ascent must end it immediately.
     if (g.fight.hull <= 0) {
+        journal.journalOnFightEnd(&g.world, idx);
         endAscent(g);
         g.world.hull = 0;
         world.advancePhase(&g.world);
@@ -215,6 +217,7 @@ fn postFight(g: *def.GameState) bool {
 
     if (outcome == def.OUT_PLAYER_FLED) {
         // Nothing from this fight; secured hold kept, +1 phase, return travel.
+        journal.journalOnFightEnd(&g.world, idx);
         g.world.hull = g.fight.hull;
         g.fight.def_index = NO_FIGHT;
         world.advancePhase(&g.world);
@@ -225,6 +228,7 @@ fn postFight(g: *def.GameState) bool {
     if (outcome == def.OUT_CREATURE_FLED) {
         // No loot; subdue-length renewal; stay at the node. The log entry drives
         // the explicit `Secured: nothing` line.
+        journal.journalOnFightEnd(&g.world, idx);
         g.world.hull = g.fight.hull;
         logSecured(g, idx, outcome);
         world.markTaken(&g.world, zone, idx, def.OUT_CREATURE_FLED);
@@ -237,6 +241,7 @@ fn postFight(g: *def.GameState) bool {
         // def_index and outcome live as the pending-choice marker; renewal and
         // the choice settle in resolveSubdueChoice.
         var subdef = creatures.defAt(idx);
+        journal.journalOnFightEnd(&g.world, idx);
         addLoot(g, &subdef, outcome);
         logSecured(g, idx, outcome);
         g.world.hull = g.fight.hull;
@@ -245,6 +250,7 @@ fn postFight(g: *def.GameState) bool {
 
     // Kill / Overkill: corpse or ruined table, renewal, then clear the marker.
     var cdef = creatures.defAt(idx);
+    journal.journalOnFightEnd(&g.world, idx);
     addLoot(g, &cdef, outcome);
     logSecured(g, idx, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
