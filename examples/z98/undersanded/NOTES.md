@@ -1421,3 +1421,40 @@ ships, its Derelict row cannot load under the current validator and
 6. **Boss journal trigger timing.** M8 authors all 19 entries, but the boss
    fight is M11; only `journalOnBossKill`/its trigger test can ship in M8.
    Do not claim an end-to-end boss-kill journal test in M8.
+
+## M8 preflight (P26 amendments applied)
+
+User rulings applied to the spec (§25.1/§25.2/§25.10/§32/§38 P26) and the M8
+plan before implementation. Baseline at commit `139aebdf`: `TIER_M7 PASS
+126/0` (nested M6 90/0), seed v151.
+
+**Scope is verification + one new row, not re-authoring.** M6 already ships
+18 creature rows, all §14.3 named-field encodings, §14.4 drops, 7 tools, 15
+upgrades, 12 cosmetics, Z1–Z3 encounters, zone D and `manual.1`. M8 adds the
+Derelict row (load-order index 18), wires blind/ink/decoy/phasing + Lure/Sonar,
+and authors journal/manual 2–8/legends/zone text.
+
+**Rulings (P26):** (C1) boss row this milestone; `MAX_DROP_LINES` 4→6;
+`ROLE_BOSS=4`, `FAMILY_BOSS=13`; boss exemptions `sale=0`/`resolve=0`;
+`subdue_chance=-1` + `F_BOSS`. (C2) "New entry" = persisted `journal_viewed`
+mask as an **additive optional save key** (absent ⇒ 0), §32. (C3) keep M7's
+Esc-at-dock = Save / `q` = Quit; add `J` + dock "New entry"; no Esc menu this
+milestone. (C4) zone flavour authored now: `[text]` gains `zone.1..9`;
+T1 authors `zone.1/2/3/9`.
+
+**Behaviour drivers (binding, §25.2):** coupling = regen fields; discharge =
+`[rules]` one-shot (`discharge_*` pin); armor/speed-below/atk-below/flee-on-hit/
+grudge/resist = named fields; Rust flee = `[rules]` `SET_FLEE` `HP_BELOW 24`;
+blind = `[rules]` `SET_BLIND` (`RES_BELOW 65`, `effect_b=50`, persistent);
+ink/decoy/phasing = `F_INK`/`F_DECOY`/`F_PHASING` + fight logic. Thresholds are
+absolute integers (50% of 130 = 65), never percentages.
+
+**Derelict row:** `id=17`, `family=13`, `role=4`, `zone_mask=256`,
+`phase_mask=3`, `hp=300`, `resolve=0`, `speed=7`, `attack=10`, `subdue=-1`,
+`flags=1`, `sale=0`, `respawn 20/20/40`, `counter_tool=1`; kill =
+Plate×5/Gland×3/Glow×3/Glass×2/Coral×2; over = Plate×2/Gland×1.
+
+**Corrections applied to the plan:** manual page 1 is M6-authored/M7-consumed
+(pages 2–8 here); `error.*` is not authored (M7 owns the copy); journal key =
+`journal.<def_index+1>` (boss = 19); H4 uses `journal_mask`, not a
+`spd_revealed` field; zone flavour vocabulary added.

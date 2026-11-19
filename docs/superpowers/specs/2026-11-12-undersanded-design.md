@@ -804,7 +804,9 @@ The full game adds T2–T4 sources for every material (M13 re-derives this table
 
 **Legends page:** Named creatures as *unconfirmed sightings — investigate if you can.* **2 entries in T1** (Mileel, Tunisteel); T2–T4 named creatures add entries at M13. No locations, no stats, no tips.
 
-**Journal:** reactive, never proactive. **19 entries in T1** (18 non-boss + 1 boss, incl. 2 flex), full game = one per creature (≈49–55). One paragraph each, first-person, past tense, observational. **Non-boss entry is written when the first fight with that creature ends (any outcome).** Boss entry unlocks only after the first kill. Updates silently; a "New entry" indicator appears on the Esc menu. No popups.
+**Journal:** reactive, never proactive. **19 entries in T1** (18 non-boss + 1 boss, incl. 2 flex), full game = one per creature (≈49–55). One paragraph each, first-person, past tense, observational. **Non-boss entry is written when the first fight with that creature ends (any outcome, including Hull-0 ascent, player flee and creature flee).** Boss entry unlocks only after the first kill. Entries are keyed `journal.<def_index + 1>` in load order (boss = `journal.19` at index 18). Unlocks live in `World.journal_mask` (persisted); a separate **`journal_viewed`** mask (persisted, additive optional save key) drives the "New entry" indicator until the entry is opened. `J` opens the Journal screen; no popups.
+
+**Zone flavor:** one paragraph per zone, keyed `zone.<zone_index + 1>` (Z1..Z8 = 1..8, D = 9); rendered on the node screen for the current zone. T1 authors Z1–Z3 and D (4); Z4–Z8 at M13.
 
 **Tooltips:** only two, first time each mechanic appears —
 *"Restrain damages Resolve, not HP."* / *"Past the red zone is overkill. It costs you the rare."*
@@ -1076,7 +1078,7 @@ Each of these is a compile error or a runtime trap, not a style preference.
 ```zig
 pub const MAX_CREATURES: usize = 56;   // ~49–55 roster + flex
 pub const MAX_ZONES: usize = 12;       // 8 hunting + boss + spare
-pub const MAX_DROP_LINES: usize = 4;
+pub const MAX_DROP_LINES: usize = 6;   // Derelict kill row needs 5 (§14.4)
 pub const MAX_TOOLS: usize = 8;
 pub const MAX_PARTS: usize = 14;
 pub const MAX_MATERIALS: usize = 10;
@@ -1121,9 +1123,28 @@ pub const CreatureDef = struct {
 };
 ```
 
-≈240 bytes × 56 = **13.4 KB**. Loader asserts `subdue_chance == -1` iff `flags & F_BOSS`, and rejects any other value outside 0..100.
+≈288 bytes × 56 = **16.1 KB** (6 drop slots per table, §25.1). Loader asserts `subdue_chance == -1` iff `flags & F_BOSS`, and rejects any other value outside 0..100.
 
 `name`/`name_len` are the display identity (journal headings, `--dump-defs`, asset manifest); names are ASCII, ≤ `MAX_NAME_LEN`, unique, and **append-only** with the row order (never rename or reorder an existing row). `rule_start/rule_count` are **computed by the loader** from `[rules] owner=` blocks (§25.10); compiled-in fallback rows carry the same values.
+
+**Behavior drivers (M8, binding).** Named fields and `[rules]` rows both exist; exactly one is the *live* driver per behavior, the other is a documentation/test pin. Do not encode the same behavior twice in a way that can disagree.
+
+| Behavior | Live driver | Field/flag role |
+| :--- | :--- | :--- |
+| Coupling regen (Thrash/Despair) | `thrash_regen`/`despair_regen` fields | live |
+| Discharge | `[rules]` `HULL_DMG`, one-shot | `discharge_*` = pin (must equal the rule) |
+| Armor / armor-below | `armor_pct` / `armor_below_*` fields (+ persistent `SET_ARMOR`) | live |
+| Speed-below / attack-below | `speed_below_*` / `atk_below_*` fields | live (`*_pct` = pp added to 100) |
+| Flee on a hit | `flee_kind` / `flee_th` fields (strict `>`) | live |
+| Flee on a threshold | `[rules]` `SET_FLEE` (`HP_BELOW`) | `flee_*` = 0 |
+| Grudge | `grudge_*` fields | live |
+| Shell / resist-restrain | `resist_restrain_pct` field (+ `F_SHELL`) | live |
+| Blind | `[rules]` `SET_BLIND` (`RES_BELOW`, `effect_b` = chance, persistent-while-true) | `blind_chance` = pin |
+| Ink | `F_INK` flag + round logic (every 3rd round, 1 RNG draw) | flag is the driver |
+| Decoy | `F_DECOY` flag + round-1 logic (Strike misses unless Lure) | flag is the driver |
+| Phasing | `F_PHASING` + round state machine (§25.8) | flag is the driver |
+
+Lure suppresses blind/decoy; Sonar suppresses ink and reveals Speed/next action; Brine Net ignores Shell/Phasing reduction. Rule thresholds are **absolute integers** precomputed from the percentage (e.g. 50% of 130 HP = `cond_a=65`), matching the landed T1 rows.
 
 ### 25.3 Fight state — flat, never a union payload
 
@@ -1297,14 +1318,14 @@ ASCII text, one statement per line. The scanner enforces this grammar; any viola
 - **Sections:** `[creatures]`, `[rules]`, `[tools]`, `[upgrades]`, `[cosmetics]`, `[encounter]`, `[zones]`, `[text]`. Unknown section → error.
 - **Comments/blank:** a line whose first non-space character is `#`, and empty lines, are ignored. Row lines longer than **4096 bytes** → error.
 - **Rows:** comma-separated `key=value` fields, order-free. Values are the text between `=` and the next `,`; surrounding ASCII spaces are trimmed, inner spaces kept. Unknown key, duplicate key, or a missing required key → error. Rows are all-or-nothing: parsed into a temp and committed only on success.
-- **`[creatures]`:** every §25.2 field by name. Array fields flattened: `sub0_part,sub0_count` … `sub3_part,sub3_count`, same for `kill*`/`over*` (omitted slot = empty); `respawn_sub,respawn_kill,respawn_over`; `flags` numeric. `zone_mask`/`phase_mask` numeric per the §25.2 comment. `name` ASCII ≤ `MAX_NAME_LEN`, unique. `rule_start/rule_count` are **not** authored.
+- **`[creatures]`:** every §25.2 field by name. Array fields flattened: `sub0_part,sub0_count` … `sub5_part,sub5_count` (MAX_DROP_LINES=6), same for `kill*`/`over*` (omitted slot = empty); `respawn_sub,respawn_kill,respawn_over`; `flags` numeric. `zone_mask`/`phase_mask` numeric per the §25.2 comment. `name` ASCII ≤ `MAX_NAME_LEN`, unique. `rule_start/rule_count` are **not** authored.
 - **`[rules]`:** `owner,cond_op,cond_a,cond_b,effect_op,effect_a,effect_b,timing`. `owner` is a creature `id`. The loader packs blocks in owner first-appearance order and sets each creature's `rule_start/rule_count`; validation requires a complete, non-overlapping partition (no orphan rules, no gaps).
 - **`[tools]`:** `id,kind,cost0_kind,cost0_amt,cost1_kind,cost1_amt,cost2_kind,cost2_amt`; ids 1..7 unique; `kind` 0 activated / 1 rigged; cost kinds 0 (unused) or part id 1..9.
 - **`[upgrades]`:** `axis,tier,cost0_kind,cost0_amt,cost1_kind,cost1_amt,cost2_kind,cost2_amt`; the full 5×3 grid (15 rows); `axis` = `World.boat` index 0..4; `tier` 1..3; cost kinds 0 / 1..7 material / 8..9 keystone.
 - **`[cosmetics]`:** `name,price,unlock`; exactly 12 rows in item order (bit index 0..11); `unlock` is a condition id 1..4 (Z1/Z2/Z3/Derelict); `price > 0`.
 - **`[encounter]`:** `zone,phase,def_index,weight`; `zone` = index 0..11, `phase` = 0 Day / 1 Night, `def_index` = **load-order** index (not `CreatureDef.id`); `weight > 0`; weights per zone/phase sum to 100 (an empty zone/phase is allowed).
 - **`[zones]`:** `id,cost,boss`; `id` = zone index 0..11; `cost` ≥ 0; `boss` 0/1.
-- **`[text]`:** multi-line prose. `key=` starts an entry; it continues until the next `key=` or `[section]`. A continuation line begins with exactly one space, which is stripped; a continuation line consisting of exactly that one space is a **retained blank line** (paragraph break). Inside an entry the comment/blank rules do **not** apply — a line beginning with `#` after the leading space is prose. Keys live in the fixed vocabulary `manual.1..8`, `journal.1..19`, `legend.1..2`, `error.1..6`; caps `MAX_TEXT_KEYS` / `MAX_TEXT_BYTES`.
+- **`[text]`:** multi-line prose. `key=` starts an entry; it continues until the next `key=` or `[section]`. A continuation line begins with exactly one space, which is stripped; a continuation line consisting of exactly that one space is a **retained blank line** (paragraph break). Inside an entry the comment/blank rules do **not** apply — a line beginning with `#` after the leading space is prose. Keys live in the fixed vocabulary `manual.1..8`, `journal.1..19`, `legend.1..2`, `zone.1..9` (zone index + 1: Z1..Z8 = 1..8, D = 9), `error.1..6` (reserved; M7 owns the fatal/save copy as code constants, no reader today); caps `MAX_TEXT_KEYS` / `MAX_TEXT_BYTES`.
 - **Storage:** the file buffer and all string bytes live in the permanent arena for the process lifetime; loaded slices point into it (never into a temporary read buffer). `[text]` is file-only: `data.z98` ships with the game, so the compiled-in fallback is tables-only (`text_count = 0`) and exists for dev tools/tests, not as a content substitute.
 
 Loader errors use the §33 copy: missing → "Content file missing. Reinstall from CD."; malformed → "Content file is damaged at line N. Reinstall from CD."
@@ -1648,7 +1669,7 @@ hash=0x........
 
 `version` = format layout. `data_version` = content IDs. `hash` = CRC32 of everything above `[crc32]`.
 
-Grammar rules (P25): one scalar `key=value` per line; arrays are one line each, `name=i,i,i`; the line buffer is 8192 bytes so the worst-case `ready[672]` line always fits, and the whole file is capped at 64 KiB. `[crc32]` is last and nothing may follow it. Unknown keys are `Damaged`, except inside the reserved `[options]` section, which skips them (M12 fills it). `[score]` carries the P25 `FieldRecord` / `LastRun` flat fields and lifetime counters; `[expedition]` carries the active expedition including `pending_cond`.
+Grammar rules (P25): one scalar `key=value` per line; arrays are one line each, `name=i,i,i`; the line buffer is 8192 bytes so the worst-case `ready[672]` line always fits, and the whole file is capped at 64 KiB. `[crc32]` is last and nothing may follow it. Unknown keys are `Damaged`, except inside the reserved `[options]` section, which skips them (M12 fills it). **Additive keys (M8):** a key introduced after a format is frozen may be read as **optional** — absent means its zero value — and is always written by the current serializer, so older saves keep loading without a `version` bump; keys that were mandatory when the format shipped stay mandatory. The first such key is `journal_viewed` (a `u32[2]` viewed mask beside `journal_mask`; §18). `[score]` carries the P25 `FieldRecord` / `LastRun` flat fields and lifetime counters; `[expedition]` carries the active expedition including `pending_cond`.
 
 ### Load checks
 
@@ -1784,7 +1805,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | **M5** | Dock + economy | Refine/expertise 0–5, 5 boat axes + Heavy, tool crafting (7 tools), cosmetics (12), grudges | Real E0 walk spends **111 materials + Steel Fins ×2** and every axis buys T1–T3 behind its expertise gate; §17 table self-consistent; full-run pacing is M15; all dock actions 1 phase (refusals cost 0) |
 | **M6** | Data tables + loader | `data.z98` format §25.10 + loader; full schema/capacities §25.1; **spec-complete T1 content** (18 rows: §14.2 stats + names + zone/phase masks, §14.4 drops incl. the five M2-era defs, 4 rules with `owner=`, §10–§11 tools/upgrades/cosmetics, §13 Z1–Z3 encounters, empty Z4–Z8, manual page 1 text); loaded tables == compiled-in fallback field-for-field; malformed rejection | Loader goldens pass; `--dump-defs` golden; every malformed class rejected with line numbers; 56/57 capacity boundary; bad boss sentinel rejected (fixture; boss row is M8/M11) |
 | **M7** | Save system | CRC32, `data_version=2`, tmp+verify+rename+rollback, 2 slots, first-run lore page | Save round-trip golden passes; rollback path exercised; v1 save → v2 loader errors correctly |
-| **M8** | Tier-1 content authoring | 17 creature rows + 2 flex, tools, journal 19 entries, manual pages, Legends 2, zone flavor, error copy — §40 checklist | **Demo content-complete in terminal**; full T1 loop playable start→boss gate |
+| **M8** | Tier-1 content authoring | Verify M6's 18 rows/drops/tools/tables/zones/`manual.1`; append the Derelict row; wire blind/ink/decoy/phasing + Lure/Sonar; journal 19, manual 2–8, Legends 2, zone flavour 4 — §40 checklist | **Demo content-complete in terminal**; full T1 loop playable start→boss gate |
 | **M9** | Pixel tier | G6–G8 (`std_gfx_px`), 8×16 font atlas, bars + dotted red zone, dirty rects, surface-lost recovery | Fight renders in art mode; terminal + z9edit goldens byte-identical |
 | **M10** | Asset pipeline + art | Palette lock, transitory SVG→`.ZSP` conversion (uncommitted, P19), committed Z98 `--validate-assets`, 11 bases + 6 recolors + 5 boss ramps, 5 demo backgrounds, boat, 9 overlays | Demo asset budget met (≤1.35 MB indexed, backgrounds ≤120 KB each); all 11 bases reviewed side-by-side as one set |
 | **M11** | Boss + score screen — **DEMO GATE** | The Derelict §15 (3 phases), 5 Phase-2 adaptive variants, credits, 3-panel score screen, cosmetics render on boat | Full boss loop completable; all 5 variants triggerable from a save; Field Record written once; demo shippable |
@@ -1857,6 +1878,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P23 | **M6 kickoff rulings (user-authorized):** (1) loaded tables reach consumers through the existing accessor layer (`defAt`/`rows` + new accessor twins for the const arrays) with a static `?*Tables` override installed by the loader — verified legal in Z98; compiled-in `creatures_t1`/`tables_t1` remain the fallback/golden and tests are untouched; (2) `CreatureDef` gains `name`/`name_len` (§25.2) so names live in data, not in a `render_term` switch — this retires the "Unknown Creature" display for the 13 M4 rows; (3) `data.z98` grammar is §25.10 as written (KV rows, indexed drop/respawn keys, `format=2` header, `owner=` rules, `textGet` bool+out-param); (4) M6 ships **spec-complete** §14.4 drops for all 18 rows (not the code-state blank tables), so `loop_golden.txt` and any drop-dependent golden are re-pinned inside M6 — the M4/M5 deferral of the five M2-era drop tables is closed early; (5) `Tables` is a static (BSS) struct of ≈32 KB and the permanent arena (raised 64 KB → 256 KB per §35) holds the `data.z98` buffer, string bytes and save image; (6) `undtool` tools keep the compiled-in fallback when no file is beside the exe, while the game (`app.run*`) treats missing/damaged `data.z98` as the §33 fatal path. |
 | P24 | **M6 loader follow-ups (user-authorized):** (1) the compiled-in fallback is **tables-only** (`text_count = 0`) because `data.z98` is a shipped asset; validation requires `manual.1` in any loaded file but exempts the fallback builder, and the transcription test compares every table field and asserts the loaded text separately (has `manual.1`, non-empty, within caps). (2) `[text]` keeps paragraph breaks: a continuation line of exactly one space is a retained blank line, comment/blank rules do not apply inside an entry, and a `#` after the leading space is prose (§25.10). |
 | P25 | **M7 kickoff rulings (user-authorized "R1–R4 yes"):** (R1) `canSave` blocks mid-fight **and** while a subdue Release/Sell choice is pending (settle state), with a greyed reason; nothing is lost because no other action is legal there. (R2) `FieldRecord` (frozen at the first Derelict kill), `LastRun` (overwritten each engagement) and lifetime score counters are added to `World` **now**, zeroed by `zeroWorld`, and persisted; M11 only populates them, so `version=2` never needs a format bump. (R3) fresh install follows §20 exactly (page 1 → world init → dock; no menu); the start menu appears only when a save exists. (R4) `New Game` on an existing save asks `Erase this save? [Y] [N]` and re-inits without repeating page 1. Also pinned: save-local scanner/sections (not the §25.10 parser), `data_version` compares to installed `Tables.content_version`, `manual.1` is consumed (M6 authors it), `pending_cond` moves into `Expedition` and is persisted, `World.rng_state` is persisted, `options.cfg` holds `save_slot` only (read-only reader in M7), save lines 8192 B / file 64 KiB, two error surfaces (§33 fatal vs save-load menu), and `errors.log` receives recovery/warning lines. |
+| P26 | **M8 kickoff rulings (user-authorized):** (C1) the Derelict row lands in **M8** — `MAX_DROP_LINES` 4→6, `ROLE_BOSS=4`/`FAMILY_BOSS=13` (+validator ranges), `sale=0`/`resolve=0` boss exemptions, `subdue_chance=-1` with `F_BOSS`; the 5-line kill table is the reason the cap moves. (C2) the "New entry" marker is a persisted **additive optional save key** `journal_viewed` (absent = 0; §32). (C3) keep M7's Esc-at-dock = Save / `q` = Quit; M8 adds `J` (Journal) and a dock "New entry" line, and defers the Esc menu. (C4) zone flavor is authored **now**: `[text]` vocabulary gains `zone.1..9`, rendered on the node screen. (B) behavior driver table (§25.2) is binding: rule rows where threshold-driven (discharge, Rust flee, blind), named fields for coupling/armor/speed/attack/flee-hit/grudge/resist, `F_PHASING`/`F_INK`/`F_DECOY` flags + fight logic for the state machines; thresholds are absolute precomputed integers. `error.1..6` stay accepted but unread (M7 owns the copy). |
 
 ### Game design
 
@@ -1962,7 +1984,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | Cosmetic descriptions (12) | M11 |
 | T2–T4 creature rows, names, tables | M13 (authoring, rules locked in §21) |
 | Legends entries T2–T4 | M13 |
-| Derelict kill drops are 5 lines but `MAX_DROP_LINES = 4` (§14.4 vs §25.1) — boss row cannot load as written | M8/M11 (raise cap to 6 or merge two lines) |
+| ~~Derelict kill drops are 5 lines vs `MAX_DROP_LINES`~~ — resolved M8/P26: cap raised to **6**, boss row lands at load-order index 18 | closed |
 
 **No design questions remain open.** Everything above is authoring or measurement.
 

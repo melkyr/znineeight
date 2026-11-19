@@ -2,65 +2,96 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** All Tier-1 content authored into `data.z98` — 17 creature rows + 2 flex (Anemoniacus, Freezing Perch = M2/M3 sim rares now placed in Z2/Z3 tables), 7 tools, Z1–Z3 encounter tables, 19 journal entries, manual pages 1–8 (7 authored here, page 1 at M7), Legends (2), zone flavor (4), error copy (6) — demo content-complete in terminal.
+**Goal:** Complete Tier-1 content and its remaining wiring: append **one** Derelict row (load-order index 18) and wire the four deferred behaviours (blind, ink, decoy, phasing) plus Lure/Sonar; author journal 19, manual pages 2–8, Legends 2, zone flavour 4, and the journal/help UI. M6 already shipped the other 18 rows, stats, drops, tools/upgrades/cosmetics, Z1–Z3 encounters, zone D and `manual.1` — M8 verifies those, it does not re-author them.
 
-**Architecture:** Pure authoring + wiring: rows move from `tables_t1.zig` fixtures to the real `data.z98`; behaviors from spec §14.3 are expressed as §25.6 rule rows plus the named fields (`discharge_*`, `armor_below_*`, `speed_below_*`, `atk_below_*`, `flee_*`, `grudge_*`); text goes in the `[text]` section. The journal system keys non-boss entries on first-fight-end (P12), boss on first kill; `?` serves embedded manual pages (P12).
+**Architecture:** Pure authoring + wiring. Named fields and `[rules]` rows already encode most of §14.3; M8 adds the Derelict row, the one missing `SET_BLIND` rule, and the flag-driven state machines. Text lives in `[text]` (keys `manual.* journal.* legend.* zone.*`). Journal unlocks are `World.journal_mask` bits (first fight end, any outcome); a persisted `journal_viewed` mask drives the "New entry" indicator; exact Speed is hidden until the journal bit exists (Sonar overrides).
 
-**Tech Stack:** Z98 → C89 `-fsafe`; M6 loader, M7 save (journal bits persist), M2 fight, M4 loop.
+**Tech Stack:** Z98 → C89 `-fsafe`; M6 loader, M7 save (journal bits + additive `journal_viewed`), M2 fight, M4 loop, M5 tools.
 
-**Spec:** `docs/superpowers/specs/2026-11-12-undersanded-design.md` §10 (tools), §11 (cosmetics), §12–13 (zones/encounters), §14 (all four roster tables), §15 (Derelict row placeholder — boss fight is M11), §18 (manual/journal/tooltips), §38 P12 (journal trigger, `?` pages), §40 (authoring checklist), §36 (M8 row).
+**Spec:** `docs/superpowers/specs/2026-11-12-undersanded-design.md` §8.7–8.8, §10 (tools), §11 (cosmetics), §12–13 (zones/encounters), §14 (roster tables), §15 (Derelict row only — boss fight is M11), §18 (manual/journal/tooltips/zone flavour), §25.2 (behaviour drivers), §25.10 (`zone.*`), §32 (additive keys), §38 P12/P26, §40 checklist, §36 M8.
 
 **Sequence:** PREVIOUS: `2026-11-12-undersanded-m07-save-system-plan.md`. NEXT: `2026-11-12-undersanded-m09-pixel-tier-plan.md`.
 
 ## Global Constraints
 
-**Test model (spec §26, binding):** tiers run natively — `undtool.nix` (COMMAND.COM-analogue console) + native test drivers are the FAST gate; Wine/DD7/DSound probes are SLOW evidence only, never the gate; operator hardware is M16-only. Logic goldens must be runnable in CI without Wine.
+**Test model (spec §26, binding):** tiers run natively — `undtool.nix` + native drivers are the FAST gate; Wine/DD7/DSound are SLOW evidence only, never the gate. No Python.
 
-As prior. Stats/drops/respawn values copied **verbatim** from spec §14.2/§14.4 — no tuning in this milestone (balance is M15's job; M3 levers only via STOP-present). Journal voice: first-person, past tense, observational, never instructs (§18). Tooltip strings exact (§18). Sale prices §14.2 (10–70 range). Subdue chances 95/80/60/−1 exact.
+Values are copied **verbatim** from spec §14.2/§14.4 — no tuning (balance is M15). Subdue 95/80/60/−1 and surge restore 25% are spec-fixed. **Rule thresholds are absolute precomputed integers** (e.g. 50% of 130 HP = `cond_a=65`), matching the landed T1 rows; never store a percentage in `cond_a`. `*_below_pct` values are pp added to 100. D17/D18 still apply.
+
+**Behaviour drivers (spec §25.2, binding — one live driver each):**
+
+| Behaviour | Live driver |
+| :--- | :--- |
+| Coupling regen | `thrash_regen`/`despair_regen` fields |
+| Discharge | `[rules]` `HULL_DMG` one-shot (`discharge_*` = pin) |
+| Armor / armor-below | `armor_pct`/`armor_below_*` fields |
+| Speed-below / attack-below | `speed_below_*`/`atk_below_*` fields |
+| Flee on hit | `flee_kind`/`flee_th` fields (strict `>`) |
+| Flee on threshold (Rust) | `[rules]` `SET_FLEE` `HP_BELOW 24` |
+| Grudge | `grudge_*` fields |
+| Shell/resist | `resist_restrain_pct` (+ `F_SHELL`) |
+| Blind (Lantern) | `[rules]` `SET_BLIND` `RES_BELOW 65`, `effect_b=50`, persistent |
+| Ink (Squid) | `F_INK` + round logic |
+| Decoy (Angler) | `F_DECOY` + round-1 logic |
+| Phasing (Ghost-Ray) | `F_PHASING` + round state machine |
 
 ## File Structure
 
-- `examples/z98/undersanded/data.z98` — full T1 content (creatures 1–19 incl. flex, rules, tools, upgrades, cosmetics, encounters Z1–Z3, zones, text).
-- `examples/z98/undersanded/journal.zig` — entry unlock logic (P12 triggers), "New entry" indicator flag, seen mask.
-- `examples/z98/undersanded/help.zig` — `?` key → embedded manual page per screen; tooltips (two strings, first-occurrence only).
-- `examples/z98/undersanded/fight.zig` (modify) — blind/decoy/ink/phasing wiring + Lure/Sonar interactions and reveals (moved from M5, P22.2/P22.8).
-- `examples/z98/undersanded/tests/tier_m8_content.sh`, updated goldens (`defs_golden.txt`, screen goldens).
+- `examples/z98/undersanded/def.zig` — msg ids 18–23; `ROLE_BOSS=4`/`FAMILY_BOSS=13`; `journal_viewed: [2]u32` in `World`; zeroing hooks.
+- `examples/z98/undersanded/creatures_t1.zig` — boss row appended + role/family consts; fallback drop arrays width 6.
+- `examples/z98/undersanded/data.z98` — Derelict row + 5-line kill/2-line overkill drops; one `SET_BLIND` rule; `journal.*`, `manual.2..8`, `legend.*`, `zone.*` text.
+- `examples/z98/undersanded/data.zig` / `validate.zig` — drop-key width 6; boss exemptions (`role<=4`, `family<=13`, `sale>=0`, `resolve>=0` for boss); `zone.*` vocabulary.
+- `examples/z98/undersanded/fight.zig` — blind/ink/decoy/phasing wiring, Lure/Sonar constants + effects, `peekCreatureAction` extension, new msg ids.
+- `examples/z98/undersanded/journal.zig` — unlock + viewed logic.
+- `examples/z98/undersanded/help.zig` — `helpPage(screen)` + `tooltip(kind)`.
+- `examples/z98/undersanded/nav.zig` — `NAV_JOURNAL`/`NAV_HELP`, `J`/`?` routing, dock "New entry" line.
+- `examples/z98/undersanded/render_term.zig` — journal/help screens, node zone-flavour line, `SPD ??` + Sonar override, msgLine cases.
+- `examples/z98/undersanded/persist.zig` — additive optional `journal_viewed`.
+- `examples/z98/undersanded/game.zig` — zero `journal_viewed`.
+- `examples/z98/undersanded/tests/{journal_test,help_test}.zig`, extended `fight_test`/`content_test`/`persist_test`; `tests/tier_m8_content.sh`; goldens (`defs_golden.txt`, journal/help/zone screens, save round-trip).
+- `examples/z98/undersanded/README.md` — `J`/`?`.
 
 ## Review Focus
 
-- Stat transcription drift (HP/Res/Spd/Atk/subdue/sale/respawn) — every value must match spec §14.2 byte-for-byte → generated diff test: dump from loader vs a checked-in copy of the spec table.
-- Behavior encoding errors (one-shot vs persistent timing per §14.3: discharge one-shot; armor/speed/attack-below persistent) → per-creature behavior tests asserting the exact effect and timing.
-- Drop table order and keystone drops (Mileel Hooked Barbel ×1 only on subdue; Tunisteel Steel Fins ×2 only on subdue) → per-creature drop goldens.
-- Journal voice drift into "now do X" → review step; tooltip appearing more than once → counter test.
-- Encounter weights transcription (Z1–Z3 day/night exact) → loader golden of encounter arrays.
+- Behaviour double-encoding drift (field and rule disagreeing) — assert the pin equals the live driver for every creature.
+- Threshold units (absolute vs percent) — the 275%-class bug; every `cond_a` is an integer threshold, not a percentage.
+- Hidden/visible Speed: `SPD ??` until the journal bit, Sonar overrides, and the reveal must survive save/load.
+- Blind chance vs trigger: `SET_BLIND` fires while below; `pending_blind` must be consumed by the next Strike, not permanently re-arm.
+- Journal trigger completeness: first fight end **including** Hull-0 ascent, player flee and creature flee; boss only on kill.
+- Zone flavour / journal key mapping (`def_index+1`) — off-by-one would mislabel entries.
 
 ---
 
 ### Task 0: Preflight
 
-- [ ] Print spec §14.2 and §14.4 into the working notes as the transcription source. Confirm the §40 checklist scope for M8 (everything except boss-flavor/cosmetic-description/field-record lines = M11). Note the flex rares (Anemoniacus, Freezing Perch) are the new Z2/Z3 encounter rows from spec §13.
+- [ ] Record in `NOTES.md`: P26 rulings (C1–C4, driver table), the landed T1 state M8 verifies (18 rows, 4 rules, tables), the boss row field values, the current `TIER_M7 PASS 126/0` baseline, and the D18 note. Commit `example(undersanded): M8 preflight`.
 
-### Task 1: Creature rows + behavior rules
+### Task 1: Derelict row + behaviour wiring
 
-**Interfaces (consumed by M13 — the schema is the contract):** 19 `[creatures]` rows as **M6 KV rows** (order-free `key=value` fields — §25.2 names; there is no column order); `[rules]` rows encoding §14.3 per creature (Mystic Eel: Despair regen override +8; Electric Eel: Thrash +8 + discharge {stat RES, th 50, dmg 8} one-shot; Mileel: Despair +10 + flee{kind SINGLE_HIT, th 30% max, **strict `>`**, fires **next turn**} + grudge{EEL, RES, 30}; (a hit of exactly 24 on HP 80 must NOT flee); Steel Tuna: persistent armor 60% (Plate negates) + speed_below{30, +4}; Rust Tuna: armor 80% + flee{HP_BELOW 30, strict `<`, next turn}; Tunisteel: armor 50% (grudge → 30) + speed_below{30, +6}; Kelp Crab: Thrash +6; Brine Jelly: Despair +10; Barnacle: armor_below{50, 70} + stationary; Anemone: discharge{HP, 50, 10} one-shot + stationary; Anemoniacus (flex): Thrash +10 + discharge{HP, 50, 10} one-shot; Freezing Perch (flex): Despair +8 + flee{SINGLE_HIT, th 20% max (21), strict, next turn}; Coral Crab: `resist_restrain_pct=50` (Shell; Brine Net tool check) + Thrash +12; Lantern-Jelly: `blind_chance=50` + rule SET_BLIND {stat RES, th 50} (fires while below, §8.7 persistent-while-true; Lure tool check) + Despair +12; Ghost-Ray: phasing flag F_PHASING (floor((r-1)/2)%2, lock Phase <30%; when solid `resist_restrain_pct=50` — "Solid: Restrain 50%"); Squid: ink every 3 rounds + speed_below{RES 50, +6}; Angler: decoy round 1 + atk_below{50, **+50**} (`*_below_pct` = pp added to 100 — spec §9.5 accumulate example: 100+50+25; NEVER +150); Wrasse: armor_below{30, 50} + speed_below{30, +4}; Derelict: boss sentinel row only).
-- [ ] **Fight wiring (moved from M5 — P22.2/P22.8):** implement `F_PHASING` (floor((r-1)/2)%2, locked Phase <30%), `F_INK` (every 3 rounds randomizes the next action, never Flee; extend `fight.peekCreatureAction`), `F_DECOY` (round 1 Strike hits the decoy), and `blind_chance` (blinds the next Strike, 50%) in `fight.zig`; wire Lure (prevents blind/decoy, reveals real target/phase) and Sonar (ink immunity, exact Speed, next-action reveal via the peek). Tests: solid/phase alternation, ink cadence + never-Flee, decoy miss, blind, Lure/Sonar counters, reveal output stable across two peeks.
-- [ ] Transcription diff test (Review Focus #1) + per-creature behavior tests. Implement rows. PASS. Commit `example(undersanded): T1 creature rows + behavior rules`.
+**Interfaces (consumed by M11/M13 — the schema is the contract):** append one `[creatures]` row at load-order index 18 (`id=17`): `family=13`, `role=4`, `zone_mask=256`, `phase_mask=3`, `hp=300`, `resolve=0`, `speed=7`, `attack=10`, `subdue_chance=-1`, `flags=1` (`F_BOSS`), `sale=0`, `respawn_sub=20/kill=20/over=40`, `counter_tool=1`; drop slots `sub` empty; `kill` = Plate×5, Gland×3, Glow×3, Glass×2, Coral×2; `over` = Plate×2, Gland×1. All other fields 0/100 as the other rows. Raise `MAX_DROP_LINES` to 6 in `def.zig` and the `data.zig` key tables (`sub0..sub5`), fallback rows and `--dump-defs` golden. Validator: role max 4, family max 13, `sale<=0` allowed only for boss, `resolve=0` allowed for boss, `subdue_chance=-1` requires `F_BOSS` (already enforced).
 
-### Task 2: Drops, tools, upgrades, cosmetics, encounters
+- [ ] **Fight wiring** per the driver table: `pending_blind` consumed by the next Strike (chance = `pending_blind`), Lure (tool 4) suppresses; `F_INK` at round start every 3rd round draws `rngRange(0,2)`, never Flee, Sonar (tool 6) suppresses, extends `peekCreatureAction`; `F_DECOY` round 1 Strike misses unless Lure; `F_PHASING` `floor((round-1)/2)%2`, locked Phase below 30% HP, Solid ⇒ `active_resist_restrain=50` and Strike works, Phase ⇒ Strike misses and Restrain full. Add `TOOL_LURE=4`, `TOOL_SONAR=6`, msg ids 18–23 with `MESSAGES`/`msgLine` copy. Lure reveals phase/real target; Sonar reveals exact Speed + next action + Ghost-Ray flip.
+- [ ] Add the `SET_BLIND` rule (`owner=12`, `cond_op=2`, `cond_a=65`, `effect_op=6`, `effect_b=50`, `timing=1`). Keep Rust's `SET_FLEE` at `24`; keep discharge thresholds `48/45/50`. Tests: solid/phase alternation, ink cadence + never-Flee + 1 draw, decoy miss, blind chance, Lure/Sonar counters, reveal stable across two peeks, boss row loads and pins all fields. Commit `example(undersanded): Derelict row + combat behaviour wiring`.
 
-- [ ] `data.z98`: §14.4 drop rows exactly (subdue/kill/overkill, keystones on subdue only); tools/upgrades/cosmetics tables (M5 fixtures → real file, §10–§11 verbatim incl. prices 150/175/200 and unlock milestones); Z1–Z3 encounter rows exactly §13; Z4–Z8 stubs; Derelict zone D (boss flag, travel 5, gate 6-seen, telegraph string). Goldens updated. Commit `example(undersanded): T1 drops, tools, tables, encounters`.
+### Task 2: Verify shipped content + boss drops
 
-### Task 3: Journal + help + tooltips
+- [ ] Verify (do not re-author) the landed §14.4 drops, §10–§11 tables, §13 Z1–Z3 encounters and zone D; assert them against the spec table in `content_test`. Re-pin `defs_golden.txt` for the boss row. Commit `example(undersanded): verify T1 tables + boss drops`.
 
-**Interfaces:** `pub fn journalOnFightEnd(w: *World, def) void` (non-boss: first fight end any outcome); `pub fn journalOnBossKill(w: *World)`; `pub fn helpPage(screen) ?[]const u8` (8 manual pages + page 1 embedded); `pub fn tooltip(kind) ?[]const u8` (exactly 2 kinds, each once per fresh install).
-- [ ] Author 19 journal entries (3 sentences, §18 voice; boss entry "after the first kill", Derelict referred to as "a signal, not a machine" pre-kill), manual pages 1–8 (one mechanic per page, worked examples — spec §18 list), Legends 2 entries (Mileel, Tunisteel: "unconfirmed sightings", no locations/stats/tips), zone flavor 4 paragraphs, error copy 6 messages (§33 verbatim — authored here per §40's list; M7 consumes the keys: §40 listed them under M7, resolved as content-authored-M8 / runtime-consumed-M7). Unit tests: trigger matrix (fight end→entry once; flee counts; boss kill gate); help per screen; tooltip once (`tooltip_shown` bits persist via M7 save set); H4 wiring: `journalOnFightEnd` sets the `spd_revealed` bit → fight screen flips `SPD ??` to exact Speed (M2 render reads the bit). PASS. Commit `example(undersanded): T1 journal, manual, legends, copy`.
+### Task 3: Journal + help + tooltips + zone flavour
+
+**Interfaces:** `pub fn journalOnFightEnd(w: *World, def_index: i32) void` (first end, any outcome); `pub fn journalOnBossKill(w: *World) void`; `pub fn helpPage(screen: i32) ?[]const u8`; `pub fn tooltip(kind: i32) ?[]const u8`.
+
+- [ ] `journal.zig`: set `journal_mask` bit for `def_index` (boss bit only via `journalOnBossKill`); `journal_viewed` bit cleared on unlock, set when the entry is opened; "New entry" = any unviewed bit. Key mapping `journal.<def_index + 1>`.
+- [ ] Author text: journal 19 (one paragraph each, §18 voice; boss = "a signal, not a machine" pre-kill), manual pages 2–8 (pages 1 is M6-authored), Legends 2 (`legend.1` Mileel, `legend.2` Tunisteel), zone flavour 4 (`zone.1` Z1, `zone.2` Z2, `zone.3` Z3, `zone.9` D; `zone.4..8` deferred M13). Do not author `error.*` (M7 owns the copy).
+- [ ] UI: `NAV_JOURNAL`/`NAV_HELP`, `J`/`?` keys, journal screen, per-screen `?` page map (dock→1, map→5, node→2, fight→2, settle→3, refine/craft→4, tools→6, journal→7), node-screen zone flavour, dock "New entry" line. H4: `render_term` prints `SPD ??` unless `journal_mask` bit for `def_index` is set or Sonar is active. Tooltips (2 kinds) once per fresh install via `tooltip_shown` bits; triggers = first Restrain action and first red-zone entry.
+- [ ] Persist `journal_viewed` as an **additive optional key** (absent ⇒ 0; always written); extend `persist_test` round-trip and the M7-era fixture (old save without the key must still load). Tests: trigger matrix (incl. ascent/flee), viewed indicator, help map, tooltip once, speed reveal survives save. Commit `example(undersanded): journal, manual, legends, zone flavour`.
 
 ### Task 4: `tier_m8_content.sh` — demo content-complete
 
-- [ ] Tier: Tasks 1–3 tests + full-loop scripted golden **start → Z1–Z3 fights → boss node shows lock/telegraph at 6-seen** (Anemoniacus/Freezing Perch rows loadable + fightable) (boss fight itself M11) + journal bits persist through save round-trip + `?` pages golden. Non-vacuous. Run PASS. Commit `example(undersanded): M8 content tier`.
+- [ ] Tier nests `tier_m7_save.sh`; runs the new drivers; scripted full loop **start → Z1–Z3 fights → boss node lock/telegraph at 6-seen** (boss fight is M11); journal bits + `journal_viewed` survive save round-trip; `?` and journal screen goldens; boss row dump golden; non-vacuous (mutate a golden → fail). Commit `example(undersanded): M8 content tier`.
 
-**Gate:** demo content-complete in terminal: every §40 M8 item authored, the full T1 loop playable to the boss gate, all goldens green.
+**Gate:** demo content-complete in terminal: every §40 M8 item authored, full T1 loop playable to the boss gate, all goldens green.
 
 ### Task 5: Next-milestone amendment review (M9)
 
-- [ ] Read `2026-11-12-undersanded-m09-pixel-tier-plan.md`; judge render-asset needs vs text content (log line lengths, screen copy for art layout). Amendment or "no amendment needed" in NOTES.md.
+- [ ] Read `2026-11-12-undersanded-m09-pixel-tier-plan.md`; judge render-asset needs vs text content (log line lengths, screen copy for art layout). Amendment or "no amendment needed" in `NOTES.md`.
