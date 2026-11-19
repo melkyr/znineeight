@@ -281,13 +281,22 @@ if [ "$NIX_OK" -eq 1 ]; then
         diff -u "$BOSS_GOLDEN" "$OUT/boss_row.txt" 2>/dev/null | sed 's/^/       /'
     fi
 
-    cp "$OUT/help1.txt" "$OUT/help_mutated.txt"
-    printf 'NON-VACUITY EXTRA LINE\n' >>"$OUT/help_mutated.txt"
-    if ! cmp -s "$OUT/help_mutated.txt" "$HELP_GOLDEN"; then
-        pass_case "non-vacuity: mutated help dump no longer matches the golden"
+    # Non-vacuity: the same cmp that accepts the real golden must reject a
+    # one-byte mutation of that golden (and still accept the original).
+    MUT_GOLDEN="$OUT/help_golden.mutated"
+    cp "$HELP_GOLDEN" "$MUT_GOLDEN"
+    printf 'X' >>"$MUT_GOLDEN"
+    if cmp -s "$OUT/help1.txt" "$HELP_GOLDEN"; then
+        pass_case "non-vacuity: unmutated golden still matches the help dump"
     else
-        fail_case "non-vacuity: mutated help dump still matched the golden"
+        fail_case "non-vacuity: unmutated golden no longer matches the help dump"
     fi
+    if ! cmp -s "$OUT/help1.txt" "$MUT_GOLDEN"; then
+        pass_case "non-vacuity: one-byte-mutated golden is rejected by the same cmp"
+    else
+        fail_case "non-vacuity: mutated golden still matched the help dump"
+    fi
+    rm -f "$MUT_GOLDEN"
 
     rm -f "$NATIVE/data.z98"
 else
@@ -296,7 +305,8 @@ else
         "--dump-grid --screen help rerun is byte-identical" \
         "--dump-grid --screen journal rerun is byte-identical" \
         "--dump-defs boss row byte-identical to golden" \
-        "non-vacuity: mutated help dump no longer matches the golden"; do
+        "non-vacuity: unmutated golden still matches the help dump" \
+        "non-vacuity: one-byte-mutated golden is rejected by the same cmp"; do
         fail_case "$label (undtool.nix did not build)"
     done
 fi
