@@ -146,6 +146,101 @@ pub const LoadErr = error{ Missing, DamagedLine, Overflow, BadSentinel, BadRef, 
 
 pub var err_line: i32 = 0;
 
+// Source line probes for validate.zig. Populated by loadFile; read only when
+// lines_ready is true (fixtures), so fallback/synthetic images report line 0.
+pub var lines_ready: bool = false;
+pub var header_line: i32 = 0;
+pub var section_line: [8]i32 = undefined;
+pub var def_src: [def.MAX_CREATURES]i32 = undefined;
+pub var rule_src: [def.MAX_RULES]i32 = undefined;
+pub var tool_src: [def.MAX_TOOLS]i32 = undefined;
+pub var upgrade_src: [15]i32 = undefined;
+pub var cosmetic_src: [def.MAX_COSMETICS]i32 = undefined;
+pub var enc_src: [def.MAX_ZONES * 2 * def.MAX_ENCOUNTER]i32 = undefined;
+pub var zone_src: [def.MAX_ZONES]i32 = undefined;
+
+pub fn resetLines() void {
+    lines_ready = false;
+    header_line = 0;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        section_line[i] = 0;
+    }
+    i = 0;
+    while (i < def.MAX_CREATURES) : (i += 1) {
+        def_src[i] = 0;
+    }
+    i = 0;
+    while (i < def.MAX_RULES) : (i += 1) {
+        rule_src[i] = 0;
+    }
+    i = 0;
+    while (i < def.MAX_TOOLS) : (i += 1) {
+        tool_src[i] = 0;
+    }
+    i = 0;
+    while (i < 15) : (i += 1) {
+        upgrade_src[i] = 0;
+    }
+    i = 0;
+    while (i < def.MAX_COSMETICS) : (i += 1) {
+        cosmetic_src[i] = 0;
+    }
+    i = 0;
+    while (i < def.MAX_ZONES * 2 * def.MAX_ENCOUNTER) : (i += 1) {
+        enc_src[i] = 0;
+    }
+    i = 0;
+    while (i < def.MAX_ZONES) : (i += 1) {
+        zone_src[i] = 0;
+    }
+}
+
+fn srcAt(i: i32, n: i32, arr: []const i32) i32 {
+    if (!lines_ready) return 0;
+    if (i < 0 or i >= n) return 0;
+    return arr[@intCast(usize, i)];
+}
+
+pub fn headerSrcLine() i32 {
+    if (!lines_ready) return 0;
+    return header_line;
+}
+
+pub fn sectionSrcLine(sid: i32) i32 {
+    if (!lines_ready) return 0;
+    if (sid < 0 or sid >= 8) return 0;
+    return section_line[@intCast(usize, sid)];
+}
+
+pub fn defSrcLine(i: i32) i32 {
+    return srcAt(i, @intCast(i32, def.MAX_CREATURES), def_src[0..]);
+}
+
+pub fn ruleSrcLine(i: i32) i32 {
+    return srcAt(i, @intCast(i32, def.MAX_RULES), rule_src[0..]);
+}
+
+pub fn toolSrcLine(i: i32) i32 {
+    return srcAt(i, @intCast(i32, def.MAX_TOOLS), tool_src[0..]);
+}
+
+pub fn upgradeSrcLine(i: i32) i32 {
+    return srcAt(i, 15, upgrade_src[0..]);
+}
+
+pub fn cosmeticSrcLine(i: i32) i32 {
+    return srcAt(i, @intCast(i32, def.MAX_COSMETICS), cosmetic_src[0..]);
+}
+
+pub fn encSrcLine(i: i32) i32 {
+    return srcAt(i, @intCast(i32, def.MAX_ZONES * 2 * def.MAX_ENCOUNTER), enc_src[0..]);
+}
+
+pub fn zoneSrcLine(i: i32) i32 {
+    return srcAt(i, @intCast(i32, def.MAX_ZONES), zone_src[0..]);
+}
+
 pub fn install(t: *def.Tables) void {
     def.content_override = t;
 }
@@ -651,6 +746,7 @@ fn parseEncounter(fields: []const RowField, n: usize, line: i32, t: *def.Tables)
         return error.Overflow;
     }
     t.encounters[base + count] = def.EncounterRow{ .def_index = def_index, .weight = weight };
+    enc_src[base + count] = line;
     t.enc_count[ci] = @intCast(i32, count + 1);
 }
 
@@ -671,9 +767,10 @@ fn parseZone(fields: []const RowField, n: usize, line: i32, t: *def.Tables) Load
     }
     t.zone_cost[@intCast(usize, id)] = cost;
     t.zone_boss[@intCast(usize, id)] = boss;
+    zone_src[@intCast(usize, id)] = line;
 }
 
-fn textKeyKnown(k: []const u8) bool {
+pub fn textKeyKnown(k: []const u8) bool {
     if (k.len > 7 and eql(k[0..7], "manual.")) {
         const n = parseI32(k[7..]) orelse return false;
         return n >= 1 and n <= 8;
@@ -779,6 +876,7 @@ fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [de
                 return error.Overflow;
             }
             t.rules[out_i] = rows[j];
+            rule_src[out_i] = lines[j];
             out_i += 1;
             emitted[j] = true;
         }
@@ -793,6 +891,7 @@ fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [de
 
 pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) LoadErr!void {
     err_line = 0;
+    resetLines();
     const content = file_mod.readAll(arena, path) catch return error.Io;
 
     var tmp: def.Tables = undefined;
@@ -810,7 +909,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
 
     var rule_owner: [def.MAX_RULES]i32 = undefined;
     var rule_row: [def.MAX_RULES]def.Rule = undefined;
-    var rule_line: [def.MAX_RULES]i32 = undefined;
+    var rule_in_line: [def.MAX_RULES]i32 = undefined;
     var rule_n: usize = 0;
     var tool_n: usize = 0;
     var upgrade_n: usize = 0;
@@ -837,6 +936,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
             if (eql(line, "format=2")) {
                 header_ok = true;
                 tmp.content_version = 2;
+                header_line = line_no;
             } else {
                 return failLine(line_no);
             }
@@ -896,6 +996,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
             const sid = sectionId(name);
             if (sid < 0) return failLine(line_no);
             section = sid;
+            section_line[@intCast(usize, sid)] = line_no;
             if (sid == 7) text_section_line = line_no;
         } else if (cls == 3) {
             if (section < 0 or section == 7) return failLine(line_no);
@@ -909,6 +1010,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
                 var d = zeroDef();
                 try parseCreature(fields[0..], fn_count, line_no, &d);
                 tmp.defs[@intCast(usize, tmp.def_count)] = d;
+                def_src[@intCast(usize, tmp.def_count)] = line_no;
                 tmp.def_count += 1;
             } else if (section == 1) {
                 if (rule_n >= def.MAX_RULES) {
@@ -916,7 +1018,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
                     return error.Overflow;
                 }
                 try parseRule(fields[0..], fn_count, line_no, &rule_owner[rule_n], &rule_row[rule_n]);
-                rule_line[rule_n] = line_no;
+                rule_in_line[rule_n] = line_no;
                 rule_n += 1;
             } else if (section == 2) {
                 if (tool_n >= def.MAX_TOOLS) {
@@ -926,6 +1028,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
                 var tr = zeroTool();
                 try parseTool(fields[0..], fn_count, line_no, &tr);
                 tmp.tools[tool_n] = tr;
+                tool_src[tool_n] = line_no;
                 tool_n += 1;
             } else if (section == 3) {
                 if (upgrade_n >= 15) {
@@ -935,6 +1038,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
                 var ur = zeroUpgrade();
                 try parseUpgrade(fields[0..], fn_count, line_no, &ur);
                 tmp.upgrades[upgrade_n] = ur;
+                upgrade_src[upgrade_n] = line_no;
                 upgrade_n += 1;
             } else if (section == 4) {
                 if (cosmetic_n >= def.MAX_COSMETICS) {
@@ -944,6 +1048,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
                 var cr = def.CosmeticRow{ .name = "", .price = 0, .unlock = 0 };
                 try parseCosmetic(fields[0..], fn_count, line_no, &cr);
                 tmp.cosmetics[cosmetic_n] = cr;
+                cosmetic_src[cosmetic_n] = line_no;
                 cosmetic_n += 1;
             } else if (section == 5) {
                 try parseEncounter(fields[0..], fn_count, line_no, &tmp);
@@ -972,24 +1077,19 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
     tmp.upgrade_count = @intCast(i32, upgrade_n);
     tmp.cosmetic_count = @intCast(i32, cosmetic_n);
 
-    var has_manual: bool = false;
     var ti: usize = 0;
     var text_bytes: usize = 0;
     while (ti < @intCast(usize, tmp.text_count)) : (ti += 1) {
-        if (eql(tmp.text_key[ti], "manual.1")) has_manual = true;
         text_bytes += tmp.text_val[ti].len;
     }
     if (text_bytes > def.MAX_TEXT_BYTES) {
         err_line = if (text_section_line > 0) text_section_line else 1;
         return error.Overflow;
     }
-    if (!has_manual) {
-        err_line = if (text_section_line > 0) text_section_line else 1;
-        return error.DamagedLine;
-    }
 
-    try packRules(&tmp, &rule_owner, &rule_row, &rule_line, rule_n);
+    try packRules(&tmp, &rule_owner, &rule_row, &rule_in_line, rule_n);
 
+    lines_ready = true;
     tables.* = tmp;
     return;
 }

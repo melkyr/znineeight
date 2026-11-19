@@ -1,0 +1,3 @@
+format=2
+[creatures]
+id=1,name=Eel,family=1,role=1,zone_mask=3,phase_mask=3,hp=10,resolve=10,speed=1,attack=1,thrash_regen=0,despair_regen=0,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sub0_part=1,sub0_count=100,sale=1,respawn_sub=1,respawn_kill=2,respawn_over=3,counter_tool=0
