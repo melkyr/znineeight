@@ -35,13 +35,25 @@ pub const MAX_PX_W: u32 = 640;
 pub const MAX_PX_H: u32 = 480;
 pub const MAX_PX_BYTES: usize = 640 * 480 * 2;
 
-const GfxState = struct {
+// The Windows wrapper shares this state type. The COM/window handles are
+// opaque `*void` here (and only here) so the pure core stays free of Windows
+// headers and of std_gfx/std_gfx_pal imports.
+pub const GfxState = struct {
     pixels: [*]u8,
     pitch: i32,
     w: u32,
     h: u32,
     mem_only: bool,
     opened: bool,
+    win: *void,
+    dd7: *void,
+    primary: *void,
+    px_surface: *void,
+    pst: *void,
+    locked: bool,
+    owned: bool,
+    fallback: bool,
+    unlocked_logged: bool,
 };
 
 pub const Gfx = struct { opaque: *GfxState };
@@ -50,13 +62,17 @@ var g_canvas: [MAX_PX_BYTES]u8 = undefined;
 var g_state: GfxState = undefined;
 var g_gfx: Gfx = undefined;
 
-fn surfaceOf(s: *GfxState) Surface {
+pub fn pxCoreSurface(s: *GfxState) Surface {
     return Surface{
         .pixels = s.pixels,
         .pitch = s.pitch,
         .w = s.w,
         .h = s.h,
     };
+}
+
+fn nullPtr() *void {
+    return @ptrCast(*void, @intToPtr(*void, 0));
 }
 
 fn storePixel(row: [*]u8, x: i32, px: u16) void {
@@ -199,6 +215,15 @@ pub fn gfxPxOpenMemory(w: u32, h: u32) PxError!*Gfx {
     s.h = h;
     s.mem_only = true;
     s.opened = true;
+    s.win = nullPtr();
+    s.dd7 = nullPtr();
+    s.primary = nullPtr();
+    s.px_surface = nullPtr();
+    s.pst = nullPtr();
+    s.locked = false;
+    s.owned = false;
+    s.fallback = false;
+    s.unlocked_logged = false;
     g_gfx.opaque = s;
     return &g_gfx;
 }
@@ -212,19 +237,19 @@ pub fn gfxPxDump(g: *Gfx) []const u8 {
 
 pub fn gfxPxFill(g: *Gfx, x: i32, y: i32, w: i32, h: i32, rgb565: u16) void {
     if (!g.opaque.opened) return;
-    var sf = surfaceOf(g.opaque);
+    var sf = pxCoreSurface(g.opaque);
     pxCoreFill(&sf, x, y, w, h, rgb565);
 }
 
 pub fn gfxPxBlit(g: *Gfx, dx: i32, dy: i32, s: *const Sprite) void {
     if (!g.opaque.opened) return;
-    var sf = surfaceOf(g.opaque);
+    var sf = pxCoreSurface(g.opaque);
     pxCoreBlit(&sf, dx, dy, s);
 }
 
 pub fn gfxPxBlitPart(g: *Gfx, dx: i32, dy: i32, s: *const Sprite,
     sx: i32, sy: i32, sw: i32, sh: i32) void {
     if (!g.opaque.opened) return;
-    var sf = surfaceOf(g.opaque);
+    var sf = pxCoreSurface(g.opaque);
     pxCoreBlitPart(&sf, dx, dy, s, sx, sy, sw, sh);
 }

@@ -1582,7 +1582,10 @@ Kickoff rulings (spec §38 P27; user-authorized "3. A"):
   art subdue modal, exported `msgLine` + parity test.
 - **Allowlist delta only what is used** (`StretchDIBits`; `SetWindowLongA` only
   if the fixed-size path needs it) — recorded here when implemented and gated
-  by `check_win9x_imports.sh`.
+  by `check_win9x_imports.sh`. **Recorded M9 Task 2 delta:** GDI32 adds
+  `StretchDIBits` (24-bit DIB px fallback), USER32 adds `SetWindowLongA`
+  (standalone px fixed-size frame). No `CreateDIBSection` was needed: the DIB
+  pixels are a fixed module buffer passed to `StretchDIBits`.
 - **D24/D25:** new atlas/table data uses explicit `[N]T{...}` literals; no
   array-returning APIs. (`examples/torrent_example_defects.md` D24/D25).
 - **Tier split:** native core/art/loop tests + `tier_edit.sh` (byte-identical)

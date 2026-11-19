@@ -80,6 +80,12 @@ const GfxState = struct {
 
 pub const Gfx = struct { opaque: *GfxState };
 
+// Read-only access to the shared window/pump state. The px tier borrows the
+// open cell window through this accessor; the cell contract is unchanged.
+pub fn gfxNativeState(g: *Gfx) *pal.State {
+    return &g.opaque.st;
+}
+
 var g_state: GfxState = undefined;
 var g_gfx: Gfx = undefined;
 var g_opened: bool = false;
@@ -160,18 +166,10 @@ fn kindFromU8(k: u8) EventKind {
     return .close;
 }
 
-pub fn gfxPollEvent(g: *Gfx, ev: *Event) bool {
-    const s = g.opaque;
-    if (s.mem_only) return false;
-    var raw: pal.RawEvent = undefined;
-    if (!pal.pollEvent(&s.st, &raw)) return false;
-    if (raw.kind == EK_RESIZE) {
-        resizeGrid(s, raw.cols, raw.rows);
-        if (s.cols != 0 and s.rows != 0) {
-            raw.cols = s.cols;
-            raw.rows = s.rows;
-        }
-    }
+// One raw->Event mapping shared by the cell pump and the px pump, so both
+// tiers deliver the same kind/ch/x/y/px/py/focus data.
+pub fn gfxEventFromRaw(raw: pal.RawEvent) Event {
+    var ev: Event = undefined;
     ev.kind = kindFromU8(raw.kind);
     ev.ch = raw.ch;
     ev.code = raw.code;
@@ -188,6 +186,22 @@ pub fn gfxPollEvent(g: *Gfx, ev: *Event) bool {
     ev.cols = raw.cols;
     ev.rows = raw.rows;
     ev.mods = raw.mods;
+    return ev;
+}
+
+pub fn gfxPollEvent(g: *Gfx, ev: *Event) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    var raw: pal.RawEvent = undefined;
+    if (!pal.pollEvent(&s.st, &raw)) return false;
+    if (raw.kind == EK_RESIZE) {
+        resizeGrid(s, raw.cols, raw.rows);
+        if (s.cols != 0 and s.rows != 0) {
+            raw.cols = s.cols;
+            raw.rows = s.rows;
+        }
+    }
+    ev.* = gfxEventFromRaw(raw);
     return true;
 }
 
@@ -198,7 +212,10 @@ pub fn gfxWaitEvent(g: *Gfx, timeout_ms: u32) bool {
     const s = g.opaque;
     if (s.mem_only) return false;
     var raw: pal.RawEvent = undefined;
-    return pal.waitEvent(&s.st, timeout_ms, &raw);
+    if (!pal.waitEvent(&s.st, timeout_ms, &raw)) return false;
+    const ev = gfxEventFromRaw(raw);
+    _ = ev;
+    return true;
 }
 
 // Test affordance: resize the real window (window mode) so Windows SENDs
