@@ -1140,9 +1140,11 @@ pub const CreatureDef = struct {
 | Grudge | `grudge_*` fields | live |
 | Shell / resist-restrain | `resist_restrain_pct` field (+ `F_SHELL`) | live |
 | Blind | `[rules]` `SET_BLIND` (`RES_BELOW`, `effect_b` = chance, persistent-while-true) | `blind_chance` = pin |
-| Ink | `F_INK` flag + round logic (every 3rd round, 1 RNG draw) | flag is the driver |
-| Decoy | `F_DECOY` flag + round-1 logic (Strike misses unless Lure) | flag is the driver |
-| Phasing | `F_PHASING` + round state machine (§25.8) | flag is the driver |
+| Ink | `[rules]` `SET_INK` (`ROUND_MOD` every 3rd, persistent) | `F_INK` = pin |
+| Decoy | `[rules]` `MISS_STRIKE` (`FIRST_ROUND`, one-shot) | `F_DECOY` = pin |
+| Phasing | `F_PHASING` + round state machine — **the sole VM exception** (§25.8; no phase op) | flag is the driver |
+
+Every §25.6 effect op executes; `ADD_SPEED`/`MULT_ATK` rules apply on top of the field-driven speed/attack baseline.
 
 Lure suppresses blind/decoy; Sonar suppresses ink and reveals Speed/next action; Brine Net ignores Shell/Phasing reduction. Rule thresholds are **absolute integers** precomputed from the percentage (e.g. 50% of 130 HP = `cond_a=65`), matching the landed T1 rows.
 
@@ -1237,6 +1239,8 @@ Chosen over fn pointers because: fn pointers need exact signature matches and ca
 
 One-shot detection: fire when `prev >= threshold && now < threshold`, then set a consumed bit.
 
+**Every effect op executes — no silent no-ops.** `ADD_SPEED`/`MULT_ATK` adjust the computed speed/attack on top of the field-driven baseline (fields set the base; rules add/multiply, applied once per §25.4); `SET_BLIND`/`MISS_STRIKE` arm a strike latch consumed by the next Strike; `SET_INK` arms the next-action randomiser (never Flee). A periodic trigger is `ROUND_MOD` + persistent timing: the condition holds on the matching rounds and the latch makes it fire once per matching round. **Phasing is the only behaviour not expressible as a rule** — §25.8 defines it as an algorithm (`floor((round-1)/2)%2`, Phase lock <30%) and the vocabulary has no phase op; it is driven by `F_PHASING` + `phase_state`.
+
 The struct itself lives in `def.zig` and is re-exported as `behavior.Rule` (the op constants stay in `behavior.zig`), so `Tables` can hold rule rows without an import cycle.
 
 ### 25.7 World and cooldowns
@@ -1297,7 +1301,7 @@ Index `zone * MAX_CREATURES + def_index`. Available when `cycle > ready` or (`cy
 | Overkill | overshoot vs margin (§8.6) |
 | Threshold one-shot | prev/now crossing + consumed bit |
 | Phasing | `floor((round-1)/2) % 2`; lock Phase below 30% HP |
-| Ink | every 3rd round, randomize next combat action, never Flee |
+| Ink | `SET_INK` rule (`ROUND_MOD` 3/0) arms the latch; consumer randomizes the next combat action, never Flee |
 | Encounter | availability filter → rare-chance pipeline (§12) → weighted roll |
 | Loot | fixed table + Cargo bonus to primary line |
 | Expertise yield | 1→1/2/3; deep −1 below E5 |
@@ -1878,7 +1882,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P23 | **M6 kickoff rulings (user-authorized):** (1) loaded tables reach consumers through the existing accessor layer (`defAt`/`rows` + new accessor twins for the const arrays) with a static `?*Tables` override installed by the loader — verified legal in Z98; compiled-in `creatures_t1`/`tables_t1` remain the fallback/golden and tests are untouched; (2) `CreatureDef` gains `name`/`name_len` (§25.2) so names live in data, not in a `render_term` switch — this retires the "Unknown Creature" display for the 13 M4 rows; (3) `data.z98` grammar is §25.10 as written (KV rows, indexed drop/respawn keys, `format=2` header, `owner=` rules, `textGet` bool+out-param); (4) M6 ships **spec-complete** §14.4 drops for all 18 rows (not the code-state blank tables), so `loop_golden.txt` and any drop-dependent golden are re-pinned inside M6 — the M4/M5 deferral of the five M2-era drop tables is closed early; (5) `Tables` is a static (BSS) struct of ≈32 KB and the permanent arena (raised 64 KB → 256 KB per §35) holds the `data.z98` buffer, string bytes and save image; (6) `undtool` tools keep the compiled-in fallback when no file is beside the exe, while the game (`app.run*`) treats missing/damaged `data.z98` as the §33 fatal path. |
 | P24 | **M6 loader follow-ups (user-authorized):** (1) the compiled-in fallback is **tables-only** (`text_count = 0`) because `data.z98` is a shipped asset; validation requires `manual.1` in any loaded file but exempts the fallback builder, and the transcription test compares every table field and asserts the loaded text separately (has `manual.1`, non-empty, within caps). (2) `[text]` keeps paragraph breaks: a continuation line of exactly one space is a retained blank line, comment/blank rules do not apply inside an entry, and a `#` after the leading space is prose (§25.10). |
 | P25 | **M7 kickoff rulings (user-authorized "R1–R4 yes"):** (R1) `canSave` blocks mid-fight **and** while a subdue Release/Sell choice is pending (settle state), with a greyed reason; nothing is lost because no other action is legal there. (R2) `FieldRecord` (frozen at the first Derelict kill), `LastRun` (overwritten each engagement) and lifetime score counters are added to `World` **now**, zeroed by `zeroWorld`, and persisted; M11 only populates them, so `version=2` never needs a format bump. (R3) fresh install follows §20 exactly (page 1 → world init → dock; no menu); the start menu appears only when a save exists. (R4) `New Game` on an existing save asks `Erase this save? [Y] [N]` and re-inits without repeating page 1. Also pinned: save-local scanner/sections (not the §25.10 parser), `data_version` compares to installed `Tables.content_version`, `manual.1` is consumed (M6 authors it), `pending_cond` moves into `Expedition` and is persisted, `World.rng_state` is persisted, `options.cfg` holds `save_slot` only (read-only reader in M7), save lines 8192 B / file 64 KiB, two error surfaces (§33 fatal vs save-load menu), and `errors.log` receives recovery/warning lines. |
-| P26 | **M8 kickoff rulings (user-authorized):** (C1) the Derelict row lands in **M8** — `MAX_DROP_LINES` 4→6, `ROLE_BOSS=4`/`FAMILY_BOSS=13` (+validator ranges), `sale=0`/`resolve=0` boss exemptions, `subdue_chance=-1` with `F_BOSS`; the 5-line kill table is the reason the cap moves. (C2) the "New entry" marker is a persisted **additive optional save key** `journal_viewed` (absent = 0; §32). (C3) keep M7's Esc-at-dock = Save / `q` = Quit; M8 adds `J` (Journal) and a dock "New entry" line, and defers the Esc menu. (C4) zone flavor is authored **now**: `[text]` vocabulary gains `zone.1..9`, rendered on the node screen. (B) behavior driver table (§25.2) is binding: rule rows where threshold-driven (discharge, Rust flee, blind), named fields for coupling/armor/speed/attack/flee-hit/grudge/resist, `F_PHASING`/`F_INK`/`F_DECOY` flags + fight logic for the state machines; thresholds are absolute precomputed integers. `error.1..6` stay accepted but unread (M7 owns the copy). |
+| P26 | **M8 kickoff rulings (user-authorized):** (C1) the Derelict row lands in **M8** — `MAX_DROP_LINES` 4→6, `ROLE_BOSS=4`/`FAMILY_BOSS=13` (+validator ranges), `sale=0`/`resolve=0` boss exemptions, `subdue_chance=-1` with `F_BOSS`; the 5-line kill table is the reason the cap moves. (C2) the "New entry" marker is a persisted **additive optional save key** `journal_viewed` (absent = 0; §32). (C3) keep M7's Esc-at-dock = Save / `q` = Quit; M8 adds `J` (Journal) and a dock "New entry" line, and defers the Esc menu. (C4) zone flavor is authored **now**: `[text]` vocabulary gains `zone.1..9`, rendered on the node screen. (B) behavior driver table (§25.2) is binding: **rule rows** for discharge, Rust flee, blind, ink and decoy (every §25.6 effect op executes, incl. `ADD_SPEED`/`MULT_ATK`, so the VM is never silently incomplete); named fields for coupling/armor/speed/attack/flee-hit/grudge/resist; **phasing is the sole VM exception** (`F_PHASING` + §25.8 algorithm, no phase op — the vocab never claimed it). Thresholds are absolute precomputed integers. `error.1..6` stay accepted but unread (M7 owns the copy). |
 
 ### Game design
 

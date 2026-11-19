@@ -4,7 +4,7 @@
 
 **Goal:** Complete Tier-1 content and its remaining wiring: append **one** Derelict row (load-order index 18) and wire the four deferred behaviours (blind, ink, decoy, phasing) plus Lure/Sonar; author journal 19, manual pages 2–8, Legends 2, zone flavour 4, and the journal/help UI. M6 already shipped the other 18 rows, stats, drops, tools/upgrades/cosmetics, Z1–Z3 encounters, zone D and `manual.1` — M8 verifies those, it does not re-author them.
 
-**Architecture:** Pure authoring + wiring. Named fields and `[rules]` rows already encode most of §14.3; M8 adds the Derelict row, the one missing `SET_BLIND` rule, and the flag-driven state machines. Text lives in `[text]` (keys `manual.* journal.* legend.* zone.*`). Journal unlocks are `World.journal_mask` bits (first fight end, any outcome); a persisted `journal_viewed` mask drives the "New entry" indicator; exact Speed is hidden until the journal bit exists (Sonar overrides).
+**Architecture:** Pure authoring + wiring. Named fields and `[rules]` rows already encode most of §14.3; M8 adds the Derelict row, the three missing behaviour rules (`SET_BLIND`, `SET_INK`, `MISS_STRIKE`), and the one flag-driven algorithm (phasing). Text lives in `[text]` (keys `manual.* journal.* legend.* zone.*`). Journal unlocks are `World.journal_mask` bits (first fight end, any outcome); a persisted `journal_viewed` mask drives the "New entry" indicator; exact Speed is hidden until the journal bit exists (Sonar overrides).
 
 **Tech Stack:** Z98 → C89 `-fsafe`; M6 loader, M7 save (journal bits + additive `journal_viewed`), M2 fight, M4 loop, M5 tools.
 
@@ -31,9 +31,11 @@ Values are copied **verbatim** from spec §14.2/§14.4 — no tuning (balance is
 | Grudge | `grudge_*` fields |
 | Shell/resist | `resist_restrain_pct` (+ `F_SHELL`) |
 | Blind (Lantern) | `[rules]` `SET_BLIND` `RES_BELOW 65`, `effect_b=50`, persistent |
-| Ink (Squid) | `F_INK` + round logic |
-| Decoy (Angler) | `F_DECOY` + round-1 logic |
-| Phasing (Ghost-Ray) | `F_PHASING` + round state machine |
+| Ink (Squid) | `[rules]` `SET_INK` + `ROUND_MOD(3,0)`, persistent (`F_INK` = pin) |
+| Decoy (Angler) | `[rules]` `MISS_STRIKE` + `FIRST_ROUND`, one-shot (`F_DECOY` = pin) |
+| Phasing (Ghost-Ray) | `F_PHASING` + state machine — **sole VM exception** (no phase op) |
+
+Every §25.6 effect op executes (incl. `ADD_SPEED`/`MULT_ATK`); no effect is a silent no-op.
 
 ## File Structure
 
@@ -70,8 +72,8 @@ Values are copied **verbatim** from spec §14.2/§14.4 — no tuning (balance is
 
 **Interfaces (consumed by M11/M13 — the schema is the contract):** append one `[creatures]` row at load-order index 18 (`id=17`): `family=13`, `role=4`, `zone_mask=256`, `phase_mask=3`, `hp=300`, `resolve=0`, `speed=7`, `attack=10`, `subdue_chance=-1`, `flags=1` (`F_BOSS`), `sale=0`, `respawn_sub=20/kill=20/over=40`, `counter_tool=1`; drop slots `sub` empty; `kill` = Plate×5, Gland×3, Glow×3, Glass×2, Coral×2; `over` = Plate×2, Gland×1. All other fields 0/100 as the other rows. Raise `MAX_DROP_LINES` to 6 in `def.zig` and the `data.zig` key tables (`sub0..sub5`), fallback rows and `--dump-defs` golden. Validator: role max 4, family max 13, `sale<=0` allowed only for boss, `resolve=0` allowed for boss, `subdue_chance=-1` requires `F_BOSS` (already enforced).
 
-- [ ] **Fight wiring** per the driver table: `pending_blind` consumed by the next Strike (chance = `pending_blind`), Lure (tool 4) suppresses; `F_INK` at round start every 3rd round draws `rngRange(0,2)`, never Flee, Sonar (tool 6) suppresses, extends `peekCreatureAction`; `F_DECOY` round 1 Strike misses unless Lure; `F_PHASING` `floor((round-1)/2)%2`, locked Phase below 30% HP, Solid ⇒ `active_resist_restrain=50` and Strike works, Phase ⇒ Strike misses and Restrain full. Add `TOOL_LURE=4`, `TOOL_SONAR=6`, msg ids 18–23 with `MESSAGES`/`msgLine` copy. Lure reveals phase/real target; Sonar reveals exact Speed + next action + Ghost-Ray flip.
-- [ ] Add the `SET_BLIND` rule (`owner=12`, `cond_op=2`, `cond_a=65`, `effect_op=6`, `effect_b=50`, `timing=1`). Keep Rust's `SET_FLEE` at `24`; keep discharge thresholds `48/45/50`. Tests: solid/phase alternation, ink cadence + never-Flee + 1 draw, decoy miss, blind chance, Lure/Sonar counters, reveal stable across two peeks, boss row loads and pins all fields. Commit `example(undersanded): Derelict row + combat behaviour wiring`.
+- [ ] **Fight wiring** per the driver table. Implement the two missing VM effects: `MISS_STRIKE` (arm a strike-miss latch; `FIRST_ROUND`+one-shot ⇒ round 1 only) and `ADD_SPEED`/`MULT_ATK` (adjust computed speed/attack on top of the field baseline, applied once). Consume the latches: `pending_ink` randomizes the next player action (`rngRange(0,2)`→Strike/Restrain/Equipment, never Flee, 1 draw, Sonar suppresses) and extends `peekCreatureAction`; `pending_blind` rolls its chance to miss the next Strike (Lure suppresses); the decoy/miss latch misses the next Strike (Lure suppresses). `F_PHASING` is the algorithmic exception: `floor((round-1)/2)%2`, locked Phase below 30% HP, Solid ⇒ `active_resist_restrain=50` and Strike works, Phase ⇒ Strike misses and Restrain full. Add `TOOL_LURE=4`, `TOOL_SONAR=6`, msg ids 18–23 with `MESSAGES`/`msgLine` copy. Lure reveals phase/real target; Sonar reveals exact Speed + next action + Ghost-Ray flip.
+- [ ] Add the three behaviour rules as `[rules]` rows: blind (`owner=12`, `cond_op=2`, `cond_a=65`, `effect_op=6`, `effect_b=50`, `timing=1`), ink (`owner=14`, `cond_op=3`, `cond_a=3`, `cond_b=0`, `effect_op=7`, `timing=1`), decoy (`owner=15`, `cond_op=4`, `effect_op=10`, `timing=0`). Keep Rust's `SET_FLEE` at `24`; keep discharge thresholds `48/45/50`. Tests: solid/phase alternation, ink cadence + never-Flee + 1 draw, decoy round-1 miss, blind chance, `ADD_SPEED`/`MULT_ATK` rule execution + precedence, Lure/Sonar counters, reveal stable across two peeks, boss row loads and pins all fields. Commit `example(undersanded): Derelict row + combat behaviour wiring`.
 
 ### Task 2: Verify shipped content + boss drops
 

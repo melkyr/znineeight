@@ -1446,8 +1446,19 @@ T1 authors `zone.1/2/3/9`.
 `[rules]` one-shot (`discharge_*` pin); armor/speed-below/atk-below/flee-on-hit/
 grudge/resist = named fields; Rust flee = `[rules]` `SET_FLEE` `HP_BELOW 24`;
 blind = `[rules]` `SET_BLIND` (`RES_BELOW 65`, `effect_b=50`, persistent);
-ink/decoy/phasing = `F_INK`/`F_DECOY`/`F_PHASING` + fight logic. Thresholds are
-absolute integers (50% of 130 = 65), never percentages.
+ink = `[rules]` `SET_INK` (`ROUND_MOD` 3/0, persistent); decoy = `[rules]`
+`MISS_STRIKE` (`FIRST_ROUND`, one-shot); **phasing is the sole VM exception**
+(`F_PHASING` + §25.8 algorithm, no phase op). Every §25.6 effect op executes
+(`MISS_STRIKE`, `ADD_SPEED`, `MULT_ATK` are implemented, not no-ops).
+Thresholds are absolute integers (50% of 130 = 65), never percentages.
+
+**VM correction (supersedes the first M8 draft):** ink and decoy are *rule
+rows*, not flag+logic. `applyRules` runs once per round, so `SET_INK` +
+`ROUND_MOD` fires once per matching round and the consumer randomises the
+next action; `MISS_STRIKE` + `FIRST_ROUND`+one-shot fires round 1 only. The
+landed `applyEffect` already sets `pending_ink`; the missing pieces are the
+MISS_STRIKE implementation and the latch consumers. Phasing stays
+algorithmic because the vocabulary has no phase op.
 
 **Derelict row:** `id=17`, `family=13`, `role=4`, `zone_mask=256`,
 `phase_mask=3`, `hp=300`, `resolve=0`, `speed=7`, `attack=10`, `subdue=-1`,
