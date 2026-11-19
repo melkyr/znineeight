@@ -25,12 +25,20 @@ const content_boot = @import("../content_boot.zig");
 extern "c" fn mkdir(path: [*]const u8, mode: u32) i32;
 extern "c" fn rmdir(path: [*]const u8) i32;
 extern "c" fn chdir(path: [*]const u8) i32;
+extern "c" fn open(path: [*]const u8, flags: i32, mode: u32) i32;
+extern "c" fn dup2(oldfd: i32, newfd: i32) i32;
+extern "c" fn close(fd: i32) i32;
+
+const O_CREATE_WRITE_TRUNC: i32 = 577;
+const FILE_MODE_0644: u32 = 420;
 
 const DATA_PATH = "examples/z98/undersanded/data.z98";
 const TMP_DIR = "/tmp/m6t5_bind";
 const MISSING_DIR = "/tmp/m6t5_bind/missing";
 const DAMAGED_DIR = "/tmp/m6t5_bind/damaged";
 const TMP_CHANGED = "/tmp/m6t5_bind/changed.z98";
+const EMIT_OUT = "/tmp/m6t5_bind/emit.out";
+const EMIT_ERR = "/tmp/m6t5_bind/emit.err";
 const MISSING_MSG = "Content file missing. Reinstall from CD.";
 const DAMAGED_MSG = "Content file is damaged at line 3. Reinstall from CD.";
 
@@ -38,6 +46,7 @@ var fails: usize = 0;
 var shipped_buf: [256 * 1024]u8 = undefined;
 var temp_buf: [256 * 1024]u8 = undefined;
 var boot_buf: [256 * 1024]u8 = undefined;
+var emit_buf: [4096]u8 = undefined;
 
 fn report(name: []const u8, ok: bool) void {
     if (ok) {
@@ -197,6 +206,59 @@ fn childExitIn(dir_path: []const u8) i32 {
     return (status >> 8) & 255;
 }
 
+fn isOneLine(buf: []const u8, msg: []const u8) bool {
+    if (buf.len != msg.len + 1) return false;
+    var i: usize = 0;
+    while (i < msg.len) : (i += 1) {
+        if (buf[i] != msg[i]) return false;
+    }
+    return buf[msg.len] == '\n';
+}
+
+fn emitCapture(out_path: []const u8, err_path: []const u8, console_mode: bool, msg: []const u8) bool {
+    _ = makeDir(TMP_DIR);
+    const pid = os.fork();
+    if (pid == 0) {
+        var ob: [512]u8 = undefined;
+        var eb: [512]u8 = undefined;
+        if (!cstr(ob[0..], out_path) or !cstr(eb[0..], err_path)) os.exit(2);
+        const ofd = open(@ptrCast([*]const u8, &ob[0]), O_CREATE_WRITE_TRUNC, FILE_MODE_0644);
+        const efd = open(@ptrCast([*]const u8, &eb[0]), O_CREATE_WRITE_TRUNC, FILE_MODE_0644);
+        if (ofd < 0 or efd < 0) os.exit(2);
+        _ = dup2(ofd, 1);
+        _ = dup2(efd, 2);
+        _ = close(ofd);
+        _ = close(efd);
+        content_boot.writeFailure(console_mode, msg);
+        os.exit(0);
+    }
+    if (pid < 0) return false;
+    var status: i32 = 0;
+    _ = os.waitpid(pid, &status, 0);
+    if (((status >> 8) & 255) != 0) return false;
+
+    var arena = arena_mod.init(emit_buf[0..]);
+    const o = file_mod.readAll(&arena, out_path) catch return false;
+    const e = file_mod.readAll(&arena, err_path) catch return false;
+    if (console_mode) {
+        if (!isOneLine(o, msg)) return false;
+        if (e.len != 0) return false;
+    } else {
+        if (o.len != 0) return false;
+        if (!isOneLine(e, msg)) return false;
+    }
+    return true;
+}
+
+fn tBootFailureSingleEmission() bool {
+    if (!emitCapture(EMIT_OUT, EMIT_ERR, true, MISSING_MSG)) return false;
+    var msg_buf: [80]u8 = undefined;
+    const damaged = content_boot.damagedText(3, msg_buf[0..]);
+    if (!emitCapture(EMIT_OUT, EMIT_ERR, true, damaged)) return false;
+    if (!emitCapture(EMIT_OUT, EMIT_ERR, false, MISSING_MSG)) return false;
+    return true;
+}
+
 fn tMissingCopyAndExit() bool {
     data.uninstall();
     _ = makeDir(TMP_DIR);
@@ -234,6 +296,7 @@ fn tDamagedCopyAndLine() bool {
 pub fn main() void {
     report("shipped_load_validate_install", tShippedLoadValidateInstall());
     report("temp_override_visible_then_uninstall", tTempOverrideVisible());
+    report("boot_failure_single_emission", tBootFailureSingleEmission());
     report("startup_missing_copy_exit_nonzero", tMissingCopyAndExit());
     report("startup_damaged_copy_line_3", tDamagedCopyAndLine());
 

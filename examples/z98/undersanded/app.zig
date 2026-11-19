@@ -140,12 +140,14 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     switch (boot.result) {
         content_boot.BootResult.Loaded => {},
         content_boot.BootResult.Missing => {
-            fail(console_mode, content_boot.MSG_MISSING);
+            content_boot.writeFailure(console_mode, content_boot.MSG_MISSING);
+            os.exit(1);
             return;
         },
         content_boot.BootResult.Damaged => {
             var msg_buf: [80]u8 = undefined;
-            fail(console_mode, content_boot.damagedText(boot.line, msg_buf[0..]));
+            content_boot.writeFailure(console_mode, content_boot.damagedText(boot.line, msg_buf[0..]));
+            os.exit(1);
             return;
         },
         else => {},

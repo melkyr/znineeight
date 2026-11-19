@@ -730,13 +730,13 @@ fn renderMapRow(s: *const def.GameState, sc: *Screen, zone: i32, y: i32) void {
     x = padTo(sc, x, y, 28);
 
     var open = true;
-    if (zone == BOSS_ZONE) open = bossGateOpen(s);
+    if (tables.zoneIsBoss(zone) != 0) open = bossGateOpen(s);
     if (open) {
         x = put(sc, x, y, "open");
     } else {
         x = put(sc, x, y, "locked");
     }
-    if (zone == BOSS_ZONE) {
+    if (tables.zoneIsBoss(zone) != 0) {
         _ = put(sc, x, y, "  Hull 150+ recommended.");
     }
 }

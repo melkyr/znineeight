@@ -6,6 +6,7 @@
 
 const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
+const io = @import("std_io.zig");
 const parse = @import("std_parse");
 const def = @import("def.zig");
 const data = @import("data.zig");
@@ -62,6 +63,18 @@ fn append(dst: []u8, at: *usize, s: []const u8) void {
 fn normalizedLine(line: i32) i32 {
     if (line > 0) return line;
     return 1;
+}
+
+// Dedicated boot-failure emission: CUI gets one line on stdout, GUI one line
+// on stderr. Unlike app.fail(), never repeats across streams.
+pub fn writeFailure(console_mode: bool, msg: []const u8) void {
+    if (console_mode) {
+        io.write(msg);
+        io.write("\n");
+    } else {
+        @stderrWrite(msg.ptr, msg.len);
+        @stderrWrite("\n", 1);
+    }
 }
 
 pub fn damagedText(line: i32, out: []u8) []const u8 {
