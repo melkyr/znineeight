@@ -353,7 +353,7 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
 
     g.fight.def_index = NO_FIGHT;
     g.fight.outcome = def.OUT_ONGOING;
-    g.pending_cond = def.COND_NONE;
+    ep.pending_cond = def.COND_NONE;
 
     // Depart = 1 dock action + travel cost, advanced instantly (§6).
     const phases = 1 + travelPhases(g, zone);
@@ -376,7 +376,7 @@ fn hunt(g: *def.GameState) void {
 
     // startFightDef resets pending_cond, so capture the rough-sleep condition
     // first and copy it into the fight after the fight is initialised.
-    const saved_cond = g.pending_cond;
+    const saved_cond = g.exp.pending_cond;
     var cdef = creatures.defAt(idx);
 
     // 0-based fight index at call time: seed = exp.seed + index*77.
@@ -384,7 +384,7 @@ fn hunt(g: *def.GameState) void {
     g.exp.fight_index += 1;
 
     g.fight.cond = saved_cond;
-    g.pending_cond = def.COND_NONE;
+    g.exp.pending_cond = def.COND_NONE;
     g.fight.hull = g.world.hull;
     g.fight.max_hull = world.hullMax(&g.world);
 
@@ -423,7 +423,7 @@ fn restAtNode(g: *def.GameState) void {
     // Node Rest is penalised; empty-pool Rest is safe (§5).
     if (!empty) {
         const roll = rng.rngRange(&g.world.rng_state, COND_ROLL_LO, COND_ROLL_HI);
-        g.pending_cond = def.COND_DROWSY + roll;
+        g.exp.pending_cond = def.COND_DROWSY + roll;
     }
 }
 

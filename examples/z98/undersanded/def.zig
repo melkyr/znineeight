@@ -129,6 +129,21 @@ pub const FightState = struct {
     pending_stun: i32,
 };
 
+pub const FieldRecord = struct {
+    cycles: i32, field_phases: i32,
+    creatures_seen: i32, rares_seen: i32, bosses_killed: i32,
+    final_phase2: i32,
+    subdued: i32, killed: i32, overkilled: i32,
+    expertise: [MAX_MATERIALS]i32,
+    money_earned: i32, cosmetics: i32,
+    boat: [5]i32,
+};
+
+pub const LastRun = struct {
+    cycles: i32, phase2: i32, outcome: i32,
+    actions: i32, hull_spent: i32, boss_kills: i32,
+};
+
 pub const World = struct {
     cycle: i32, phase: i32,
     ready: [MAX_ZONES * MAX_CREATURES]i32,
@@ -147,6 +162,10 @@ pub const World = struct {
     tools_owned: u32, tool_selected: i32,
     cosmetics_owned: u32, cosmetics_unlocked: u32,
     field_record_written: i32,
+    field_record: FieldRecord,
+    last_run: LastRun,
+    score_subdued: i32, score_killed: i32, score_overkilled: i32,
+    score_money_earned: i32,
     boss_variants_seen: u32, boss_kills: i32,
 };
 
@@ -156,6 +175,7 @@ pub const Expedition = struct {
     active: i32, zone: i32, fight_index: i32, seed: u32,
     hold: [MAX_PARTS]i32, hold_n: i32,
     tool: i32, tool_charge: i32, tool_broken: i32,
+    pending_cond: i32,
 };
 
 pub const Effect = struct { op: i32, a: i32, b: i32 };
@@ -166,7 +186,6 @@ pub const GameState = struct {
     log: [MAX_LOG]LogEntry,
     log_n: i32,
     exp: Expedition,
-    pending_cond: i32,
     screen: i32,
 };
 

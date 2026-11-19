@@ -44,7 +44,7 @@ fn newGame() def.GameState {
         ep.hold[i] = 0;
     }
     g.exp.hold_n = 0;
-    g.pending_cond = def.COND_NONE;
+    g.exp.pending_cond = def.COND_NONE;
     g.log_n = 0;
     g.screen = 0;
     g.fight.def_index = -1;
@@ -517,7 +517,7 @@ fn tRestHealsAdvancesAndCondition() bool {
     expedition.expeditionStep(&g, expedition.EXP_REST);
     if (g.world.hull != 80) return false;
     if (g.world.field_phases - before != 1) return false;
-    if (g.pending_cond < def.COND_DROWSY or g.pending_cond > def.COND_EXPOSED) return false;
+    if (g.exp.pending_cond < def.COND_DROWSY or g.exp.pending_cond > def.COND_EXPOSED) return false;
 
     // Clamp at Hull T3 max (200).
     var h = newGame();
@@ -536,7 +536,7 @@ fn tRestHealsAdvancesAndCondition() bool {
     expedition.expeditionStep(&e, expedition.EXP_REST);
     if (e.world.hull != 80) return false;
     if (e.world.field_phases - e_before != 1) return false;
-    if (e.pending_cond != def.COND_NONE) return false;
+    if (e.exp.pending_cond != def.COND_NONE) return false;
     return true;
 }
 
@@ -549,7 +549,7 @@ fn tEmptyPoolHuntDoesNothing() bool {
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
     if (g.world.hull != 50) return false;
     if (g.world.field_phases != phases) return false;
-    if (g.pending_cond != def.COND_NONE) return false;
+    if (g.exp.pending_cond != def.COND_NONE) return false;
     if (g.fight.def_index >= 0) return false;
     if (g.exp.fight_index != 0) return false;
     return true;
@@ -572,7 +572,7 @@ fn tRestOrderingAfterPhaseAdvance() bool {
     expedition.expeditionStep(&g, expedition.EXP_REST);
     if (g.world.hull != 80) return false;
     if (g.world.field_phases - phases_before != 1) return false;
-    if (g.pending_cond < def.COND_DROWSY or g.pending_cond > def.COND_EXPOSED) return false;
+    if (g.exp.pending_cond < def.COND_DROWSY or g.exp.pending_cond > def.COND_EXPOSED) return false;
 
     // Now Night: the pool is empty, so Hunt does nothing at all.
     const hull = g.world.hull;
@@ -877,13 +877,13 @@ fn tRoughSleepCarriesIntoFight() bool {
     _ = expedition.depart(&g, 0);
 
     expedition.expeditionStep(&g, expedition.EXP_REST);
-    if (g.pending_cond == def.COND_NONE) return false;
-    const cond = g.pending_cond;
+    if (g.exp.pending_cond == def.COND_NONE) return false;
+    const cond = g.exp.pending_cond;
 
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
     if (g.fight.def_index < 0) return false;
     if (g.fight.cond != cond) return false;
-    if (g.pending_cond != def.COND_NONE) return false;
+    if (g.exp.pending_cond != def.COND_NONE) return false;
     return true;
 }
 
@@ -953,14 +953,14 @@ fn tDockRest() bool {
     gw.cycle = 4;
     gw.field_phases = 10;
     gw.rng_state = 12345;
-    g.pending_cond = def.COND_NONE;
+    g.exp.pending_cond = def.COND_NONE;
 
     expedition.restAtDock(&g);
     if (gw.hull != 100) return false;
     if (gw.field_phases != 11) return false;
     if (gw.phase != world.PHASE_NIGHT) return false;
     if (gw.cycle != 4) return false;
-    if (g.pending_cond != def.COND_NONE) return false;
+    if (g.exp.pending_cond != def.COND_NONE) return false;
     if (gw.rng_state != 12345) return false;
 
     // Clamp at the base 100 max (Hull tier 0).

@@ -203,7 +203,7 @@ fn emptyPoolRest() bool {
     expedition.expeditionStep(&s, expedition.EXP_REST);
 
     if (s.world.hull != 80) return false;
-    if (s.pending_cond != def.COND_NONE) return false;
+    if (s.exp.pending_cond != def.COND_NONE) return false;
 
     io.write("empty_rest hull=80 cond=0\n");
     return true;

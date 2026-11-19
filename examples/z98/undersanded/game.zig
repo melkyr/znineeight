@@ -51,6 +51,33 @@ pub fn zeroWorld(w: *def.World) void {
     w.cosmetics_owned = 0;
     w.cosmetics_unlocked = 0;
     w.field_record_written = 0;
+    w.field_record = def.FieldRecord{
+        .cycles = 0,
+        .field_phases = 0,
+        .creatures_seen = 0,
+        .rares_seen = 0,
+        .bosses_killed = 0,
+        .final_phase2 = 0,
+        .subdued = 0,
+        .killed = 0,
+        .overkilled = 0,
+        .expertise = [def.MAX_MATERIALS]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        .money_earned = 0,
+        .cosmetics = 0,
+        .boat = [5]i32{ 0, 0, 0, 0, 0 },
+    };
+    w.last_run = def.LastRun{
+        .cycles = 0,
+        .phase2 = 0,
+        .outcome = 0,
+        .actions = 0,
+        .hull_spent = 0,
+        .boss_kills = 0,
+    };
+    w.score_subdued = 0;
+    w.score_killed = 0;
+    w.score_overkilled = 0;
+    w.score_money_earned = 0;
     w.boss_variants_seen = 0;
     w.boss_kills = 0;
 }
@@ -70,6 +97,7 @@ pub fn newGame(s: *def.GameState) void {
         .tool = 0,
         .tool_charge = 0,
         .tool_broken = 0,
+        .pending_cond = def.COND_NONE,
     };
     s.fight.def_index = def.NO_FIGHT;
 }
@@ -85,6 +113,7 @@ pub fn startFight(s: *def.GameState, def_index: i32) void {
         .tool = 0,
         .tool_charge = 0,
         .tool_broken = 0,
+        .pending_cond = def.COND_NONE,
     };
     // The grudge mask is run-scoped, not per-fight fixture state: capture it
     // before zeroWorld so a standalone startFight still honours the current
