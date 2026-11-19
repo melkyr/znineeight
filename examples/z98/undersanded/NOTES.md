@@ -962,8 +962,9 @@ Read the whole M7 plan, spec §25.10, §32, §38 P23/P24, and the landed M6 shap
 `creatures.defAt/defCount/rules`, `tables.rows/tools/upgrades/cosmetics/
 zoneCost/zoneIsBoss`).
 
-Verdict: **amendment required** — the M7 design is sound and its persisted-field
-list stands, but Task 1's "M6 parsers" is too broad, the `data_version` source
+Verdict: **amendment required** — the M7 design is sound, but Task 1's "M6
+parsers" is too broad, the persisted-field list does not stand as written (no
+Field Record / Last Run / release-count fields exist), the `data_version` source
 and the `manual.1` lookup are not pinned, and `BadId` must be a load-order check.
 The amendments below are clarifications, not a redesign; the M7 plan itself is
 not edited here.
@@ -982,10 +983,12 @@ May reuse:
 
 - `data.parseI32` for every i32 scalar and every array element (thin wrapper
   over `std_parse.parseInt`).
-- `data.parseRowKV` **only** for a single-key scalar line. It trims surrounding
-  spaces, strips a trailing `\r`, rejects an empty key/value, and rejects a
-  duplicate key — all save-compatible. It may not validate save keys; M7 keeps
-  its own section/key schema.
+- `data.parseRowKV` **only** for a comma-free, non-empty scalar line (one
+  `key=value`, no comma in the value). It trims surrounding spaces, strips a
+  trailing `\r`, and rejects an empty key/value or a duplicate key. Because it
+  splits on **every** comma, a value containing a comma (or an empty value) is
+  not save-compatible; do not use it for arrays or any value that may contain a
+  comma. It may not validate save keys; M7 keeps its own section/key schema.
 - The line-splitting/CRLF contract: split on `\n`, strip one trailing `\r`.
   M6 has **no exported splitter** (`stripCR` is private and `classifyLine`
   wraps it), so M7 must reproduce the same short scan (or M6 could export
@@ -1015,7 +1018,8 @@ Must **not** reuse:
 parsers"):**
 
 > Implement `persist.zig` reusing only `data.parseI32` for i32 scalars/array
-> elements and `data.parseRowKV` for single-key scalar lines; use
+> elements and `data.parseRowKV` for comma-free, non-empty scalar lines (never
+> for arrays or comma-bearing values); use
 > `std_parse.parseUint` for every `u32` field and a hex parser for `[crc32]
 > hash=0xXXXXXXXX`. Write a save-local line scanner (`\n`, strip one trailing
 > `\r`), a save-local array parser (`name=v[,v...]`), and the save section
@@ -1064,7 +1068,8 @@ Confirm all four points:
   only). Read through the installed tables
   (`def.content_override.?.text_key`/`text_val`) with a linear scan for
   `manual.1`, or add a tiny M7-local `textGet(t, key) ?[]const u8`. The test-only
-  `textFind` in `data_load_test.zig` is not production code.
+  `textFind` helpers in `data_load_test.zig` and `data_content_test.zig` are not
+  production code.
 - **Paragraph breaks:** P24(2)/§25.10 store a one-space continuation line as a
   retained blank line, so the arena value uses literal `\n` line breaks and
   `\n\n` between paragraphs; `\r` is stripped. A `#` after the leading space is
@@ -1081,10 +1086,19 @@ Confirm all four points:
 
 #### 4. Persisted-field list vs M6 shapes
 
-Verified: `git diff bea1bc50..HEAD -- examples/z98/undersanded/def.zig` changes
-only `CreatureDef` (adds `name`/`name_len`) and adds the content row types plus
-`Tables`; **`World` and `Expedition` are unchanged** (no new fields), and
-`world.zig` has no M6 diff. M7's list stands; no field-list amendment.
+Verified: `git diff bea1bc50..HEAD -- examples/z98/undersanded/def.zig` adds
+`MAX_NAME_LEN`/`MAX_TEXT_KEYS`/`MAX_TEXT_BYTES`, `CreatureDef.name`/`name_len`,
+the content row types, `Tables`, and `content_override`; **`World` and
+`Expedition` are unchanged** (no new fields), and `world.zig` has no M6 diff.
+
+However, the landed `World`/`Expedition` (`def.zig:130-157`) contain **no**
+Field Record or Last Run structs and **no** "release count" field, while M7's
+Global Constraints list "score stats, Field Record + Last Run" and "release
+counts + bonuses + wary flags", and `saveWrite(path, w, exp)` accepts only
+`World` + `Expedition`. **M7's list does not stand as written:** M7 Task 0 must
+define those persisted fields (or explicitly defer the Field Record / Last Run /
+score payload and release counts to M11) before freezing the save grammar and
+before Task 1's `saveWrite` interface.
 
 M6 changes that touch saves are content-only or index-contract facts:
 
@@ -1101,12 +1115,21 @@ M6 changes that touch saves are content-only or index-contract facts:
   from M7's list; it is not an M6 change, but M7 should decide whether reload
   determinism requires persisting it (if so, add it to the Task 0 checklist).
 
+**Exact amendment text (M7 Task 0, add to the persisted-field checklist):**
+
+> The landed `World`/`Expedition` (`def.zig:130-157`) have no embedded Field
+> Record or Last Run structs and no release-count field. Before freezing the
+> save grammar, either (a) add the flat persisted structs/fields (and extend
+> `saveWrite`/`saveRead` beyond `World` + `Expedition` if they live outside
+> those structs), or (b) explicitly defer the Field Record, Last Run, score
+> stats, and release counts to M11 and remove them from the frozen list. Also
+> decide whether `World.rng_state` must persist for reload determinism.
+
 #### 5. Cross-plan follow-up for M8
 
-Record for the M7 next-milestone review (M7 Task 5; the M6 preflight calls this
-the M7 Task-6/7 follow-up): M8's plan still says rows move from `tables_t1.zig`
-fixtures to `data.z98` and that Task 1 "Implement rows" / Task 2 "M5 fixtures →
-real file". **M6 already authors `data.z98`**: 18 non-boss creature rows with
+Recorded for the **M7 Task 7 review** in the M6 preflight: M8's plan still says
+rows move from `tables_t1.zig` fixtures to `data.z98` and that Task 1 "Implement
+rows" / Task 2 "M5 fixtures → real file". **M6 already authors `data.z98`**: 18 non-boss creature rows with
 names/stats/zone-phase masks/§14.4 drops, 4 M2-era `[rules]`, 7 tools, 15
 upgrades, 12 cosmetics, Z1–Z3 encounters, the zone ladder incl. boss zone D, and
 `manual.1`. Reconcile at that review:
