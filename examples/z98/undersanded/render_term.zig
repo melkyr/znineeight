@@ -882,6 +882,59 @@ pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
     _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");
 }
 
+// ---- First run / menu / save error (§20, §32, §33) ------------------------
+
+// manual.1 is literal text: '\n' is one line break, '\n\n' is a paragraph
+// break (one blank row). Never re-wrap; a long line clips at the 80-column
+// frame edge.
+pub fn renderLore(text: []const u8, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  LORE");
+
+    var i: usize = 0;
+    var x: i32 = 0;
+    var y: i32 = 2;
+    while (i < text.len and y < ROWS - 2) {
+        const c = text[i];
+        if (c == '\r') {
+            i += 1;
+            continue;
+        }
+        if (c == '\n') {
+            if (i + 1 < text.len and text[i + 1] == '\n') {
+                y += 2;
+                i += 2;
+            } else {
+                y += 1;
+                i += 1;
+            }
+            x = 0;
+            continue;
+        }
+        if (x < COLS) putChar(sc, x, y, c);
+        x += 1;
+        i += 1;
+    }
+
+    _ = put(sc, 0, ROWS - 1, "[Enter] Begin");
+}
+
+pub fn renderMenu(sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  MAIN MENU");
+    _ = put(sc, 2, 3, "[C]ontinue");
+    _ = put(sc, 2, 4, "[N]ew Game");
+    _ = put(sc, 2, 5, "[O]ptions (unavailable until M12)");
+    _ = put(sc, 2, 6, "[Q]uit");
+}
+
+pub fn renderSaveError(reason: []const u8, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  SAVE ERROR");
+    _ = put(sc, 2, 3, reason);
+    _ = put(sc, 2, 6, "[F]resh  [B]ackup slot  [Q]uit");
+}
+
 // Row-major text dump (trailing spaces trimmed, '\n' after every row) for the
 // headless render smoke and future cell-grid goldens.
 pub fn dump(sc: *const Screen, out: []u8) []const u8 {

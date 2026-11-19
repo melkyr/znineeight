@@ -18,6 +18,8 @@ const expedition = @import("expedition.zig");
 const creatures = @import("creatures_t1.zig");
 const dock = @import("dock.zig");
 const render = @import("render_term.zig");
+const paths = @import("paths.zig");
+const save_ux = @import("save_ux.zig");
 
 pub const NAV_DOCK: i32 = 10;
 pub const NAV_MAP: i32 = 11;
@@ -28,6 +30,9 @@ pub const NAV_UPGRADE: i32 = 15;
 pub const NAV_CRAFT: i32 = 16;
 pub const NAV_BUY: i32 = 17;
 pub const NAV_TOOLS: i32 = 18;
+pub const NAV_LORE: i32 = 19;
+pub const NAV_MENU: i32 = 20;
+pub const NAV_SAVE_ERR: i32 = 21;
 pub const NAV_QUIT: i32 = -1;
 
 pub const NAV_RESULT_NONE: i32 = -100;
@@ -233,6 +238,9 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         NAV_CRAFT => return craftStep(g, st, key),
         NAV_BUY => return buyStep(g, st, key),
         NAV_TOOLS => return toolsStep(g, st, key),
+        NAV_LORE => return setScreen(g, NAV_LORE),
+        NAV_MENU => return setScreen(g, NAV_MENU),
+        NAV_SAVE_ERR => return setScreen(g, NAV_SAVE_ERR),
         else => return dockStep(g, st, key),
     }
 }
@@ -250,6 +258,9 @@ fn drawCurrent(g: *def.GameState, out: []u8) []const u8 {
         NAV_CRAFT => render.renderCraft(g, &sc),
         NAV_BUY => render.renderBuy(g, &sc),
         NAV_TOOLS => render.renderTools(g, &sc),
+        NAV_LORE => render.renderLore(save_ux.manualPageOne(), &sc),
+        NAV_MENU => render.renderMenu(&sc),
+        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrText(error.Damaged), &sc),
         else => render.renderDock(g, &sc),
     }
     return render.dump(&sc, out);
@@ -269,10 +280,13 @@ fn writeRarePreview(g: *def.GameState, st: *const NavState) void {
 pub fn navRun(g: *def.GameState) void {
     if (g.screen != NAV_MAP and g.screen != NAV_NODE and g.screen != NAV_SETTLE
         and g.screen != NAV_REFINE and g.screen != NAV_UPGRADE
-        and g.screen != NAV_CRAFT and g.screen != NAV_BUY and g.screen != NAV_TOOLS) {
+        and g.screen != NAV_CRAFT and g.screen != NAV_BUY and g.screen != NAV_TOOLS
+        and g.screen != NAV_LORE and g.screen != NAV_MENU and g.screen != NAV_SAVE_ERR) {
         g.screen = NAV_DOCK;
     }
 
+    var dir_buf: [4096]u8 = undefined;
+    const dir = paths.dataDirOrFallback(dir_buf[0..]);
     var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE };
     var buf: [8192]u8 = undefined;
 
@@ -280,6 +294,30 @@ pub fn navRun(g: *def.GameState) void {
         io.write(drawCurrent(g, buf[0..]));
         io.write("> ");
         const key = input.readKey() orelse return;
+
+        if (g.screen == NAV_DOCK) {
+            if (isEsc(key)) {
+                const save = save_ux.saveTo(g, dir);
+                io.write(save.text);
+                io.write("\n");
+                continue;
+            }
+            if (isChar(key, 'q') and save_ux.quitPromptNeeded(g)) {
+                io.write(save_ux.QUIT_PROMPT);
+                io.write("\n");
+                const answer = input.readKey() orelse return;
+                if (isChar(answer, 'y')) {
+                    const save = save_ux.saveTo(g, dir);
+                    io.write(save.text);
+                    io.write("\n");
+                    if (save.ok) return;
+                } else if (isChar(answer, 'n')) {
+                    return;
+                }
+                continue;
+            }
+        }
+
         const next = navStep(g, &st, key);
         if (next == NAV_QUIT) return;
         if (st.last >= 0) {
