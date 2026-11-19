@@ -1483,3 +1483,57 @@ was not run separately. Nested: `TIER_M6 PASS 90 passed / 0 failed`;
 (47/0, 1 evidence skip); `TIER_M3 PASS 65 passed / 0 failed` (65/0, 1
 evidence skip); `TIER_M2 PASS 29 passed / 0 failed`; `TIER_M1 PASS`
 (41/0, 0 evidence skips; the M1 line itself carries no counts).
+
+### M9 amendment review (M8 Task 5)
+
+Read `2026-11-12-undersanded-m09-pixel-tier-plan.md` against the landed M8
+fight surface (`render_term.zig:112-401`, `nav.zig:261-388`,
+`data.z98:133-182`) and spec §8.8/§26/§27/§36. Verdict: **amendment required**
+— M9 is still fight-only (spec §36; plan Goal/Task 4), so the M8
+dock/map/node/journal/help screens, zone flavour, and boss telegraph remain
+terminal and need no art layout now. But the art fight screen must render four
+M8 fight-surface facts the plan does not pin.
+
+- **Hidden Speed / Sonar reveal.** M8 prints `SPD ??` unless
+  `render_term.speedRevealed` is true (`render_term.zig:120-123`, `:385-390`):
+  the `World.journal_mask` bit for `fight.def_index`, or
+  `tool_active && tool == fight.TOOL_SONAR`. Amend M9 `layoutFight`/stats to
+  carry the same state and reveal paths, with unit checks for hidden,
+  journal-revealed, and Sonar-revealed Speed (only call/display
+  `effectiveSpeed` when revealed). Otherwise §8.8/H4 regress in art mode.
+- **Tool status line.** The terminal fight draws
+  `TOOL <name> <kind> charge N broken yes/no active yes/no`
+  (`render_term.zig:347-370`); the longest live form is 69 chars
+  (`Bioluminescent Lure`, activated, charge 1). The §27 art layout names only
+  a generic HUD `tool`; pin the full status in the layout (or state where it
+  is dropped) and keep it within the 640 px / 8 px glyph = 80-column width.
+- **Mid-fight help overlay.** M8 makes `?` work on every screen, including
+  mid-fight (`nav.zig:289-298`), rendering `journal.helpPage(g.screen)`
+  (`nav.zig:361-365`, `render_term.zig:1016-1021`). M9 must either draw the
+  same overlay over the art fight or explicitly fall back to terminal; the
+  current plan says only "wire art fight screen".
+- **Zero-max Resolve bar (boss row).** M8 ships the Derelict with
+  `resolve=0` (`data.z98:24`), and the terminal bar helper guards `max <= 0`
+  before `value * width / max` (`render_term.zig:125-133`). M9 Task 3's
+  fill/red-zone formulas and hp 0/half/max tests omit `max_res == 0`; add the
+  guard and a boss-row bar case so the art Resolve bar cannot divide by zero.
+
+Checked, no amendment needed:
+
+- **Fight log line lengths.** M9's 8 lines at 8×16 = 128 px inside the 140 px
+  log band; 640 px = 80 glyph columns. All authored/dynamic M8 fight lines fit
+  (longest fixed line 57 chars: Lure true-target; longest dynamic subdue line
+  52; Ink 53), so art can reuse the terminal `msgLine` text without wrapping
+  or a taller log band.
+- **Dock/map/node/journal/help geometry and zone flavour.** These M8 screens
+  stay terminal in M9, and Task 5's M8 byte-identical `--dump-grid` goldens
+  protect them. M9 implies no art dimensions for them; no layout change is
+  needed now. If a later milestone adds art screens, it must reserve the
+  journal text block/help page area then.
+- **Boss telegraph / role.** "Hull 150+ recommended." is a node-screen string
+  (`render_term.zig:799-801`) and boss fight UI/telegraph behavior is M11;
+  M9 only needs the boss row's zero-Resolve guard, and `ROLE_BOSS=4` already
+  renders as `boss` through `roleName` (`render_term.zig:164-172`).
+- **Sonar / Lure / blind / ink / decoy / phase copy.** These M8 messages are
+  already encoded in `MSG_*`/`msgLine` (`render_term.zig:253-295`), so no
+  art-only text or width is required.
