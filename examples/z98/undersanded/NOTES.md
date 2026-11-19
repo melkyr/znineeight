@@ -954,3 +954,170 @@ arena file buffer; `manual.1` is required. `[rules]` packs by owner
 first-appearance order and writes each creature's `rule_start/rule_count`.
 `dumpDefs` is field-by-field text (never struct bytes); its committed golden is
 `tests/fixtures/defs_golden.txt`.
+
+### M7 amendment review (M6 Task 7)
+
+Read the whole M7 plan, spec §25.10, §32, §38 P23/P24, and the landed M6 shapes
+(`def.Tables`, `data.loadFile/buildFallback/install`, `validate.validateAll`,
+`creatures.defAt/defCount/rules`, `tables.rows/tools/upgrades/cosmetics/
+zoneCost/zoneIsBoss`).
+
+Verdict: **amendment required** — the M7 design is sound and its persisted-field
+list stands, but Task 1's "M6 parsers" is too broad, the `data_version` source
+and the `manual.1` lookup are not pinned, and `BadId` must be a load-order check.
+The amendments below are clarifications, not a redesign; the M7 plan itself is
+not edited here.
+
+#### 1. Parser reuse (save grammar vs §25.10)
+
+The save is **not** a §25.10 file. §25.10 rows are comma-separated
+`key=value` fields (many keys per line) with a mandatory `format=2` header and
+the fixed `[creatures]`…`[text]` vocabulary. The M7 save is a `version=` /
+`data_version=` header followed by save-local sections (`[world]`, `[boat]`,
+`[cooldowns]`, `[journal]`, `[score]`, reserved `[options]`) with **one
+scalar `key=value` per line** and arrays written as `name=i,i,i`; `[crc32]` is
+last.
+
+May reuse:
+
+- `data.parseI32` for every i32 scalar and every array element (thin wrapper
+  over `std_parse.parseInt`).
+- `data.parseRowKV` **only** for a single-key scalar line. It trims surrounding
+  spaces, strips a trailing `\r`, rejects an empty key/value, and rejects a
+  duplicate key — all save-compatible. It may not validate save keys; M7 keeps
+  its own section/key schema.
+- The line-splitting/CRLF contract: split on `\n`, strip one trailing `\r`.
+  M6 has **no exported splitter** (`stripCR` is private and `classifyLine`
+  wraps it), so M7 must reproduce the same short scan (or M6 could export
+  `stripCR` as a follow-up; not required).
+- For `u32` fields (`rng_state`, `seen_mask`/`journal_mask`/`wary_mask` words,
+  `tools_owned`, `cosmetics_*`, `boss_variants_seen`) use
+  `std_parse.parseUint`, not `parseI32`; M6 exposes no `parseUint` wrapper.
+  Parse `[crc32] hash=0xXXXXXXXX` as hex, not `parseI32`.
+
+Must **not** reuse:
+
+- `data.sectionId` — it is the §25.10 vocabulary and returns `-1` for every save
+  section (`world`, `boat`, `cooldowns`, `journal`, `score`, `crc32`, `options`).
+- `data.classifyLine` as the header/section classifier — it treats `format=2` as
+  the only valid header (save starts with `version=`/`data_version=`) and its
+  section/comment rules are data-file rules.
+- `beginTextEntry`/`finishTextValue` and the `[text]` continuation rules
+  (one-space paragraph lines, comments inside prose). Saves have no prose
+  payload; `[options]` is an ordinary KV section.
+- `validate.validateAll`, `data.buildFallback`, and `data.textKeyKnown` — all
+  content-schema, not save-code, concerns.
+- `parseRowKV` for arrays: `name=i,i,i` splits at each comma into fields with no
+  `=`, so it fails. Split the value at `=` first, then at commas, and run
+  `parseI32` per element (M7-local helper).
+
+**Exact amendment text (M7 Task 1, replace "Implement `persist.zig` with M6
+parsers"):**
+
+> Implement `persist.zig` reusing only `data.parseI32` for i32 scalars/array
+> elements and `data.parseRowKV` for single-key scalar lines; use
+> `std_parse.parseUint` for every `u32` field and a hex parser for `[crc32]
+> hash=0xXXXXXXXX`. Write a save-local line scanner (`\n`, strip one trailing
+> `\r`), a save-local array parser (`name=v[,v...]`), and the save section
+> vocabulary (`version`, `data_version`, `[world]`, `[boat]`, `[cooldowns]`,
+> `[journal]`, `[score]`, reserved `[options]`, `[crc32]` last). Do not use
+> `data.sectionId`, `data.classifyLine`'s `format=2` header rule, the `[text]`
+> continuation logic, `validateAll`, or `buildFallback`.
+
+#### 2. `data_version` ↔ `content_version`
+
+`loadFile` publishes `format=2` as `Tables.content_version = 2`; `buildFallback`
+also sets 2. §25.10 requires the save's `data_version` to equal
+`content_version`, so the comparison source is the **installed P23(1) tables**,
+not a literal:
+
+```
+const cv = if (def.content_override) |t| t.content_version else 2;
+```
+
+The game installs `data.g_tables` via `content_boot.loadFromDir` →
+`data.install` before any save read; the tool fallback path leaves
+`content_override == null` and uses 2. There is no `data.contentVersion()`
+wrapper. Place the check in `saveRead`'s §32 load-check block, after parsing
+`version`/`data_version` and in §32 order (version → data_version → CRC → IDs),
+returning `BadDataVersion` on mismatch; no migration.
+
+**Exact amendment text (M7 Task 1, add after the error/test sentence):**
+
+> Compare the save's `data_version` with the installed content version, not the
+> literal 2: `const cv = if (def.content_override) |t| t.content_version else 2;`
+> In `saveRead`, perform the comparison after the `version` check and before
+> accepting the save, in §32 order (`version` → `data_version` → CRC → IDs).
+> Mismatch returns `BadDataVersion`; never migrate.
+
+#### 3. `[text]` page-1 handoff
+
+Confirm all four points:
+
+- **Key:** `manual.1` (exactly). `data.z98` line 130 carries it.
+- **Non-empty rule:** `validate.validateAll` requires `manual.1` to be present
+  and non-empty whenever `text_count > 0`; the compiled-in fallback is
+  tables-only (`text_count = 0`) and is exempt (P24(1)). The game always loads
+  the shipped file, so first-run must read the loaded value, never the fallback.
+- **API:** M6 has **no production text-value getter**; only `text_key[]` /
+  `text_val[]` on `def.Tables` (public) and `data.textKeyKnown` (validation
+  only). Read through the installed tables
+  (`def.content_override.?.text_key`/`text_val`) with a linear scan for
+  `manual.1`, or add a tiny M7-local `textGet(t, key) ?[]const u8`. The test-only
+  `textFind` in `data_load_test.zig` is not production code.
+- **Paragraph breaks:** P24(2)/§25.10 store a one-space continuation line as a
+  retained blank line, so the arena value uses literal `\n` line breaks and
+  `\n\n` between paragraphs; `\r` is stripped. A `#` after the leading space is
+  prose, not a comment. Render/emit those `\n`s; do not re-trim or rewrap.
+
+**Exact amendment text (M7 Task 3, replace "embedded `[text]` from data.z98"):**
+
+> Read page 1 from the installed tables with a local lookup for key `manual.1`
+> (`def.content_override.?.text_key`/`text_val`; M6 has no value getter). Treat
+> the stored value as literal text: `\n` is a line break and `\n\n` is a
+> paragraph break (P24). Show it only when the loaded value is present and
+> non-empty; the tables-only fallback is not a content source. M7 consumes
+> `manual.1`; it does not author it (M6 ships it in `data.z98`).
+
+#### 4. Persisted-field list vs M6 shapes
+
+Verified: `git diff bea1bc50..HEAD -- examples/z98/undersanded/def.zig` changes
+only `CreatureDef` (adds `name`/`name_len`) and adds the content row types plus
+`Tables`; **`World` and `Expedition` are unchanged** (no new fields), and
+`world.zig` has no M6 diff. M7's list stands; no field-list amendment.
+
+M6 changes that touch saves are content-only or index-contract facts:
+
+- Creature `name`/`name_len`, zone/phase masks, stats, drops, and rules are
+  content, not save state. `CreatureDef.id` is the content id; it is **not** the
+  array index used by saves.
+- `World.ready[zone*MAX_CREATURES + def_index]`, `seen_mask`, `journal_mask`,
+  and `wary_mask` are indexed by **load-order `def_index`** (`0..defCount-1`).
+  M7's "unknown creature id in cooldowns → BadId" must validate against
+  `creatures.defCount()` (installed count), not `CreatureDef.id`. T1 row order
+  is unchanged/append-only; `data_version` guards future content changes.
+- `tooltip_shown` and `field_phases` already existed before M6; M7 Task 3
+  already lists them. `World.rng_state` is a pre-existing §25.7 field absent
+  from M7's list; it is not an M6 change, but M7 should decide whether reload
+  determinism requires persisting it (if so, add it to the Task 0 checklist).
+
+#### 5. Cross-plan follow-up for M8
+
+Record for the M7 next-milestone review (M7 Task 5; the M6 preflight calls this
+the M7 Task-6/7 follow-up): M8's plan still says rows move from `tables_t1.zig`
+fixtures to `data.z98` and that Task 1 "Implement rows" / Task 2 "M5 fixtures →
+real file". **M6 already authors `data.z98`**: 18 non-boss creature rows with
+names/stats/zone-phase masks/§14.4 drops, 4 M2-era `[rules]`, 7 tools, 15
+upgrades, 12 cosmetics, Z1–Z3 encounters, the zone ladder incl. boss zone D, and
+`manual.1`. Reconcile at that review:
+
+- M8 Task 1 adds the Derelict **boss sentinel row** (the 19th row) and reconciles
+  the remaining §14.3 behavior encoding (which effects are already M6 named
+  fields vs. still need `[rules]` rows); it must not re-author the 18 M6 rows,
+  names, masks, or drops.
+- M8 Task 2 does not re-author tools/upgrades/cosmetics/encounters/zone D; it
+  keeps/verifies them and only adds content M6 did not ship.
+- M8 Task 3 authors `manual.2..8`, journal entries, legends, zone flavor, and
+  error copy; it must not re-author `manual.1` (M6 ships it; M7 consumes it).
+- Align M8's "19 rows" goal wording with the split: M6 ships 18 (all non-boss);
+  M8 adds the boss row.
