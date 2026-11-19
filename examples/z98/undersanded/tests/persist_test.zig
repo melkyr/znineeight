@@ -20,6 +20,14 @@ const P_VALID_A = "/tmp/m7t1_valid_a.dat";
 const P_VALID_B = "/tmp/m7t1_valid_b.dat";
 const P_BAD = "/tmp/m7t1_bad.dat";
 
+const T_DIR = "/tmp/";
+const T_SAVE0 = "/tmp/save0.dat";
+const T_SAVE1 = "/tmp/save1.dat";
+const T_TMP = "/tmp/save.tmp";
+const T_BAK = "/tmp/save.bak";
+const T_LOG = "/tmp/errors.log";
+const P_ROLL = "/tmp/m7t2_roll_save0.dat";
+
 var fails: usize = 0;
 var file_buf: [256 * 1024]u8 = undefined;
 
@@ -71,6 +79,64 @@ fn replaceOnce(buf: []u8, needle: []const u8, repl: []const u8) bool {
 fn writeFile(path: []const u8, bytes: []const u8) bool {
     file_mod.writeAll(path, bytes) catch return false;
     return true;
+}
+
+fn removeIfExists(path: []const u8) void {
+    if (file_mod.exists(path)) file_mod.remove(path) catch {};
+}
+
+fn readInto(path: []const u8, storage: []u8) ?[]const u8 {
+    var arena = arena_mod.init(storage);
+    const raw = file_mod.readAll(&arena, path) catch return null;
+    return raw;
+}
+
+fn fileContains(path: []const u8, needle: []const u8) bool {
+    var buf: [4096]u8 = undefined;
+    const raw = readInto(path, buf[0..]) orelse return false;
+    return contains(raw, needle);
+}
+
+fn cleanSlots() void {
+    removeIfExists(P_ROLL);
+    removeIfExists(T_SAVE0);
+    removeIfExists(T_SAVE1);
+    removeIfExists(T_TMP);
+    removeIfExists(T_BAK);
+    removeIfExists(T_LOG);
+}
+
+fn loadCycle(path: []const u8, out: *i32) bool {
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    persist.saveRead(path, &w, &e) catch return false;
+    out.* = w.cycle;
+    return true;
+}
+
+fn seedTwoSaves(path: []const u8) bool {
+    var g: def.GameState = undefined;
+    richState(&g);
+    g.world.cycle = 11;
+    persist.saveWrite(path, &g.world, &g.exp) catch return false;
+    g.world.cycle = 22;
+    persist.saveWrite(path, &g.world, &g.exp) catch return false;
+    return true;
+}
+
+fn win9xRename(old_path: []const u8, new_path: []const u8) file_mod.FileError!void {
+    if (file_mod.exists(new_path)) return error.RenameFailed;
+    return file_mod.rename(old_path, new_path);
+}
+
+fn failStep5Rename(old_path: []const u8, new_path: []const u8) file_mod.FileError!void {
+    if (eq(old_path, T_TMP) and eq(new_path, P_ROLL)) return error.RenameFailed;
+    return file_mod.rename(old_path, new_path);
+}
+
+fn corruptWrite(path: []const u8, data: []const u8) file_mod.FileError!void {
+    _ = data;
+    return file_mod.writeAll(path, "corrupt save\n");
 }
 
 fn lineLenAfter(hay: []const u8, key: []const u8) usize {
@@ -364,6 +430,145 @@ fn tPendingSettlementNotSaved() bool {
     return true;
 }
 
+fn tHappyPathSlots() bool {
+    cleanSlots();
+    if (!seedTwoSaves(P_ROLL)) return false;
+    if (!file_mod.exists(P_ROLL) or !file_mod.exists(T_BAK)) return false;
+    var c: i32 = 0;
+    if (!loadCycle(P_ROLL, &c) or c != 22) return false;
+    if (!loadCycle(T_BAK, &c) or c != 11) return false;
+    return true;
+}
+
+fn tSecondSaveWithPreExistingBak() bool {
+    cleanSlots();
+    var g: def.GameState = undefined;
+    richState(&g);
+    g.world.cycle = 11;
+    persist.saveWrite(P_ROLL, &g.world, &g.exp) catch return false;
+    if (!writeFile(T_BAK, "stale backup\n")) return false;
+
+    g.world.cycle = 22;
+    var wrote = true;
+    persist.fs_rename = win9xRename;
+    persist.saveWrite(P_ROLL, &g.world, &g.exp) catch {
+        wrote = false;
+    };
+    persist.fs_rename = file_mod.rename;
+    if (!wrote) return false;
+
+    var c: i32 = 0;
+    if (!loadCycle(P_ROLL, &c) or c != 22) return false;
+    if (!loadCycle(T_BAK, &c) or c != 11) return false;
+    return true;
+}
+
+fn tStep5FailureRollsBack() bool {
+    cleanSlots();
+    if (!seedTwoSaves(P_ROLL)) return false;
+    if (!file_mod.exists(T_BAK)) return false;
+
+    var g: def.GameState = undefined;
+    richState(&g);
+    g.world.cycle = 33;
+
+    var got_io = false;
+    persist.fs_rename = failStep5Rename;
+    persist.saveWrite(P_ROLL, &g.world, &g.exp) catch |e| {
+        got_io = e == error.Io;
+    };
+    persist.fs_rename = file_mod.rename;
+    if (!got_io) return false;
+
+    if (!file_mod.exists(P_ROLL)) return false;
+    var c: i32 = 0;
+    if (!loadCycle(P_ROLL, &c) or c != 22) return false;
+    return true;
+}
+
+fn tStep3VerifyFailureAborts() bool {
+    cleanSlots();
+    if (!seedTwoSaves(P_ROLL)) return false;
+    if (!file_mod.exists(T_BAK)) return false;
+
+    var g: def.GameState = undefined;
+    richState(&g);
+    g.world.cycle = 33;
+
+    var got_err = false;
+    persist.fs_write = corruptWrite;
+    persist.saveWrite(P_ROLL, &g.world, &g.exp) catch |verr| {
+        got_err = verr == error.Damaged or verr == error.BadHash;
+    };
+    persist.fs_write = file_mod.writeAll;
+    if (!got_err) return false;
+
+    var c: i32 = 0;
+    if (!loadCycle(P_ROLL, &c) or c != 22) return false;
+    if (!loadCycle(T_BAK, &c) or c != 11) return false;
+    if (file_mod.exists(T_TMP)) return false;
+    return true;
+}
+
+fn makeCrashState() bool {
+    cleanSlots();
+    var g: def.GameState = undefined;
+    richState(&g);
+    g.world.cycle = 11;
+    persist.saveWrite(T_SAVE0, &g.world, &g.exp) catch return false;
+    persist.fs_rename(T_SAVE0, T_BAK) catch return false;
+    if (file_mod.exists(T_SAVE0)) return false;
+    if (!writeFile(T_TMP, "stale temp\n")) return false;
+    return true;
+}
+
+fn tRecoveryRestoresAndLogs() bool {
+    if (!makeCrashState()) return false;
+    persist.recoverAtBoot(T_DIR);
+    if (!file_mod.exists(T_SAVE0)) return false;
+    if (file_mod.exists(T_TMP)) return false;
+    if (file_mod.exists(T_BAK)) return false;
+    var c: i32 = 0;
+    if (!loadCycle(T_SAVE0, &c) or c != 11) return false;
+    if (!fileContains(T_LOG, "recovery")) return false;
+    if (!fileContains(T_LOG, "save.bak")) return false;
+    return true;
+}
+
+fn tStaleTmpDeleted() bool {
+    cleanSlots();
+    if (!writeFile(T_TMP, "stale temp\n")) return false;
+    persist.recoverAtBoot(T_DIR);
+    return !file_mod.exists(T_TMP);
+}
+
+fn bootWouldFreshInstall() bool {
+    return !file_mod.exists(T_SAVE0);
+}
+
+fn tRecoveryPrecedesFreshInstall() bool {
+    if (!makeCrashState()) return false;
+    if (!bootWouldFreshInstall()) return false;
+    persist.recoverAtBoot(T_DIR);
+    if (bootWouldFreshInstall()) return false;
+    return file_mod.exists(T_SAVE0);
+}
+
+fn tBackupSlotManual() bool {
+    cleanSlots();
+    var g: def.GameState = undefined;
+    richState(&g);
+    g.world.cycle = 44;
+    persist.saveBackupSlot(T_DIR, &g.world, &g.exp) catch return false;
+    if (!file_mod.exists(T_SAVE1)) return false;
+    if (file_mod.exists(T_SAVE0)) return false;
+    if (file_mod.exists(T_BAK)) return false;
+    var c: i32 = 0;
+    if (!loadCycle(T_SAVE1, &c) or c != 44) return false;
+    if (!fileContains(T_LOG, "backup slot")) return false;
+    return true;
+}
+
 pub fn main() void {
     report("round_trip_byte_compare", tRoundTrip());
     report("crc_tamper_bad_hash", tCrcTamper());
@@ -373,6 +578,14 @@ pub fn main() void {
     report("failed_load_leaves_target_untouched", tFailedLoadLeavesTarget());
     report("ready_672_worst_case_line", tReadyWorstCaseLine());
     report("pending_settlement_not_saved", tPendingSettlementNotSaved());
+    report("happy_path_saves_save0_and_bak", tHappyPathSlots());
+    report("second_save_with_preexisting_bak", tSecondSaveWithPreExistingBak());
+    report("step5_failure_rolls_back_save0", tStep5FailureRollsBack());
+    report("step3_verify_failure_aborts_untouched", tStep3VerifyFailureAborts());
+    report("startup_recovery_restores_and_logs", tRecoveryRestoresAndLogs());
+    report("startup_recovery_deletes_stale_tmp", tStaleTmpDeleted());
+    report("startup_recovery_precedes_fresh_install", tRecoveryPrecedesFreshInstall());
+    report("backup_slot_writes_save1_manually", tBackupSlotManual());
 
     if (fails != 0) os.exit(1);
     io.write("persist_test PASS\n");

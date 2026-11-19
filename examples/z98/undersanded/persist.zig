@@ -22,6 +22,12 @@ pub const MAX_FILE: usize = 64 * 1024;
 
 const SAVE_VERSION: i32 = 2;
 
+// Fault-injection seam (R4): plain fn fields, defaults = std_file, no ?fn
+// call-through. Tests swap and restore them.
+pub var fs_rename: fn ([]const u8, []const u8) file_mod.FileError!void = file_mod.rename;
+pub var fs_remove: fn ([]const u8) file_mod.FileError!void = file_mod.remove;
+pub var fs_write: fn ([]const u8, []const u8) file_mod.FileError!void = file_mod.writeAll;
+
 const SEC_WORLD: i32 = 0;
 const SEC_BOAT: i32 = 1;
 const SEC_COOLDOWNS: i32 = 2;
@@ -52,6 +58,30 @@ fn eql(a: []const u8, b: []const u8) bool {
         if (a[i] != b[i]) return false;
     }
     return true;
+}
+
+// Directory portion of a save path (including the trailing separator). Both
+// separators are accepted because the deployed target is Win9x.
+fn dirOf(path: []const u8) []const u8 {
+    var i: usize = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/' or path[i] == '\\') return path[0 .. i + 1];
+    }
+    return path[0..0];
+}
+
+fn joinInto(dir: []const u8, name: []const u8, out: []u8) ?[]const u8 {
+    if (dir.len + name.len > out.len) return null;
+    var i: usize = 0;
+    while (i < dir.len) : (i += 1) out[i] = dir[i];
+    var j: usize = 0;
+    while (j < name.len) : (j += 1) out[dir.len + j] = name[j];
+    return out[0 .. dir.len + name.len];
+}
+
+fn siblingInto(path: []const u8, name: []const u8, out: []u8) ?[]const u8 {
+    return joinInto(dirOf(path), name, out);
 }
 
 fn stripCR(line: []const u8) []const u8 {
@@ -401,38 +431,175 @@ fn contentVersion() i32 {
     return 2;
 }
 
-pub fn saveWrite(path: []const u8, w: *const def.World, exp: *const def.Expedition) SaveErr!void {
-    var arena = arena_mod.init(g_arena_buf[0..]);
-    var out = buf_mod.init(&arena);
+fn buildSave(out: *buf_mod.Buf, w: *const def.World, exp: *const def.Expedition) SaveErr!void {
+    buf_mod.append(out, "version=") catch return SaveErr.Damaged;
+    appendInt(out, SAVE_VERSION);
+    nl(out);
+    buf_mod.append(out, "data_version=") catch return SaveErr.Damaged;
+    appendInt(out, contentVersion());
+    nl(out);
 
-    buf_mod.append(&out, "version=") catch return SaveErr.Damaged;
-    appendInt(&out, SAVE_VERSION);
-    nl(&out);
-    buf_mod.append(&out, "data_version=") catch return SaveErr.Damaged;
-    appendInt(&out, contentVersion());
-    nl(&out);
+    writeWorld(out, w);
+    writeBoat(out, w);
+    writeCooldowns(out, w);
+    writeJournal(out, w);
+    writeExpedition(out, exp);
+    writeScore(out, w);
+    wSection(out, "options");
 
-    writeWorld(&out, w);
-    writeBoat(&out, w);
-    writeCooldowns(&out, w);
-    writeJournal(&out, w);
-    writeExpedition(&out, exp);
-    writeScore(&out, w);
-    wSection(&out, "options");
-
-    const prefix = buf_mod.slice(&out);
+    const prefix = buf_mod.slice(out);
     if (prefix.len + 32 > MAX_FILE) return SaveErr.Damaged;
     const hash = crcOf(prefix);
 
-    wSection(&out, "crc32");
-    buf_mod.append(&out, "hash=") catch return SaveErr.Damaged;
-    appendHex8(&out, hash);
-    nl(&out);
+    wSection(out, "crc32");
+    buf_mod.append(out, "hash=") catch return SaveErr.Damaged;
+    appendHex8(out, hash);
+    nl(out);
 
-    const bytes = buf_mod.slice(&out);
-    if (bytes.len > MAX_FILE) return SaveErr.Damaged;
-    file_mod.writeAll(path, bytes) catch |e| return mapFileError(e);
+    if (buf_mod.slice(out).len > MAX_FILE) return SaveErr.Damaged;
     return;
+}
+
+// Step 3: re-read the temp file and prove its CRC before any rename. Mirrors
+// saveRead's section-order scan but skips the field/ID checks (a save may carry
+// a state that saveRead rejects; the write path only owns file integrity).
+fn verifyCrcFile(path: []const u8) SaveErr!void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const content = file_mod.readAll(&arena, path) catch |e| return mapFileError(e);
+    if (content.len > MAX_FILE) return error.Damaged;
+
+    var at: usize = 0;
+    var line: Line = undefined;
+    var section: i32 = -1;
+    var next_sec: i32 = 0;
+    var saw_hash = false;
+    var crc_start: usize = 0;
+    var hash: u32 = 0;
+
+    while (nextLine(content, &at, &line)) {
+        const t = stripCR(content[line.start..line.end]);
+        if (t.len == 0) return error.Damaged;
+        if (t.len > MAX_LINE) return error.Damaged;
+        if (saw_hash) return error.Damaged;
+
+        if (t[0] == '[') {
+            var name: []const u8 = "";
+            if (!sectionName(t, &name)) return error.Damaged;
+            const sid = sectionId(name);
+            if (sid < 0) return error.Damaged;
+            if (sid != next_sec) return error.Damaged;
+            if (sid == SEC_CRC) crc_start = line.start;
+            section = sid;
+            next_sec = sid + 1;
+            continue;
+        }
+
+        if (section == SEC_CRC) {
+            var key: []const u8 = "";
+            var val: []const u8 = "";
+            if (!parseScalar(t, &key, &val)) return error.Damaged;
+            if (!eql(key, "hash")) return error.Damaged;
+            hash = parseHexU32(val) orelse return error.Damaged;
+            saw_hash = true;
+        }
+    }
+
+    if (next_sec != SEC_CRC + 1 or !saw_hash) return error.Damaged;
+    if (crc_start > content.len) return error.Damaged;
+    if (crcOf(content[0..crc_start]) != hash) return error.BadHash;
+}
+
+pub fn logError(dir: []const u8, msg: []const u8) void {
+    var path_buf: [4096]u8 = undefined;
+    const path = joinInto(dir, "errors.log", path_buf[0..]) orelse return;
+    var abuf: [1]u8 = undefined;
+    var arena = arena_mod.init(abuf[0..]);
+    var f = file_mod.open(&arena, path, file_mod.Mode.Append) catch return;
+    file_mod.write(&f, msg) catch {
+        file_mod.close(&f);
+        return;
+    };
+    file_mod.write(&f, "\n") catch {};
+    file_mod.flush(&f) catch {};
+    file_mod.close(&f);
+}
+
+// Startup recovery: a missing save0.dat with a present save.bak is the crash
+// window between steps 4 and 5. Restore the backup (log it) and drop any stale
+// save.tmp. Call before any fresh-install decision (Task 3b wires boot).
+pub fn recoverAtBoot(dir: []const u8) void {
+    var save_buf: [4096]u8 = undefined;
+    const save0 = joinInto(dir, "save0.dat", save_buf[0..]) orelse return;
+    var bak_buf: [4096]u8 = undefined;
+    const bak = joinInto(dir, "save.bak", bak_buf[0..]) orelse return;
+    var tmp_buf: [4096]u8 = undefined;
+    const tmp = joinInto(dir, "save.tmp", tmp_buf[0..]) orelse return;
+
+    if (!file_mod.exists(save0) and file_mod.exists(bak)) {
+        fs_rename(bak, save0) catch {
+            logError(dir, "startup recovery failed: could not restore save0.dat from save.bak");
+            fs_remove(tmp) catch {};
+            return;
+        };
+        logError(dir, "startup recovery restored save0.dat from save.bak");
+    }
+    fs_remove(tmp) catch {};
+}
+
+pub fn saveWrite(path: []const u8, w: *const def.World, exp: *const def.Expedition) SaveErr!void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    var out = buf_mod.init(&arena);
+    buildSave(&out, w, exp) catch |e| return e;
+    const bytes = buf_mod.slice(&out);
+
+    var tmp_buf: [4096]u8 = undefined;
+    const tmp = siblingInto(path, "save.tmp", tmp_buf[0..]) orelse return SaveErr.Io;
+    var bak_buf: [4096]u8 = undefined;
+    const bak = siblingInto(path, "save.bak", bak_buf[0..]) orelse return SaveErr.Io;
+
+    // 1 + 2: serialize to save.tmp (writeAll flushes and closes).
+    fs_write(tmp, bytes) catch |write_err| {
+        fs_remove(tmp) catch {};
+        return mapFileError(write_err);
+    };
+
+    // 3: re-read save.tmp and verify its CRC before any rename.
+    verifyCrcFile(tmp) catch |verify_err| {
+        fs_remove(tmp) catch {};
+        return verify_err;
+    };
+
+    // 4: remove stale save.bak (mandatory on Win9x), then dest -> save.bak.
+    var had_dest = false;
+    if (file_mod.exists(path)) {
+        if (file_mod.exists(bak)) {
+            fs_remove(bak) catch |remove_err| return mapFileError(remove_err);
+        }
+        fs_rename(path, bak) catch |bak_err| return mapFileError(bak_err);
+        had_dest = true;
+    }
+
+    // 5 (+6): commit; on any failure restore save.bak -> save0.dat.
+    fs_rename(tmp, path) catch {
+        if (had_dest) {
+            fs_rename(bak, path) catch {};
+        }
+        return SaveErr.Io;
+    };
+}
+
+// Manual backup slot: write save1.dat directly (never auto-written). It does
+// not use the 6-step save0 path because that would overwrite save.bak.
+pub fn saveBackupSlot(dir: []const u8, w: *const def.World, exp: *const def.Expedition) SaveErr!void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    var out = buf_mod.init(&arena);
+    buildSave(&out, w, exp) catch |e| return e;
+    const bytes = buf_mod.slice(&out);
+
+    var slot_buf: [4096]u8 = undefined;
+    const slot = joinInto(dir, "save1.dat", slot_buf[0..]) orelse return SaveErr.Io;
+    file_mod.writeAll(slot, bytes) catch |e| return mapFileError(e);
+    logError(dir, "backup slot written: save1.dat");
 }
 
 pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!void {
