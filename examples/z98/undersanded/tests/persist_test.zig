@@ -27,9 +27,13 @@ const T_TMP = "/tmp/save.tmp";
 const T_BAK = "/tmp/save.bak";
 const T_LOG = "/tmp/errors.log";
 const P_ROLL = "/tmp/m7t2_roll_save0.dat";
+const P_MISSING = "/tmp/m7t1_does_not_exist.dat";
+const P_RESAVE = "/tmp/m7t1_fixture_resave.sav";
+const FIXTURE_V2 = "examples/z98/undersanded/tests/fixtures/save_v2_valid.sav";
 
 var fails: usize = 0;
 var file_buf: [256 * 1024]u8 = undefined;
+var alt_buf: [persist.MAX_FILE]u8 = undefined;
 
 fn report(name: []const u8, ok: bool) void {
     if (ok) {
@@ -151,6 +155,55 @@ fn lineLenAfter(hay: []const u8, key: []const u8) usize {
         return n;
     }
     return 0;
+}
+
+fn findSeq(hay: []const u8, needle: []const u8) ?usize {
+    if (needle.len == 0) return 0;
+    if (hay.len < needle.len) return null;
+    var i: usize = 0;
+    while (i + needle.len <= hay.len) : (i += 1) {
+        if (eq(hay[i .. i + needle.len], needle)) return i;
+    }
+    return null;
+}
+
+fn copyTo(out: []u8, at: *usize, src: []const u8) bool {
+    if (at.* + src.len > out.len) return false;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) {
+        out[at.* + i] = src[i];
+    }
+    at.* += src.len;
+    return true;
+}
+
+fn hexNib(n: u32) u8 {
+    if (n < 10) return @intCast(u8, @intCast(u32, '0') + n);
+    return @intCast(u8, @intCast(u32, 'a') + n - 10);
+}
+
+fn appendHex8(out: []u8, at: *usize, v: u32) bool {
+    if (at.* + 8 > out.len) return false;
+    var shift: i32 = 28;
+    while (shift >= 0) : (shift -= 4) {
+        out[at.*] = hexNib((v >> @intCast(u32, shift)) & 0xF);
+        at.* += 1;
+    }
+    return true;
+}
+
+// Insert one line just before [crc32] and recompute the hash so crafted input
+// reaches the post-CRC range checks instead of failing as BadHash.
+fn rewriteBeforeCrc(raw: []const u8, insert: []const u8, out: []u8) ?[]const u8 {
+    const idx = findSeq(raw, "[crc32]\n") orelse return null;
+    var at: usize = 0;
+    if (!copyTo(out, &at, raw[0..idx])) return null;
+    if (!copyTo(out, &at, insert)) return null;
+    const hash = persist.crcOf(out[0..at]);
+    if (!copyTo(out, &at, "[crc32]\nhash=0x")) return null;
+    if (!appendHex8(out, &at, hash)) return null;
+    if (!copyTo(out, &at, "\n")) return null;
+    return out[0..at];
 }
 
 fn richState(g: *def.GameState) void {
@@ -554,6 +607,228 @@ fn tRecoveryPrecedesFreshInstall() bool {
     return file_mod.exists(T_SAVE0);
 }
 
+fn tFixtureCanonicalResave() bool {
+    var arena = arena_mod.init(file_buf[0..]);
+    const raw = file_mod.readAll(&arena, FIXTURE_V2) catch return false;
+    if (raw.len == 0) return false;
+
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    persist.saveRead(FIXTURE_V2, &w, &e) catch return false;
+    persist.saveWrite(P_RESAVE, &w, &e) catch return false;
+
+    var arena2 = arena_mod.init(alt_buf[0..]);
+    const saved = file_mod.readAll(&arena2, P_RESAVE) catch return false;
+    removeIfExists(P_RESAVE);
+    if (!eq(raw, saved)) return false;
+    if (e.pending_cond != def.COND_SHAKY) return false;
+    if (e.zone != 2 or e.tool != 4 or e.hold[7] != 6) return false;
+    return w.cycle == 7 and w.boss_variants_seen == 0x1F;
+}
+
+fn craftedBad(kind: i32) bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    const ep = &g.exp;
+    const wp = &g.world;
+    switch (kind) {
+        0 => ep.active = 2,
+        1 => ep.zone = @intCast(i32, def.MAX_ZONES),
+        2 => ep.zone = -1,
+        3 => ep.fight_index = -1,
+        4 => ep.tool = -1,
+        5 => ep.tool = 8,
+        6 => ep.tool_charge = -1,
+        7 => ep.tool_broken = 2,
+        8 => ep.pending_cond = 4,
+        9 => ep.hold[0] = -1,
+        10 => wp.boss_variants_seen = 32,
+        11 => wp.tools_owned = @intCast(u32, 1) << @intCast(u32, 8),
+        12 => wp.cosmetics_owned = @intCast(u32, 1) << @intCast(u32, 12),
+        13 => wp.cosmetics_unlocked = @intCast(u32, 1) << @intCast(u32, 12),
+        else => return false,
+    }
+    persist.saveWrite(P_BAD, &g.world, &g.exp) catch {
+        io.write(" saveWrite failed\n");
+        return false;
+    };
+
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    if (!expectErr(P_BAD, &w, &e, error.Damaged)) {
+        io.write(" expectErr missed\n");
+        return false;
+    }
+    return true;
+}
+
+fn tCraftedCrcValidRejected() bool {
+    cleanSlots();
+    var k: i32 = 0;
+    while (k < 14) : (k += 1) {
+        if (!craftedBad(k)) {
+            io.write("crafted kind failed: ");
+            io.printInt(k);
+            io.write("\n");
+            return false;
+        }
+    }
+    removeIfExists(P_BAD);
+    cleanSlots();
+    return true;
+}
+
+fn seedValidA() bool {
+    var g: def.GameState = undefined;
+    richState(&g);
+    persist.saveWrite(P_VALID_A, &g.world, &g.exp) catch return false;
+    return true;
+}
+
+fn tOptionsUnknownSkipped() bool {
+    if (!seedValidA()) return false;
+    var arena = arena_mod.init(file_buf[0..]);
+    const raw = file_mod.readAll(&arena, P_VALID_A) catch return false;
+    const rewritten = rewriteBeforeCrc(raw, "mystery=1\n", alt_buf[0..]) orelse return false;
+    if (!writeFile(P_BAD, rewritten)) return false;
+
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    persist.saveRead(P_BAD, &w, &e) catch return false;
+    return w.cycle == 7 and e.pending_cond == def.COND_SHAKY and e.hold[7] == 6;
+}
+
+fn tTrailingAfterCrcRejected() bool {
+    if (!seedValidA()) return false;
+    var arena = arena_mod.init(file_buf[0..]);
+    const raw = file_mod.readAll(&arena, P_VALID_A) catch return false;
+    var at: usize = 0;
+    if (!copyTo(alt_buf[0..], &at, raw)) return false;
+    if (!copyTo(alt_buf[0..], &at, "junk\n")) return false;
+    if (!writeFile(P_BAD, alt_buf[0..at])) return false;
+
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    return expectErr(P_BAD, &w, &e, error.Damaged);
+}
+
+fn tOverMaxLineRejected() bool {
+    if (!seedValidA()) return false;
+    var line: [persist.MAX_LINE + 2]u8 = undefined;
+    var i: usize = 0;
+    while (i <= persist.MAX_LINE) : (i += 1) {
+        line[i] = 'a';
+    }
+    line[persist.MAX_LINE + 1] = '\n';
+
+    var arena = arena_mod.init(file_buf[0..]);
+    const raw = file_mod.readAll(&arena, P_VALID_A) catch return false;
+    const rewritten = rewriteBeforeCrc(raw, line[0..], alt_buf[0..]) orelse return false;
+    if (!writeFile(P_BAD, rewritten)) return false;
+
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    return expectErr(P_BAD, &w, &e, error.Damaged);
+}
+
+fn poisonedUntouched(path: []const u8, want: persist.SaveErr) bool {
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    game.zeroWorld(&w);
+    w.cycle = 777;
+    w.hull = 42;
+    w.money = -99;
+    w.ready[0] = 555;
+    memZeroExp(&e);
+    e.active = -5;
+    e.zone = 9;
+    e.pending_cond = def.COND_EXPOSED;
+
+    var got: ?persist.SaveErr = null;
+    persist.saveRead(path, &w, &e) catch |err| {
+        got = err;
+    };
+    const err = got orelse return false;
+    if (err != want) return false;
+    if (w.cycle != 777 or w.hull != 42 or w.money != -99) return false;
+    if (w.ready[0] != 555) return false;
+    return e.active == -5 and e.zone == 9 and e.pending_cond == def.COND_EXPOSED;
+}
+
+fn tFailedLoadAllClasses() bool {
+    cleanSlots();
+    if (!seedValidA()) return false;
+    var arena = arena_mod.init(file_buf[0..]);
+    const base = file_mod.readAll(&arena, P_VALID_A) catch return false;
+    var at: usize = 0;
+
+    at = 0;
+    if (!copyTo(alt_buf[0..], &at, base)) return false;
+    if (!replaceOnce(alt_buf[0..at], "version=2", "version=1")) return false;
+    if (!writeFile(P_BAD, alt_buf[0..at])) return false;
+    if (!poisonedUntouched(P_BAD, error.BadVersion)) return false;
+
+    at = 0;
+    if (!copyTo(alt_buf[0..], &at, base)) return false;
+    if (!replaceOnce(alt_buf[0..at], "data_version=2", "data_version=1")) return false;
+    if (!writeFile(P_BAD, alt_buf[0..at])) return false;
+    if (!poisonedUntouched(P_BAD, error.BadDataVersion)) return false;
+
+    at = 0;
+    if (!copyTo(alt_buf[0..], &at, base)) return false;
+    if (!replaceOnce(alt_buf[0..at], "cycle=7", "cycle=8")) return false;
+    if (!writeFile(P_BAD, alt_buf[0..at])) return false;
+    if (!poisonedUntouched(P_BAD, error.BadHash)) return false;
+
+    at = 0;
+    if (!copyTo(alt_buf[0..], &at, base)) return false;
+    if (!copyTo(alt_buf[0..], &at, "junk\n")) return false;
+    if (!writeFile(P_BAD, alt_buf[0..at])) return false;
+    if (!poisonedUntouched(P_BAD, error.Damaged)) return false;
+
+    var gid: def.GameState = undefined;
+    richState(&gid);
+    const gid_world = &gid.world;
+    gid_world.ready[@intCast(usize, creatures.defCount())] = 1;
+    persist.saveWrite(P_BAD, &gid.world, &gid.exp) catch return false;
+    if (!poisonedUntouched(P_BAD, error.BadId)) return false;
+
+    if (!poisonedUntouched(P_MISSING, error.Missing)) return false;
+    removeIfExists(P_BAD);
+    cleanSlots();
+    return true;
+}
+
+fn tRecoveryNoTrailingSep() bool {
+    if (!makeCrashState()) return false;
+    persist.recoverAtBoot("/tmp");
+    if (!file_mod.exists(T_SAVE0)) return false;
+    if (file_mod.exists(T_TMP)) return false;
+    if (file_mod.exists(T_BAK)) return false;
+    var c: i32 = 0;
+    if (!loadCycle(T_SAVE0, &c) or c != 11) return false;
+    return fileContains(T_LOG, "recovery") and fileContains(T_LOG, "save.bak");
+}
+
+fn tLogErrorNoTrailingSep() bool {
+    cleanSlots();
+    persist.logError("/tmp", "log probe no trailing separator");
+    if (!file_mod.exists(T_LOG)) return false;
+    return fileContains(T_LOG, "log probe no trailing separator");
+}
+
+fn tBackupSlotNoTrailingSep() bool {
+    cleanSlots();
+    var g: def.GameState = undefined;
+    richState(&g);
+    g.world.cycle = 45;
+    persist.saveBackupSlot("/tmp", &g.world, &g.exp) catch return false;
+    if (!file_mod.exists(T_SAVE1)) return false;
+    var c: i32 = 0;
+    if (!loadCycle(T_SAVE1, &c) or c != 45) return false;
+    return fileContains(T_LOG, "backup slot");
+}
+
 fn tBackupSlotManual() bool {
     cleanSlots();
     var g: def.GameState = undefined;
@@ -586,6 +861,15 @@ pub fn main() void {
     report("startup_recovery_deletes_stale_tmp", tStaleTmpDeleted());
     report("startup_recovery_precedes_fresh_install", tRecoveryPrecedesFreshInstall());
     report("backup_slot_writes_save1_manually", tBackupSlotManual());
+    report("fixture_v2_canonical_resave", tFixtureCanonicalResave());
+    report("crafted_crc_valid_rejected", tCraftedCrcValidRejected());
+    report("options_unknown_keys_skipped", tOptionsUnknownSkipped());
+    report("trailing_content_after_crc_rejected", tTrailingAfterCrcRejected());
+    report("over_max_line_rejected", tOverMaxLineRejected());
+    report("failed_load_all_classes_untouched", tFailedLoadAllClasses());
+    report("recovery_no_trailing_separator", tRecoveryNoTrailingSep());
+    report("log_error_no_trailing_separator", tLogErrorNoTrailingSep());
+    report("backup_slot_no_trailing_separator", tBackupSlotNoTrailingSep());
 
     if (fails != 0) os.exit(1);
     io.write("persist_test PASS\n");

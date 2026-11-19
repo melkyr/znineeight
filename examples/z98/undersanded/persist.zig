@@ -43,6 +43,9 @@ const COOLDOWNS_ALL: u32 = 0x7;
 const JOURNAL_ALL: u32 = 0x3;
 const EXPEDITION_ALL: u32 = 0x3FF;
 const SCORE_ALL: u32 = 0x1FF;
+// Known ownership bits: tools 0..7 (MAX_TOOLS=8), cosmetics 0..11.
+const TOOLS_OWNED_MASK: u32 = 0xFF;
+const COSMETICS_OWNED_MASK: u32 = 0xFFF;
 
 const FIELD_RECORD_LEN: usize = 26;
 const LAST_RUN_LEN: usize = 6;
@@ -72,12 +75,35 @@ fn dirOf(path: []const u8) []const u8 {
 }
 
 fn joinInto(dir: []const u8, name: []const u8, out: []u8) ?[]const u8 {
-    if (dir.len + name.len > out.len) return null;
+    var sep: u8 = '/';
+    if (@isWindows()) sep = '\\';
+
+    var add_sep = false;
+    if (dir.len > 0) {
+        const last = dir[dir.len - 1];
+        if (last != '/' and last != '\\') add_sep = true;
+    }
+
+    var need: usize = dir.len + name.len;
+    if (add_sep) need += 1;
+    if (need > out.len) return null;
+
+    var o: usize = 0;
     var i: usize = 0;
-    while (i < dir.len) : (i += 1) out[i] = dir[i];
+    while (i < dir.len) : (i += 1) {
+        out[o] = dir[i];
+        o += 1;
+    }
+    if (add_sep) {
+        out[o] = sep;
+        o += 1;
+    }
     var j: usize = 0;
-    while (j < name.len) : (j += 1) out[dir.len + j] = name[j];
-    return out[0 .. dir.len + name.len];
+    while (j < name.len) : (j += 1) {
+        out[o] = name[j];
+        o += 1;
+    }
+    return out[0..need];
 }
 
 fn siblingInto(path: []const u8, name: []const u8, out: []u8) ?[]const u8 {
@@ -588,6 +614,17 @@ pub fn saveWrite(path: []const u8, w: *const def.World, exp: *const def.Expediti
     };
 }
 
+// Direct serializer for tooling that must not touch the save0 rollback
+// siblings (save.tmp/save.bak). Builds the canonical image and writes it
+// straight to `path`; callers own integrity checks and cleanup.
+pub fn saveWriteDirect(path: []const u8, w: *const def.World, exp: *const def.Expedition) SaveErr!void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    var out = buf_mod.init(&arena);
+    buildSave(&out, w, exp) catch |e| return e;
+    const bytes = buf_mod.slice(&out);
+    fs_write(path, bytes) catch |e| return mapFileError(e);
+}
+
 // Manual backup slot: write save1.dat directly (never auto-written). It does
 // not use the 6-step save0 path because that would overwrite save.bak.
 pub fn saveBackupSlot(dir: []const u8, w: *const def.World, exp: *const def.Expedition) SaveErr!void {
@@ -902,6 +939,24 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
     if (tw.money < 0) return error.Damaged;
     if (tw.tool_selected < 0 or tw.tool_selected > 7) return error.Damaged;
     if (te.hold_n < 0 or te.hold_n > def.MAX_PARTS) return error.Damaged;
+
+    // Crafted-but-CRC-valid states still have to pass the same vocabulary the
+    // rest of the game assumes.
+    if (te.active != 0 and te.active != 1) return error.Damaged;
+    if (te.zone < 0 or te.zone >= @intCast(i32, def.MAX_ZONES)) return error.Damaged;
+    if (te.fight_index < 0) return error.Damaged;
+    if (te.tool < 0 or te.tool > 7) return error.Damaged;
+    if (te.tool_charge < 0) return error.Damaged;
+    if (te.tool_broken < 0 or te.tool_broken > 1) return error.Damaged;
+    if (te.pending_cond < def.COND_NONE or te.pending_cond > def.COND_EXPOSED) return error.Damaged;
+    i = 0;
+    while (i < def.MAX_PARTS) : (i += 1) {
+        if (te.hold[i] < 0) return error.Damaged;
+    }
+    if (tw.boss_variants_seen > 31) return error.Damaged;
+    if ((tw.tools_owned & ~TOOLS_OWNED_MASK) != 0) return error.Damaged;
+    if ((tw.cosmetics_owned & ~COSMETICS_OWNED_MASK) != 0) return error.Damaged;
+    if ((tw.cosmetics_unlocked & ~COSMETICS_OWNED_MASK) != 0) return error.Damaged;
 
     if (!maskBitsValid(&tw.seen_mask, def_count)) return error.BadId;
     if (!maskBitsValid(&tw.journal_mask, def_count)) return error.BadId;

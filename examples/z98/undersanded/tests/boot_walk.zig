@@ -4,12 +4,14 @@
 //   "$ZIG" -fsafe -W -osl --output-dir "$OUT" \
 //       examples/z98/undersanded/tests/boot_walk.zig
 //   sh "$OUT/build_target.sh" linux "$OUT/boot_walk"
-//   printf 'c' | "$OUT/boot_walk" <save-dir> [<content-dir>]
+//   printf 'c' | "$OUT/boot_walk" <save-dir> [<content-dir>] [poison]
 //
 // Keys come from stdin through nav.boot's own input path (input.readKey /
 // readKeyRaw), exactly like app.zig's console boot. argv[1] is the writable
-// save dir; argv[2] is an optional content dir containing data.z98. The final
-// line reports the boot result and state so the M7 tier can assert routing.
+// save dir; argv[2] is an optional content dir containing data.z98; the
+// optional `poison` argv[3] seeds a live fight before boot to prove nav.boot
+// resets the GameState before its first draw. The final line reports the boot
+// result and state so the M7 tier can assert routing.
 
 const io = @import("std_io");
 const os = @import("std_os");
@@ -33,6 +35,15 @@ fn copyInto(dst: []u8, src: []const u8) []const u8 {
 fn intFlag(v: bool) i32 {
     if (v) return 1;
     return 0;
+}
+
+fn eq(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
 }
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
@@ -67,8 +78,16 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var arena = arena_mod.init(g_content_arena_buf[0..]);
     _ = content_boot.loadFromDir(&arena, &data.g_tables, content_dir);
 
+    var poison = false;
+    if (os.argc() > 3 and eq(os.argv(3), "poison")) poison = true;
+
     var s: def.GameState = undefined;
     game.newGame(&s);
+    if (poison) {
+        // nav.boot must reset this to a fresh state before its first draw.
+        s.fight.def_index = 3;
+        s.fight.outcome = def.OUT_ONGOING;
+    }
     const reached = nav.boot(&s, dir);
 
     io.write("\nboot ret=");

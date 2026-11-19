@@ -39,6 +39,7 @@ DATA="$ROOT/examples/z98/undersanded/data.z98"
 LORE_GOLDEN="$FIXTURES/dump_grid_lore.golden"
 MENU_GOLDEN="$FIXTURES/dump_grid_menu.golden"
 V1_FIXTURE="$FIXTURES/save_v1_bad.sav"
+V2_FIXTURE="$FIXTURES/save_v2_valid.sav"
 
 PASSES=0
 FAILS=0
@@ -51,8 +52,8 @@ if [ ! -x "$ZIG" ]; then
     exit 1
 fi
 if [ ! -f "$DATA" ] || [ ! -f "$LORE_GOLDEN" ] || [ ! -f "$MENU_GOLDEN" ] \
-    || [ ! -f "$V1_FIXTURE" ]; then
-    echo "FAIL: M7 fixture missing ($DATA, $LORE_GOLDEN, $MENU_GOLDEN, $V1_FIXTURE)"
+    || [ ! -f "$V1_FIXTURE" ] || [ ! -f "$V2_FIXTURE" ]; then
+    echo "FAIL: M7 fixture missing ($DATA, $LORE_GOLDEN, $MENU_GOLDEN, $V1_FIXTURE, $V2_FIXTURE)"
     exit 1
 fi
 
@@ -115,7 +116,11 @@ for c in round_trip_byte_compare crc_tamper_bad_hash version_one_bad_version \
     second_save_with_preexisting_bak step5_failure_rolls_back_save0 \
     step3_verify_failure_aborts_untouched startup_recovery_restores_and_logs \
     startup_recovery_deletes_stale_tmp startup_recovery_precedes_fresh_install \
-    backup_slot_writes_save1_manually; do
+    backup_slot_writes_save1_manually fixture_v2_canonical_resave \
+    crafted_crc_valid_rejected options_unknown_keys_skipped \
+    trailing_content_after_crc_rejected over_max_line_rejected \
+    failed_load_all_classes_untouched recovery_no_trailing_separator \
+    log_error_no_trailing_separator backup_slot_no_trailing_separator; do
     require_case "$PERSIST_LOG" "$c"
 done
 if [ -f "$PERSIST_LOG" ] \
@@ -327,6 +332,112 @@ if [ "$BW_OK" -eq 1 ]; then
         fail_case "Q did not exit the save-error screen"
         grep '^boot ' "$OUT/boot_v1.log" | sed 's/^/       /'
     fi
+
+    # A poisoned fight.state must not leak into the first boot frame: nav.boot
+    # installs a fresh GameState before drawing.
+    POISON_FRESH="$OUT/boot/poison_fresh"
+    mkdir -p "$POISON_FRESH"
+    printf '\n' | timeout 120 "$BW/boot_walk" "$POISON_FRESH" "$UNDDIR" poison \
+        >"$OUT/boot_poison_fresh.log" 2>&1
+    PF_RC=$?
+    if [ "$PF_RC" -eq 0 ] \
+        && grep -qF 'UNDERSANDED  LORE' "$OUT/boot_poison_fresh.log" \
+        && ! grep -qF 'UNDERSANDED  FIGHT' "$OUT/boot_poison_fresh.log"; then
+        pass_case "poisoned fight state: lore renders without a fight frame"
+    else
+        fail_case "poisoned fight state leaked a fight frame on fresh boot (rc=$PF_RC)"
+        sed 's/^/       /' "$OUT/boot_poison_fresh.log"
+    fi
+
+    printf 'q' | timeout 120 "$BW/boot_walk" "$FRESH" "$UNDDIR" poison \
+        >"$OUT/boot_poison_menu.log" 2>&1
+    PM_RC=$?
+    if [ "$PM_RC" -eq 0 ] \
+        && grep -qF 'UNDERSANDED  MAIN MENU' "$OUT/boot_poison_menu.log" \
+        && ! grep -qF 'UNDERSANDED  FIGHT' "$OUT/boot_poison_menu.log"; then
+        pass_case "poisoned fight state: menu renders without a fight frame"
+    else
+        fail_case "poisoned fight state leaked a fight frame on menu boot (rc=$PM_RC)"
+        sed 's/^/       /' "$OUT/boot_poison_menu.log"
+    fi
+
+    # B adopts the other slot only when it loads.
+    BOTHER="$OUT/boot/backup_other"
+    mkdir -p "$BOTHER"
+    cp "$V1_FIXTURE" "$BOTHER/save0.dat"
+    cp "$FRESH/save0.dat" "$BOTHER/save1.dat"
+    printf 'cb' | timeout 120 "$BW/boot_walk" "$BOTHER" "$UNDDIR" \
+        >"$OUT/boot_backup_other.log" 2>&1
+    BO_RC=$?
+    if [ "$BO_RC" -eq 0 ] \
+        && grep -qF 'UNDERSANDED  SAVE ERROR' "$OUT/boot_backup_other.log" \
+        && grep -qxF 'boot ret=1 screen=10 money=0 field_record_written=0 boss_variants_seen=0 expedition_active=0 save0=1' \
+            "$OUT/boot_backup_other.log"; then
+        pass_case "backup slot B loads the valid other slot"
+    else
+        fail_case "backup slot B did not load the valid other slot (rc=$BO_RC)"
+        grep '^boot ' "$OUT/boot_backup_other.log" | sed 's/^/       /'
+    fi
+    if cmp -s "$BOTHER/save0.dat" "$V1_FIXTURE"; then
+        pass_case "successful B leaves the failed active slot untouched"
+    else
+        fail_case "successful B mutated the failed active slot"
+    fi
+
+    # B fails on both -> F must erase/re-create the original active slot, not
+    # the other slot that B merely tried.
+    BF="$OUT/boot/backup_fail_fresh"
+    mkdir -p "$BF"
+    cp "$V1_FIXTURE" "$BF/save0.dat"
+    cp "$V1_FIXTURE" "$BF/save1.dat"
+    printf 'cbf\n' | timeout 120 "$BW/boot_walk" "$BF" "$UNDDIR" \
+        >"$OUT/boot_backup_fail.log" 2>&1
+    BF_RC=$?
+    if [ "$BF_RC" -eq 0 ] \
+        && grep -qF 'UNDERSANDED  SAVE ERROR' "$OUT/boot_backup_fail.log" \
+        && ! cmp -s "$BF/save0.dat" "$V1_FIXTURE" \
+        && grep -qx 'version=2' "$BF/save0.dat"; then
+        pass_case "failed B keeps the failed slot for F to erase/re-write"
+    else
+        fail_case "failed B confused F's target slot (rc=$BF_RC)"
+        grep '^boot ' "$OUT/boot_backup_fail.log" | sed 's/^/       /'
+    fi
+    if cmp -s "$BF/save1.dat" "$V1_FIXTURE"; then
+        pass_case "failed B leaves the other slot untouched"
+    else
+        fail_case "failed B wrote or erased the other slot"
+    fi
+
+    # Real startup recovery through nav.boot with production-shaped paths
+    # (no trailing separator): save.bak present, save0.dat missing, stale tmp.
+    REC="$OUT/boot/recovery"
+    mkdir -p "$REC"
+    cp "$FRESH/save0.dat" "$REC/save.bak"
+    printf 'stale temp\n' >"$REC/save.tmp"
+    rm -f "$REC/save0.dat"
+    printf 'q' | timeout 120 "$BW/boot_walk" "$REC" "$UNDDIR" \
+        >"$OUT/boot_recovery.log" 2>&1
+    REC_RC=$?
+    if [ "$REC_RC" -eq 0 ] && [ -f "$REC/save0.dat" ]; then
+        pass_case "startup recovery via nav.boot restores save.bak"
+    else
+        fail_case "startup recovery via nav.boot did not restore save0.dat (rc=$REC_RC)"
+    fi
+    if [ ! -f "$REC/save.tmp" ]; then
+        pass_case "startup recovery via nav.boot deletes stale save.tmp"
+    else
+        fail_case "startup recovery left stale save.tmp"
+    fi
+    if [ -f "$REC/errors.log" ] && grep -qF 'recovery' "$REC/errors.log"; then
+        pass_case "startup recovery via nav.boot writes errors.log"
+    else
+        fail_case "startup recovery did not write errors.log"
+    fi
+    if grep -qF 'UNDERSANDED  MAIN MENU' "$OUT/boot_recovery.log"; then
+        pass_case "recovery boot shows the start menu"
+    else
+        fail_case "recovery boot did not show the start menu"
+    fi
 else
     for label in "boot_walk fresh install exits 0" \
         "fresh install shows page 1 (lore screen)" \
@@ -338,7 +449,17 @@ else
         "v1 save boot walk exits 0 after Q" \
         "version=1 save reaches the save-error screen with §33 copy" \
         "save-error screen offers [F]resh [B]ackup slot [Q]uit" \
-        "Q exits the save-error screen"; do
+        "Q exits the save-error screen" \
+        "poisoned fight state: lore renders without a fight frame" \
+        "poisoned fight state: menu renders without a fight frame" \
+        "backup slot B loads the valid other slot" \
+        "successful B leaves the failed active slot untouched" \
+        "failed B keeps the failed slot for F to erase/re-write" \
+        "failed B leaves the other slot untouched" \
+        "startup recovery via nav.boot restores save.bak" \
+        "startup recovery via nav.boot deletes stale save.tmp" \
+        "startup recovery via nav.boot writes errors.log" \
+        "recovery boot shows the start menu"; do
         fail_case "$label (boot_walk did not build)"
     done
 fi
@@ -357,6 +478,24 @@ else
 fi
 
 if [ "$NIX_OK" -eq 1 ]; then
+    if [ ! -f "$NATIVE/data.z98" ]; then
+        pass_case "--save-roundtrip no-content baseline: data.z98 absent before"
+    else
+        fail_case "--save-roundtrip no-content baseline: data.z98 present before"
+    fi
+
+    RTV2="$OUT/roundtrip_fixture.dat"
+    cp "$V2_FIXTURE" "$RTV2"
+    timeout 120 "$NIX" --save-roundtrip "$RTV2" \
+        >"$OUT/rt_fixture.out" 2>"$OUT/rt_fixture.err"
+    FIX_RT_RC=$?
+    if [ "$FIX_RT_RC" -eq 0 ] && cmp -s "$RTV2" "$V2_FIXTURE"; then
+        pass_case "--save-roundtrip committed v2 fixture exits 0, byte-identical"
+    else
+        fail_case "--save-roundtrip committed v2 fixture (rc=$FIX_RT_RC)"
+        sed 's/^/       /' "$OUT/rt_fixture.err"
+    fi
+
     timeout 120 "$NIX" --save-roundtrip "$RTG" \
         >"$OUT/rt.log" 2>"$OUT/rt.err"
     RT_RC=$?
@@ -377,7 +516,7 @@ if [ "$NIX_OK" -eq 1 ]; then
         fail_case "--save-roundtrip left the temp file behind"
     fi
     if [ ! -f "$NATIVE/data.z98" ]; then
-        pass_case "--save-roundtrip installs no content (no data.z98 beside tool)"
+        pass_case "--save-roundtrip installs no content (data.z98 absent before and after)"
     else
         fail_case "--save-roundtrip created data.z98 beside the tool"
     fi
@@ -424,6 +563,47 @@ if [ "$NIX_OK" -eq 1 ]; then
     else
         fail_case "--save-roundtrip missing file exit 2 (rc=$MISSING_RC)"
     fi
+    if [ ! -f "$NATIVE/data.z98" ]; then
+        pass_case "--save-roundtrip exit 2 still installs no content"
+    else
+        fail_case "--save-roundtrip exit 2 installed data.z98"
+    fi
+
+    RESDIR="$OUT/reserved"
+    mkdir -p "$RESDIR"
+    cp "$V2_FIXTURE" "$RESDIR/save.tmp"
+    cp "$V2_FIXTURE" "$RESDIR/save.bak"
+    timeout 120 "$NIX" --save-roundtrip "$RESDIR/save.tmp" \
+        >"$OUT/rt_res_tmp.out" 2>"$OUT/rt_res_tmp.err"
+    RES_TMP_RC=$?
+    if [ "$RES_TMP_RC" -eq 2 ] && cmp -s "$RESDIR/save.tmp" "$V2_FIXTURE"; then
+        pass_case "--save-roundtrip rejects input basename save.tmp"
+    else
+        fail_case "--save-roundtrip save.tmp input (rc=$RES_TMP_RC)"
+    fi
+    timeout 120 "$NIX" --save-roundtrip "$RESDIR/save.bak" \
+        >"$OUT/rt_res_bak.out" 2>"$OUT/rt_res_bak.err"
+    RES_BAK_RC=$?
+    if [ "$RES_BAK_RC" -eq 2 ] && cmp -s "$RESDIR/save.bak" "$V2_FIXTURE"; then
+        pass_case "--save-roundtrip rejects input basename save.bak"
+    else
+        fail_case "--save-roundtrip save.bak input (rc=$RES_BAK_RC)"
+    fi
+
+    SIB="$OUT/sibling"
+    mkdir -p "$SIB"
+    cp "$V2_FIXTURE" "$SIB/save0.dat"
+    printf 'keep sibling save.tmp\n' >"$SIB/save.tmp"
+    cp "$SIB/save.tmp" "$OUT/sibling_save_tmp.before"
+    timeout 120 "$NIX" --save-roundtrip "$SIB/save0.dat" \
+        >"$OUT/rt_sibling.out" 2>"$OUT/rt_sibling.err"
+    SIB_RC=$?
+    if [ "$SIB_RC" -eq 0 ] \
+        && cmp -s "$SIB/save.tmp" "$OUT/sibling_save_tmp.before"; then
+        pass_case "--save-roundtrip preserves a pre-existing sibling save.tmp"
+    else
+        fail_case "--save-roundtrip disturbed a pre-existing sibling save.tmp (rc=$SIB_RC)"
+    fi
 
     cp "$V1_FIXTURE" "$OUT/roundtrip_bad.dat"
     timeout 120 "$NIX" --save-roundtrip "$OUT/roundtrip_bad.dat" \
@@ -440,14 +620,20 @@ if [ "$NIX_OK" -eq 1 ]; then
         fail_case "--save-roundtrip mutated an unreadable input"
     fi
 else
-    for label in "--save-roundtrip boot-walk save exits 0 (byte-identical)" \
+    for label in "--save-roundtrip no-content baseline: data.z98 absent before" \
+        "--save-roundtrip committed v2 fixture exits 0, byte-identical" \
+        "--save-roundtrip boot-walk save exits 0 (byte-identical)" \
         "--save-roundtrip leaves the original byte-identical" \
         "--save-roundtrip removes its temp file" \
-        "--save-roundtrip installs no content (no data.z98 beside tool)" \
+        "--save-roundtrip installs no content (data.z98 absent before and after)" \
         "--save-roundtrip exits 1 when the re-save differs" \
         "--save-roundtrip leaves a differing input untouched" \
         "--save-roundtrip missing arg exits 2 and names the path" \
         "--save-roundtrip missing file exits 2" \
+        "--save-roundtrip exit 2 still installs no content" \
+        "--save-roundtrip rejects input basename save.tmp" \
+        "--save-roundtrip rejects input basename save.bak" \
+        "--save-roundtrip preserves a pre-existing sibling save.tmp" \
         "--save-roundtrip unreadable content exits 2" \
         "--save-roundtrip leaves an unreadable input untouched"; do
         fail_case "$label (undtool.nix did not build)"

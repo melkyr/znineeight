@@ -314,10 +314,51 @@ fn withSuffix(path: []const u8, suffix: []const u8, out: []u8) ?[]const u8 {
     return out[0 .. path.len + suffix.len];
 }
 
-// --save-roundtrip: load, re-save to a distinct temp path, byte-compare. Never
-// installs content (def.content_override stays null -> content version 2) and
-// never writes the original path. 0 = identical, 1 = differs, 2 = bad input.
+fn asciiLower(c: u8) u8 {
+    if (c >= 'A' and c <= 'Z') return c + 32;
+    return c;
+}
+
+fn eqNoCase(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (asciiLower(a[i]) != asciiLower(b[i])) return false;
+    }
+    return true;
+}
+
+fn baseName(path: []const u8) []const u8 {
+    var i: usize = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/' or path[i] == '\\') return path[i + 1 ..];
+    }
+    return path;
+}
+
+fn reservedSaveName(path: []const u8) bool {
+    const b = baseName(path);
+    if (eqNoCase(b, "save.tmp")) return true;
+    if (eqNoCase(b, "save.bak")) return true;
+    return false;
+}
+
+fn removeChecked(path: []const u8) bool {
+    if (!file_mod.exists(path)) return true;
+    file_mod.remove(path) catch return false;
+    return true;
+}
+
+// --save-roundtrip: load, re-save to a distinct .rt path, byte-compare. Never
+// installs content (def.content_override stays null -> content version 2), never
+// writes the original path and never touches the sibling save.tmp/save.bak.
+// 0 = identical, 1 = differs, 2 = bad input.
 fn saveRoundTrip(path: []const u8) i32 {
+    if (reservedSaveName(path)) {
+        fail("undtool: --save-roundtrip refuses save.tmp/save.bak");
+        return 2;
+    }
     if (!file_mod.exists(path)) {
         fail("undtool: --save-roundtrip cannot read save file");
         return 2;
@@ -341,19 +382,25 @@ fn saveRoundTrip(path: []const u8) i32 {
         fail("undtool: --save-roundtrip path too long");
         return 2;
     };
-    if (file_mod.exists(tmp)) file_mod.remove(tmp) catch {};
-    persist.saveWrite(tmp, &w, &exp) catch {
-        if (file_mod.exists(tmp)) file_mod.remove(tmp) catch {};
+    if (!removeChecked(tmp)) {
+        fail("undtool: --save-roundtrip cannot remove re-save file");
+        return 2;
+    }
+    persist.saveWriteDirect(tmp, &w, &exp) catch {
+        _ = removeChecked(tmp);
         fail("undtool: --save-roundtrip cannot re-save save file");
         return 2;
     };
 
     const after = file_mod.readAll(&arena, tmp) catch {
-        if (file_mod.exists(tmp)) file_mod.remove(tmp) catch {};
+        _ = removeChecked(tmp);
         fail("undtool: --save-roundtrip cannot read re-saved file");
         return 2;
     };
-    file_mod.remove(tmp) catch {};
+    if (!removeChecked(tmp)) {
+        fail("undtool: --save-roundtrip cannot remove re-save file");
+        return 2;
+    }
 
     if (bytesEq(before, after)) return 0;
     return 1;

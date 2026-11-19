@@ -377,6 +377,8 @@ pub fn navRun(g: *def.GameState) void {
 // else the §20 first-run flow. Returns true when the dock was reached (the
 // caller then runs navRun) and false when the player quits or input ends.
 pub fn boot(g: *def.GameState, dir: []const u8) bool {
+    // app.zig passes an uninitialised GameState; boot owns the first draw.
+    game.newGame(g);
     persist.recoverAtBoot(dir);
 
     var slot = save_ux.readSaveSlot(dir);
@@ -443,12 +445,15 @@ pub fn boot(g: *def.GameState, dir: []const u8) bool {
                 continue;
             }
             if (act == BOOT_ACT_BACKUP) {
-                slot = save_ux.otherSlot(slot);
-                save_ux.loadSlot(g, dir, slot) catch |e| {
+                // Adopt the other slot only after it loads. On failure keep the
+                // original failed slot so [F]resh erases the right file.
+                const other = save_ux.otherSlot(slot);
+                save_ux.loadSlot(g, dir, other) catch |e| {
                     st.save_err_kind = save_ux.saveErrKind(e);
                     screen = NAV_SAVE_ERR;
                     continue;
                 };
+                slot = other;
                 g.screen = NAV_DOCK;
                 return true;
             }
