@@ -12,3 +12,5 @@ name=Trench Mark,price=200,unlock=4
 name=Barnacle Stamp,price=150,unlock=2
 name=Glass Squid,price=175,unlock=3
 name=Boss Sigil,price=200,unlock=4
+[text]
+manual.1=Test content.

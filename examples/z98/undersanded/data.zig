@@ -154,6 +154,7 @@ pub var g_tables: def.Tables = undefined;
 // lines_ready is true (fixtures), so fallback/synthetic images report line 0.
 pub var lines_ready: bool = false;
 pub var header_line: i32 = 0;
+pub var last_line: i32 = 0;
 pub var section_line: [8]i32 = undefined;
 pub var def_src: [def.MAX_CREATURES]i32 = undefined;
 pub var rule_src: [def.MAX_RULES]i32 = undefined;
@@ -166,6 +167,7 @@ pub var zone_src: [def.MAX_ZONES]i32 = undefined;
 pub fn resetLines() void {
     lines_ready = false;
     header_line = 0;
+    last_line = 0;
     var i: usize = 0;
     while (i < 8) : (i += 1) {
         section_line[i] = 0;
@@ -209,6 +211,11 @@ fn srcAt(i: i32, n: i32, arr: []const i32) i32 {
 pub fn headerSrcLine() i32 {
     if (!lines_ready) return 0;
     return header_line;
+}
+
+pub fn lastSrcLine() i32 {
+    if (!lines_ready) return 0;
+    return last_line;
 }
 
 pub fn sectionSrcLine(sid: i32) i32 {
@@ -409,6 +416,7 @@ fn clearTables(t: *def.Tables) void {
     t.cosmetic_count = 0;
     t.text_count = 0;
     t.content_version = 0;
+    t.loaded = 0;
 
     var i: usize = 0;
     while (i < def.MAX_CREATURES) : (i += 1) {
@@ -455,6 +463,7 @@ fn clearTables(t: *def.Tables) void {
 pub fn buildFallback(out: *def.Tables) void {
     clearTables(out);
     out.content_version = 2;
+    out.loaded = 0;
 
     var i: usize = 0;
     while (i < creatures.DEFS.len) : (i += 1) {
@@ -894,6 +903,7 @@ fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [de
 }
 
 pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) LoadErr!void {
+    tables.loaded = 0;
     err_line = 0;
     resetLines();
     const content = file_mod.readAll(arena, path) catch return error.Io;
@@ -1067,6 +1077,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
 
         pos = if (eol < content.len) eol + 1 else content.len;
     }
+    last_line = line_no;
 
     if (!header_ok) {
         err_line = 1;
@@ -1093,6 +1104,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
 
     try packRules(&tmp, &rule_owner, &rule_row, &rule_in_line, rule_n);
 
+    tmp.loaded = 1;
     lines_ready = true;
     tables.* = tmp;
     return;

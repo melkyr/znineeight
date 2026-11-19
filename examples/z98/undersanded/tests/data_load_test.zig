@@ -226,8 +226,10 @@ fn tLoadMatchesFallback() bool {
     resetArena();
     var fb: def.Tables = undefined;
     data.buildFallback(&fb);
+    if (fb.loaded != 0) return false;
     var loaded: def.Tables = undefined;
     data.loadFile(&arena, DATA_PATH, &loaded) catch return false;
+    if (loaded.loaded != 1) return false;
 
     if (fb.text_count != 0) return false;
     if (loaded.text_count != 1) return false;

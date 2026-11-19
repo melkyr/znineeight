@@ -4,9 +4,9 @@
 #
 # FAST, native only (no Wine gate):
 #   * build each M6 driver with -fsafe -W -osl + build_target.sh linux
-#   * run data_test, data_load_test, validate_test, bind_test, and
-#     data_content_test; every driver must exit 0, print its exact PASS line,
-#     and print no FAIL line
+#   * run data_test, data_load_test, validate_test, bind_test,
+#     data_content_test, and content_test; every driver must exit 0, print its
+#     exact PASS line, and print no FAIL line
 #   * assert existing driver case names by name (non-vacuous)
 #   * build undtool_native.zig, byte-compare `--dump-defs data.z98` with the
 #     committed tests/fixtures/defs_golden.txt, rerun for determinism, prove a
@@ -99,13 +99,19 @@ require_case() {
     fi
 }
 
-for t in data_test data_load_test validate_test bind_test data_content_test; do
+for t in data_test data_load_test validate_test bind_test data_content_test content_test; do
     run_driver "$t"
 done
 
 DATA_LOG="$OUT/data_test/run.log"
 for c in parse_i32_edges classify_header row_kv_capacity line_cap_4096; do
     require_case "$DATA_LOG" "$c"
+done
+
+CONTENT_TEST_LOG="$OUT/content_test/run.log"
+for c in creature_names_nonempty_unique_24 creature_masks_match_s14_2 \
+    creature_drops_match_s14_4 tables_size_within_32k_budget; do
+    require_case "$CONTENT_TEST_LOG" "$c"
 done
 
 LOAD_LOG="$OUT/data_load_test/run.log"
@@ -120,7 +126,9 @@ VALIDATE_LOG="$OUT/validate_test/run.log"
 for c in fallback_validates_clean data_good_validates_clean \
     data_z98_validates_clean over_capacity_57_creatures \
     def_count_over_capacity_synthetic encounter_weight_sum \
-    manual1_missing_when_text manual1_empty_when_text text_bytes_over_cap \
+    manual1_missing_when_text manual1_missing_section_when_loaded \
+    manual1_empty_when_text text_bytes_over_cap \
+    creature_name_nonprintable phase_mask_high_bits \
     rule_partition_gap upgrade_grid_missing_row; do
     require_case "$VALIDATE_LOG" "$c"
 done

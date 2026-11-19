@@ -28,3 +28,5 @@ axis=3,tier=3,cost0_kind=5,cost0_amt=10,cost1_kind=4,cost1_amt=4,cost2_kind=0,co
 axis=1,tier=1,cost0_kind=7,cost0_amt=2,cost1_kind=3,cost1_amt=1,cost2_kind=0,cost2_amt=0
 axis=1,tier=2,cost0_kind=7,cost0_amt=2,cost1_kind=3,cost1_amt=2,cost2_kind=0,cost2_amt=0
 axis=1,tier=3,cost0_kind=7,cost0_amt=4,cost1_kind=3,cost1_amt=4,cost2_kind=9,cost2_amt=2
+[text]
+manual.1=Test content.

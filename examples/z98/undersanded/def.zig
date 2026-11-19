@@ -102,6 +102,8 @@ pub const Tables = struct {
     text_val: [MAX_TEXT_KEYS][]const u8,
     text_count: i32,
     content_version: i32,
+    // 1 = data.loadFile succeeded, 0 = buildFallback/synthetic (P24/R10).
+    loaded: i32,
 };
 
 pub var content_override: ?*Tables = null;

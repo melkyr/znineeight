@@ -74,6 +74,14 @@ pub fn validateAll(t: *const def.Tables) data.LoadErr!void {
             at(line);
             return error.DamagedLine;
         }
+        var nb: usize = 0;
+        while (nb < @intCast(usize, d.name_len)) : (nb += 1) {
+            const b = d.name[nb];
+            if (b < 0x20 or b > 0x7e) {
+                at(line);
+                return error.DamagedLine;
+            }
+        }
         if (d.family < FAMILY_MIN or d.family > FAMILY_MAX) {
             at(line);
             return error.BadRef;
@@ -87,6 +95,10 @@ pub fn validateAll(t: *const def.Tables) data.LoadErr!void {
             return error.BadRef;
         }
         if (d.phase_mask == 0) {
+            at(line);
+            return error.BadRef;
+        }
+        if (d.phase_mask > 3) {
             at(line);
             return error.BadRef;
         }
@@ -330,7 +342,7 @@ pub fn validateAll(t: *const def.Tables) data.LoadErr!void {
         at(data.sectionSrcLine(7));
         return error.Overflow;
     }
-    if (t.text_count > 0) {
+    if (t.loaded != 0 or t.text_count > 0) {
         var has_manual: bool = false;
         var manual_empty: bool = false;
         i = 0;
@@ -341,7 +353,14 @@ pub fn validateAll(t: *const def.Tables) data.LoadErr!void {
             }
         }
         if (!has_manual or manual_empty) {
-            at(data.sectionSrcLine(7));
+            const sec = data.sectionSrcLine(7);
+            if (sec > 0) {
+                at(sec);
+            } else if (t.loaded != 0) {
+                at(data.lastSrcLine());
+            } else {
+                at(0);
+            }
             return error.DamagedLine;
         }
     }

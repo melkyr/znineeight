@@ -78,6 +78,14 @@ fn tokenIndex(tok: []const u8) ?i32 {
     return null;
 }
 
+// Tool tokens address loaded def indexes; a partial data.z98 can carry fewer
+// rows than the compiled-in fallback, so reject before defAt can panic.
+fn tokenDefIndex(tok: []const u8) ?i32 {
+    const index = tokenIndex(tok) orelse return null;
+    if (index < 0 or index >= creatures.defCount()) return null;
+    return index;
+}
+
 fn fail(msg: []const u8) void {
     @stderrWrite(msg.ptr, msg.len);
     @stderrWrite("\n", 1);
@@ -245,7 +253,7 @@ pub fn replayLine(path: []const u8, out: []u8) ?[]const u8 {
     var r: replay.Replay = undefined;
     if (!replay.replayRead(path, &r)) return null;
 
-    const index = tokenIndex(replay.creatureText(&r)) orelse return null;
+    const index = tokenDefIndex(replay.creatureText(&r)) orelse return null;
 
     var s: def.GameState = undefined;
     sim.zeroState(&s);
@@ -463,7 +471,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         if (eq(screen_id, "fight")) {
             var dump_index: i32 = 0;
             if (have_creature) {
-                dump_index = tokenIndex(token) orelse {
+                dump_index = tokenDefIndex(token) orelse {
                     fail("undtool: unknown --creature token");
                     return;
                 };
@@ -500,7 +508,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         return;
     }
 
-    const index = tokenIndex(token) orelse {
+    const index = tokenDefIndex(token) orelse {
         fail("undtool: unknown --creature token");
         return;
     };

@@ -23,6 +23,7 @@ const P_ROLE = "examples/z98/undersanded/tests/fixtures/data_bad_role.z98";
 const P_FAMILY = "examples/z98/undersanded/tests/fixtures/data_bad_family.z98";
 const P_ZONE_MASK = "examples/z98/undersanded/tests/fixtures/data_bad_zone_mask.z98";
 const P_PHASE_MASK = "examples/z98/undersanded/tests/fixtures/data_bad_phase_mask.z98";
+const P_PHASE_MASK_HIGH = "examples/z98/undersanded/tests/fixtures/data_bad_phase_mask_high.z98";
 const P_SALE = "examples/z98/undersanded/tests/fixtures/data_bad_sale_zero.z98";
 const P_RESPAWN = "examples/z98/undersanded/tests/fixtures/data_bad_respawn.z98";
 const P_DROP_COUNT = "examples/z98/undersanded/tests/fixtures/data_bad_drop_count.z98";
@@ -32,6 +33,7 @@ const P_DUP_NAME = "examples/z98/undersanded/tests/fixtures/data_bad_dup_creatur
 const P_EMPTY_NAME = "examples/z98/undersanded/tests/fixtures/data_bad_empty_creature_name.z98";
 const P_NAME_COMMA = "examples/z98/undersanded/tests/fixtures/data_bad_creature_name_comma.z98";
 const P_NAME_LONG = "examples/z98/undersanded/tests/fixtures/data_bad_creature_name_long.z98";
+const P_NAME_NONPRINT = "examples/z98/undersanded/tests/fixtures/data_bad_creature_name_nonprintable.z98";
 const P_RULE_OP = "examples/z98/undersanded/tests/fixtures/data_bad_rule_op.z98";
 const P_RULE_OWNER = "examples/z98/undersanded/tests/fixtures/data_bad_rule_owner.z98";
 const P_RULE_PART = "examples/z98/undersanded/tests/fixtures/data_bad_rule_partition.z98";
@@ -50,6 +52,7 @@ const P_ENC_PHASE = "examples/z98/undersanded/tests/fixtures/data_bad_encounter_
 const P_ZONE_COST = "examples/z98/undersanded/tests/fixtures/data_bad_zone_cost.z98";
 const P_ZONE_BOSS = "examples/z98/undersanded/tests/fixtures/data_bad_zone_boss.z98";
 const P_TEXT_MISSING = "examples/z98/undersanded/tests/fixtures/data_bad_text_manual_missing.z98";
+const P_TEXT_MISSING_SECTION = "examples/z98/undersanded/tests/fixtures/data_bad_text_missing_section.z98";
 const P_TEXT_EMPTY = "examples/z98/undersanded/tests/fixtures/data_bad_text_manual_empty.z98";
 const P_TEXT_BYTES = "examples/z98/undersanded/tests/fixtures/data_bad_text_bytes.z98";
 const P_CONTENT = "examples/z98/undersanded/tests/fixtures/data_bad_content_version.z98";
@@ -243,6 +246,7 @@ pub fn main() void {
     report("family_out_of_range", expectErr(P_FAMILY, error.BadRef, 3));
     report("zone_mask_bad_bits", expectErr(P_ZONE_MASK, error.BadRef, 3));
     report("phase_mask_zero", expectErr(P_PHASE_MASK, error.BadRef, 3));
+    report("phase_mask_high_bits", expectErr(P_PHASE_MASK_HIGH, error.BadRef, 3));
     report("sale_zero", expectErr(P_SALE, error.BadRef, 3));
     report("respawn_not_monotonic", expectErr(P_RESPAWN, error.BadRef, 3));
     report("drop_count_100", expectErr(P_DROP_COUNT, error.BadRef, 3));
@@ -252,6 +256,7 @@ pub fn main() void {
     report("empty_creature_name", expectErr(P_EMPTY_NAME, error.DamagedLine, 3));
     report("creature_name_comma", expectErr(P_NAME_COMMA, error.DamagedLine, 3));
     report("creature_name_long", expectErr(P_NAME_LONG, error.DamagedLine, 3));
+    report("creature_name_nonprintable", expectErr(P_NAME_NONPRINT, error.DamagedLine, 3));
 
     report("rule_effect_op_out_of_range", expectErr(P_RULE_OP, error.BadRef, 5));
     report("rule_owner_unknown", expectErr(P_RULE_OWNER, error.BadRef, 5));
@@ -276,6 +281,7 @@ pub fn main() void {
     report("zone_boss_not_bit", expectErr(P_ZONE_BOSS, error.BadRef, 3));
 
     report("manual1_missing_when_text", expectErr(P_TEXT_MISSING, error.DamagedLine, 2));
+    report("manual1_missing_section_when_loaded", expectErr(P_TEXT_MISSING_SECTION, error.DamagedLine, 32));
     report("manual1_empty_when_text", expectErr(P_TEXT_EMPTY, error.DamagedLine, 2));
     report("text_bytes_over_cap", expectErr(P_TEXT_BYTES, error.Overflow, 2));
     report("content_version_not_2", expectErr(P_CONTENT, error.DamagedLine, 1));
