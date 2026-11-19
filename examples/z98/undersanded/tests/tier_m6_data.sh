@@ -34,7 +34,7 @@ ZIG="${ZIG:-/tmp/seed151_build/zig1_5_clean}"
 OUT="${OUT:-/tmp/undersanded_m6_tier}"
 TESTS="examples/z98/undersanded/tests"
 FIXTURES="$SCRIPT_DIR/fixtures"
-DATA="examples/z98/undersanded/data.z98"
+DATA="$ROOT/examples/z98/undersanded/data.z98"
 GOLDEN="$FIXTURES/defs_golden.txt"
 
 PASSES=0
