@@ -60,7 +60,7 @@ const COND_ROLL_HI: i32 = 2;
 fn zoneCost(zone: i32) i32 {
     if (zone < 0) return 0;
     if (@intCast(usize, zone) >= def.MAX_ZONES) return 0;
-    return tables.ZONE_COST[@intCast(usize, zone)];
+    return tables.zoneCost(zone);
 }
 
 // Travel phases each way. Heavy (Hull T3 or Cargo T3) adds +1 on zones whose
@@ -300,9 +300,10 @@ fn toolOwned(w: *const def.World, tool: i32) bool {
 }
 
 fn toolKind(tool: i32) i32 {
+    const rows = tables.tools();
     var i: usize = 0;
-    while (i < tables.TOOLS.len) : (i += 1) {
-        if (tables.TOOLS[i].id == tool) return tables.TOOLS[i].kind;
+    while (i < rows.len) : (i += 1) {
+        if (rows[i].id == tool) return rows[i].kind;
     }
     return -1;
 }
@@ -318,9 +319,10 @@ fn unlockZoneCosmetics(w: *def.World, zone: i32) void {
         2 => cond = tables.UNLOCK_Z3,
         else => return,
     }
+    const rows = tables.cosmetics();
     var i: usize = 0;
-    while (i < tables.COSMETICS.len) : (i += 1) {
-        if (tables.COSMETICS[i].unlock != cond) continue;
+    while (i < rows.len) : (i += 1) {
+        if (rows[i].unlock != cond) continue;
         const bit: u32 = @intCast(u32, i);
         w.cosmetics_unlocked = w.cosmetics_unlocked | (@intCast(u32, 1) << bit);
     }
@@ -378,7 +380,7 @@ fn hunt(g: *def.GameState) void {
     var cdef = creatures.defAt(idx);
 
     // 0-based fight index at call time: seed = exp.seed + index*77.
-    fight.startFightDef(g, idx, &cdef, creatures.RULES[0..]);
+    fight.startFightDef(g, idx, &cdef, creatures.rules());
     g.exp.fight_index += 1;
 
     g.fight.cond = saved_cond;

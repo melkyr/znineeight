@@ -289,9 +289,10 @@ fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) 
 }
 
 fn toolKindFor(id: i32) i32 {
+    const rows = tables.tools();
     var i: usize = 0;
-    while (i < tables.TOOLS.len) : (i += 1) {
-        if (tables.TOOLS[i].id == id) return tables.TOOLS[i].kind;
+    while (i < rows.len) : (i += 1) {
+        if (rows[i].id == id) return rows[i].kind;
     }
     return -1;
 }
@@ -645,9 +646,10 @@ pub fn renderCraft(s: *const def.GameState, sc: *Screen) void {
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK - CRAFT");
     _ = put(sc, 0, 1, "Build one tool from parts; owned forever.");
 
+    const rows = tables.tools();
     var i: usize = 0;
-    while (i < tables.TOOLS.len) : (i += 1) {
-        const row = tables.TOOLS[i];
+    while (i < rows.len) : (i += 1) {
+        const row = rows[i];
         const y = 3 + @intCast(i32, i);
         var x = putInt(sc, 0, y, row.id);
         x = put(sc, x, y, " ");
@@ -673,10 +675,11 @@ pub fn renderBuy(s: *const def.GameState, sc: *Screen) void {
     var x = put(sc, 0, 1, "Coins: ");
     _ = putInt(sc, x, 1, s.world.money);
 
+    const rows = tables.cosmetics();
     var i: usize = 0;
-    while (i < tables.COSMETICS.len) : (i += 1) {
+    while (i < rows.len) : (i += 1) {
         const idx: i32 = @intCast(i32, i);
-        const row = tables.COSMETICS[i];
+        const row = rows[i];
         const y = 3 + idx;
         putChar(sc, 0, y, cosmeticKey(idx));
         var p = put(sc, 2, y, row.name);
@@ -723,7 +726,7 @@ fn renderMapRow(s: *const def.GameState, sc: *Screen, zone: i32, y: i32) void {
     x = padTo(sc, x, y, 4);
     x = put(sc, x, y, zoneName(zone));
     x = padTo(sc, x, y, 24);
-    x = putInt(sc, x, y, tables.ZONE_COST[@intCast(usize, zone)]);
+    x = putInt(sc, x, y, tables.zoneCost(zone));
     x = padTo(sc, x, y, 28);
 
     var open = true;

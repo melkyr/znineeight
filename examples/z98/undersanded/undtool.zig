@@ -23,10 +23,12 @@ const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const nav = @import("nav.zig");
 const fight_console = @import("fight_console.zig");
+const paths = @import("paths.zig");
 const file_mod = @import("std_file");
 const arena_mod = @import("std_arena");
 const buf_mod = @import("std_buf");
 const data = @import("data.zig");
+const content_boot = @import("content_boot.zig");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
@@ -35,6 +37,16 @@ const DUMP_SEED: u32 = 98;
 
 // --dump-defs uses its own permanent arena and never installs the override.
 var g_dump_arena_buf: [256 * 1024]u8 = undefined;
+
+// Tool paths load data.z98 beside the exe when present; failure keeps fallback.
+var g_content_arena_buf: [256 * 1024]u8 = undefined;
+
+fn tryLoadContent() void {
+    var dir_buf: [512]u8 = undefined;
+    const dir = paths.resolveDataDir(dir_buf[0..]);
+    var arena = arena_mod.init(g_content_arena_buf[0..]);
+    _ = content_boot.loadFromDir(&arena, &data.g_tables, dir);
+}
 
 const TOKEN_ROWS = [_]TokenRow{
     TokenRow{ .name = "eel", .index = 0 },
@@ -113,8 +125,8 @@ pub fn dumpFightFrame(def_index: i32, seed: u32, out: []u8) []const u8 {
     s.exp.seed = seed;
     s.exp.fight_index = 0;
     var d = creatures.defAt(def_index);
-    fight.startFightDef(&s, def_index, &d, creatures.RULES[0..]);
-    fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.RULES[0..]);
+    fight.startFightDef(&s, def_index, &d, creatures.rules());
+    fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.rules());
     var sc: render.Screen = undefined;
     render.renderFrame(&s, &d, &sc);
     return render.dump(&sc, out);
@@ -240,7 +252,7 @@ pub fn replayLine(path: []const u8, out: []u8) ?[]const u8 {
     s.exp.seed = r.seed;
 
     var d = creatures.defAt(index);
-    fight.startFightDef(&s, index, &d, creatures.RULES[0..]);
+    fight.startFightDef(&s, index, &d, creatures.rules());
 
     var applied: i32 = 0;
     const acts = replay.actionSlice(&r);
@@ -378,6 +390,10 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             return;
         }
     }
+
+    // Every mode except --dump-defs runs with data.z98 beside the exe when it
+    // is there; a bad file never fails the tool (fallback stays installed).
+    if (!have_dump_defs) tryLoadContent();
 
     // Interactive play modes are exclusive: neither combines with the other nor
     // with any tool flag.

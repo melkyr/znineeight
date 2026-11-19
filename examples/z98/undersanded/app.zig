@@ -25,11 +25,13 @@ const buf_mod = @import("std_buf.zig");
 const file_mod = @import("std_file.zig");
 const paths = @import("paths.zig");
 const def = @import("def.zig");
+const data = @import("data.zig");
+const content_boot = @import("content_boot.zig");
 const game = @import("game.zig");
 const nav = @import("nav.zig");
 
 const PATH_MAX: usize = 512;
-const ARENA_SIZE: usize = 64 * 1024;
+const ARENA_SIZE: usize = 256 * 1024;
 const BT_CAP: usize = 4096;
 const LINE: []const u8 = "UNDERSANDED M1: skeleton OK";
 
@@ -133,6 +135,21 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     const writable_dir = paths.dataDirOrFallback(writable_buf[0..]);
 
     installTrap(writable_dir);
+
+    const boot = content_boot.loadFromDir(&g_arena, &data.g_tables, exe_dir);
+    switch (boot.result) {
+        content_boot.BootResult.Loaded => {},
+        content_boot.BootResult.Missing => {
+            fail(console_mode, content_boot.MSG_MISSING);
+            return;
+        },
+        content_boot.BootResult.Damaged => {
+            var msg_buf: [80]u8 = undefined;
+            fail(console_mode, content_boot.damagedText(boot.line, msg_buf[0..]));
+            return;
+        },
+        else => {},
+    }
 
     var sample_buf: [PATH_MAX]u8 = undefined;
     const sample_path = joinPath(exe_dir, "sample.txt", sample_buf[0..]) orelse {

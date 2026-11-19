@@ -121,6 +121,42 @@ pub fn rows(zone: i32, phase: i32) []const EncounterRow {
     return fallbackRows(zone, phase);
 }
 
+pub fn tools() []const ToolRow {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.tool_count);
+        return t.tools[0..n];
+    }
+    return TOOLS[0..];
+}
+
+pub fn upgrades() []const UpgradeRow {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.upgrade_count);
+        return t.upgrades[0..n];
+    }
+    return UPGRADES[0..];
+}
+
+pub fn cosmetics() []const CosmeticRow {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.cosmetic_count);
+        return t.cosmetics[0..n];
+    }
+    return COSMETICS[0..];
+}
+
+pub fn zoneCost(i: i32) i32 {
+    if (i < 0 or i >= @intCast(i32, def.MAX_ZONES)) return 0;
+    if (def.content_override) |t| return t.zone_cost[@intCast(usize, i)];
+    return ZONE_COST[@intCast(usize, i)];
+}
+
+pub fn zoneIsBoss(i: i32) i32 {
+    if (i < 0 or i >= @intCast(i32, def.MAX_ZONES)) return 0;
+    if (def.content_override) |t| return t.zone_boss[@intCast(usize, i)];
+    return ZONE_IS_BOSS[@intCast(usize, i)];
+}
+
 // ---- §10 tools -----------------------------------------------------------
 //
 // Tool ids match `creatures_t1.TOOL_*` counter-tool ids. Costs are keystone

@@ -164,7 +164,7 @@ pub fn runSimDef(def_index: i32, cdef: *const def.CreatureDef, rules: []const be
 // DEFS[5] wrapper used by undtool --sim.
 pub fn runSim(def_index: i32, n_fights: i32, seed0: u32, hull: i32) SimReport {
     var d = creatures.defAt(def_index);
-    return runSimDef(def_index, &d, creatures.RULES[0..], n_fights, seed0, hull);
+    return runSimDef(def_index, &d, creatures.rules(), n_fights, seed0, hull);
 }
 
 // ---- Integer report arithmetic -------------------------------------------

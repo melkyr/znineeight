@@ -736,6 +736,14 @@ pub fn defAt(index: i32) def.CreatureDef {
     }
 }
 
+pub fn rules() []const behavior.Rule {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.rule_count);
+        return t.rules[0..n];
+    }
+    return RULES[0..];
+}
+
 // Rule rows (indexes match each def's rule_start/rule_count).
 pub const RULES = [_]behavior.Rule{
     behavior.Rule{

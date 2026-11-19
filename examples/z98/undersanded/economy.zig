@@ -64,9 +64,10 @@ pub fn upgradeCost(axis: i32, tier: i32, out: *[3]MaterialAmt) void {
     out[1] = NONE_AMT;
     out[2] = NONE_AMT;
 
+    const rows = tables.upgrades();
     var i: usize = 0;
-    while (i < tables.UPGRADES.len) : (i += 1) {
-        const row = tables.UPGRADES[i];
+    while (i < rows.len) : (i += 1) {
+        const row = rows[i];
         if (row.axis != axis or row.tier != tier) continue;
         out[0] = MaterialAmt{ .kind = row.cost[0].kind, .amt = row.cost[0].amt };
         out[1] = MaterialAmt{ .kind = row.cost[1].kind, .amt = row.cost[1].amt };

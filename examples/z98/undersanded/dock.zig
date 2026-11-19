@@ -86,18 +86,20 @@ fn recountHold(g: *def.GameState) void {
 }
 
 fn findTool(tool: i32) ?*const tables.ToolRow {
+    const rows = tables.tools();
     var i: usize = 0;
-    while (i < tables.TOOLS.len) : (i += 1) {
-        if (tables.TOOLS[i].id == tool) return &tables.TOOLS[i];
+    while (i < rows.len) : (i += 1) {
+        if (rows[i].id == tool) return &rows[i];
     }
     return null;
 }
 
 fn findUpgrade(axis: i32, tier: i32) ?*const tables.UpgradeRow {
+    const rows = tables.upgrades();
     var i: usize = 0;
-    while (i < tables.UPGRADES.len) : (i += 1) {
-        if (tables.UPGRADES[i].axis == axis and tables.UPGRADES[i].tier == tier) {
-            return &tables.UPGRADES[i];
+    while (i < rows.len) : (i += 1) {
+        if (rows[i].axis == axis and rows[i].tier == tier) {
+            return &rows[i];
         }
     }
     return null;
@@ -237,7 +239,7 @@ pub fn dockBuy(g: *def.GameState, cosmetic: i32) i32 {
     if (cosmeticOwned(&g.world, cosmetic)) return DOCK_ERR_ALREADY;
     if (!cosmeticUnlocked(&g.world, cosmetic)) return DOCK_ERR_LOCKED;
 
-    const row = tables.COSMETICS[@intCast(usize, cosmetic)];
+    const row = tables.cosmetics()[@intCast(usize, cosmetic)];
     const wp = &g.world;
     if (wp.money < row.price) return DOCK_ERR_COINS;
 

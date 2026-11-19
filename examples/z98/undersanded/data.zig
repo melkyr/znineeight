@@ -146,6 +146,10 @@ pub const LoadErr = error{ Missing, DamagedLine, Overflow, BadSentinel, BadRef, 
 
 pub var err_line: i32 = 0;
 
+// BSS Tables image owned by the data layer; the game/startup loads into this
+// and installs it (§35).
+pub var g_tables: def.Tables = undefined;
+
 // Source line probes for validate.zig. Populated by loadFile; read only when
 // lines_ready is true (fixtures), so fallback/synthetic images report line 0.
 pub var lines_ready: bool = false;

@@ -252,6 +252,7 @@ else
     CUI="$OUT/cui_writable"
     mkdir -p "$CUI"
     cp "$BUILD_OUT/undtool.exe" "$BUILD_OUT/sample.txt" "$CUI/"
+    cp "$ROOT/examples/z98/undersanded/data.z98" "$CUI/"
     ( cd "$CUI" && timeout 120 wine ./undtool.exe </dev/null ) >"$CUI/run.log" 2>&1
     CUI_RC=$?
     sed 's/^/       /' "$CUI/run.log"
@@ -271,6 +272,7 @@ else
     RO="$OUT/cui_readonly"
     mkdir -p "$RO"
     cp "$BUILD_OUT/undtool.exe" "$BUILD_OUT/sample.txt" "$RO/"
+    cp "$ROOT/examples/z98/undersanded/data.z98" "$RO/"
     RO_BEFORE="$(find "$RO" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d '[:space:]')"
     chmod 0555 "$RO"
     RO_DIRS="$RO"
@@ -347,6 +349,7 @@ else
     else
         timeout 180 wineboot -i >"$GUI/wineboot.log" 2>&1 || true
         cp "$BUILD_OUT/under.exe" "$BUILD_OUT/sample.txt" "$GUI/"
+        cp "$ROOT/examples/z98/undersanded/data.z98" "$GUI/"
         ( cd "$GUI" && timeout 120 wine ./under.exe ) >"$GUI/app.log" 2>&1 &
         WINE_PID=$!
         WINDOW_SEEN=0

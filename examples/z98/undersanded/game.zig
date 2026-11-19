@@ -94,7 +94,7 @@ pub fn startFight(s: *def.GameState, def_index: i32) void {
     s.fight.pending_stun = 0;
 
     var d = creatures.defAt(def_index);
-    fight.startFightDef(s, def_index, &d, creatures.RULES[0..]);
+    fight.startFightDef(s, def_index, &d, creatures.rules());
     fight.applyGrudge(s, &d, grudge_mask);
 }
 
@@ -103,7 +103,7 @@ pub fn gameStep(s: *def.GameState, a: def.Action) void {
         def.ACT_STRIKE, def.ACT_RESTRAIN, def.ACT_EQUIP, def.ACT_FLEE, def.ACT_ATTEMPT, def.ACT_DECLINE => {
             const index = s.fight.def_index;
             var d = creatures.defAt(index);
-            fight.step(s, a, &d, creatures.RULES[0..]);
+            fight.step(s, a, &d, creatures.rules());
         },
         else => {},
     }
