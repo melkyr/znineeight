@@ -26,6 +26,14 @@ pub fn readKey() ?Key {
     return Key{ .ch = b, .code = 0 };
 }
 
+// Boot first-run keeps Enter (LF/CR): the lore footer is "[Enter] Begin" and
+// readKey intentionally filters line endings for the game loops.
+pub fn readKeyRaw() ?Key {
+    const b = io.readByte();
+    if (b == 0 or b == 255) return null;
+    return Key{ .ch = b, .code = 0 };
+}
+
 fn lower(c: u8) u8 {
     if (c >= 'A' and c <= 'Z') return c + 32;
     return c;

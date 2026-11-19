@@ -114,8 +114,20 @@ fn tDockLines() bool {
     if (!contains(text, "Luminescence 0(E0)")) return false;
     if (!contains(text, "Tools owned: 0  Selected: none")) return false;
     if (!contains(text, "[R]efine [U]pgrade [C]raft [B]uy [E]quip [T] Rest [D]epart [Q]uit")) return false;
+    if (!contains(text, "[Esc] Save")) return false;
     if (contains(text, "not yet")) return false;
     return true;
+}
+
+fn tDockSaveBlockedLine() bool {
+    var g = newGame();
+    g.fight.def_index = 0;
+    g.fight.outcome = def.OUT_ONGOING;
+    var sc: render.Screen = undefined;
+    render.renderDock(&g, &sc);
+    var buf: [8192]u8 = undefined;
+    const text = render.dump(&sc, buf[0..]);
+    return contains(text, "[Esc] Save - Cannot save during a fight.");
 }
 
 fn tDockSubmenus() bool {
@@ -308,6 +320,7 @@ fn tUnresolvedRenewsBoth() bool {
 
 pub fn main() void {
     report("dock_screen_key_lines", tDockLines());
+    report("dock_save_blocked_line", tDockSaveBlockedLine());
     report("dock_submenu_screens", tDockSubmenus());
     report("map_screen_ladder_locked_boss", tMapLines());
     report("map_boss_gate_six_distinct_nonboss", tBossGate());

@@ -18,6 +18,10 @@ const expedition = @import("expedition.zig");
 const creatures = @import("creatures_t1.zig");
 const dock = @import("dock.zig");
 const render = @import("render_term.zig");
+const paths = @import("paths.zig");
+const save_ux = @import("save_ux.zig");
+const game = @import("game.zig");
+const persist = @import("persist.zig");
 
 pub const NAV_DOCK: i32 = 10;
 pub const NAV_MAP: i32 = 11;
@@ -28,14 +32,30 @@ pub const NAV_UPGRADE: i32 = 15;
 pub const NAV_CRAFT: i32 = 16;
 pub const NAV_BUY: i32 = 17;
 pub const NAV_TOOLS: i32 = 18;
+pub const NAV_LORE: i32 = 19;
+pub const NAV_MENU: i32 = 20;
+pub const NAV_SAVE_ERR: i32 = 21;
 pub const NAV_QUIT: i32 = -1;
 
 pub const NAV_RESULT_NONE: i32 = -100;
 pub const NAV_RESULT_PREVIEW: i32 = -101;
 
+// Boot action ids: pure menu/confirm/error decisions shared by tests and the
+// nav.boot I/O loop.
+pub const BOOT_ACT_NONE: i32 = 0;
+pub const BOOT_ACT_CONTINUE: i32 = 1;
+pub const BOOT_ACT_NEW: i32 = 2;
+pub const BOOT_ACT_OPTIONS: i32 = 3;
+pub const BOOT_ACT_QUIT: i32 = 4;
+pub const BOOT_ACT_FRESH: i32 = 5;
+pub const BOOT_ACT_BACKUP: i32 = 6;
+pub const BOOT_ACT_YES: i32 = 7;
+pub const BOOT_ACT_NO: i32 = 8;
+
 pub const NavState = struct {
     armed: i32,
     last: i32,
+    save_err_kind: i32,
 };
 
 fn lower(c: u8) u8 {
@@ -45,6 +65,37 @@ fn lower(c: u8) u8 {
 
 fn isChar(k: input.Key, c: u8) bool {
     return lower(k.ch) == c;
+}
+
+// Boot routing is pure: the caller decides whether the active slot save exists.
+pub fn bootStartScreen(save_exists: bool) i32 {
+    if (save_exists) return NAV_MENU;
+    return NAV_LORE;
+}
+
+pub fn menuAction(k: input.Key) i32 {
+    if (isChar(k, 'c')) return BOOT_ACT_CONTINUE;
+    if (isChar(k, 'n')) return BOOT_ACT_NEW;
+    if (isChar(k, 'o')) return BOOT_ACT_OPTIONS;
+    if (isChar(k, 'q')) return BOOT_ACT_QUIT;
+    return BOOT_ACT_NONE;
+}
+
+pub fn confirmAction(k: input.Key) i32 {
+    if (isChar(k, 'y')) return BOOT_ACT_YES;
+    if (isChar(k, 'n')) return BOOT_ACT_NO;
+    return BOOT_ACT_NONE;
+}
+
+pub fn errorAction(k: input.Key) i32 {
+    if (isChar(k, 'f')) return BOOT_ACT_FRESH;
+    if (isChar(k, 'b')) return BOOT_ACT_BACKUP;
+    if (isChar(k, 'q')) return BOOT_ACT_QUIT;
+    return BOOT_ACT_NONE;
+}
+
+pub fn firstRunAdvance(k: input.Key) bool {
+    return k.ch == 10 or k.ch == 13 or k.ch == ' ' or k.code == 10 or k.code == 13;
 }
 
 fn isEsc(k: input.Key) bool {
@@ -233,11 +284,14 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         NAV_CRAFT => return craftStep(g, st, key),
         NAV_BUY => return buyStep(g, st, key),
         NAV_TOOLS => return toolsStep(g, st, key),
+        NAV_LORE => return setScreen(g, NAV_LORE),
+        NAV_MENU => return setScreen(g, NAV_MENU),
+        NAV_SAVE_ERR => return setScreen(g, NAV_SAVE_ERR),
         else => return dockStep(g, st, key),
     }
 }
 
-fn drawCurrent(g: *def.GameState, out: []u8) []const u8 {
+pub fn drawCurrent(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
     var sc: render.Screen = undefined;
     if (expedition.isInFight(g)) {
         var d = creatures.defAt(g.fight.def_index);
@@ -250,6 +304,9 @@ fn drawCurrent(g: *def.GameState, out: []u8) []const u8 {
         NAV_CRAFT => render.renderCraft(g, &sc),
         NAV_BUY => render.renderBuy(g, &sc),
         NAV_TOOLS => render.renderTools(g, &sc),
+        NAV_LORE => render.renderLore(save_ux.manualPageOne(), &sc),
+        NAV_MENU => render.renderMenu(&sc),
+        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), &sc),
         else => render.renderDock(g, &sc),
     }
     return render.dump(&sc, out);
@@ -269,17 +326,42 @@ fn writeRarePreview(g: *def.GameState, st: *const NavState) void {
 pub fn navRun(g: *def.GameState) void {
     if (g.screen != NAV_MAP and g.screen != NAV_NODE and g.screen != NAV_SETTLE
         and g.screen != NAV_REFINE and g.screen != NAV_UPGRADE
-        and g.screen != NAV_CRAFT and g.screen != NAV_BUY and g.screen != NAV_TOOLS) {
+        and g.screen != NAV_CRAFT and g.screen != NAV_BUY and g.screen != NAV_TOOLS
+        and g.screen != NAV_LORE and g.screen != NAV_MENU and g.screen != NAV_SAVE_ERR) {
         g.screen = NAV_DOCK;
     }
 
-    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE };
+    var dir_buf: [4096]u8 = undefined;
+    const dir = paths.dataDirOrFallback(dir_buf[0..]);
+    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE, .save_err_kind = save_ux.ERR_KIND_NONE };
     var buf: [8192]u8 = undefined;
 
     while (true) {
-        io.write(drawCurrent(g, buf[0..]));
+        io.write(drawCurrent(g, &st, buf[0..]));
         io.write("> ");
         const key = input.readKey() orelse return;
+
+        if (g.screen == NAV_DOCK) {
+            if (isEsc(key)) {
+                const save = save_ux.dockSave(g, dir);
+                io.write(save.text);
+                io.write("\n");
+                continue;
+            }
+            if (isChar(key, 'q') and save_ux.quitPromptNeeded(g)) {
+                io.write(save_ux.QUIT_PROMPT);
+                io.write("\n");
+                const answer = input.readKey() orelse return;
+                const decision = save_ux.quitDecision(g, dir, answer.ch);
+                if (decision.text.len > 0) {
+                    io.write(decision.text);
+                    io.write("\n");
+                }
+                if (decision.quit) return;
+                continue;
+            }
+        }
+
         const next = navStep(g, &st, key);
         if (next == NAV_QUIT) return;
         if (st.last >= 0) {
@@ -289,4 +371,97 @@ pub fn navRun(g: *def.GameState) void {
             writeRarePreview(g, &st);
         }
     }
+}
+
+// Boot entry: recovery -> options.cfg slot -> menu when that slot has a save,
+// else the §20 first-run flow. Returns true when the dock was reached (the
+// caller then runs navRun) and false when the player quits or input ends.
+pub fn boot(g: *def.GameState, dir: []const u8) bool {
+    // app.zig passes an uninitialised GameState; boot owns the first draw.
+    game.newGame(g);
+    persist.recoverAtBoot(dir);
+
+    var slot = save_ux.readSaveSlot(dir);
+    var screen = bootStartScreen(save_ux.saveSlotExists(dir, slot));
+    var st = NavState{ .armed = 0, .last = NAV_RESULT_NONE, .save_err_kind = save_ux.ERR_KIND_NONE };
+    var buf: [8192]u8 = undefined;
+
+    while (true) {
+        g.screen = screen;
+        io.write(drawCurrent(g, &st, buf[0..]));
+
+        if (screen == NAV_MENU) {
+            io.write("> ");
+            const key = input.readKey() orelse return false;
+            const act = menuAction(key);
+            if (act == BOOT_ACT_CONTINUE) {
+                save_ux.loadSlot(g, dir, slot) catch |e| {
+                    st.save_err_kind = save_ux.saveErrKind(e);
+                    screen = NAV_SAVE_ERR;
+                    continue;
+                };
+                g.screen = NAV_DOCK;
+                return true;
+            }
+            if (act == BOOT_ACT_NEW) {
+                io.write(save_ux.NEW_GAME_CONFIRM);
+                io.write("\n");
+                const answer = input.readKey() orelse return false;
+                if (confirmAction(answer) != BOOT_ACT_YES) continue;
+                game.newGame(g);
+                const out = save_ux.saveToSlot(g, dir, slot);
+                if (!out.ok) {
+                    st.save_err_kind = save_ux.ERR_KIND_IO;
+                    screen = NAV_SAVE_ERR;
+                    continue;
+                }
+                g.screen = NAV_DOCK;
+                return true;
+            }
+            if (act == BOOT_ACT_OPTIONS) continue;
+            if (act == BOOT_ACT_QUIT) return false;
+            continue;
+        }
+
+        if (screen == NAV_LORE) {
+            io.write("> ");
+            const key = input.readKeyRaw() orelse return false;
+            if (!firstRunAdvance(key)) continue;
+            save_ux.firstRunBeginSlot(g, dir, slot) catch |e| {
+                st.save_err_kind = save_ux.saveErrKind(e);
+                screen = NAV_SAVE_ERR;
+                continue;
+            };
+            return true;
+        }
+
+        if (screen == NAV_SAVE_ERR) {
+            io.write("> ");
+            const key = input.readKey() orelse return false;
+            const act = errorAction(key);
+            if (act == BOOT_ACT_FRESH) {
+                save_ux.eraseSlot(dir, slot);
+                screen = NAV_LORE;
+                continue;
+            }
+            if (act == BOOT_ACT_BACKUP) {
+                // Adopt the other slot only after it loads. On failure keep the
+                // original failed slot so [F]resh erases the right file.
+                const other = save_ux.otherSlot(slot);
+                save_ux.loadSlot(g, dir, other) catch |e| {
+                    st.save_err_kind = save_ux.saveErrKind(e);
+                    screen = NAV_SAVE_ERR;
+                    continue;
+                };
+                slot = other;
+                g.screen = NAV_DOCK;
+                return true;
+            }
+            if (act == BOOT_ACT_QUIT) return false;
+            continue;
+        }
+
+        screen = bootStartScreen(save_ux.saveSlotExists(dir, slot));
+    }
+    return false;
 }

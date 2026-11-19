@@ -175,7 +175,7 @@ pub fn startFightDef(s: *def.GameState, def_index: i32, cdef: *const def.Creatur
     while (i < def.MAX_LOG) : (i += 1) {
         s.log[i] = def.LogEntry{ .class = 0, .msg_id = 0, .a = 0, .b = 0 };
     }
-    s.pending_cond = def.COND_NONE;
+    s.exp.pending_cond = def.COND_NONE;
     s.screen = SCREEN_FIGHT;
 }
 

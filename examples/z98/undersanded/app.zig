@@ -201,5 +201,9 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
         var s: def.GameState = undefined;
         game.newGame(&s);
         nav.navRun(&s);
+        return;
     }
+
+    var s: def.GameState = undefined;
+    if (nav.boot(&s, writable_dir)) nav.navRun(&s);
 }
