@@ -9,15 +9,7 @@
 
 const def = @import("def.zig");
 
-pub const Rule = struct {
-    cond_op: i32,
-    cond_a: i32,
-    cond_b: i32,
-    effect_op: i32,
-    effect_a: i32,
-    effect_b: i32,
-    timing: i32,
-};
+pub const Rule = def.Rule;
 
 // ---- Condition op vocabulary ---------------------------------------------
 

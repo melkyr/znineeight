@@ -129,15 +129,8 @@ fn putBar(sc: *Screen, y: i32, label: []const u8, value: i32, max: i32) void {
     _ = putInt(sc, x, y, max);
 }
 
-pub fn creatureName(id: i32) []const u8 {
-    switch (id) {
-        1 => return "Mystic Eel",
-        2 => return "Mystic Electric Eel",
-        4 => return "Steel Tuna",
-        18 => return "Anemoniacus",
-        19 => return "Freezing Perch",
-        else => return "Unknown Creature",
-    }
+pub fn creatureName(d: *const def.CreatureDef) []const u8 {
+    return d.name[0..@intCast(usize, d.name_len)];
 }
 
 // Effective Speed for display: base + stat-threshold bonus + Last Surge
@@ -194,14 +187,14 @@ fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
         },
         fight.MSG_SUBDUE_OK => {
             p = copyInto(out, p, "Subdued ");
-            p = copyInto(out, p, creatureName(d.id));
+            p = copyInto(out, p, creatureName(d));
             p = copyInto(out, p, " (");
             p = intInto(out, p, d.subdue_chance);
             p = copyInto(out, p, "%).");
         },
         fight.MSG_SUBDUE_FAIL => {
             p = copyInto(out, p, "Subdue failed - ");
-            p = copyInto(out, p, creatureName(d.id));
+            p = copyInto(out, p, creatureName(d));
             p = copyInto(out, p, " surges! (");
             p = intInto(out, p, d.subdue_chance);
             p = copyInto(out, p, "%).");
@@ -282,7 +275,7 @@ fn renderLog(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef, y0
 
 fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) void {
     _ = put(sc, 2, 2, "SUBDUE ATTEMPT");
-    var x = put(sc, 2, 3, creatureName(d.id));
+    var x = put(sc, 2, 3, creatureName(d));
     x = put(sc, x, 3, " - ");
     x = putInt(sc, x, 3, d.subdue_chance);
     _ = put(sc, x, 3, "% chance");
@@ -296,9 +289,10 @@ fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) 
 }
 
 fn toolKindFor(id: i32) i32 {
+    const rows = tables.tools();
     var i: usize = 0;
-    while (i < tables.TOOLS.len) : (i += 1) {
-        if (tables.TOOLS[i].id == id) return tables.TOOLS[i].kind;
+    while (i < rows.len) : (i += 1) {
+        if (rows[i].id == id) return rows[i].kind;
     }
     return -1;
 }
@@ -338,7 +332,7 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
 
     _ = put(sc, 0, 0, "UNDERSANDED  FIGHT");
 
-    var x = put(sc, 0, 1, creatureName(d.id));
+    var x = put(sc, 0, 1, creatureName(d));
     x = put(sc, x, 1, "  ");
     x = put(sc, x, 1, roleName(d.role));
     x = put(sc, x, 1, "  SPD ");
@@ -652,9 +646,10 @@ pub fn renderCraft(s: *const def.GameState, sc: *Screen) void {
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK - CRAFT");
     _ = put(sc, 0, 1, "Build one tool from parts; owned forever.");
 
+    const rows = tables.tools();
     var i: usize = 0;
-    while (i < tables.TOOLS.len) : (i += 1) {
-        const row = tables.TOOLS[i];
+    while (i < rows.len) : (i += 1) {
+        const row = rows[i];
         const y = 3 + @intCast(i32, i);
         var x = putInt(sc, 0, y, row.id);
         x = put(sc, x, y, " ");
@@ -680,10 +675,11 @@ pub fn renderBuy(s: *const def.GameState, sc: *Screen) void {
     var x = put(sc, 0, 1, "Coins: ");
     _ = putInt(sc, x, 1, s.world.money);
 
+    const rows = tables.cosmetics();
     var i: usize = 0;
-    while (i < tables.COSMETICS.len) : (i += 1) {
+    while (i < rows.len) : (i += 1) {
         const idx: i32 = @intCast(i32, i);
-        const row = tables.COSMETICS[i];
+        const row = rows[i];
         const y = 3 + idx;
         putChar(sc, 0, y, cosmeticKey(idx));
         var p = put(sc, 2, y, row.name);
@@ -730,17 +726,17 @@ fn renderMapRow(s: *const def.GameState, sc: *Screen, zone: i32, y: i32) void {
     x = padTo(sc, x, y, 4);
     x = put(sc, x, y, zoneName(zone));
     x = padTo(sc, x, y, 24);
-    x = putInt(sc, x, y, tables.ZONE_COST[@intCast(usize, zone)]);
+    x = putInt(sc, x, y, tables.zoneCost(zone));
     x = padTo(sc, x, y, 28);
 
     var open = true;
-    if (zone == BOSS_ZONE) open = bossGateOpen(s);
+    if (tables.zoneIsBoss(zone) != 0) open = bossGateOpen(s);
     if (open) {
         x = put(sc, x, y, "open");
     } else {
         x = put(sc, x, y, "locked");
     }
-    if (zone == BOSS_ZONE) {
+    if (tables.zoneIsBoss(zone) != 0) {
         _ = put(sc, x, y, "  Hull 150+ recommended.");
     }
 }

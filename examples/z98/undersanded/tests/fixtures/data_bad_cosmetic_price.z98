@@ -1,0 +1,16 @@
+format=2
+[cosmetics]
+name=Foam White,price=0,unlock=1
+name=Abyss Teal,price=175,unlock=2
+name=Leviathan Black,price=200,unlock=3
+name=Gull Skull,price=150,unlock=1
+name=Lantern Jaw,price=175,unlock=2
+name=Derelict Cog,price=200,unlock=4
+name=Patched Pennant,price=150,unlock=1
+name=Reef Signal,price=175,unlock=3
+name=Trench Mark,price=200,unlock=4
+name=Barnacle Stamp,price=150,unlock=2
+name=Glass Squid,price=175,unlock=3
+name=Boss Sigil,price=200,unlock=4
+[text]
+manual.1=Test content.

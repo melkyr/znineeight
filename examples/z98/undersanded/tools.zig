@@ -13,9 +13,10 @@ pub const FRAGILE_MIN_PRECISION_TIER: i32 = 2;
 pub const FRAGILE_MIN_HIT: i32 = 15;
 
 fn findKind(tool: i32) i32 {
+    const rows = tables.tools();
     var i: usize = 0;
-    while (i < tables.TOOLS.len) : (i += 1) {
-        if (tables.TOOLS[i].id == tool) return tables.TOOLS[i].kind;
+    while (i < rows.len) : (i += 1) {
+        if (rows[i].id == tool) return rows[i].kind;
     }
     return -1;
 }

@@ -60,9 +60,27 @@ fn drop(part: i32, count: i32) def.DropLine {
     return def.DropLine{ .part = part, .count = count };
 }
 
+const ZERO_NAME = [def.MAX_NAME_LEN]u8{
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+fn named(d: def.CreatureDef, text: []const u8) def.CreatureDef {
+    var out = d;
+    var i: usize = 0;
+    while (i < text.len and i < def.MAX_NAME_LEN) : (i += 1) {
+        out.name[i] = text[i];
+    }
+    out.name_len = @intCast(i32, text.len);
+    return out;
+}
+
 fn blank() def.CreatureDef {
     return def.CreatureDef{
         .id = 0,
+        .name = ZERO_NAME,
+        .name_len = 0,
         .family = 0,
         .role = 0,
         .zone_mask = 0,
@@ -121,10 +139,12 @@ fn blank() def.CreatureDef {
 
 // Row 1 — Mystic Eel (70/80/10/6, subdue 95, Despair override +8).
 fn mysticEel() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Mystic Eel");
     d.id = 1;
     d.family = 1;
     d.role = ROLE_COMMON;
+    d.zone_mask = 3;
+    d.phase_mask = 3;
     d.hp = 70;
     d.resolve = 80;
     d.speed = 10;
@@ -135,16 +155,22 @@ fn mysticEel() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
+    d.sub[0] = drop(PART_SHELL_CHIP, 3);
+    d.sub[1] = drop(PART_GLAND_SAC, 1);
+    d.kill[0] = drop(PART_SHELL_CHIP, 2);
+    d.over[0] = drop(PART_SHELL_CHIP, 1);
     return d;
 }
 
 // Row 2 — Mystic Electric Eel (80/100/16/7, subdue 95, Thrash +8,
 // Discharge 8 Hull when Resolve crosses below 50%).
 fn mysticElectricEel() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Mystic Electric Eel");
     d.id = 2;
     d.family = 1;
     d.role = ROLE_COMMON;
+    d.zone_mask = 3;
+    d.phase_mask = 2;
     d.hp = 80;
     d.resolve = 100;
     d.speed = 16;
@@ -158,6 +184,11 @@ fn mysticElectricEel() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
+    d.sub[0] = drop(PART_GLAND_SAC, 3);
+    d.sub[1] = drop(PART_SHELL_CHIP, 1);
+    d.kill[0] = drop(PART_GLAND_SAC, 1);
+    d.kill[1] = drop(PART_SHELL_CHIP, 1);
+    d.over[0] = drop(PART_GLAND_SAC, 1);
     d.rule_start = 0;
     d.rule_count = 1;
     return d;
@@ -166,10 +197,12 @@ fn mysticElectricEel() def.CreatureDef {
 // Row 4 — Steel Tuna (120/70/6/8, subdue 95, Armor Strike 60%,
 // HP<30% -> Speed +4).
 fn steelTuna() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Steel Tuna");
     d.id = 4;
     d.family = 2;
     d.role = ROLE_COMMON;
+    d.zone_mask = 3;
+    d.phase_mask = 3;
     d.hp = 120;
     d.resolve = 70;
     d.speed = 6;
@@ -183,16 +216,22 @@ fn steelTuna() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
+    d.sub[0] = drop(PART_PLATE_SCRAP, 3);
+    d.sub[1] = drop(PART_SHELL_CHIP, 1);
+    d.kill[0] = drop(PART_PLATE_SCRAP, 2);
+    d.over[0] = drop(PART_PLATE_SCRAP, 1);
     return d;
 }
 
 // Row 18 — Anemoniacus (95/80/7/9, rare subdue 65, Thrash +10,
 // Discharge 10 Hull when HP crosses below 50%).
 fn anemoniacus() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Anemoniacus");
     d.id = 18;
     d.family = 10;
     d.role = ROLE_RARE;
+    d.zone_mask = 2;
+    d.phase_mask = 3;
     d.hp = 95;
     d.resolve = 80;
     d.speed = 7;
@@ -206,6 +245,11 @@ fn anemoniacus() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
+    d.sub[0] = drop(PART_GLOW_POLYP, 2);
+    d.sub[1] = drop(PART_CORAL_BUD, 2);
+    d.kill[0] = drop(PART_GLAND_SAC, 1);
+    d.kill[1] = drop(PART_CORAL_BUD, 1);
+    d.over[0] = drop(PART_CORAL_BUD, 1);
     d.rule_start = 1;
     d.rule_count = 1;
     return d;
@@ -214,10 +258,12 @@ fn anemoniacus() def.CreatureDef {
 // Row 19 — Freezing Perch (105/95/13/10, rare subdue 65, Despair +8,
 // flees next turn if a single hit deals >20% max HP (21)).
 fn freezingPerch() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Freezing Perch");
     d.id = 19;
     d.family = 11;
     d.role = ROLE_RARE;
+    d.zone_mask = 4;
+    d.phase_mask = 3;
     d.hp = 105;
     d.resolve = 95;
     d.speed = 13;
@@ -230,6 +276,11 @@ fn freezingPerch() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
+    d.sub[0] = drop(PART_BRINE_VIAL, 3);
+    d.sub[1] = drop(PART_PLATE_SCRAP, 1);
+    d.kill[0] = drop(PART_BRINE_VIAL, 1);
+    d.kill[1] = drop(PART_PLATE_SCRAP, 1);
+    d.over[0] = drop(PART_BRINE_VIAL, 1);
     return d;
 }
 
@@ -237,10 +288,12 @@ fn freezingPerch() def.CreatureDef {
 
 // Roster 5 — Rust Tuna (80/60/8/7, Armor 80%, HP<30% flees next turn).
 fn rustTuna() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Rust Tuna");
     d.id = 5;
     d.family = FAMILY_TUNA;
     d.role = ROLE_COMMON;
+    d.zone_mask = 7;
+    d.phase_mask = 3;
     d.hp = 80;
     d.resolve = 60;
     d.speed = 8;
@@ -263,10 +316,12 @@ fn rustTuna() def.CreatureDef {
 
 // Roster 7 — Kelp Crab (100/90/8/7, Thrash +6).
 fn kelpCrab() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Kelp Crab");
     d.id = 7;
     d.family = FAMILY_CRAB;
     d.role = ROLE_COMMON;
+    d.zone_mask = 7;
+    d.phase_mask = 3;
     d.hp = 100;
     d.resolve = 90;
     d.speed = 8;
@@ -288,10 +343,12 @@ fn kelpCrab() def.CreatureDef {
 
 // Roster 8 — Brine Jelly (60/110/10/6, Despair +10).
 fn brineJelly() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Brine Jelly");
     d.id = 8;
     d.family = FAMILY_JELLY;
     d.role = ROLE_COMMON;
+    d.zone_mask = 6;
+    d.phase_mask = 2;
     d.hp = 60;
     d.resolve = 110;
     d.speed = 10;
@@ -313,10 +370,12 @@ fn brineJelly() def.CreatureDef {
 
 // Roster 9 — Chitin Barnacle (130/50/3/6, HP<50% -> Armor 70%, Stationary).
 fn chitinBarnacle() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Chitin Barnacle");
     d.id = 9;
     d.family = FAMILY_BARNACLE;
     d.role = ROLE_COMMON;
+    d.zone_mask = 6;
+    d.phase_mask = 3;
     d.hp = 130;
     d.resolve = 50;
     d.speed = 3;
@@ -340,10 +399,12 @@ fn chitinBarnacle() def.CreatureDef {
 // Roster 10 — Spark Anemone (90/70/4/6, Discharge 10 Hull at HP<50%,
 // Stationary).
 fn sparkAnemone() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Spark Anemone");
     d.id = 10;
     d.family = FAMILY_ANEMONE;
     d.role = ROLE_COMMON;
+    d.zone_mask = 3;
+    d.phase_mask = 3;
     d.hp = 90;
     d.resolve = 70;
     d.speed = 4;
@@ -371,10 +432,12 @@ fn sparkAnemone() def.CreatureDef {
 // Roster 3 — Mileel (80/140/12/8, named, Despair +10, flees if a hit exceeds
 // 30% max HP, grudge +30 Resolve).
 fn mileel() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Mileel");
     d.id = 3;
     d.family = FAMILY_EEL;
     d.role = ROLE_NAMED;
+    d.zone_mask = 2;
+    d.phase_mask = 1;
     d.hp = 80;
     d.resolve = 140;
     d.speed = 12;
@@ -403,10 +466,12 @@ fn mileel() def.CreatureDef {
 // Roster 6 — Tunisteel (140/100/5/9, named, Heavy Armor 50%, HP<30% -> Speed
 // +6, grudge armor 50% -> 30%).
 fn tunisteel() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Tunisteel");
     d.id = 6;
     d.family = FAMILY_TUNA;
     d.role = ROLE_NAMED;
+    d.zone_mask = 2;
+    d.phase_mask = 1;
     d.hp = 140;
     d.resolve = 100;
     d.speed = 5;
@@ -435,10 +500,12 @@ fn tunisteel() def.CreatureDef {
 
 // Roster 11 — Coral Crab (160/120/5/10, Shell: Restrain 50%, Thrash +12).
 fn coralCrab() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Coral Crab");
     d.id = 11;
     d.family = FAMILY_CRAB;
     d.role = ROLE_RARE;
+    d.zone_mask = 6;
+    d.phase_mask = 3;
     d.hp = 160;
     d.resolve = 120;
     d.speed = 5;
@@ -463,10 +530,12 @@ fn coralCrab() def.CreatureDef {
 // Roster 12 — Abyssal Lantern-Jelly (90/130/11/9, Resolve<50% -> blind 50%,
 // Despair +12).
 fn abyssalLanternJelly() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Abyssal Lantern-Jelly");
     d.id = 12;
     d.family = FAMILY_JELLY;
     d.role = ROLE_RARE;
+    d.zone_mask = 4;
+    d.phase_mask = 2;
     d.hp = 90;
     d.resolve = 130;
     d.speed = 11;
@@ -490,10 +559,12 @@ fn abyssalLanternJelly() def.CreatureDef {
 // Roster 13 — Neon Ghost-Ray (100/110/18/10, Phasing every 2 rounds;
 // HP<30% stays Phase).
 fn neonGhostRay() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Neon Ghost-Ray");
     d.id = 13;
     d.family = FAMILY_RAY;
     d.role = ROLE_RARE;
+    d.zone_mask = 4;
+    d.phase_mask = 2;
     d.hp = 100;
     d.resolve = 110;
     d.speed = 18;
@@ -516,10 +587,12 @@ fn neonGhostRay() def.CreatureDef {
 // Roster 14 — Glass Squid (100/130/14/9, Ink every 3 rounds; Resolve<50% ->
 // Speed +6).
 fn glassSquid() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Glass Squid");
     d.id = 14;
     d.family = FAMILY_SQUID;
     d.role = ROLE_RARE;
+    d.zone_mask = 4;
+    d.phase_mask = 2;
     d.hp = 100;
     d.resolve = 130;
     d.speed = 14;
@@ -545,10 +618,12 @@ fn glassSquid() def.CreatureDef {
 // Roster 15 — Brine Angler (110/100/9/10, round 1 decoy; HP<50% -> Attack
 // +50%).
 fn brineAngler() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Brine Angler");
     d.id = 15;
     d.family = FAMILY_ANGLER;
     d.role = ROLE_RARE;
+    d.zone_mask = 4;
+    d.phase_mask = 2;
     d.hp = 110;
     d.resolve = 100;
     d.speed = 9;
@@ -572,10 +647,12 @@ fn brineAngler() def.CreatureDef {
 
 // Roster 16 — Ironclad Wrasse (150/140/7/11, HP<30% -> Armor 50% + Speed +4).
 fn ironcladWrasse() def.CreatureDef {
-    var d = blank();
+    var d = named(blank(), "Ironclad Wrasse");
     d.id = 16;
     d.family = FAMILY_WRASSE;
     d.role = ROLE_RARE;
+    d.zone_mask = 4;
+    d.phase_mask = 1;
     d.hp = 150;
     d.resolve = 140;
     d.speed = 7;
@@ -625,10 +702,17 @@ pub const DEFS = [18]def.CreatureDef{
 };
 
 pub fn defCount() i32 {
+    if (def.content_override) |t| return t.def_count;
     return @intCast(i32, DEFS.len);
 }
 
 pub fn defAt(index: i32) def.CreatureDef {
+    if (def.content_override) |t| {
+        if (index < 0 or index >= t.def_count) {
+            @panic("defAt: invalid creature index");
+        }
+        return t.defs[@intCast(usize, index)];
+    }
     switch (index) {
         0 => return DEFS[0],
         1 => return DEFS[1],
@@ -650,6 +734,14 @@ pub fn defAt(index: i32) def.CreatureDef {
         17 => return DEFS[17],
         else => @panic("defAt: invalid creature index"),
     }
+}
+
+pub fn rules() []const behavior.Rule {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.rule_count);
+        return t.rules[0..n];
+    }
+    return RULES[0..];
 }
 
 // Rule rows (indexes match each def's rule_start/rule_count).

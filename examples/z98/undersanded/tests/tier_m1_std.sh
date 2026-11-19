@@ -252,6 +252,7 @@ else
     CUI="$OUT/cui_writable"
     mkdir -p "$CUI"
     cp "$BUILD_OUT/undtool.exe" "$BUILD_OUT/sample.txt" "$CUI/"
+    cp "$ROOT/examples/z98/undersanded/data.z98" "$CUI/"
     ( cd "$CUI" && timeout 120 wine ./undtool.exe </dev/null ) >"$CUI/run.log" 2>&1
     CUI_RC=$?
     sed 's/^/       /' "$CUI/run.log"
@@ -271,6 +272,7 @@ else
     RO="$OUT/cui_readonly"
     mkdir -p "$RO"
     cp "$BUILD_OUT/undtool.exe" "$BUILD_OUT/sample.txt" "$RO/"
+    cp "$ROOT/examples/z98/undersanded/data.z98" "$RO/"
     RO_BEFORE="$(find "$RO" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d '[:space:]')"
     chmod 0555 "$RO"
     RO_DIRS="$RO"
@@ -307,6 +309,56 @@ else
     fi
     chmod 0755 "$RO"
     RO_DIRS=""
+fi
+
+# ---------------------------------------------------------------------------
+# SLOW evidence: console entry fatal content-boot copies (headless)
+# ---------------------------------------------------------------------------
+echo "== SLOW evidence: console content-boot fatal copies =="
+if [ -n "$MISSING_WINE" ]; then
+    skip_evidence "console content-boot fatal copies (missing:$MISSING_WINE)"
+elif [ ! -f "$BUILD_OUT/undtool.exe" ]; then
+    skip_evidence "console content-boot fatal copies (undtool.exe missing; build failed)"
+else
+    export WINEPREFIX="$OUT/wineprefix_cui"
+    export WINEARCH=win32
+    export WINEDEBUG="${WINEDEBUG:--all}"
+
+    BOOT_MISS="$OUT/boot_missing"
+    mkdir -p "$BOOT_MISS"
+    cp "$BUILD_OUT/undtool.exe" "$BUILD_OUT/sample.txt" "$BOOT_MISS/"
+    ( cd "$BOOT_MISS" && timeout 120 wine ./undtool.exe </dev/null ) \
+        >"$OUT/boot_missing.log" 2>&1
+    BM_RC=$?
+    BM_N="$(grep -Fc 'Content file missing. Reinstall from CD.' "$OUT/boot_missing.log" || true)"
+    if [ "$BM_RC" -ne 0 ]; then
+        evidence_pass "console boot without data.z98 exited non-zero ($BM_RC)"
+    else
+        evidence_fail "console boot without data.z98 exited 0"
+    fi
+    if [ "$BM_N" = "1" ]; then
+        evidence_pass "missing copy emitted exactly once"
+    else
+        evidence_fail "missing copy emitted $BM_N time(s), want 1"
+    fi
+
+    BOOT_BAD="$OUT/boot_damaged"
+    mkdir -p "$BOOT_BAD"
+    cp "$BUILD_OUT/undtool.exe" "$BUILD_OUT/sample.txt" "$BOOT_BAD/"
+    printf 'format=2\n[creatures]\nnot_a_row\n' >"$BOOT_BAD/data.z98"
+    ( cd "$BOOT_BAD" && timeout 120 wine ./undtool.exe </dev/null ) \
+        >"$OUT/boot_damaged.log" 2>&1
+    BB_RC=$?
+    if [ "$BB_RC" -ne 0 ]; then
+        evidence_pass "console boot with damaged data.z98 exited non-zero ($BB_RC)"
+    else
+        evidence_fail "console boot with damaged data.z98 exited 0"
+    fi
+    if grep -Fq 'Content file is damaged at line ' "$OUT/boot_damaged.log"; then
+        evidence_pass "damaged copy names a line"
+    else
+        evidence_fail "damaged copy missing"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -347,6 +399,7 @@ else
     else
         timeout 180 wineboot -i >"$GUI/wineboot.log" 2>&1 || true
         cp "$BUILD_OUT/under.exe" "$BUILD_OUT/sample.txt" "$GUI/"
+        cp "$ROOT/examples/z98/undersanded/data.z98" "$GUI/"
         ( cd "$GUI" && timeout 120 wine ./under.exe ) >"$GUI/app.log" 2>&1 &
         WINE_PID=$!
         WINDOW_SEEN=0

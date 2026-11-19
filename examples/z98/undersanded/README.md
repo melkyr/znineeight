@@ -9,7 +9,7 @@ GDI32/KERNEL32/USER32, passing `check_win9x_imports.sh <exe> 9x`.
 | :--- | :--- | :--- | :--- |
 | `under.exe` | `WINDOWS_GUI` | `main.zig` | windowed terminal mode: `std_gfx.gfxOpen(80, 30)` titled `UNDERSANDED` |
 | `undtool.exe` | `WINDOWS_CUI` | `main_console.zig` | **M4 playable console**: dock-first expedition navigation, `std_io` text frames + stdin keys, no window |
-| `undtool.nix` | Linux ELF | `undtool_native.zig` | tooling and `--play`/`--fight`: `--sim`, `--replay`, `--test-rules`, `--dump-grid` |
+| `undtool.nix` | Linux ELF | `undtool_native.zig` | tooling and `--play`/`--fight`: `--sim`, `--replay`, `--test-rules`, `--dump-grid`, `--dump-defs` |
 
 `undtool.exe` with no arguments starts at the **dock** and runs the M4
 expedition loop (`D`epart → map → zone → node → hunt/rest/surface). Fights use
@@ -26,8 +26,8 @@ M1 sample/probe path):
 * `--fight` — the M2 one-off fight with the 1–5 creature chooser.
 
 Both flags are exclusive: combining them with each other or with any tool flag
-(`--sim`, `--replay`, `--test-rules`, `--dump-grid`, `--screen`, `--creature`,
-`--seed`, `--hull`) exits 2. There is no runtime `--headless` flag: the GUI
+(`--sim`, `--replay`, `--test-rules`, `--dump-grid`, `--dump-defs`, `--screen`,
+`--creature`, `--seed`, `--hull`) exits 2. There is no runtime `--headless` flag: the GUI
 mode is selected at build/link time (Ruling A), because Z98 has no
 program-level `-D` build option.
 
@@ -70,8 +70,8 @@ The `--play` and `--fight` console flags bypass the M1 sample/probe path.
 The console entry `main_console.zig` is Windows-only: it links `std_gfx` →
 `std_gfx_pal` → `#include <windows.h>`. A Linux-compatible gate runner is
 provided in `undtool_native.zig` — a gfx-free root that forwards to
-`undtool.run`, so `--sim`, `--replay`, `--test-rules`, `--dump-grid`, `--play`
-and `--fight` behave exactly as in `undtool.exe`. This is the authoritative CI
+`undtool.run`, so `--sim`, `--replay`, `--test-rules`, `--dump-grid`,
+`--dump-defs`, `--play` and `--fight` behave exactly as in `undtool.exe`. This is the authoritative CI
 path for the logic/sim gates (spec §26 test model); the Windows binaries remain
 the shipped artifacts.
 
@@ -87,6 +87,7 @@ mkdir -p out/native
   examples/z98/undersanded/undtool_native.zig
 sh out/native/build_target.sh linux out/native/undtool.nix
 ./out/native/undtool.nix --test-rules    # rules_ok=100
+./out/native/undtool.nix --dump-defs examples/z98/undersanded/data.z98
 ./out/native/undtool.nix --play          # dock-first console loop
 ./out/native/undtool.nix --fight         # M2 creature chooser
 ```

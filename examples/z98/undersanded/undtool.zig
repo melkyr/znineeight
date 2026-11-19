@@ -3,7 +3,7 @@
 // main_console.zig routes any argv element beginning with `--` here before the
 // playable console; tool paths never touch sample.txt or a fight UI. M3 Task 2
 // owns `--sim N --creature <token> --seed S`; later tasks extend this
-// dispatcher with --replay, --test-rules and --dump-grid.
+// dispatcher with --replay, --test-rules, --dump-grid and --dump-defs.
 //
 // Token table (tooling only; CreatureDef has no name field):
 //   eel -> 0, electric_eel -> 1, steel_tuna -> 2,
@@ -23,12 +23,30 @@ const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const nav = @import("nav.zig");
 const fight_console = @import("fight_console.zig");
+const paths = @import("paths.zig");
 const file_mod = @import("std_file");
+const arena_mod = @import("std_arena");
+const buf_mod = @import("std_buf");
+const data = @import("data.zig");
+const content_boot = @import("content_boot.zig");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
 // Pinned seed for the deterministic --dump-grid fight frame (never CLI seed0).
 const DUMP_SEED: u32 = 98;
+
+// --dump-defs uses its own permanent arena and never installs the override.
+var g_dump_arena_buf: [256 * 1024]u8 = undefined;
+
+// Tool paths load data.z98 beside the exe when present; failure keeps fallback.
+var g_content_arena_buf: [256 * 1024]u8 = undefined;
+
+fn tryLoadContent() void {
+    var dir_buf: [512]u8 = undefined;
+    const dir = paths.resolveDataDir(dir_buf[0..]);
+    var arena = arena_mod.init(g_content_arena_buf[0..]);
+    _ = content_boot.loadFromDir(&arena, &data.g_tables, dir);
+}
 
 const TOKEN_ROWS = [_]TokenRow{
     TokenRow{ .name = "eel", .index = 0 },
@@ -58,6 +76,14 @@ fn tokenIndex(tok: []const u8) ?i32 {
         if (eq(TOKEN_ROWS[i].name, tok)) return TOKEN_ROWS[i].index;
     }
     return null;
+}
+
+// Tool tokens address loaded def indexes; a partial data.z98 can carry fewer
+// rows than the compiled-in fallback, so reject before defAt can panic.
+fn tokenDefIndex(tok: []const u8) ?i32 {
+    const index = tokenIndex(tok) orelse return null;
+    if (index < 0 or index >= creatures.defCount()) return null;
+    return index;
 }
 
 fn fail(msg: []const u8) void {
@@ -107,8 +133,8 @@ pub fn dumpFightFrame(def_index: i32, seed: u32, out: []u8) []const u8 {
     s.exp.seed = seed;
     s.exp.fight_index = 0;
     var d = creatures.defAt(def_index);
-    fight.startFightDef(&s, def_index, &d, creatures.RULES[0..]);
-    fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.RULES[0..]);
+    fight.startFightDef(&s, def_index, &d, creatures.rules());
+    fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.rules());
     var sc: render.Screen = undefined;
     render.renderFrame(&s, &d, &sc);
     return render.dump(&sc, out);
@@ -227,14 +253,14 @@ pub fn replayLine(path: []const u8, out: []u8) ?[]const u8 {
     var r: replay.Replay = undefined;
     if (!replay.replayRead(path, &r)) return null;
 
-    const index = tokenIndex(replay.creatureText(&r)) orelse return null;
+    const index = tokenDefIndex(replay.creatureText(&r)) orelse return null;
 
     var s: def.GameState = undefined;
     sim.zeroState(&s);
     s.exp.seed = r.seed;
 
     var d = creatures.defAt(index);
-    fight.startFightDef(&s, index, &d, creatures.RULES[0..]);
+    fight.startFightDef(&s, index, &d, creatures.rules());
 
     var applied: i32 = 0;
     const acts = replay.actionSlice(&r);
@@ -266,6 +292,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_test_rules = false;
     var have_replay = false;
     var have_dump_grid = false;
+    var have_dump_defs = false;
     var have_screen = false;
     var have_play = false;
     var have_fight = false;
@@ -276,6 +303,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var token: []const u8 = "";
     var replay_path: []const u8 = "";
     var dump_path: []const u8 = "";
+    var defs_path: []const u8 = "";
     var screen_id: []const u8 = "";
 
     const nargs = os.argc();
@@ -304,6 +332,14 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             }
             dump_path = os.argv(i);
             have_dump_grid = true;
+        } else if (eq(a, "--dump-defs")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --dump-defs needs a file path");
+                return;
+            }
+            defs_path = os.argv(i);
+            have_dump_defs = true;
         } else if (eq(a, "--screen")) {
             i += 1;
             if (i >= nargs) {
@@ -363,6 +399,10 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         }
     }
 
+    // Every mode except --dump-defs runs with data.z98 beside the exe when it
+    // is there; a bad file never fails the tool (fallback stays installed).
+    if (!have_dump_defs) tryLoadContent();
+
     // Interactive play modes are exclusive: neither combines with the other nor
     // with any tool flag.
     if (have_play or have_fight) {
@@ -370,8 +410,8 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             fail("undtool: --play and --fight are mutually exclusive");
             return;
         }
-        if (have_test_rules or have_replay or have_dump_grid or have_screen or
-            have_sim or have_creature or have_seed or have_hull)
+        if (have_test_rules or have_replay or have_dump_grid or have_dump_defs or
+            have_screen or have_sim or have_creature or have_seed or have_hull)
         {
             fail("undtool: --play/--fight cannot be combined with tool flags");
             return;
@@ -389,6 +429,23 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
 
     if (have_test_rules) {
         os.exit(ruletest.testRules());
+        return;
+    }
+
+    if (have_dump_defs) {
+        var arena = arena_mod.init(g_dump_arena_buf[0..]);
+        var t: def.Tables = undefined;
+        data.loadFile(&arena, defs_path, &t) catch {
+            fail("undtool: --dump-defs cannot read or parse data file");
+            return;
+        };
+        var out = buf_mod.initCapacity(&arena, 64 * 1024) catch {
+            fail("undtool: --dump-defs out of memory");
+            return;
+        };
+        data.dumpDefs(&t, &out);
+        io.write(buf_mod.slice(&out));
+        os.exit(0);
         return;
     }
 
@@ -414,7 +471,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         if (eq(screen_id, "fight")) {
             var dump_index: i32 = 0;
             if (have_creature) {
-                dump_index = tokenIndex(token) orelse {
+                dump_index = tokenDefIndex(token) orelse {
                     fail("undtool: unknown --creature token");
                     return;
                 };
@@ -451,7 +508,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         return;
     }
 
-    const index = tokenIndex(token) orelse {
+    const index = tokenDefIndex(token) orelse {
         fail("undtool: unknown --creature token");
         return;
     };

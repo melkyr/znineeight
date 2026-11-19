@@ -8,7 +8,7 @@
 const def = @import("def.zig");
 const world = @import("world.zig");
 
-pub const EncounterRow = struct { def_index: i32, weight: i32 };
+pub const EncounterRow = def.EncounterRow;
 
 pub const PHASE_DAY: i32 = 0;
 pub const PHASE_NIGHT: i32 = 1;
@@ -89,7 +89,7 @@ pub const Z3_NIGHT = [_]EncounterRow{
     EncounterRow{ .def_index = 4, .weight = 10 }, // Freezing Perch (rare)
 };
 
-pub fn rows(zone: i32, phase: i32) []const EncounterRow {
+pub fn fallbackRows(zone: i32, phase: i32) []const EncounterRow {
     switch (zone) {
         0 => {
             if (phase == PHASE_NIGHT) return Z1_NIGHT[0..];
@@ -107,6 +107,56 @@ pub fn rows(zone: i32, phase: i32) []const EncounterRow {
     }
 }
 
+pub fn rows(zone: i32, phase: i32) []const EncounterRow {
+    if (def.content_override) |t| {
+        if (zone < 0 or zone >= def.MAX_ZONES or phase < 0 or phase > 1) {
+            return EMPTY[0..];
+        }
+        const ci: usize = @intCast(usize, zone) * 2 + @intCast(usize, phase);
+        const base: usize = @intCast(usize, zone) * 2 * def.MAX_ENCOUNTER +
+            @intCast(usize, phase) * def.MAX_ENCOUNTER;
+        const n: usize = @intCast(usize, t.enc_count[ci]);
+        return t.encounters[base .. base + n];
+    }
+    return fallbackRows(zone, phase);
+}
+
+pub fn tools() []const ToolRow {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.tool_count);
+        return t.tools[0..n];
+    }
+    return TOOLS[0..];
+}
+
+pub fn upgrades() []const UpgradeRow {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.upgrade_count);
+        return t.upgrades[0..n];
+    }
+    return UPGRADES[0..];
+}
+
+pub fn cosmetics() []const CosmeticRow {
+    if (def.content_override) |t| {
+        const n: usize = @intCast(usize, t.cosmetic_count);
+        return t.cosmetics[0..n];
+    }
+    return COSMETICS[0..];
+}
+
+pub fn zoneCost(i: i32) i32 {
+    if (i < 0 or i >= @intCast(i32, def.MAX_ZONES)) return 0;
+    if (def.content_override) |t| return t.zone_cost[@intCast(usize, i)];
+    return ZONE_COST[@intCast(usize, i)];
+}
+
+pub fn zoneIsBoss(i: i32) i32 {
+    if (i < 0 or i >= @intCast(i32, def.MAX_ZONES)) return 0;
+    if (def.content_override) |t| return t.zone_boss[@intCast(usize, i)];
+    return ZONE_IS_BOSS[@intCast(usize, i)];
+}
+
 // ---- §10 tools -----------------------------------------------------------
 //
 // Tool ids match `creatures_t1.TOOL_*` counter-tool ids. Costs are keystone
@@ -117,13 +167,9 @@ pub const TOOL_KIND_RIGGED: i32 = 1;
 
 // Two-field cost slot local to the dock/M6 tables. `kind` 0 = unused slot;
 // otherwise a part id (1..9). Task 1's `MaterialAmt` is a separate type.
-pub const CostSlot = struct { kind: i32, amt: i32 };
+pub const CostSlot = def.CostSlot;
 
-pub const ToolRow = struct {
-    id: i32,
-    kind: i32,
-    cost: [3]CostSlot,
-};
+pub const ToolRow = def.ToolRow;
 
 fn slot(kind: i32, amt: i32) CostSlot {
     return CostSlot{ .kind = kind, .amt = amt };
@@ -155,11 +201,7 @@ pub const TOOLS = [_]ToolRow{
 // Plate, 3 Gland, 4 Brine, 5 Coral, 6 Luminescence, 7 Glass; 8/9 are the
 // Hooked Barbel / Steel Fins keystone parts.
 
-pub const UpgradeRow = struct {
-    axis: i32,
-    tier: i32,
-    cost: [3]CostSlot,
-};
+pub const UpgradeRow = def.UpgradeRow;
 
 pub const UPGRADES = [_]UpgradeRow{
     // Hull
@@ -194,11 +236,7 @@ pub const UNLOCK_Z2: i32 = 2;
 pub const UNLOCK_Z3: i32 = 3;
 pub const UNLOCK_DERELICT: i32 = 4;
 
-pub const CosmeticRow = struct {
-    name: []const u8,
-    price: i32,
-    unlock: i32,
-};
+pub const CosmeticRow = def.CosmeticRow;
 
 pub const COSMETICS = [_]CosmeticRow{
     .{ .name = "Foam White", .price = 150, .unlock = UNLOCK_Z1 },
