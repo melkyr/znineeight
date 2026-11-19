@@ -95,6 +95,7 @@ const GLYPH_COUNT: u32 = GLYPH_LAST - GLYPH_FIRST + 1;
 const ATLAS_COLORS: u32 = 16;
 const S_OK: u32 = 0;
 const E_FAIL: u32 = 0x80004005;
+pub const DDERR_SURFACELOST: u32 = 0x887601C2;
 const BITSPIXEL: i32 = 12;
 const SRCCOPY: u32 = 0x00CC0020;
 const MB_OK: u32 = 0;
@@ -504,7 +505,7 @@ const Surface7Vtbl = struct {
     GetPixelFormat: extern "stdcall" fn(iface: *void, fmt: *void) u32,
     GetSurfaceDesc: extern "stdcall" fn(iface: *void, desc: *void) u32,
     Initialize: extern "stdcall" fn() void,
-    IsLost: extern "stdcall" fn() void,
+    IsLost: extern "stdcall" fn(iface: *void) u32,
     Lock: extern "stdcall" fn(iface: *void, dest: *void, desc: *void, flags: u32, event: *void) u32,
     ReleaseDC: extern "stdcall" fn(iface: *void, hdc: *void) u32,
     Restore: extern "stdcall" fn(iface: *void) u32,
@@ -791,6 +792,14 @@ pub fn pxUnlock(surface: *void) bool {
 pub fn pxRestore(surface: *void) bool {
     if (isNull(surface)) return false;
     return surfaceVtbl(surface).Restore(surface) == S_OK;
+}
+
+// IsLost returns DD_OK when the surface is valid and DDERR_SURFACELOST when
+// the driver dropped it. Used to classify a failed Lock without changing the
+// pxLock bool contract.
+pub fn pxIsLost(surface: *void) bool {
+    if (isNull(surface)) return false;
+    return surfaceVtbl(surface).IsLost(surface) == DDERR_SURFACELOST;
 }
 
 pub fn pxPrimaryIs565(primary: *void) bool {

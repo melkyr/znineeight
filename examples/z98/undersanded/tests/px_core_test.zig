@@ -61,6 +61,30 @@ fn tOpenMemory() bool {
     return true;
 }
 
+fn tRepaintFlagSemantics() bool {
+    const g = core.gfxPxOpenMemory(8, 2) catch return false;
+    if (core.pxCoreSurfaceLost(g.opaque)) return false;
+    if (core.pxCoreNeedsFullRepaint(g.opaque)) return false;
+
+    core.pxCoreMarkSurfaceLost(g.opaque);
+    if (!core.pxCoreSurfaceLost(g.opaque)) return false;
+    if (core.pxCoreNeedsFullRepaint(g.opaque)) return false;
+
+    core.pxCoreMarkRestored(g.opaque);
+    if (core.pxCoreSurfaceLost(g.opaque)) return false;
+    if (!core.pxCoreNeedsFullRepaint(g.opaque)) return false;
+
+    core.pxCoreClearFullRepaint(g.opaque);
+    if (core.pxCoreNeedsFullRepaint(g.opaque)) return false;
+
+    core.pxCoreMarkSurfaceLost(g.opaque);
+    const g2 = core.gfxPxOpenMemory(8, 2) catch return false;
+    if (g2 != g) return false;
+    if (core.pxCoreSurfaceLost(g.opaque)) return false;
+    if (core.pxCoreNeedsFullRepaint(g.opaque)) return false;
+    return true;
+}
+
 fn tLutAnchors() bool {
     const g = core.gfxPxOpenMemory(8, 2) catch return false;
     const lut: [8]u16 = [8]u16{
@@ -362,6 +386,7 @@ fn tGolden320x200() bool {
 
 pub fn main() void {
     report("memory_open_dimensions", tOpenMemory());
+    report("repaint_flag_set_clear", tRepaintFlagSemantics());
     report("lut_565_anchors", tLutAnchors());
     report("key_byte_skip", tKeySkip());
     report("fill_clip_all_edges", tFillClip());

@@ -3,9 +3,10 @@
 #
 # EVIDENCE ONLY: this script is not part of the native gate. It builds a tiny
 # -osw probe that imports std_gfx_px, opens the standalone fixed 640x480 px
-# window, fills a deterministic 565 ramp under lock, presents it, and writes a
-# short log. If Wine/Xvfb (or the seed compiler) is absent it prints a LOUD
-# skip and exits 0.
+# window, fills a deterministic 565 ramp under lock, presents it, forces a
+# surface-lost restore via gfxPxTestRestore, presents again, and writes a short
+# log. If Wine/Xvfb (or the seed compiler) is absent it prints a LOUD skip and
+# exits 0.
 #
 # Env: ZIG compiler (default /tmp/seed151_build/zig1_5_clean)
 #      OUT scratch dir (default /tmp/m9_px_probe)
@@ -68,6 +69,22 @@ pub fn main() void {
     px.gfxPxPresent(g, 0, 0, 640, 480);
     var ev: gfx.Event = undefined;
     while (px.gfxPxPollEvent(g, &ev)) {}
+    if (px.gfxPxTestRestore(g)) {
+        px.gfxPxPresent(g, 0, 0, 640, 480);
+        if (px.gfxPxNeedsFullRepaint(g)) {
+            io.write("PXPROBE restore=1 repaint=1\n");
+            px.gfxPxClearFullRepaint(g);
+            if (px.gfxPxNeedsFullRepaint(g)) {
+                io.write("PXPROBE repaint-clear=0\n");
+            } else {
+                io.write("PXPROBE repaint-clear=1\n");
+            }
+        } else {
+            io.write("PXPROBE restore=0 repaint=0\n");
+        }
+    } else {
+        io.write("PXPROBE restore=0 repaint=0\n");
+    }
     const mem = gfx.gfxOpenMemory(80, 30) catch return;
     if (px.gfxPxAttach(mem) != null) {
         io.write("PXPROBE memattach=non-null\n");
@@ -153,6 +170,8 @@ if [ "$PROBE_RC" -eq 0 ] \
     && grep -q 'PXPROBE visible=1' "$OUT/probe.log" \
     && grep -q 'PXPROBE memattach=null' "$OUT/probe.log" \
     && grep -q 'PXPROBE gdi-present=1' "$OUT/probe.log" \
+    && grep -q 'PXPROBE restore=1 repaint=1' "$OUT/probe.log" \
+    && grep -q 'PXPROBE repaint-clear=1' "$OUT/probe.log" \
     && grep -q 'PXPROBE ok' "$OUT/probe.log" \
     && ! grep -q 'gfxPx: present failed' "$OUT/probe.log"; then
     echo "EVIDENCE-PASS: px probe visible, opened 640x480, filled ramp, presented (log $OUT/probe.log)"

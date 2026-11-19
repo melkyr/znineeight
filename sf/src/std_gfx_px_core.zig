@@ -53,6 +53,8 @@ pub const GfxState = struct {
     locked: bool,
     owned: bool,
     fallback: bool,
+    surface_lost: bool,
+    needs_full_repaint: bool,
     unlocked_logged: bool,
     present_failed_logged: bool,
 };
@@ -70,6 +72,30 @@ pub fn pxCoreSurface(s: *GfxState) Surface {
         .w = s.w,
         .h = s.h,
     };
+}
+
+// Surface-lost / full-repaint flag state lives in the shared GfxState so the
+// Windows wrapper and the headless memory target use one representation. The
+// core only flips flags; the wrapper owns the COM Restore/re-lock sequence.
+pub fn pxCoreMarkSurfaceLost(s: *GfxState) void {
+    s.surface_lost = true;
+}
+
+pub fn pxCoreSurfaceLost(s: *GfxState) bool {
+    return s.surface_lost;
+}
+
+pub fn pxCoreMarkRestored(s: *GfxState) void {
+    s.surface_lost = false;
+    s.needs_full_repaint = true;
+}
+
+pub fn pxCoreNeedsFullRepaint(s: *GfxState) bool {
+    return s.needs_full_repaint;
+}
+
+pub fn pxCoreClearFullRepaint(s: *GfxState) void {
+    s.needs_full_repaint = false;
 }
 
 fn nullPtr() *void {
@@ -224,6 +250,8 @@ pub fn gfxPxOpenMemory(w: u32, h: u32) PxError!*Gfx {
     s.locked = false;
     s.owned = false;
     s.fallback = false;
+    s.surface_lost = false;
+    s.needs_full_repaint = false;
     s.unlocked_logged = false;
     s.present_failed_logged = false;
     g_gfx.opaque = s;

@@ -66,6 +66,8 @@ fn bind(s: *core.GfxState, pst: *pal.State, surface: *void, owned: bool, w: u32,
     s.locked = false;
     s.owned = owned;
     s.fallback = !pal.pxPrimaryIs565(pst.primary);
+    s.surface_lost = false;
+    s.needs_full_repaint = false;
     s.unlocked_logged = false;
     s.present_failed_logged = false;
 }
@@ -118,9 +120,17 @@ pub fn gfxPxLock(g: *Gfx) PxError!Surface {
         s.locked = true;
         return core.pxCoreSurface(s);
     }
+    if (core.pxCoreSurfaceLost(s)) {
+        if (!gfxPxRestore(g)) return error.LockFailed;
+    }
     var pixels: *void = pal.nullHandle();
     var pitch: i32 = 0;
-    if (!pal.pxLock(s.px_surface, &pixels, &pitch)) return error.LockFailed;
+    if (!pal.pxLock(s.px_surface, &pixels, &pitch)) {
+        if (!pal.pxIsLost(s.px_surface)) return error.LockFailed;
+        core.pxCoreMarkSurfaceLost(s);
+        if (!gfxPxRestore(g)) return error.LockFailed;
+        if (!pal.pxLock(s.px_surface, &pixels, &pitch)) return error.LockFailed;
+    }
     s.pixels = @ptrCast([*]u8, pixels);
     s.pitch = pitch;
     s.locked = true;
@@ -191,13 +201,27 @@ pub fn gfxPxPresent(g: *Gfx, x: i32, y: i32, w: i32, h: i32) void {
         warnPresent(s, "locked");
         return;
     }
+    if (core.pxCoreSurfaceLost(s)) {
+        if (!gfxPxRestore(g)) {
+            warnPresent(s, "restore");
+            return;
+        }
+    }
     if (s.fallback) {
         if (!pal.pxGdiPresent565(s.win, s.px_surface, x, y, w, h)) {
             warnPresent(s, "gdi");
         }
         return;
     }
-    const hr = pal.pxPresentRect(s.primary, s.win, s.px_surface, x, y, w, h);
+    var hr = pal.pxPresentRect(s.primary, s.win, s.px_surface, x, y, w, h);
+    if (hr == pal.DDERR_SURFACELOST) {
+        core.pxCoreMarkSurfaceLost(s);
+        if (!gfxPxRestore(g)) {
+            warnPresent(s, "restore");
+            return;
+        }
+        hr = pal.pxPresentRect(s.primary, s.win, s.px_surface, x, y, w, h);
+    }
     if (hr == 0) return;
     s.fallback = true;
     if (!pal.pxGdiPresent565(s.win, s.px_surface, x, y, w, h)) {
@@ -205,17 +229,50 @@ pub fn gfxPxPresent(g: *Gfx, x: i32, y: i32, w: i32, h: i32) void {
     }
 }
 
+// Restore a lost px/primary pair once, re-creating the offscreen if the driver
+// rejects Restore. Success clears the lost flag and arms a full repaint; the
+// caller re-locks through gfxPxLock for the next frame.
 pub fn gfxPxRestore(g: *Gfx) bool {
     const s = g.opaque;
     if (!s.opened) return false;
     if (s.mem_only) return true;
+    if (!core.pxCoreSurfaceLost(s) and !pal.pxIsLost(s.px_surface) and
+        !pal.pxIsLost(s.primary)) {
+        return true;
+    }
+    core.pxCoreMarkSurfaceLost(s);
     if (s.locked) {
         if (!pal.pxUnlock(s.px_surface)) return false;
         s.locked = false;
     }
-    var ok = pal.pxRestore(s.px_surface);
-    if (!pal.pxRestore(s.primary)) ok = false;
-    return ok;
+    if (!pal.pxRestore(s.px_surface)) {
+        pal.pxRelease(s.px_surface);
+        s.px_surface = pal.nullHandle();
+        const recreated = pal.pxCreate565(s.dd7, s.w, s.h);
+        if (@ptrToInt(recreated) == 0) return false;
+        s.px_surface = recreated;
+    }
+    if (!pal.pxRestore(s.primary)) return false;
+    s.fallback = !pal.pxPrimaryIs565(s.primary);
+    core.pxCoreMarkRestored(s);
+    return true;
+}
+
+pub fn gfxPxNeedsFullRepaint(g: *Gfx) bool {
+    return core.pxCoreNeedsFullRepaint(g.opaque);
+}
+
+pub fn gfxPxClearFullRepaint(g: *Gfx) void {
+    core.pxCoreClearFullRepaint(g.opaque);
+}
+
+// Test seam: mark the live px surface lost without a driver event so the tier
+// and probe can drive restore -> re-lock -> full-repaint deterministically.
+pub fn gfxPxTestRestore(g: *Gfx) bool {
+    const s = g.opaque;
+    if (!s.opened or s.mem_only) return false;
+    core.pxCoreMarkSurfaceLost(s);
+    return true;
 }
 
 pub fn gfxPxClose(g: *Gfx) void {
@@ -238,6 +295,8 @@ pub fn gfxPxClose(g: *Gfx) void {
     s.dd7 = pal.nullHandle();
     s.primary = pal.nullHandle();
     s.pst = pal.nullHandle();
+    s.surface_lost = false;
+    s.needs_full_repaint = false;
 }
 
 pub fn gfxPxPollEvent(g: *Gfx, ev: *gfx.Event) bool {
