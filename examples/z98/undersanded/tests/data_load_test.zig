@@ -26,6 +26,10 @@ const TMP_UNKNOWN_SECTION = "/tmp/m6t3_unknown_section.z98";
 const TMP_UNKNOWN_KEY = "/tmp/m6t3_unknown_key.z98";
 const TMP_BAD_HEADER = "/tmp/m6t3_bad_header.z98";
 const TMP_TEXT = "/tmp/m6t3_text_paragraphs.z98";
+const TMP_TEXT_CRLF = "/tmp/m6t3_text_crlf.z98";
+const TMP_TEXT_TWO_SPACE = "/tmp/m6t3_text_two_space.z98";
+const TMP_TEXT_DUP = "/tmp/m6t3_text_duplicate.z98";
+const TMP_RULE_BADREF = "/tmp/m6t3_rule_badref.z98";
 
 var fails: usize = 0;
 var arena_buf: [256 * 1024]u8 = undefined;
@@ -259,6 +263,57 @@ fn tTextParagraphs() bool {
     return true;
 }
 
+fn tTextCrlf() bool {
+    data.uninstall();
+    resetArena();
+    const text = "format=2\r\n[text]\r\nmanual.1=abc\r\n def\r\n";
+    file_mod.writeAll(TMP_TEXT_CRLF, text) catch return false;
+
+    var t: def.Tables = undefined;
+    data.loadFile(&arena, TMP_TEXT_CRLF, &t) catch return false;
+    if (t.text_count != 1) return false;
+    const p = textFind(&t, "manual.1") orelse return false;
+    if (!bytesEq(p, "abc\ndef")) return false;
+    if (contains(p, "\r")) return false;
+    return true;
+}
+
+fn tTextTwoSpaceContinuation() bool {
+    data.uninstall();
+    resetArena();
+    const text = "format=2\n[text]\nmanual.1=First\n  two spaces\n";
+    file_mod.writeAll(TMP_TEXT_TWO_SPACE, text) catch return false;
+
+    var t: def.Tables = undefined;
+    data.loadFile(&arena, TMP_TEXT_TWO_SPACE, &t) catch return false;
+    if (t.text_count != 1) return false;
+    const p = textFind(&t, "manual.1") orelse return false;
+    return bytesEq(p, "First\n two spaces");
+}
+
+fn tTextDuplicateKey() bool {
+    file_mod.writeAll(TMP_TEXT_DUP, "format=2\n[text]\nmanual.1=One.\nmanual.1=Two.\n") catch return false;
+    return loadFailsWith(TMP_TEXT_DUP, 4);
+}
+
+fn tRuleBadRefLine() bool {
+    data.uninstall();
+    resetArena();
+    const text = "format=2\n[rules]\nowner=999,cond_op=1,cond_a=1,cond_b=0,effect_op=3,effect_a=1,effect_b=0,timing=0\n[text]\nmanual.1=x\n";
+    file_mod.writeAll(TMP_RULE_BADREF, text) catch return false;
+
+    var t: def.Tables = undefined;
+    data.buildFallback(&t);
+    var failed = false;
+    var badref = false;
+    data.loadFile(&arena, TMP_RULE_BADREF, &t) catch |e| {
+        failed = true;
+        badref = (e == error.BadRef);
+    };
+    if (!failed or !badref) return false;
+    return data.err_line == 3;
+}
+
 fn tDumpGolden() bool {
     data.uninstall();
     resetArena();
@@ -371,6 +426,10 @@ fn tOverrideLifecycle() bool {
 pub fn main() void {
     report("load_data_matches_fallback", tLoadMatchesFallback());
     report("text_paragraphs_and_hash_prose", tTextParagraphs());
+    report("text_crlf_strips_cr", tTextCrlf());
+    report("text_two_space_continuation", tTextTwoSpaceContinuation());
+    report("text_duplicate_key_rejected", tTextDuplicateKey());
+    report("rule_badref_records_line", tRuleBadRefLine());
     report("dump_defs_golden_byte_exact", tDumpGolden());
     report("reject_unknown_section_line", tRejectUnknownSection());
     report("reject_unknown_key_line", tRejectUnknownKey());

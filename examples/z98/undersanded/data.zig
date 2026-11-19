@@ -199,16 +199,6 @@ fn reqUint(fields: []const RowField, n: usize, key: []const u8, line: i32) LoadE
     };
 }
 
-fn optInt(fields: []const RowField, n: usize, key: []const u8, line: i32, dflt: i32) LoadErr!i32 {
-    const vo = findField(fields, n, key);
-    if (vo == null) return dflt;
-    const v = vo orelse "";
-    return parseI32(v) orelse {
-        err_line = line;
-        return error.DamagedLine;
-    };
-}
-
 const ZERO_NAME = [def.MAX_NAME_LEN]u8{
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
@@ -718,6 +708,7 @@ fn finishTextValue(content: []u8, t: *def.Tables, val_start: usize, val_end: usi
     var after_nl: bool = false;
     while (read < val_end) : (read += 1) {
         const ch = content[read];
+        if (ch == '\r') continue;
         if (after_nl and ch == ' ') {
             after_nl = false;
             continue;
@@ -738,6 +729,10 @@ fn beginTextEntry(content: []u8, t: *def.Tables, line: []const u8, pos: usize, e
     const key = trimSpaces(line[0..eq]);
     if (key.len == 0 or !textKeyKnown(key)) return failLine(line_no);
     const tcount: usize = @intCast(usize, t.text_count);
+    var ki: usize = 0;
+    while (ki < tcount) : (ki += 1) {
+        if (eql(t.text_key[ki], key)) return failLine(line_no);
+    }
     if (tcount >= def.MAX_TEXT_KEYS) {
         err_line = line_no;
         return error.TooMany;
@@ -748,7 +743,7 @@ fn beginTextEntry(content: []u8, t: *def.Tables, line: []const u8, pos: usize, e
     active.* = true;
 }
 
-fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [def.MAX_RULES]def.Rule, n: usize) LoadErr!void {
+fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [def.MAX_RULES]def.Rule, lines: *const [def.MAX_RULES]i32, n: usize) LoadErr!void {
     var emitted: [def.MAX_RULES]bool = undefined;
     var i: usize = 0;
     while (i < def.MAX_RULES) : (i += 1) {
@@ -770,7 +765,7 @@ fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [de
             }
         }
         if (di < 0) {
-            err_line = 0;
+            err_line = lines[i];
             return error.BadRef;
         }
 
@@ -780,7 +775,7 @@ fn packRules(t: *def.Tables, owners: *const [def.MAX_RULES]i32, rows: *const [de
             if (emitted[j]) continue;
             if (owners[j] != owner) continue;
             if (out_i >= def.MAX_RULES) {
-                err_line = 0;
+                err_line = lines[j];
                 return error.Overflow;
             }
             t.rules[out_i] = rows[j];
@@ -815,6 +810,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
 
     var rule_owner: [def.MAX_RULES]i32 = undefined;
     var rule_row: [def.MAX_RULES]def.Rule = undefined;
+    var rule_line: [def.MAX_RULES]i32 = undefined;
     var rule_n: usize = 0;
     var tool_n: usize = 0;
     var upgrade_n: usize = 0;
@@ -853,7 +849,6 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
         // continuation line is a retained blank paragraph break.
         if (section == 7 and text_active) {
             if (line.len > 0 and line[0] == ' ') {
-                if (line.len > 1 and line[1] == ' ') return failLine(line_no);
                 text_val_end = pos + line.len;
                 pos = if (eol < content.len) eol + 1 else content.len;
                 continue;
@@ -921,6 +916,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
                     return error.Overflow;
                 }
                 try parseRule(fields[0..], fn_count, line_no, &rule_owner[rule_n], &rule_row[rule_n]);
+                rule_line[rule_n] = line_no;
                 rule_n += 1;
             } else if (section == 2) {
                 if (tool_n >= def.MAX_TOOLS) {
@@ -992,7 +988,7 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
         return error.DamagedLine;
     }
 
-    try packRules(&tmp, &rule_owner, &rule_row, rule_n);
+    try packRules(&tmp, &rule_owner, &rule_row, &rule_line, rule_n);
 
     tables.* = tmp;
     return;
