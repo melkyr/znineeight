@@ -149,6 +149,9 @@ fn tShippedLoadValidateInstall() bool {
 
 fn tTempOverrideVisible() bool {
     data.uninstall();
+    // The temp rewrite lives under TMP_DIR; make the scratch dir explicitly so
+    // this case is independent of leftovers from tMissingCopyAndExit.
+    _ = makeDir(TMP_DIR);
     var shipped = arena_mod.init(shipped_buf[0..]);
     data.loadFile(&shipped, DATA_PATH, &data.g_tables) catch return false;
     validate.validateAll(&data.g_tables) catch return false;

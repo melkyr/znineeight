@@ -111,7 +111,9 @@ done
 CONTENT_TEST_LOG="$OUT/content_test/run.log"
 for c in creature_names_nonempty_unique_24 creature_masks_match_s14_2 \
     creature_drops_match_s14_4 boss_row_pins_s14_2_fields \
-    tables_size_within_budget; do
+    tables_size_within_budget creature_scalars_match_s14_2 \
+    tools_match_s10 upgrades_match_s11 cosmetics_match_s11 \
+    encounters_match_s13 zones_and_zone_d_match_s12; do
     require_case "$CONTENT_TEST_LOG" "$c"
 done
 
