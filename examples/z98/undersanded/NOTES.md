@@ -1589,3 +1589,70 @@ Kickoff rulings (spec §38 P27; user-authorized "3. A"):
   = gate; px probe, `tier_edit_gui.sh`, Wine runs = SLOW evidence, loud skip.
 
 Task 0 records the M8/`tier_edit` baseline at the amended HEAD before code.
+
+#### Baseline + facts
+
+Baseline at HEAD `32e85ba4c05695d20f14ad9b01d5ac2ff2d5b71c` (branch
+`undersanded/m9`), seed v151 compiler `/tmp/seed151_build/zig1_5_clean`
+md5 `a2fc81055dc1cb7a67099fe3934d22ee`:
+
+```
+ZIG=/tmp/seed151_build/zig1_5_clean OUT=/tmp/m9_t0_m8 sh examples/z98/undersanded/tests/tier_m8_content.sh
+-> TIER_M8 PASS 52 passed / 0 failed
+ZIG=/tmp/seed151_build/zig1_5_clean OUT=/tmp/m9_t0_edit sh examples/z98/z9edit/tests/tier_edit.sh
+-> TIER_EDIT PASS (== tier_edit summary: 38 passed, 0 failed ==)
+   lexer md5 3x: dcc81009e9a36c86e4d90e104c439871 (run1 = run2 = run3)
+   compile max RSS: 5848 KiB
+```
+
+Facts verified in this tree:
+
+- **Opaque `Gfx`.** `std_gfx.zig:17-18` states the opaque contract; private
+  `GfxState` at `:69-79`, public `Gfx = struct { opaque: *GfxState }` at `:81`.
+  No cell buffer or raw COM pointer is app-reachable.
+- **PAL surface placeholders.** In `std_gfx_pal.zig` the vtbl slots are still
+  `extern "stdcall" fn() void` for `BltFast` (`:442`), `GetPixelFormat`
+  (`:456`, placeholder), `Lock` (`:460`), `Unlock` (`:467`). Typed already:
+  `Blt` (`:440`, returns `u32`) and `Restore` (`:462`,
+  `fn(iface: *void) u32`). Public: `State` (`:564`), `open` (`:1078`),
+  `waitEvent` (`:1663`), `pollEvent` (`:1694`).
+- **No px format today.** `makeSurface` (`std_gfx_pal.zig:779-795`) sets only
+  `DDSD_CAPS` for the primary (`:782-783`) and
+  `DDSD_CAPS|DDSD_WIDTH|DDSD_HEIGHT` + `DDSCAPS_OFFSCREENPLAIN` for the
+  offscreen (`:785-786`); the calls are `:1059-1061`. Format fields exist in
+  `DdSurfaceDesc2` (`:333-340`) but `zeroDesc` leaves them zero (`:365-372`),
+  and the constants cover only `DDSCAPS_PRIMARYSURFACE`/`OFFSCREENPLAIN`/
+  `DDSD_CAPS|HEIGHT|WIDTH` (`:64-68`). The surface is 32-bit
+  (`std_gfx.zig:8`; `std_gfx_pal.zig:6-8`). px needs its own 16bpp 565
+  offscreen created with `DDSD_PIXELFORMAT` + `DDSCAPS_SYSTEMMEMORY`, plus a
+  typed `GetPixelFormat` query at open.
+- **Allowlist delta is exactly the used symbols.**
+  `scripts/win32_cross/check_win9x_imports.sh:34` GDI32 ends
+  `... SelectObject SetBkMode SetTextColor TextOutA`; `:35` USER32 ends
+  `... SetWindowTextA ShowWindow TranslateMessage UnregisterClassA UpdateWindow`.
+  Neither list contains `StretchDIBits` or `SetWindowLongA`; add each only
+  when the px code actually imports it, and keep the script green.
+- **`render_term` art facts** (art rendering must match):
+  - Hidden Speed: `speedRevealed` (`render_term.zig:120-123`) is the journal
+    bit for `fight.def_index` or active Sonar; the `SPD ??` branch
+    (`:385-390`) prints `??` when false and calls `effectiveSpeed` only when
+    revealed.
+  - Full tool status: `renderToolStatus` (`:347-370`) draws
+    `TOOL <name> <kind> charge N broken yes/no active yes/no`; called on row 6
+    (`:396`).
+  - Subdue modal: `renderFrame` early-returns to `renderModal` for
+    `SCREEN_SUBDUE`/`SCREEN_SUBDUE_POST` (`:375-378`); copy/actions at
+    `:323-336` (`SUBDUE ATTEMPT`, chance row, Last Surge copy,
+    `[A]ttempt   [F] Fight on   [Esc] Cancel`).
+  - Zero-max bar guard: `barFill` returns 0 when `max <= 0 or width <= 0`
+    before dividing (`:125-133`, guard `:126`); keeps the boss `max_res = 0`
+    case safe.
+  - `msgLine` is private (`render_term.zig:174`); M9 must export/share it (or
+    duplicate it byte-identically) for the art log and a parity test.
+  - Mid-fight help overlay: `nav.zig:289-298` handles `?` on every screen
+    (including mid-fight) and any key dismisses it; `drawCurrent` renders the
+    page first (`:361-365`). Art mode draws the same overlay or documents the
+    terminal fallback.
+- **D24/D25 guard.** New atlas/table data uses explicit `[N]T{...}` literals;
+  no array-returning APIs. Reference: `examples/torrent_example_defects.md`
+  (D24/D25).
