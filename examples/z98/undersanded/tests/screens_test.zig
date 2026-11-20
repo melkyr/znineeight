@@ -19,6 +19,7 @@ const creatures = @import("../creatures_t1.zig");
 const fight = @import("../fight.zig");
 const expedition = @import("../expedition.zig");
 const render = @import("../render_term.zig");
+const nav = @import("../nav.zig");
 const undtool = @import("../undtool.zig");
 
 const DOCK_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_dock.golden";
@@ -124,7 +125,9 @@ fn tDockSaveBlockedLine() bool {
     g.fight.def_index = 0;
     g.fight.outcome = def.OUT_ONGOING;
     var sc: render.Screen = undefined;
-    render.renderDock(&g, &sc);
+    var v: render.View = undefined;
+    nav.prepareDock(&g, &v);
+    render.renderDock(&v, &sc);
     var buf: [8192]u8 = undefined;
     const text = render.dump(&sc, buf[0..]);
     return contains(text, "[Esc] Save - Cannot save during a fight.");
@@ -133,15 +136,18 @@ fn tDockSaveBlockedLine() bool {
 fn tDockSubmenus() bool {
     var g = newGame();
     var sc: render.Screen = undefined;
+    var v: render.View = undefined;
     var buf: [8192]u8 = undefined;
 
-    render.renderRefine(&g, &sc);
+    nav.prepareRefine(&g, &v);
+    render.renderRefine(&v, &sc);
     var text = render.dump(&sc, buf[0..]);
     if (!contains(text, "DOCK - REFINE")) return false;
     if (!contains(text, "Shell Chip x0 -> 0 Chitin")) return false;
     if (!contains(text, "[1-7] Refine material")) return false;
 
-    render.renderUpgrade(&g, &sc);
+    nav.prepareUpgrade(&g, &v);
+    render.renderUpgrade(&v, &sc);
     text = render.dump(&sc, buf[0..]);
     if (!contains(text, "DOCK - UPGRADE")) return false;
     if (!contains(text, "Hull T0 -> T1: Chitin x3")) return false;
@@ -153,7 +159,8 @@ fn tDockSubmenus() bool {
     if (!contains(text, "Steel Plate Tool [rigged] Plate Scrap x3")) return false;
     if (!contains(text, "[1-7] Craft tool")) return false;
 
-    render.renderBuy(&g, &sc);
+    nav.prepareBuy(&g, &v);
+    render.renderBuy(&v, &sc);
     text = render.dump(&sc, buf[0..]);
     if (!contains(text, "DOCK - BUY")) return false;
     if (!contains(text, "Foam White 150 (locked)")) return false;

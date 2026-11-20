@@ -17,6 +17,7 @@ const input = @import("input.zig");
 const expedition = @import("expedition.zig");
 const creatures = @import("creatures_t1.zig");
 const dock = @import("dock.zig");
+const data = @import("data.zig");
 const render = @import("render_term.zig");
 const paths = @import("paths.zig");
 const save_ux = @import("save_ux.zig");
@@ -25,6 +26,8 @@ const persist = @import("persist.zig");
 const journal = @import("journal.zig");
 const fight = @import("fight.zig");
 const text_scan = @import("text_scan.zig");
+const render_text = @import("render_text.zig");
+const economy = @import("economy.zig");
 
 pub const HELP_PAGE_NONE: i32 = 0;
 pub const TIP_NONE: i32 = 0;
@@ -354,6 +357,126 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     }
 }
 
+// ---- prepared views for the decoupled terminal renderers ------------------
+
+fn initView(g: *const def.GameState, screen: i32, out: *render.View) void {
+    out.screen = screen;
+    out.g = g;
+    out.journal_has_new = false;
+    out.save_ok = true;
+    out.save_block = "";
+    out.journal_sel = 0;
+    out.journal_text = "";
+    out.journal_text_found = false;
+    out.zone_flavour = "";
+    out.zone_flavour_found = false;
+    var i: usize = 0;
+    while (i < def.MAX_PARTS) : (i += 1) {
+        out.refine_parts[i] = 0;
+        out.refine_per_part[i] = 0;
+    }
+    i = 0;
+    while (i < 15) : (i += 1) {
+        out.upgrade_cost[i] = def.CostSlot{ .kind = 0, .amt = 0 };
+        out.upgrade_cost_is_material[i] = false;
+    }
+    i = 0;
+    while (i < def.MAX_COSMETICS) : (i += 1) {
+        out.cosmetic_status[i] = render.COSMETIC_LOCKED;
+    }
+    i = 0;
+    while (i < def.MAX_CREATURES) : (i += 1) {
+        out.journal_unlocked[i] = false;
+        out.journal_viewed[i] = false;
+    }
+}
+
+pub fn prepareDock(g: *const def.GameState, out: *render.View) void {
+    initView(g, g.screen, out);
+    out.journal_has_new = journal.journalHasNew(&g.world);
+    if (save_ux.canSave(g)) |reason| {
+        out.save_ok = false;
+        out.save_block = reason;
+    }
+}
+
+pub fn prepareRefine(g: *const def.GameState, out: *render.View) void {
+    initView(g, g.screen, out);
+    var m: i32 = 1;
+    while (m <= 7) : (m += 1) {
+        const mi: usize = @intCast(usize, m);
+        out.refine_parts[mi] = dock.refineParts(g, m);
+        out.refine_per_part[mi] = dock.refinePerPart(g, m);
+    }
+}
+
+pub fn prepareUpgrade(g: *const def.GameState, out: *render.View) void {
+    initView(g, g.screen, out);
+    var axis: i32 = 0;
+    while (axis < 5) : (axis += 1) {
+        const tier = g.world.boat[@intCast(usize, axis)];
+        if (tier >= 3) continue;
+        var cost: [3]economy.MaterialAmt = [3]economy.MaterialAmt{
+            .{ .kind = 0, .amt = 0 },
+            .{ .kind = 0, .amt = 0 },
+            .{ .kind = 0, .amt = 0 },
+        };
+        economy.upgradeCost(axis, tier + 1, &cost);
+        var i: usize = 0;
+        while (i < 3) : (i += 1) {
+            const base = @intCast(usize, axis) * 3 + i;
+            out.upgrade_cost[base] = def.CostSlot{ .kind = cost[i].kind, .amt = cost[i].amt };
+            out.upgrade_cost_is_material[base] =
+                cost[i].kind >= economy.MAT_CHITIN and cost[i].kind <= economy.MAT_GLASS;
+        }
+    }
+}
+
+pub fn prepareBuy(g: *const def.GameState, out: *render.View) void {
+    initView(g, g.screen, out);
+    var i: i32 = 0;
+    while (i < @intCast(i32, def.MAX_COSMETICS)) : (i += 1) {
+        const idx: usize = @intCast(usize, i);
+        if (dock.cosmeticOwned(&g.world, i)) {
+            out.cosmetic_status[idx] = render.COSMETIC_OWNED;
+        } else if (!dock.cosmeticUnlocked(&g.world, i)) {
+            out.cosmetic_status[idx] = render.COSMETIC_LOCKED;
+        } else {
+            out.cosmetic_status[idx] = render.COSMETIC_AVAILABLE;
+        }
+    }
+}
+
+pub fn prepareJournal(g: *const def.GameState, sel: i32, out: *render.View) void {
+    initView(g, def.NAV_JOURNAL, out);
+    out.journal_sel = sel;
+    var d: i32 = 0;
+    while (d < creatures.defCount()) : (d += 1) {
+        const di: usize = @intCast(usize, d);
+        out.journal_unlocked[di] = journal.journalUnlocked(&g.world, d);
+        out.journal_viewed[di] = journal.journalViewed(&g.world, d);
+    }
+    if (sel > 0) {
+        const si = sel - 1;
+        var key_buf: [24]u8 = undefined;
+        const key = journal.journalKey(si, key_buf[0..]);
+        if (data.textFind(key)) |text| {
+            out.journal_text = text;
+            out.journal_text_found = true;
+        }
+    }
+}
+
+pub fn prepareNode(g: *const def.GameState, out: *render.View) void {
+    initView(g, g.screen, out);
+    var zkey: [24]u8 = undefined;
+    const ztext = render_text.keyIntInto("zone.", g.exp.zone + 1, zkey[0..]);
+    if (data.textFind(ztext)) |flavour| {
+        out.zone_flavour = flavour;
+        out.zone_flavour_found = true;
+    }
+}
+
 pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) void {
     if (st.help_page != HELP_PAGE_NONE) {
         const page = journal.helpPage(g.screen) orelse "(manual text unavailable)";
@@ -365,21 +488,45 @@ pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) vo
         render.renderFrame(g, &d, sc);
     } else switch (g.screen) {
         def.NAV_MAP => render.renderMap(g, sc),
-        def.NAV_NODE, def.NAV_SETTLE => render.renderNode(g, sc),
-        def.NAV_REFINE => render.renderRefine(g, sc),
-        def.NAV_UPGRADE => render.renderUpgrade(g, sc),
+        def.NAV_NODE, def.NAV_SETTLE => {
+            var v: render.View = undefined;
+            prepareNode(g, &v);
+            render.renderNode(&v, sc);
+        },
+        def.NAV_REFINE => {
+            var v: render.View = undefined;
+            prepareRefine(g, &v);
+            render.renderRefine(&v, sc);
+        },
+        def.NAV_UPGRADE => {
+            var v: render.View = undefined;
+            prepareUpgrade(g, &v);
+            render.renderUpgrade(&v, sc);
+        },
         def.NAV_CRAFT => render.renderCraft(g, sc),
-        def.NAV_BUY => render.renderBuy(g, sc),
+        def.NAV_BUY => {
+            var v: render.View = undefined;
+            prepareBuy(g, &v);
+            render.renderBuy(&v, sc);
+        },
         def.NAV_TOOLS => render.renderTools(g, sc),
         def.NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
         def.NAV_MENU => render.renderMenu(sc),
         def.NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
-        def.NAV_JOURNAL => render.renderJournal(g, st.journal_sel, sc),
+        def.NAV_JOURNAL => {
+            var v: render.View = undefined;
+            prepareJournal(g, st.journal_sel, &v);
+            render.renderJournal(&v, sc);
+        },
         def.NAV_HELP => {
             const page = journal.helpPage(g.screen) orelse "(manual text unavailable)";
             render.renderHelp(page, sc);
         },
-        else => render.renderDock(g, sc),
+        else => {
+            var v: render.View = undefined;
+            prepareDock(g, &v);
+            render.renderDock(&v, sc);
+        },
     }
 }
 

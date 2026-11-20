@@ -1,20 +1,26 @@
 // data.zig — UNDERSANDED data.z98 public hub (spec §25.10).
 //
-// The stateless scanner lives in data_scan.zig and the loader/fallback/dump in
-// data_load.zig. This module keeps the historical public names so callers and
-// tests do not need import churn. Mutable probe state is forwarded through
-// wrapper functions; the public err_line copy is refreshed by loadFile.
+// The stateless scanner lives in data_scan.zig, the loader in data_load.zig,
+// the row schemas/parsers in data_schema.zig, the fallback builder in
+// data_fallback.zig, and the dump in data_dump.zig. This module keeps the
+// historical public names so callers and tests do not need import churn.
+// Mutable probe state is forwarded through wrapper functions; the public
+// err_line copy is refreshed by loadFile.
 
 const def = @import("def.zig");
 const scan = @import("data_scan.zig");
+const state = @import("data_state.zig");
+const schema = @import("data_schema.zig");
 const load = @import("data_load.zig");
+const fallback = @import("data_fallback.zig");
+const dump = @import("data_dump.zig");
 const arena_mod = @import("std_arena.zig");
 const buf_mod = @import("std_buf.zig");
 
 pub const MAX_LINE: usize = scan.MAX_LINE;
 pub const ROW_MAX: usize = scan.ROW_MAX;
 pub const RowField = scan.RowField;
-pub const LoadErr = load.LoadErr;
+pub const LoadErr = schema.LoadErr;
 
 // BSS Tables image owned by the data layer; the game/startup loads into this
 // and installs it (§35).
@@ -41,81 +47,81 @@ pub fn parseRowKV(line: []const u8, out: *[ROW_MAX]RowField, n: *usize) bool {
 }
 
 pub fn resetLines() void {
-    load.resetLines();
+    state.resetLines();
 }
 
 pub fn headerSrcLine() i32 {
-    return load.headerSrcLine();
+    return state.headerSrcLine();
 }
 
 pub fn lastSrcLine() i32 {
-    return load.lastSrcLine();
+    return state.lastSrcLine();
 }
 
 pub fn sectionSrcLine(sid: i32) i32 {
-    return load.sectionSrcLine(sid);
+    return state.sectionSrcLine(sid);
 }
 
 pub fn defSrcLine(i: i32) i32 {
-    return load.defSrcLine(i);
+    return state.defSrcLine(i);
 }
 
 pub fn ruleSrcLine(i: i32) i32 {
-    return load.ruleSrcLine(i);
+    return state.ruleSrcLine(i);
 }
 
 pub fn toolSrcLine(i: i32) i32 {
-    return load.toolSrcLine(i);
+    return state.toolSrcLine(i);
 }
 
 pub fn upgradeSrcLine(i: i32) i32 {
-    return load.upgradeSrcLine(i);
+    return state.upgradeSrcLine(i);
 }
 
 pub fn cosmeticSrcLine(i: i32) i32 {
-    return load.cosmeticSrcLine(i);
+    return state.cosmeticSrcLine(i);
 }
 
 pub fn encSrcLine(i: i32) i32 {
-    return load.encSrcLine(i);
+    return state.encSrcLine(i);
 }
 
 pub fn zoneSrcLine(i: i32) i32 {
-    return load.zoneSrcLine(i);
+    return state.zoneSrcLine(i);
 }
 
 pub fn install(t: *def.Tables) void {
-    load.install(t);
+    state.install(t);
 }
 
 pub fn uninstall() void {
-    load.uninstall();
+    state.uninstall();
 }
 
 pub fn buildFallback(out: *def.Tables) void {
-    load.buildFallback(out);
+    fallback.buildFallback(out);
 }
 
 pub fn textKeyKnown(k: []const u8) bool {
-    return load.textKeyKnown(k);
+    return schema.textKeyKnown(k);
 }
 
 pub fn textFind(key: []const u8) ?[]const u8 {
-    return load.textFind(key);
+    return schema.textFind(key);
 }
 
 pub fn textFindIn(t: *const def.Tables, key: []const u8) ?[]const u8 {
-    return load.textFindIn(t, key);
+    return schema.textFindIn(t, key);
 }
 
 pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) LoadErr!void {
     load.loadFile(arena, path, tables) catch |e| {
-        err_line = load.err_line;
+        err_line = state.err_line;
         return e;
     };
-    err_line = load.err_line;
+    err_line = state.err_line;
 }
 
 pub fn dumpDefs(t: *const def.Tables, out: *buf_mod.Buf) void {
-    load.dumpDefs(t, out);
+    dump.dumpDefs(t, out);
 }

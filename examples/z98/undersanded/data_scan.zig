@@ -74,11 +74,11 @@ pub fn classifyLine(line: []const u8) i32 {
 // Comma-separated key=value fields, surrounding spaces trimmed, inner spaces
 // kept. Rejects missing '=', empty key/value, duplicate key, and > ROW_MAX
 // fields. All-or-nothing: out and n are written only on success.
-pub fn parseRowKV(line: []const u8, out: *[80]RowField, n: *usize) bool {
+pub fn parseRowKV(line: []const u8, out: *[ROW_MAX]RowField, n: *usize) bool {
     const s = text_scan.stripCR(line);
     if (s.len > MAX_LINE) return false;
 
-    var tmp: [80]RowField = undefined;
+    var tmp: [ROW_MAX]RowField = undefined;
     var count: usize = 0;
     var start: usize = 0;
     var i: usize = 0;

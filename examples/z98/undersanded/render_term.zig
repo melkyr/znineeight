@@ -13,12 +13,7 @@ const fight = @import("fight.zig");
 const world = @import("world.zig");
 const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
-const dock = @import("dock.zig");
 const items = @import("items.zig");
-const economy = @import("economy.zig");
-const save_ux = @import("save_ux.zig");
-const journal = @import("journal.zig");
-const data = @import("data.zig");
 const render_text = @import("render_text.zig");
 
 pub const COLS: usize = render_text.COLS;
@@ -29,6 +24,34 @@ pub const BAR_WIDTH: i32 = 20;
 pub const LOG_LINES: i32 = 8;
 
 pub const Screen = render_text.Screen;
+
+// Domain-derived values needed by the dock/sub-menu/journal/node screens.
+// nav.zig builds this from dock/economy/journal/data so the renderers below
+// stay free of domain imports; the raw GameState pointer is read-only and only
+// supplies values the renderers already sourced from def/world/tables/items.
+pub const View = struct {
+    screen: i32,
+    g: *const def.GameState,
+    journal_has_new: bool,
+    save_ok: bool,
+    save_block: []const u8,
+    refine_parts: [def.MAX_PARTS]i32,
+    refine_per_part: [def.MAX_PARTS]i32,
+    upgrade_cost: [15]def.CostSlot,
+    upgrade_cost_is_material: [15]bool,
+    cosmetic_status: [def.MAX_COSMETICS]i32,
+    journal_sel: i32,
+    journal_unlocked: [def.MAX_CREATURES]bool,
+    journal_viewed: [def.MAX_CREATURES]bool,
+    journal_text: []const u8,
+    journal_text_found: bool,
+    zone_flavour: []const u8,
+    zone_flavour_found: bool,
+};
+
+pub const COSMETIC_LOCKED: i32 = 0;
+pub const COSMETIC_AVAILABLE: i32 = 1;
+pub const COSMETIC_OWNED: i32 = 2;
 
 const ZERO: u8 = ' ';
 const FILL: u8 = '#';
@@ -56,10 +79,6 @@ fn intInto(out: []u8, start: usize, value: i32) usize {
 
 fn copyInto(out: []u8, start: usize, s: []const u8) usize {
     return render_text.copyInto(out, start, s);
-}
-
-fn keyIntInto(prefix: []const u8, n: i32, out: []u8) []const u8 {
-    return render_text.keyIntInto(prefix, n, out);
 }
 
 pub fn speedRevealed(s: *const def.GameState) bool {
@@ -313,21 +332,22 @@ fn putCost(sc: *Screen, x: i32, y: i32, cost: [3]def.CostSlot) i32 {
     return p;
 }
 
-fn putUpgradeCost(sc: *Screen, x: i32, y: i32, cost: [3]def.CostSlot) i32 {
+fn putUpgradeCost(sc: *Screen, x: i32, y: i32, v: *const View, base: usize) i32 {
     var p = x;
     var any = false;
     var i: usize = 0;
-    while (i < cost.len) : (i += 1) {
-        if (cost[i].kind <= 0 or cost[i].amt <= 0) continue;
+    while (i < 3) : (i += 1) {
+        const slot = v.upgrade_cost[base + i];
+        if (slot.kind <= 0 or slot.amt <= 0) continue;
         if (any) p = put(sc, p, y, ", ");
         any = true;
-        if (cost[i].kind >= economy.MAT_CHITIN and cost[i].kind <= economy.MAT_GLASS) {
-            p = put(sc, p, y, materialName(cost[i].kind));
+        if (v.upgrade_cost_is_material[base + i]) {
+            p = put(sc, p, y, materialName(slot.kind));
         } else {
-            p = put(sc, p, y, partName(cost[i].kind));
+            p = put(sc, p, y, partName(slot.kind));
         }
         p = put(sc, p, y, " x");
-        p = putInt(sc, p, y, cost[i].amt);
+        p = putInt(sc, p, y, slot.amt);
     }
     if (!any) p = put(sc, p, y, "free");
     return p;
@@ -343,7 +363,8 @@ fn putMaterialStat(sc: *Screen, x: i32, y: i32, m: i32, w: *const def.World) i32
     return p;
 }
 
-pub fn renderDock(s: *const def.GameState, sc: *Screen) void {
+pub fn renderDock(v: *const View, sc: *Screen) void {
+    const s = v.g;
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK");
 
@@ -388,19 +409,20 @@ pub fn renderDock(s: *const def.GameState, sc: *Screen) void {
     _ = put(sc, x, 8, toolName(s.world.tool_selected));
 
     _ = put(sc, 0, 10, "[R]efine [U]pgrade [C]raft [B]uy [E]quip [T] Rest [D]epart [Q]uit");
-    if (journal.journalHasNew(&s.world)) {
+    if (v.journal_has_new) {
         _ = put(sc, 0, 11, "New journal entry - [J]ournal");
     }
     _ = put(sc, 0, 12, "Hint: Hull persists between trips; dock Rest is safe.");
-    if (save_ux.canSave(s)) |reason| {
-        var sx = put(sc, 0, 13, "[Esc] Save - ");
-        _ = put(sc, sx, 13, reason);
-    } else {
+    if (v.save_ok) {
         _ = put(sc, 0, 13, "[Esc] Save");
+    } else {
+        var sx = put(sc, 0, 13, "[Esc] Save - ");
+        _ = put(sc, sx, 13, v.save_block);
     }
 }
 
-pub fn renderRefine(s: *const def.GameState, sc: *Screen) void {
+pub fn renderRefine(v: *const View, sc: *Screen) void {
+    const s = v.g;
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK - REFINE");
     _ = put(sc, 0, 1, "Convert all parts of one type. Rare batches need a second press.");
@@ -408,26 +430,30 @@ pub fn renderRefine(s: *const def.GameState, sc: *Screen) void {
     var m: i32 = 1;
     while (m <= 7) : (m += 1) {
         const y = 3 + m - 1;
+        const mi: usize = @intCast(usize, m);
+        const parts = v.refine_parts[mi];
+        const per = v.refine_per_part[mi];
         var x = putInt(sc, 0, y, m);
         x = put(sc, x, y, " ");
         x = put(sc, x, y, partName(m));
         x = put(sc, x, y, " x");
-        x = putInt(sc, x, y, dock.refineParts(s, m));
+        x = putInt(sc, x, y, parts);
         x = put(sc, x, y, " -> ");
-        x = putInt(sc, x, y, dock.refineParts(s, m) * dock.refinePerPart(s, m));
+        x = putInt(sc, x, y, parts * per);
         x = put(sc, x, y, " ");
         x = put(sc, x, y, materialName(m));
         x = put(sc, x, y, " (E");
-        x = putInt(sc, x, y, s.world.expertise[@intCast(usize, m)]);
+        x = putInt(sc, x, y, s.world.expertise[mi]);
         x = put(sc, x, y, ", ");
-        x = putInt(sc, x, y, dock.refinePerPart(s, m));
+        x = putInt(sc, x, y, per);
         _ = put(sc, x, y, "/part)");
     }
 
     _ = put(sc, 0, 12, "[1-7] Refine material  [Esc] Back");
 }
 
-pub fn renderUpgrade(s: *const def.GameState, sc: *Screen) void {
+pub fn renderUpgrade(v: *const View, sc: *Screen) void {
+    const s = v.g;
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK - UPGRADE");
     _ = put(sc, 0, 1, "Buy the next tier of one axis (T2 needs E2, T3 needs E4).");
@@ -447,22 +473,7 @@ pub fn renderUpgrade(s: *const def.GameState, sc: *Screen) void {
             x = put(sc, x, y, " -> T");
             x = putInt(sc, x, y, tier + 1);
             x = put(sc, x, y, ": ");
-            var cost: [3]economy.MaterialAmt = [3]economy.MaterialAmt{
-                .{ .kind = 0, .amt = 0 },
-                .{ .kind = 0, .amt = 0 },
-                .{ .kind = 0, .amt = 0 },
-            };
-            economy.upgradeCost(axis, tier + 1, &cost);
-            var slots: [3]def.CostSlot = [3]def.CostSlot{
-                .{ .kind = 0, .amt = 0 },
-                .{ .kind = 0, .amt = 0 },
-                .{ .kind = 0, .amt = 0 },
-            };
-            var i: usize = 0;
-            while (i < 3) : (i += 1) {
-                slots[i] = def.CostSlot{ .kind = cost[i].kind, .amt = cost[i].amt };
-            }
-            _ = putUpgradeCost(sc, x, y, slots);
+            _ = putUpgradeCost(sc, x, y, v, @intCast(usize, axis) * 3);
         }
     }
 
@@ -497,7 +508,8 @@ fn cosmeticKey(index: i32) u8 {
     return @intCast(u8, 'a' + (index - 9));
 }
 
-pub fn renderBuy(s: *const def.GameState, sc: *Screen) void {
+pub fn renderBuy(v: *const View, sc: *Screen) void {
+    const s = v.g;
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK - BUY");
     var x = put(sc, 0, 1, "Coins: ");
@@ -513,9 +525,10 @@ pub fn renderBuy(s: *const def.GameState, sc: *Screen) void {
         var p = put(sc, 2, y, row.name);
         p = put(sc, p, y, " ");
         p = putInt(sc, p, y, row.price);
-        if (dock.cosmeticOwned(&s.world, idx)) {
+        const status = v.cosmetic_status[@intCast(usize, idx)];
+        if (status == COSMETIC_OWNED) {
             _ = put(sc, p, y, " (owned)");
-        } else if (!dock.cosmeticUnlocked(&s.world, idx)) {
+        } else if (status == COSMETIC_LOCKED) {
             _ = put(sc, p, y, " (locked)");
         } else {
             _ = put(sc, p, y, " (available)");
@@ -692,23 +705,21 @@ fn putTextBlock(sc: *Screen, y0: i32, s: []const u8, y_limit: i32) void {
 
 // Journal list: entry i uses key i+1 (digit 1-9, then a-j). Locked entries
 // stay unnamed; unlocked-but-unviewed entries carry a '*'.
-pub fn renderJournal(s: *const def.GameState, sel: i32, sc: *Screen) void {
+pub fn renderJournal(v: *const View, sc: *Screen) void {
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  JOURNAL");
 
-    if (sel > 0) {
-        const d = sel - 1;
+    if (v.journal_sel > 0) {
+        const d = v.journal_sel - 1;
         var x = put(sc, 0, 1, "Entry ");
-        x = putInt(sc, x, 1, sel);
+        x = putInt(sc, x, 1, v.journal_sel);
         x = put(sc, x, 1, ": ");
         if (d >= 0 and d < creatures.defCount()) {
             var cdef = creatures.defAt(d);
             _ = put(sc, x, 1, creatureName(&cdef));
         }
-        var key_buf: [24]u8 = undefined;
-        const key = journal.journalKey(d, key_buf[0..]);
-        if (data.textFind(key)) |text| {
-            putTextBlock(sc, 3, text, ROWS - 2);
+        if (v.journal_text_found) {
+            putTextBlock(sc, 3, v.journal_text, ROWS - 2);
         } else {
             _ = put(sc, 0, 3, "(entry text unavailable)");
         }
@@ -726,10 +737,11 @@ pub fn renderJournal(s: *const def.GameState, sel: i32, sc: *Screen) void {
             putChar(sc, 0, y, @intCast(u8, 'a' + (d - 9)));
         }
         x = put(sc, 2, y, " ");
-        if (journal.journalUnlocked(&s.world, d)) {
+        const di: usize = @intCast(usize, d);
+        if (v.journal_unlocked[di]) {
             var cdef = creatures.defAt(d);
             x = put(sc, x, y, creatureName(&cdef));
-            if (!journal.journalViewed(&s.world, d)) {
+            if (!v.journal_viewed[di]) {
                 _ = put(sc, x, y, "  *NEW*");
             }
         } else {
@@ -746,7 +758,8 @@ pub fn renderHelp(text: []const u8, sc: *Screen) void {
 
 
 
-pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
+pub fn renderNode(v: *const View, sc: *Screen) void {
+    const s = v.g;
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  NODE");
     _ = put(sc, 0, 2, zoneName(s.exp.zone));
@@ -772,10 +785,8 @@ pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
     }
     _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");
 
-    var zkey: [24]u8 = undefined;
-    const ztext = keyIntInto("zone.", s.exp.zone + 1, zkey[0..]);
-    if (data.textFind(ztext)) |flavour| {
-        putTextBlock(sc, 11, flavour, ROWS - 1);
+    if (v.zone_flavour_found) {
+        putTextBlock(sc, 11, v.zone_flavour, ROWS - 1);
     }
 }
 

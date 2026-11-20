@@ -279,9 +279,11 @@ fn tJournalScreenAndOpen() bool {
     game.newGame(&g);
     journal.journalOnFightEnd(&g.world, 0);
     var sc: render.Screen = undefined;
+    var v: render.View = undefined;
     var buf: [8192]u8 = undefined;
 
-    render.renderJournal(&g, 0, &sc);
+    nav.prepareJournal(&g, 0, &v);
+    render.renderJournal(&v, &sc);
     var text = render.dump(&sc, buf[0..]);
     if (!contains(text, "UNDERSANDED  JOURNAL")) return false;
     if (!contains(text, "Mystic Eel")) return false;
@@ -299,7 +301,8 @@ fn tJournalScreenAndOpen() bool {
     _ = nav.navStep(&g, &st, input.Key{ .ch = '1', .code = 0 });
     if (st.journal_sel != 1) return false;
     if (!journal.journalViewed(&g.world, 0)) return false;
-    render.renderJournal(&g, st.journal_sel, &sc);
+    nav.prepareJournal(&g, st.journal_sel, &v);
+    render.renderJournal(&v, &sc);
     text = render.dump(&sc, buf[0..]);
     if (!contains(text, "I saw a Mystic Eel")) return false;
     return !journal.journalHasNew(&g.world);
@@ -310,17 +313,21 @@ fn tZoneFlavour() bool {
     game.newGame(&g);
     g.exp.zone = 1;
     var sc: render.Screen = undefined;
+    var v: render.View = undefined;
     var buf: [8192]u8 = undefined;
-    render.renderNode(&g, &sc);
+    nav.prepareNode(&g, &v);
+    render.renderNode(&v, &sc);
     if (!contains(render.dump(&sc, buf[0..]), "The Reef is louder than it looks")) return false;
 
     g.exp.zone = 8;
-    render.renderNode(&g, &sc);
+    nav.prepareNode(&g, &v);
+    render.renderNode(&v, &sc);
     if (!contains(render.dump(&sc, buf[0..]), "The Derelict rests where the trench forgets to end")) return false;
 
     // Z4 flavour is deferred to M13: the name renders, no paragraph.
     g.exp.zone = 3;
-    render.renderNode(&g, &sc);
+    nav.prepareNode(&g, &v);
+    render.renderNode(&v, &sc);
     if (contains(render.dump(&sc, buf[0..]), "Trench-Edge drops without warning")) return false;
     return true;
 }

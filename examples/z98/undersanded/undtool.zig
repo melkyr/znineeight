@@ -232,11 +232,15 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
 
     var sc: render.Screen = undefined;
     if (eq(screen_id, "dock")) {
-        render.renderDock(&s, &sc);
+        var v: render.View = undefined;
+        nav.prepareDock(&s, &v);
+        render.renderDock(&v, &sc);
     } else if (eq(screen_id, "map")) {
         render.renderMap(&s, &sc);
     } else if (eq(screen_id, "node")) {
-        render.renderNode(&s, &sc);
+        var v: render.View = undefined;
+        nav.prepareNode(&s, &v);
+        render.renderNode(&v, &sc);
     } else if (eq(screen_id, "lore")) {
         render.renderLore(save_ux.manualPageOne(), &sc);
     } else if (eq(screen_id, "menu")) {
@@ -246,7 +250,9 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
         render.renderHelp(journal.helpPage(10) orelse "(manual text unavailable)", &sc);
     } else if (eq(screen_id, "journal")) {
         // Fresh install: every entry is still "- unrecorded -".
-        render.renderJournal(&s, 0, &sc);
+        var v: render.View = undefined;
+        nav.prepareJournal(&s, 0, &v);
+        render.renderJournal(&v, &sc);
     } else {
         return null;
     }
