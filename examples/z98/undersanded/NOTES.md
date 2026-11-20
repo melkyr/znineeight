@@ -2068,9 +2068,11 @@ encoded ≤ 6,044 B (bg_d) ≤ 120 KB. All 26 A files total 62,956 B encoded
 ### M11 amendment review (M10 Task 6)
 
 Reviewed `2026-11-12-undersanded-m11-boss-score-plan.md` at `4e2c6a4a`
-against the M10 artifacts and spec §15/§19/§30. Verdict: **no design
-amendment needed**; the plan's boss/boat/score ownership matches the landed
-M10 split. The plan-text clarifications are recorded below.
+against the M10 artifacts and spec §15/§19/§30. Verdict: **amendment
+required** for M11's file-list/bookkeeping gaps; **no boss or score design
+change** is needed, and the plan's boss/boat/score ownership matches the
+landed M10 split. The required amendments and plan-text clarifications are
+recorded below.
 
 **Boss contract confirmed.** `assets/out/boss00.zsp` header is **96×96**,
 key 255, ramp **10**; `assets/assets.man` has
@@ -2090,9 +2092,11 @@ ramp 1, allowed `0,1,10`), and the nine 64×64 cosmetic overlays
 `dec_barn`, `dec_sqid`, `dec_boss`). `assets.zig`'s `A_NAMES` pins the
 same order. M11 should note the loader currently exposes `spriteForDef`
 only; boss V rows have symbolic ids (`var_def_ids = -1`), so
-`spriteForDef(17)` always returns Armor. M11 needs a variant/overlay lookup
-(an `assets.zig` addition) or must use the pinned V order; this is M11
-implementation work, not an M10 data gap.
+`spriteForDef(17)` always returns Armor, and the overlays have no
+name/index accessor. **Amendment required:** M11 Task 4 needs boss-variant
+and overlay sprites, so the M11 plan must add `assets.zig` to its File
+Structure (or pin an equivalent accessor contract). This is an M11 plan
+file-list gap, not an M10 data gap.
 
 **Boat/score ownership confirmed.** `assets/out/boat00.zsp` and the nine
 overlay `.zsp` files are committed and validated. M10 wires only creature
@@ -2103,7 +2107,17 @@ the blit order (base -> paint ramp -> decal -> figurehead -> flag), the
 overlays, the boss screen, and the three-panel score/Field Record remain
 M11-owned.
 
-**M11 plan text: stale/contradictory, no design change.**
+**Boat paint amendment (M11).** The authored `boat00` outer hull body bbox is
+**x=30, y=42, w=153, h=67** (inclusive coordinates). Hull paint swaps the
+hull **ramp-0 shades 5/10/15** only (outline shade 0 and porthole ramp 1
+stay). The source mapping is **not** a plain `from_ramp`/`to_ramp` for all
+three paints: **Abyss Teal maps to ramp 1**; **Foam White** and
+**Leviathan Black** are **ramp-0 light/dark shade remaps**, so M11 must pin
+the exact shade LUT before Task 4. This is an M11 amendment, not a design
+change now.
+
+**M11 plan text: required amendments + stale/contradictory items (no design
+change).**
 
 - The plan's "`boss00` sprite × 5 ramp recolors" and "boss screen (5 ramp
   recolors)" are realized by the base/Armor row plus four V rows (above).
@@ -2114,9 +2128,11 @@ M11-owned.
   `save_scan.zig`); `runReset` is an M5 `world.zig` function, not a saved
   field. M11 Task 0 already states the correct `runReset` check.
 - M11's File Structure lists `boss.zig`, `score.zig`, `render_art.zig`,
-  `render_term.zig`, tests/goldens but not `assets.zig`; the boss-variant
-  lookup above will need that file (or an equivalent). File-list addition
-  only.
+  `render_term.zig`, tests/goldens but not `assets.zig`. **Amendment
+  required:** add `assets.zig` (or pin an equivalent accessor contract),
+  because current `spriteForDef(17)` returns only the base/Armor boss, boss
+  V rows parse with `def_id=-1`, and overlays have no name/index accessor;
+  M11 Task 4 needs boss-variant and overlay sprites.
 - Tiebreak reminder (not a contradiction): `World.boat` indices are H=0,
   S=1, C=2, O=3, P=4 (`world.zig`), while the required variant tiebreak is
   H>P>C>O>S. M11's pinned helper must encode the tiebreak order explicitly,
