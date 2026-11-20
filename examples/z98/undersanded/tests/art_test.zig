@@ -729,7 +729,9 @@ fn tMalformedVManifestFallsBack() bool {
     if (!assets.load(MAL_DIR) or !assets.available()) return false;
 
     // V base must be a decoded creature A row, not a lazily loaded background.
-    if (!writeManifestVariant(MAL_DIR, "V id2 eel00 6 1", "V id2 bg_a  1 5")) return false;
+    // from_ramp 0 matches the background base's un-decoded runtime ramp slot,
+    // so only the isCreatureA guard can reject this row.
+    if (!writeManifestVariant(MAL_DIR, "V id2 eel00 6 1", "V id2 bg_a  0 5")) return false;
     if (assets.load(MAL_DIR)) return false;
     if (assets.available()) return false;
 

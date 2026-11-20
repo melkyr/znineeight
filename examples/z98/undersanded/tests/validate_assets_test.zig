@@ -217,6 +217,38 @@ fn buildWideBg(spec: validate_assets.AssetSpec, out: []u8) usize {
     return len;
 }
 
+fn buildBgWithColours(spec: validate_assets.AssetSpec, colours: usize, out: []u8) usize {
+    const w: usize = @intCast(usize, spec.w);
+    const h: usize = @intCast(usize, spec.h);
+    const total: usize = w * h;
+    if (total > g_pix.len or colours == 0 or colours > 255) return 0;
+    var i: usize = 0;
+    while (i < total) : (i += 1) g_pix[i] = @intCast(u8, (i % colours) + 1);
+
+    const n = zsp.zspCanonicalEncode(g_pix[0..total], spec.w, spec.h, g_enc[0..]);
+    if (n == 0) return 0;
+    const len = 16 + 512 + n;
+    if (len > out.len) return 0;
+    out[0] = 'Z';
+    out[1] = 'S';
+    out[2] = 'P';
+    out[3] = '1';
+    wr16(out, 4, @intCast(u16, spec.w));
+    wr16(out, 6, @intCast(u16, spec.h));
+    out[8] = 255;
+    out[9] = firstRamp(spec.allowed_ramps);
+    wr16(out, 10, 0);
+    out[12] = 0;
+    out[13] = 0;
+    out[14] = 0;
+    out[15] = 0;
+    i = 0;
+    while (i < 256) : (i += 1) wr16(out, 16 + i * 2, palette.RGB565[i]);
+    i = 0;
+    while (i < n) : (i += 1) out[528 + i] = g_enc[i];
+    return len;
+}
+
 fn writeFile(dir: []const u8, name: []const u8, suffix: []const u8, buf: []const u8) bool {
     var path_buf: [600]u8 = undefined;
     const path = makePath(dir, name, suffix, path_buf[0..]) orelse return false;
@@ -439,6 +471,23 @@ fn tBackgroundRejectsKeyPixel() bool {
     return validate_assets.validateAsset(g_buf[0..len], spec) == .BadKey;
 }
 
+// Non-vacuity: the same synthetic background shape is accepted at 8 distinct
+// colours and rejected at 9. Removing the <=8 guard would make the 9-colour
+// case return Ok and fail this test.
+fn tBackgroundRejectsTooManyColours() bool {
+    const spec = validate_assets.EXPECTED_A[BG_A_INDEX];
+    ensureDir(BG_KEY_DIR);
+
+    const ok_len = buildBgWithColours(spec, 8, g_buf[0..]);
+    if (ok_len == 0) return false;
+    if (validate_assets.validateAsset(g_buf[0..ok_len], spec) != .Ok) return false;
+
+    const len = buildBgWithColours(spec, 9, g_buf[0..]);
+    if (len == 0) return false;
+    if (!writeFile(BG_KEY_DIR, "bg_9col", ".zsp", g_buf[0..len])) return false;
+    return validate_assets.validateAsset(g_buf[0..len], spec) == .BadColours;
+}
+
 fn argz(buf: []u8, s: []const u8) [*]u8 {
     var i: usize = 0;
     while (i < s.len) : (i += 1) buf[i] = s[i];
@@ -507,6 +556,7 @@ pub fn main() void {
     report("asset_rejects_noncanonical_rle", tNonCanonical());
     report("asset_rejects_missing_creature_border", tBadBorder());
     report("asset_rejects_background_key_pixel", tBackgroundRejectsKeyPixel());
+    report("asset_rejects_background_too_many_colours", tBackgroundRejectsTooManyColours());
 
     report("manifest_accepts_full_ledger", tManifestGood());
     report("manifest_rejects_bad_8_3_name", tManifestBadName());
