@@ -1874,3 +1874,145 @@ Behaviour-preserving structural cut; all M1–M9 goldens stay byte-identical.
   ramps, and def→base/V coverage.
 - **Budget:** indexed (distinct A rows) ≤1.35 MB; indexed+LUTs ≤2 MB; each
   background encoded ≤120 KB; demo RLE disk ≤400 KB.
+
+### M10 Task 0 preflight — expected A table, ledger, budgets
+
+Baseline at `7c2d6901` (branch `undersanded/m10`): `TIER_M9 PASS 67/0`
+(1 Wine evidence skip), log `/tmp/m10_base.log`. Task 0 changes only this file
+and creates the empty `assets/` + `assets/out/` skeletons; no product code, no
+plan/spec edit, no side fix.
+
+**Palette contract (P29, unchanged).** Each ramp anchors at shade indices
+**0/5/10/15** (Dark/Mid/Light/Hi). Intermediate shades are 8-bit linear
+interpolation with integer round-to-nearest:
+`c(i) = (c0*(a1-i) + c1*(i-a0) + (a1-a0)/2) / (a1-a0)`. RGB565 uses
+round-to-nearest: `r5=(r*31+127)/255`, `g6=(g*63+127)/255`,
+`b5=(b*31+127)/255`. Index **255 is the transparent key**, not ramp-15
+shade-15; ramp 15 has 15 usable shades, recolor `to_ramp==15 && shade==15`
+uses `base[254]`, and `out[255] = base[255]` always.
+
+**Boss contract.** `boss00` is **96×96** with header ramp **10** (Armor);
+`id=17` maps directly to `A boss00` with **no** V row. Four boss V rows use
+`base8.3=boss00`, `from_ramp=10`: `boss00:sliver 10->2`,
+`boss00:hoard 10->4`, `boss00:drown 10->13`, `boss00:blur 10->5`. There is no
+identity boss V row. The available 160×160 ramp-14 boss SVG is **not** the M10
+source and must not be copied.
+
+**Expected A table (validator `AssetSpec`).** These values are hardcoded in
+`validate_assets.zig`; the manifest is never trusted for them. `kind` tokens
+pinned for Tasks 2/3 are `creature`, `bg`, `boat`, `overlay`.
+`allowed_ramps_csv` is decimal ramp indices, comma-separated, no spaces; it is
+the union of ramps used by the source fills plus the mandatory stage-5
+ramp-0/shade-0 outline for alpha sprites (backgrounds are opaque and get no
+outline). Source fills came from the read-only ignored document
+`/workspace/znineeight/examples/undersanded_assets.txt` (not added or committed).
+
+| A name | kind | w | h | allowed_ramps_csv |
+| :--- | :--- | --: | --: | :--- |
+| `eel00` | creature | 96 | 96 | `0,6` |
+| `tuna00` | creature | 96 | 96 | `0,7` |
+| `crab00` | creature | 96 | 96 | `0,5,8` |
+| `jelly00` | creature | 96 | 96 | `0,5,9` |
+| `barn00` | creature | 96 | 96 | `0,10` |
+| `anem00` | creature | 96 | 96 | `0,4,11` |
+| `ray00` | creature | 96 | 96 | `0,3,12` |
+| `squid00` | creature | 96 | 96 | `0,13` |
+| `angler00` | creature | 96 | 96 | `0,4,9,14` |
+| `wrasse00` | creature | 96 | 96 | `0,15` |
+| `boss00` | creature | 96 | 96 | `0,2,4,10` |
+| `bg_a` | bg | 640 | 300 | `0,1,14` |
+| `bg_b` | bg | 640 | 300 | `0,1,6,8,14` |
+| `bg_c` | bg | 640 | 300 | `0,1,3,5,6,10,15` |
+| `bg_d` | bg | 640 | 300 | `2,4,10,14` |
+| `bg_dock` | bg | 640 | 300 | `0,1,2,4,10,14` |
+| `boat00` | boat | 200 | 150 | `0,1,10` |
+| `fig_merm` | overlay | 64 | 64 | `0,14` |
+| `fig_angl` | overlay | 64 | 64 | `0,4,14` |
+| `fig_krak` | overlay | 64 | 64 | `0,4` |
+| `flag_pen` | overlay | 64 | 64 | `0,9,14` |
+| `flag_ref` | overlay | 64 | 64 | `0,5,8,14` |
+| `flag_trn` | overlay | 64 | 64 | `0,6,10` |
+| `dec_barn` | overlay | 64 | 64 | `0,10` |
+| `dec_sqid` | overlay | 64 | 64 | `0,13` |
+| `dec_boss` | overlay | 64 | 64 | `0,2,14` |
+
+Notes on the derivation (Task 3 must author/verify per §30; Task 0 does not
+change source art):
+
+- `boss00` is the required 96×96 ramp-10 re-authoring: the ramp-14 body fills
+  become ramp 10, the sensor eye stays ramp 2, the amber lamps stay ramp 4, and
+  outline stays ramp 0. Do not carry ramp 14 into the asset.
+- `dec_barn` (`#A8B2BA`, `#3A4248`) and `dec_sqid` (`#CCE4F4`, `#44607A`) have
+  no source stroke; ramp 0 is allowed for the uniform stage-5 outline.
+- `bg_d` uses only ramps 2/4/10/14; it has no ramp-0 fill, so ramp 0 is not in
+  its allowed set.
+- Source-vs-plan deviations to resolve in Task 3 (recorded, not fixed here):
+  `bg_dock.svg` is authored 640×480 with 17 unique colours while the plan/spec
+  require 640×300 / ≤8 colours; `bg_b.svg` has 10 colours and `bg_c.svg` has 9
+  (both must drop to ≤8); `boat00.svg` uses `#D8E2EA`, which is not a locked
+  palette hex (ramp-0 hi is `#9AAABA`), so it must snap to a locked ramp-0
+  shade; `boat00.svg` portholes are `<circle>` and must become 16/12/8-sided
+  polygons. The allowed sets above are safe supersets for those corrections.
+
+**A/V/F ledger (binding).**
+
+- A rows: exactly the 26 names in the table above (11 creature bases, 5 demo
+  backgrounds, `boat00`, 9 cosmetic overlays).
+- V rows: exactly 12. Non-flex: `id2 eel00 6->1`, `id3 eel00 6->5`,
+  `id5 tuna00 7->14`, `id6 tuna00 7->10`, `id11 crab00 8->11`,
+  `id12 jelly00 9->5`. Flex: `id18 anem00 11->5`, `id19 tuna00 7->1`.
+  Boss: `boss00:sliver 10->2`, `boss00:hoard 10->4`, `boss00:drown 10->13`,
+  `boss00:blur 10->5`.
+- F row: `F font8x16 95 16` (not a `.ZSP`; never expect `font8x16.zsp`).
+- Base identity rows (no V): `id1->eel00`, `id4->tuna00`, `id7->crab00`,
+  `id8->jelly00`, `id9->barn00`, `id10->anem00`, `id13->ray00`,
+  `id14->squid00`, `id15->angler00`, `id16->wrasse00`, `id17->boss00`.
+- Every demo def has exactly one mapping (identity A or one V); every V base is
+  an A row; `from_ramp` equals the base `.ZSP` header ramp; no orphan or
+  duplicate V. `A` is the only indexed-byte source; each `V` adds only a
+  512-byte LUT.
+
+**Budgets (binding).** Indexed bytes = `sum(w*h)` over distinct A rows
+(recolors/boss V rows never multiply base pixels). With the table dimensions:
+11×96×96 = 101,376; 5×640×300 = 960,000; 200×150 = 30,000; 9×64×64 = 36,864;
+total **1,128,240 B (~1.08 MiB) ≤ 1.35 MB**. LUT bytes = 512×(26 A + 12 V) =
+**19,456 B**; indexed + LUTs = **1,147,696 B (~1.09 MiB) ≤ 2 MB** sprite
+arena. Each background encoded ≤120 KB; demo RLE disk ≤400 KB; both measured
+after Task 3 conversion. (For reference, §35's roll-up adds font 12 KB and UI
+chrome 60 KB to reach ~1.2 MB indexed + ~6 KB of V LUTs.)
+
+**P19 — no committed tooling outside Z98 + shell.** The SVG→`.ZSP` converter is
+transitory and uncommitted; it never enters the repo and is never a build/test
+dependency. Artifacts of record are the SVG sources, the `.ZSP` files, and
+`assets.man`; CI's only asset gate is the committed Z98
+`undtool --validate-assets`.
+
+**Regeneration recipe (stub; one paragraph, incl. canonical RLE rule).**
+Rasterize each SVG at its declared target size 1:1 with `rsvg-convert` (no
+resampling), composite on ramp-0 shade-0 and map `alpha<128` to index 255,
+enforce the 1px ramp-0/shade-0 outline around the alpha mask, assert every
+pixel is inside the asset's allowed ramps ∪ key, then encode canonical RLE —
+one run per maximal stretch, count 1..255, greedy 255 split for longer
+stretches — into the `.ZSP` header (`ZSP1`, w/h u16 LE, key u8, ramp u8,
+flags=0, reserved=0) + 512-byte RGB565 palette + data runs. The converter is a
+throwaway host script; `undtool --validate-assets` re-decodes, re-encodes and
+byte-compares the data section, so the canonical rule is the single contract.
+
+**Font verification (do not re-import).** `font8x16.zig` is landed and
+verified: `GLYPH_COUNT = 95`, `GLYPHS = [95][16]u8` (95 glyph rows, each
+exactly 16 bytes), ASCII 32..126, 8×16, MSB-left. Provenance recorded in its
+header: IBM VGA/MCGA ROM 8×16 font, file `VGA8.F16` from VileR's public-domain
+VGA text-mode font collection (`FONTS/PC-IBM/VGA8.F16`), URL
+`https://raw.githubusercontent.com/viler-int10h/vga-text-mode-fonts/master/FONTS/PC-IBM/VGA8.F16`,
+sha256 `a8bad6fd78475a6bc2a05438c19207a9bb8c0f4f4099f60384e158cdc3eba580`.
+No font was generated or re-imported in M10.
+
+**Scope.** M10 wires creature sprites + one resident zone background into the
+art fight (backgrounds are wired in M10). Boat render, cosmetic overlays, and
+the score screen stay **M11**; `boat00` is authored/validated in M10 but not
+rendered. `render_art` stays pure (no file I/O). `art_fight.golden` is re-pinned
+exactly once in Task 4 and the M9 tier comment is updated to say M10 re-pinned
+it; terminal/M8/M9 `--dump-grid` goldens stay byte-identical.
+
+**Skeletons.** `assets/` (SVG sources) and `assets/out/` (`.ZSP` outputs) are
+created empty in this task; contents land in Task 3.
