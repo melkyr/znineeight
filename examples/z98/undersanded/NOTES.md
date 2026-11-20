@@ -1827,3 +1827,26 @@ Mechanical smell cut; all M1–M9 goldens stay byte-identical.
   owns generating the compiled-in fallback and any split/decoupling.
 - **Gate:** `tests/quality_smells.sh` (grep + LOC, shell only) runs as a
   required case in `tests/tier_m9_px.sh`.
+
+### M9 Task 9 phase 1: generated fallback + module splits
+
+Behaviour-preserving structural cut; all M1–M9 goldens stay byte-identical.
+
+- **Content single source:** `undtool --emit-fallback <outdir>` loads
+  `data.z98` and writes `<outdir>/fallback_rows.zig` (deterministic; no
+  timestamps). The checked-in `fallback_rows.zig` is that output;
+  `creatures_t1.zig` and `tables_t1.zig` consume it and keep their public API
+  (`DEFS`, `defAt`, `defCount`, `rules`, `rows`, `tools`, `upgrades`,
+  `cosmetics`, `zoneCost`, `zoneIsBoss`, override behavior). `tests/tier_m9_px.sh`
+  regenerates twice, proves determinism, and `cmp`s against the checked-in file.
+- **Splits:** `render_text.zig` owns the cell canvas + log/tool/modal/help copy
+  (render_term and render_art import it); `fight_rules.zig` + `fight_tools.zig`
+  own derived-stat/effect math and equipped-tool predicates; `data_scan.zig` +
+  `data_load.zig` split the scanner and loader (`data.zig` is the hub);
+  `save_scan.zig` + `save_io.zig` split the read path and image builder
+  (`persist.zig` is the hub and keeps the `fs_*` seams).
+- **Z98 note:** aliases to functions (`pub const f = sub.f`) emit invalid C
+  globals in this compiler, so hubs use thin forwarding wrappers; constants and
+  array values still alias directly. Array sizes in `data_scan` use literal
+  `80` because a module-local `pub const` size failed constant evaluation in
+  some import chains.

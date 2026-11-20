@@ -304,6 +304,34 @@ if [ "$NIX_OK" -eq 1 ]; then
     cp "$DATA" "$NATIVE/data.z98"
     dump_one lore
     dump_one help
+    # --emit-fallback must reproduce the checked-in module byte-for-byte, and
+    # two runs must agree (deterministic; no timestamps).
+    FALLBACK_A="$OUT"
+    FALLBACK_B="$OUT/fallback_b"
+    mkdir -p "$FALLBACK_A" "$FALLBACK_B"
+    if ( cd "$NATIVE" && timeout 120 ./undtool.nix --emit-fallback "$FALLBACK_A" ) \
+        >"$OUT/fallback_a.err" 2>&1; then
+        pass_case "--emit-fallback ran natively"
+    else
+        fail_case "--emit-fallback failed (see $OUT/fallback_a.err)"
+    fi
+    if ( cd "$NATIVE" && timeout 120 ./undtool.nix --emit-fallback "$FALLBACK_B" ) \
+        >"$OUT/fallback_b.err" 2>&1; then
+        pass_case "--emit-fallback rerun ran natively"
+    else
+        fail_case "--emit-fallback rerun failed (see $OUT/fallback_b.err)"
+    fi
+    if cmp -s "$FALLBACK_A/fallback_rows.zig" "$FALLBACK_B/fallback_rows.zig"; then
+        pass_case "--emit-fallback output is deterministic (two runs byte-identical)"
+    else
+        fail_case "--emit-fallback output differs between runs"
+    fi
+    if cmp -s "$FALLBACK_A/fallback_rows.zig" "$UNDDIR/fallback_rows.zig"; then
+        pass_case "--emit-fallback matches checked-in fallback_rows.zig (cmp)"
+    else
+        fail_case "--emit-fallback drifted from checked-in fallback_rows.zig"
+        diff -u "$UNDDIR/fallback_rows.zig" "$FALLBACK_A/fallback_rows.zig" 2>/dev/null | indent
+    fi
     rm -f "$NATIVE/data.z98"
     for s in fight dock map node menu journal; do
         dump_one "$s"

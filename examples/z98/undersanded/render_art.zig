@@ -13,6 +13,7 @@ const def = @import("def.zig");
 const fight = @import("fight.zig");
 const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
+const render_text = @import("render_text.zig");
 const font = @import("font8x16.zig");
 const px = @import("std_gfx_px_core.zig");
 
@@ -258,7 +259,7 @@ pub fn layoutFight(s: *const def.GameState, out: *[MAX_WIDGETS]Widget) i32 {
         var d = creatures.defAt(s.fight.def_index);
         role = d.role;
         cond = s.fight.cond;
-        if (render.speedRevealed(s)) spd = render.effectiveSpeed(s, &d);
+        if (render_text.speedRevealed(s)) spd = render.effectiveSpeed(s, &d);
     }
     out[@intCast(usize, n)] = makeWidget(STATS_X, 40, 520, 24, W_STATS,
         spd, role, s.fight.def_index, 0, cond);
@@ -382,7 +383,7 @@ fn sameWidget(a: *const Widget, b: *const Widget) bool {
         and a.text_off == b.text_off and a.sprite == b.sprite;
 }
 
-fn drawScreenBlock(sf: *px.Surface, sc: *const render.Screen,
+fn drawScreenBlock(sf: *px.Surface, sc: *const render_text.Screen,
     panel: Rect, center: bool, fg: u16, bg: u16) void {
     var minx: i32 = 10000;
     var maxx: i32 = -1;
@@ -458,7 +459,7 @@ fn drawHud(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
     p = catInt(buf[0..], p, s.world.money);
     drawText(sf, w.x + 4, w.y, buf[0..p], C_TITLE, C_PANEL);
 
-    var sc: render.Screen = undefined;
+    var sc: render_text.Screen = undefined;
     render.clear(&sc);
     render.renderToolStatus(&sc, s, 0);
     drawScreenBlock(sf, &sc, Rect{ .x = 4, .y = 16, .w = 632, .h = 16 },
@@ -545,7 +546,7 @@ fn drawLogLine(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void 
 }
 
 pub fn logLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
-    return render.msgLine(e, d, out);
+    return render_text.msgLine(e, d, out);
 }
 
 fn drawButton(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
@@ -586,7 +587,7 @@ fn drawModal(sf: *px.Surface, s: *const def.GameState) void {
     px.pxCoreFill(sf, panel.x, panel.y, panel.w, panel.h, C_PANEL);
     drawDottedRect(sf, panel.x, panel.y, panel.w, panel.h, C_BORDER);
 
-    var sc: render.Screen = undefined;
+    var sc: render_text.Screen = undefined;
     render.clear(&sc);
     var d: def.CreatureDef = undefined;
     if (defValid(s)) {
@@ -594,14 +595,14 @@ fn drawModal(sf: *px.Surface, s: *const def.GameState) void {
     } else {
         d = creatures.defAt(0);
     }
-    render.renderModal(&sc, s, &d);
+    render_text.renderModal(&sc, s, &d);
     drawScreenBlock(sf, &sc, panel, true, C_TEXT, C_PANEL);
 }
 
 fn drawHelp(sf: *px.Surface, help_text: []const u8) void {
     px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
-    var sc: render.Screen = undefined;
-    render.renderHelp(help_text, &sc);
+    var sc: render_text.Screen = undefined;
+    render_text.renderHelp(help_text, &sc);
     drawScreenBlock(sf, &sc,
         Rect{ .x = 0, .y = 0, .w = def.SCREEN_W, .h = def.SCREEN_H },
         false, C_TEXT, C_BG);

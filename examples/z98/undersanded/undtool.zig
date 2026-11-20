@@ -34,6 +34,7 @@ const data = @import("data.zig");
 const content_boot = @import("content_boot.zig");
 const persist = @import("persist.zig");
 const text_scan = @import("text_scan.zig");
+const fallback_emit = @import("fallback_emit.zig");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
@@ -50,11 +51,80 @@ var g_content_arena_buf: [256 * 1024]u8 = undefined;
 // temp image must both stay intact for the byte compare.
 var g_rt_arena_buf: [256 * 1024]u8 = undefined;
 
+// --emit-fallback writes through a separate arena so the loaded content arena
+// stays untouched for the deterministic source dump.
+var g_emit_arena_buf: [256 * 1024]u8 = undefined;
+
 fn tryLoadContent() void {
     var dir_buf: [512]u8 = undefined;
     const dir = paths.resolveDataDir(dir_buf[0..]);
     var arena = arena_mod.init(g_content_arena_buf[0..]);
     _ = content_boot.loadFromDir(&arena, &data.g_tables, dir);
+}
+
+fn joinOutPath(dir: []const u8, name: []const u8, out: []u8) ?[]const u8 {
+    var sep: u8 = '/';
+    if (@isWindows()) sep = '\\';
+
+    var need: usize = name.len;
+    var add_sep = false;
+    if (dir.len > 0) {
+        need += dir.len;
+        const last = dir[dir.len - 1];
+        if (last != '/' and last != '\\') {
+            add_sep = true;
+            need += 1;
+        }
+    }
+    if (need > out.len) return null;
+
+    var at: usize = 0;
+    var i: usize = 0;
+    while (i < dir.len) : (i += 1) {
+        out[at] = dir[i];
+        at += 1;
+    }
+    if (add_sep) {
+        out[at] = sep;
+        at += 1;
+    }
+    i = 0;
+    while (i < name.len) : (i += 1) {
+        out[at] = name[i];
+        at += 1;
+    }
+    return out[0..need];
+}
+
+// Load data.z98 (never the compiled fallback) and write the checked-in Z98
+// module. 0 = written, 2 = load/write failure.
+fn emitFallback(outdir: []const u8) i32 {
+    var dir_buf: [512]u8 = undefined;
+    const dir = paths.resolveDataDir(dir_buf[0..]);
+    var load_arena = arena_mod.init(g_content_arena_buf[0..]);
+    const boot = content_boot.loadFromDir(&load_arena, &data.g_tables, dir);
+    if (boot.result != .Loaded) {
+        fail("undtool: --emit-fallback cannot load data.z98");
+        return 2;
+    }
+
+    var arena = arena_mod.init(g_emit_arena_buf[0..]);
+    var out = buf_mod.initCapacity(&arena, 128 * 1024) catch {
+        fail("undtool: --emit-fallback out of memory");
+        return 2;
+    };
+    fallback_emit.emit(&data.g_tables, &out);
+
+    var path_buf: [600]u8 = undefined;
+    const path = joinOutPath(outdir, "fallback_rows.zig", path_buf[0..]) orelse {
+        fail("undtool: --emit-fallback output path too long");
+        return 2;
+    };
+    file_mod.writeAll(path, buf_mod.slice(&out)) catch {
+        fail("undtool: --emit-fallback write failed");
+        return 2;
+    };
+    return 0;
 }
 
 const TOKEN_ROWS = [_]TokenRow{
@@ -362,6 +432,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_dump_grid = false;
     var have_dump_defs = false;
     var have_save_roundtrip = false;
+    var have_emit_fallback = false;
     var have_screen = false;
     var have_play = false;
     var have_fight = false;
@@ -374,6 +445,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var dump_path: []const u8 = "";
     var defs_path: []const u8 = "";
     var roundtrip_path: []const u8 = "";
+    var fallback_dir: []const u8 = "";
     var screen_id: []const u8 = "";
 
     const nargs = os.argc();
@@ -410,6 +482,14 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             }
             defs_path = os.argv(i);
             have_dump_defs = true;
+        } else if (eq(a, "--emit-fallback")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --emit-fallback needs an output directory");
+                return;
+            }
+            fallback_dir = os.argv(i);
+            have_emit_fallback = true;
         } else if (eq(a, "--save-roundtrip")) {
             i += 1;
             if (i >= nargs) {
@@ -477,10 +557,16 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         }
     }
 
-    // Every mode except --dump-defs and --save-roundtrip runs with data.z98
-    // beside the exe when it is there; a bad file never fails the tool (fallback
-    // stays installed). Both of those modes must not install content.
-    if (!have_dump_defs and !have_save_roundtrip) tryLoadContent();
+    // Every mode except --dump-defs, --save-roundtrip and --emit-fallback runs
+    // with data.z98 beside the exe when it is there; a bad file never fails the
+    // tool (fallback stays installed). Those three modes handle content
+    // themselves and must not install an override as a side effect.
+    if (!have_dump_defs and !have_save_roundtrip and !have_emit_fallback) tryLoadContent();
+
+    if (have_emit_fallback) {
+        os.exit(emitFallback(fallback_dir));
+        return;
+    }
 
     // Interactive play modes are exclusive: neither combines with the other nor
     // with any tool flag.
@@ -490,8 +576,8 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             return;
         }
         if (have_test_rules or have_replay or have_dump_grid or have_dump_defs or
-            have_save_roundtrip or have_screen or have_sim or have_creature or
-            have_seed or have_hull)
+            have_save_roundtrip or have_emit_fallback or have_screen or have_sim or
+            have_creature or have_seed or have_hull)
         {
             fail("undtool: --play/--fight cannot be combined with tool flags");
             return;
