@@ -107,7 +107,7 @@ fn intoModal(s: *def.GameState, d: *const def.CreatureDef) bool {
     fight.startFightDef(s, 0, d, noRules());
     s.fight.res = 1;
     fight.step(s, def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 }, d, noRules());
-    return s.screen == fight.SCREEN_SUBDUE;
+    return s.screen == def.SCREEN_SUBDUE;
 }
 
 // (a) DECLINE consumes zero RNG draws: rng_state byte-identical after.
@@ -121,7 +121,7 @@ fn tDeclineNoRng() bool {
 
     if (s.fight.rng_state != before) return false;
     if (s.fight.subdue_declined != 1) return false;
-    if (s.screen != fight.SCREEN_FIGHT) return false;
+    if (s.screen != def.SCREEN_FIGHT) return false;
     return true;
 }
 
@@ -130,9 +130,9 @@ fn tDeclineNoRng() bool {
 fn tFAndEscDeclineNoRng() bool {
     var d = rareModalDef();
 
-    const f_action = input.mapKey(fight.SCREEN_SUBDUE, input.Key{ .ch = 'f', .code = 0 }) orelse return false;
+    const f_action = input.mapKey(def.SCREEN_SUBDUE, input.Key{ .ch = 'f', .code = 0 }) orelse return false;
     if (f_action.kind != def.ACT_DECLINE) return false;
-    const esc_action = input.mapKey(fight.SCREEN_SUBDUE, input.Key{ .ch = 0, .code = input.VK_ESC }) orelse return false;
+    const esc_action = input.mapKey(def.SCREEN_SUBDUE, input.Key{ .ch = 0, .code = input.VK_ESC }) orelse return false;
     if (esc_action.kind != def.ACT_DECLINE) return false;
 
     var s: def.GameState = undefined;
@@ -188,7 +188,7 @@ fn failOnce(s: *def.GameState, d: *const def.CreatureDef) bool {
     s.fight.outcome = def.OUT_ONGOING;
     s.fight.subdue_declined = 0;
     fight.step(s, def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 }, d, noRules());
-    if (s.screen != fight.SCREEN_SUBDUE) return false;
+    if (s.screen != def.SCREEN_SUBDUE) return false;
     fight.step(s, def.Action{ .kind = def.ACT_ATTEMPT, .arg = 0 }, d, noRules());
     if (s.fight.outcome != def.OUT_ONGOING) return false;
     return true;

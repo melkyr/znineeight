@@ -398,7 +398,7 @@ fn tBossRow() bool {
     if (d.respawn[0] != 20) return false;
     if (d.respawn[1] != 20) return false;
     if (d.respawn[2] != 40) return false;
-    if (d.counter_tool != creatures.TOOL_PLATE) return false;
+    if (d.counter_tool != def.TOOL_PLATE) return false;
     if (d.rule_count != 0) return false;
     return true;
 }

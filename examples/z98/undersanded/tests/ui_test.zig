@@ -62,43 +62,43 @@ fn kindOf(screen: i32, k: input.Key) i32 {
 // ---- Input mapping --------------------------------------------------------
 
 fn tFightKeys() bool {
-    if (kindOf(fight.SCREEN_FIGHT, key('s')) != def.ACT_STRIKE) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('S')) != def.ACT_STRIKE) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('1')) != def.ACT_STRIKE) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('r')) != def.ACT_RESTRAIN) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('R')) != def.ACT_RESTRAIN) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('2')) != def.ACT_RESTRAIN) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('e')) != def.ACT_EQUIP) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('E')) != def.ACT_EQUIP) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('3')) != def.ACT_EQUIP) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('f')) != def.ACT_FLEE) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('F')) != def.ACT_FLEE) return false;
-    if (kindOf(fight.SCREEN_FIGHT, key('4')) != def.ACT_FLEE) return false;
-    if (input.mapKey(fight.SCREEN_FIGHT, key('x')) != null) return false;
-    if (input.mapKey(fight.SCREEN_FIGHT, key(27)) != null) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('s')) != def.ACT_STRIKE) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('S')) != def.ACT_STRIKE) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('1')) != def.ACT_STRIKE) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('r')) != def.ACT_RESTRAIN) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('R')) != def.ACT_RESTRAIN) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('2')) != def.ACT_RESTRAIN) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('e')) != def.ACT_EQUIP) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('E')) != def.ACT_EQUIP) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('3')) != def.ACT_EQUIP) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('f')) != def.ACT_FLEE) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('F')) != def.ACT_FLEE) return false;
+    if (kindOf(def.SCREEN_FIGHT, key('4')) != def.ACT_FLEE) return false;
+    if (input.mapKey(def.SCREEN_FIGHT, key('x')) != null) return false;
+    if (input.mapKey(def.SCREEN_FIGHT, key(27)) != null) return false;
     return true;
 }
 
 fn tModalKeys() bool {
-    if (kindOf(fight.SCREEN_SUBDUE, key('a')) != def.ACT_ATTEMPT) return false;
-    if (kindOf(fight.SCREEN_SUBDUE, key('A')) != def.ACT_ATTEMPT) return false;
-    if (kindOf(fight.SCREEN_SUBDUE, key('f')) != def.ACT_DECLINE) return false;
-    if (kindOf(fight.SCREEN_SUBDUE, key('F')) != def.ACT_DECLINE) return false;
-    if (kindOf(fight.SCREEN_SUBDUE, key(27)) != def.ACT_DECLINE) return false;
-    if (kindOf(fight.SCREEN_SUBDUE_POST, key('a')) != def.ACT_ATTEMPT) return false;
-    if (kindOf(fight.SCREEN_SUBDUE_POST, key('f')) != def.ACT_DECLINE) return false;
-    if (kindOf(fight.SCREEN_SUBDUE, key('s')) != -1) return false;
-    if (kindOf(fight.SCREEN_SUBDUE, key('r')) != -1) return false;
-    if (kindOf(fight.SCREEN_SUBDUE, key('e')) != -1) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key('a')) != def.ACT_ATTEMPT) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key('A')) != def.ACT_ATTEMPT) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key('f')) != def.ACT_DECLINE) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key('F')) != def.ACT_DECLINE) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key(27)) != def.ACT_DECLINE) return false;
+    if (kindOf(def.SCREEN_SUBDUE_POST, key('a')) != def.ACT_ATTEMPT) return false;
+    if (kindOf(def.SCREEN_SUBDUE_POST, key('f')) != def.ACT_DECLINE) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key('s')) != -1) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key('r')) != -1) return false;
+    if (kindOf(def.SCREEN_SUBDUE, key('e')) != -1) return false;
     return true;
 }
 
 fn tEscByCode() bool {
     const esc_code = input.Key{ .ch = 0, .code = input.VK_ESC };
-    if (kindOf(fight.SCREEN_SUBDUE, esc_code) != def.ACT_DECLINE) return false;
+    if (kindOf(def.SCREEN_SUBDUE, esc_code) != def.ACT_DECLINE) return false;
     const esc_vk27 = input.Key{ .ch = 0, .code = 27 };
-    if (kindOf(fight.SCREEN_SUBDUE, esc_vk27) != def.ACT_DECLINE) return false;
-    if (input.mapKey(fight.SCREEN_FIGHT, esc_code) != null) return false;
+    if (kindOf(def.SCREEN_SUBDUE, esc_vk27) != def.ACT_DECLINE) return false;
+    if (input.mapKey(def.SCREEN_FIGHT, esc_code) != null) return false;
     return true;
 }
 
@@ -298,7 +298,7 @@ fn tRenderModal() bool {
     game.newGame(&s);
     game.startFight(&s, 3);
     const d = creatures.defAt(3);
-    s.screen = fight.SCREEN_SUBDUE;
+    s.screen = def.SCREEN_SUBDUE;
 
     var sc: render.Screen = undefined;
     render.renderFrame(&s, &d, &sc);
@@ -404,7 +404,7 @@ fn runSequence(def_index: i32, seq: []const u8) Smoke {
     var r = Smoke{ .outcome = s.fight.outcome, .steps = 0, .saw_modal = false };
     var i: usize = 0;
     while (i < seq.len and s.fight.outcome == def.OUT_ONGOING) : (i += 1) {
-        if (s.screen != fight.SCREEN_FIGHT) r.saw_modal = true;
+        if (s.screen != def.SCREEN_FIGHT) r.saw_modal = true;
         const a = input.mapKey(s.screen, key(seq[i])) orelse {
             r.outcome = -1;
             return r;

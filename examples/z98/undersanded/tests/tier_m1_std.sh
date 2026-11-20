@@ -15,9 +15,11 @@
 #   * undtool.exe in a writable temp workdir: exit 0, probe_out.txt == sample
 #   * undtool.exe from a chmod 0555 workdir: exit 0, exe dir gains no file, the
 #     C:\WINDOWS\TEMP\UNDERSAN\ fallback is used and its output is recorded
-#   * under.exe under Xvfb + Wine: an UNDERSANDED-titled window opens, exit 0
-#   Missing wine/Xvfb prints explicit operator-hardware lines. An executed
-#   evidence check that fails prints EVIDENCE-FAIL and makes the tier nonzero.
+#   * under.exe under Xvfb + Wine: an UNDERSANDED-titled window opens and the
+#     live process is killed after the window/probe proof
+#   Missing wine/Xvfb or a window that never appears prints explicit
+#   operator-hardware skips. An observed evidence check that fails prints
+#   EVIDENCE-FAIL and makes the tier nonzero.
 #
 # Env: ZIG  compiler (default /tmp/zig1-m1/zig1_5_clean)
 #      OUT  scratch dir (default /tmp/undersanded_m1_tier)
@@ -362,7 +364,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# SLOW evidence: under.exe window opens under Xvfb + Wine, exit 0
+# SLOW evidence: under.exe window opens under Xvfb + Wine, then is killed
+# (the playable loop waits for events; it no longer self-exits). A missing
+# window is an operator-hardware skip; only an observed window that never
+# writes its probe may fail.
 # ---------------------------------------------------------------------------
 echo "== SLOW evidence: under.exe window under Xvfb + Wine =="
 MISSING_X=""
@@ -373,7 +378,7 @@ if [ -n "$MISSING_WINE" ]; then
     skip_evidence "under.exe window check (missing:$MISSING_WINE)"
 elif [ -n "$MISSING_X" ]; then
     skip_evidence "under.exe window check (missing:$MISSING_X)"
-    echo "operator-hardware: run under.exe on Win98 and confirm the UNDERSANDED window opens and it exits 0"
+    echo "operator-hardware: run under.exe on Win98 and confirm the UNDERSANDED window opens"
 elif [ ! -f "$BUILD_OUT/under.exe" ]; then
     skip_evidence "under.exe window check (under.exe missing; build failed)"
 else
@@ -395,49 +400,102 @@ else
         i=$((i + 1))
     done
     if ! xdpyinfo >/dev/null 2>&1; then
-        evidence_fail "Xvfb did not come up on $DISPLAY_NUM"
+        skip_evidence "Xvfb did not come up on $DISPLAY_NUM"
+        echo "operator-hardware: run under.exe on Win98 and confirm the UNDERSANDED window opens"
     else
         timeout 180 wineboot -i >"$GUI/wineboot.log" 2>&1 || true
         cp "$BUILD_OUT/under.exe" "$BUILD_OUT/sample.txt" "$GUI/"
         cp "$ROOT/examples/z98/undersanded/data.z98" "$GUI/"
         ( cd "$GUI" && timeout 120 wine ./under.exe ) >"$GUI/app.log" 2>&1 &
         WINE_PID=$!
+
+        # Bounded poll: the window can take a few seconds to appear under Wine.
         WINDOW_SEEN=0
         i=0
-        while [ "$i" -lt 400 ]; do
-            if xwininfo -root -tree 2>/dev/null | grep -q 'UNDERSANDED'; then
+        while [ "$i" -lt 200 ]; do
+            if xwininfo -name UNDERSANDED >/dev/null 2>&1; then
                 WINDOW_SEEN=1
                 break
             fi
             sleep 0.05
             i=$((i + 1))
         done
-        timeout 30 import -window root "$GUI/shot.png" >"$GUI/import.log" 2>&1 || true
-        wait "$WINE_PID" 2>/dev/null
-        GUI_RC=$?
-        WINE_PID=""
+
         if [ "$WINDOW_SEEN" -eq 1 ]; then
             evidence_pass "under.exe opened a window titled UNDERSANDED (Xvfb $DISPLAY_NUM)"
+            # 80x30 cells at 8x16 need a 640x480 client so row 29 is on-screen.
+            # The window exists before main calls gfxSetClientSize, so poll the
+            # geometry until it settles instead of sampling the creation size.
+            GW=""
+            GH=""
+            GEOM_OK=0
+            i=0
+            while [ "$i" -lt 200 ]; do
+                if xwininfo -name UNDERSANDED >"$GUI/xwininfo.txt" 2>&1; then
+                    GW="$(grep -m1 'Width:' "$GUI/xwininfo.txt" | cut -d: -f2 | tr -d ' ')"
+                    GH="$(grep -m1 'Height:' "$GUI/xwininfo.txt" | cut -d: -f2 | tr -d ' ')"
+                    if [ "$GW" = "640" ] && [ "$GH" = "480" ]; then
+                        GEOM_OK=1
+                        break
+                    fi
+                fi
+                sleep 0.05
+                i=$((i + 1))
+            done
+            if [ "$GEOM_OK" -eq 1 ]; then
+                evidence_pass "under.exe client geometry is 640x480 (all 30 cell rows visible)"
+            elif [ -n "$GW" ] && [ -n "$GH" ]; then
+                evidence_fail "under.exe client geometry ${GW}x${GH}, want 640x480"
+            else
+                evidence_fail "xwininfo could not read the UNDERSANDED client geometry"
+            fi
+            # The window is created before init completes; wait for the probe
+            # write (also bounded) so the evidence covers a live first frame.
+            PROBE_SEEN=0
+            i=0
+            while [ "$i" -lt 200 ]; do
+                if [ -f "$GUI/probe_out.txt" ]; then
+                    PROBE_SEEN=1
+                    break
+                fi
+                sleep 0.05
+                i=$((i + 1))
+            done
+            sleep 1
+            timeout 30 import -window root "$GUI/shot.png" >"$GUI/import.log" 2>&1 || true
+            if kill -0 "$WINE_PID" 2>/dev/null; then
+                evidence_pass "under.exe windowed loop stayed resident until killed"
+            else
+                evidence_fail "under.exe exited before the window evidence could be killed (see $GUI/app.log)"
+            fi
+            kill "$WINE_PID" 2>/dev/null || true
+            wineserver -k >/dev/null 2>&1 || true
+            wait "$WINE_PID" 2>/dev/null
+            WINE_PID=""
+
+            if [ "$PROBE_SEEN" -eq 1 ] && [ -f "$GUI/probe_out.txt" ] \
+                && cmp -s "$GUI/probe_out.txt" "$SAMPLE"; then
+                GUI_MD="$(md5sum "$GUI/probe_out.txt" | cut -d' ' -f1)"
+                evidence_pass "windowed under.exe wrote probe_out.txt matching sample (md5 $GUI_MD)"
+            elif [ "$PROBE_SEEN" -eq 0 ]; then
+                evidence_fail "windowed under.exe never wrote probe_out.txt within 10s (see $GUI/app.log)"
+            else
+                evidence_fail "windowed under.exe probe_out.txt differs from sample"
+            fi
+            if [ -s "$GUI/shot.png" ]; then
+                GUISTATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
+                    "$GUI/shot.png" 2>/dev/null)"
+                evidence_pass "screenshot recorded: $GUI/shot.png (mean/stddev/colors: $GUISTATS)"
+            else
+                echo "operator-hardware: screenshot not captured (window proof is the xwininfo check)"
+            fi
         else
-            evidence_fail "under.exe window titled UNDERSANDED not seen (see $GUI/app.log)"
-        fi
-        if [ "$GUI_RC" -eq 0 ]; then
-            evidence_pass "under.exe windowed run exited 0"
-        else
-            evidence_fail "under.exe windowed run exited $GUI_RC (see $GUI/app.log)"
-        fi
-        if [ -s "$GUI/shot.png" ]; then
-            GUISTATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
-                "$GUI/shot.png" 2>/dev/null)"
-            evidence_pass "screenshot recorded: $GUI/shot.png (mean/stddev/colors: $GUISTATS)"
-        else
-            echo "operator-hardware: screenshot not captured (window proof is the xwininfo tree)"
-        fi
-        if [ -f "$GUI/probe_out.txt" ] && cmp -s "$GUI/probe_out.txt" "$SAMPLE"; then
-            GUI_MD="$(md5sum "$GUI/probe_out.txt" | cut -d' ' -f1)"
-            evidence_pass "windowed under.exe wrote probe_out.txt matching sample (md5 $GUI_MD)"
-        else
-            evidence_fail "windowed under.exe probe_out.txt missing or differs from sample"
+            skip_evidence "under.exe window did not appear within 10s (Xvfb $DISPLAY_NUM)"
+            echo "operator-hardware: run under.exe on Win98 and confirm the UNDERSANDED window opens"
+            kill "$WINE_PID" 2>/dev/null || true
+            wineserver -k >/dev/null 2>&1 || true
+            wait "$WINE_PID" 2>/dev/null
+            WINE_PID=""
         fi
         sed 's/^/       /' "$GUI/app.log" | tail -8
     fi

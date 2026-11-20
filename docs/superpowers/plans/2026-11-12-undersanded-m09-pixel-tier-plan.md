@@ -32,6 +32,8 @@ As prior. std changes confined to `sf/src/std_gfx_px_core.zig`, `sf/src/std_gfx_
 - `examples/z98/undersanded/nav.zig` — add `navRunGfx(g, s)`: gfx events, cell screens, art fight at fight boundaries.
 - `examples/z98/undersanded/app.zig` + `main.zig` — `--perf`, mode select/depth fallback, call `navRunGfx`.
 - `examples/z98/undersanded/tests/px_core_test.zig`, `tests/px_test.zig`, `tests/art_test.zig`, `tests/tier_m9_px.sh`, `tests/run_px_probe.sh` (pattern after z9gb `run_ddraw_probe.sh`), `tests/fixtures/art_fight.golden` (565 dump checksum), `tests/fixtures/perf_log.golden` (shape only).
+- `examples/z98/undersanded/items.zig`, `text_scan.zig` — quality cut: single owners for tool/material ownership + text/path primitives.
+- `examples/z98/undersanded/tests/quality_smells.sh` — grep/LOC gates wired into the tier (Task 8).
 
 ## Review Focus
 
@@ -74,17 +76,38 @@ As prior. std changes confined to `sf/src/std_gfx_px_core.zig`, `sf/src/std_gfx_
 
 ### Task 5: `under.exe` playable loop (cell screens + art fight + fallback)
 
-**Interfaces:** `input.keyFromEvent(ev)*?Key` reuses existing mapping; `render_term.blitToGfx(g,screen)` draws the 80×30 `Screen` through `gfx.gfxDrawText`; `nav.navRunGfx(g,s)` runs the same `navStep` state machine driven by `gfxPollEvent/gfxWaitEvent`, cell-presenting dock/map/node/journal/help and switching to px only while `expedition.isInFight` (and art subdue modal). Mouse `px/py` hit-tests the four fight buttons → same Action. Depth <16bpp → all-cell mode (log reason). `--perf` appends p50/p95/p99 to `errors.log`.
+**Interfaces:** `loop_gfx.zig` (Windows-only) holds `keyFromEvent(ev)*?Key`, `blitScreen(g,screen)`, `navRunGfx(g,px,s,perf_on)` and the gfx boot driver; `nav.zig` exposes pure `bootDraw`/`bootKey` (shared with the stdout `boot` driver), a shared `navIntercept` for help/dock/quit keys, and `drawScreen(g,st,*Screen)` (shared with `drawCurrent`); the four art button rects come from `render_art.zig`. `perf.zig` is pure percentile math/format. Boot menu/lore/save-error render in the window; art only for fight/subdue.
 
-- [ ] `under.exe` opens `std_gfx` once (80×30), `gfxPxAttach` it, and keeps one window for the whole session (`gfxPxAttach` null → all-cell fallback). Keep behaviour identical to `navRun` (keys, pending settle, quit prompt, help overlay owning a key, mid-fight `J` inert). Art mode does not init RNG or advance phases. README documents art/terminal/fallback and `--perf`.
-- [ ] Native walk test: scripted event stream dock→map→node→fight→settle→dock renders no crash and matches state; `--perf` writes the pinned shape. Commit `example(undersanded): playable under.exe loop`.
+- [ ] `under.exe` opens `std_gfx` once (80×30), `gfxPxAttach` it, keeps one window (`null` → all-cell fallback; `<16bpp` logged). Keys/filters match the console (`input.filterKey` shared: 10/13/space dropped for nav, raw for lore). Mouse `px/py` hit-tests the four fight buttons → same hotkey/Action. Result/tooltip text on cell row 29; art notices in the art frame. Art mode never init RNG or advances phases. `--perf` appends one `perf frames=N p50=..ms p95=..ms p99=..ms` line to `errors.log` on exit. README documents art/cell fallback/controls/`--perf`.
+- [ ] **Authorized fix-round scope (review Important):** `tests/tier_m1_std.sh` SLOW `under.exe` evidence is updated to launch → assert window (`xwininfo`) → kill (loud skip without Wine/Xvfb); the old "self-exit" expectation is obsolete because the loop waits for events. Test-only, no product behaviour.
+- [ ] Native walk test: scripted event stream dock→map→node→fight→settle→dock renders no crash and matches state; `--perf` writes the pinned shape. Commit `example(undersanded): playable under.exe loop` (fix commit `fix(undersanded): px loop key filter + M1 tier evidence`).
 
 ### Task 6: `tier_m9_px.sh` + goldens
 
 - [ ] Tier (native, cwd-independent, nests `tier_m8_content.sh`): `px_core_test` + `art_test` + loop walk; art framebuffer golden (core dump checksum) byte-exact; terminal `--dump-grid --screen fight|dock|map|node|lore|menu|journal|help` **byte-identical to M8**; `tier_edit.sh` byte-identical lexer md5; forced surface-lost full-repaint case; `--perf` shape; any Wine/probe/`tier_edit_gui.sh` runs are SLOW evidence with loud skip. Non-vacuity: mutate a copy of the art golden → tier fails. PASS. Commit `example(undersanded): M9 pixel tier`.
 
-**Gate:** fight renders in art mode; dock→fight→dock playable in `under.exe`; terminal + z9edit goldens byte-identical; surface-lost repaint exercised.
+**Gate:** fight renders in art mode; dock→fight→dock playable in `under.exe`; terminal + z9edit goldens byte-identical; surface-lost repaint exercised; quality cut (Tasks 8–9) green with all goldens unchanged.
 
 ### Task 7: Next-milestone amendment review (M10)
 
 - [ ] Read `2026-11-12-undersanded-m10-assets-pipeline-plan.md`; judge `Sprite`/LUT/`gfxPxBlit` shape vs `.ZSP` decode (§30) — decoder must produce exactly `Sprite` + core-decoded pixels. Amendment or "no amendment needed" in NOTES.md.
+
+### Task 8: Quality cut — smell removal (mechanical, golden-identical)
+
+**Scope:** no behaviour/output change; every existing golden stays byte-identical. This is the tech-debt cut before M10/M13 extend the same surfaces.
+
+- [ ] **ID registry:** move every `NAV_*`, `SCREEN_*`, `MSG_*`, `OUT_*`, `TOOL_*`, `UNLOCK_*` and `NO_FIGHT` constant into `def.zig`; update all users; delete duplicates in `fight.zig`, `creatures_t1.zig`, `tables_t1.zig`, `nav.zig`. A `tests/quality_smells.sh` check forbids those ids being defined outside `def.zig`.
+- [ ] **Ownership owners:** new `items.zig` (`toolOwned`, `toolKind`, `isRigged`, material/part helpers) consumed by `dock.zig`, `expedition.zig`, `tools.zig`, `fight.zig`; delete `dock.toolOwned`, `expedition.toolOwned/toolKind`, and `fight.TOOL_*` copies. Gate: no `fn toolOwned` / `fn toolKind` outside `items.zig`.
+- [ ] **Path/text primitives:** one `paths.join` (platform separator) used by `persist.zig` + `save_ux.zig` (`pathJoin83` stays for assets); new `text_scan.zig` owns `stripCR`/`trimSpaces`/`findEq` and one append-int/text helper used by nav/perf/undtool/persist. Gate: no `fn stripCR`/`fn findEq`/`fn join(` outside the owner modules.
+- [ ] **Dead/alias sweep:** drop `tables_t1` re-export aliases once imports point at `def.zig` (keep only names still needed), remove `activeSavePath`/`mem_only`/stale comments, fold the duplicated boss line out of `defs_boss_golden`.
+- [ ] **Ownership map:** short appendix in NOTES (allowed deps: domain ↛ render; ids only in `def`; content source = Task 9; owners list). `quality_smells.sh` runs from `tier_m9_px.sh`; full nested tier + all goldens byte-identical. Commit `refactor(undersanded): single-source ids, ownership, primitives`.
+
+### Task 9: Quality cut — structural refactor (golden-identical)
+
+**Scope:** no behaviour/output change (goldens byte-identical; any drift = STOP). This is the extension-risk cut: content authored twice, god files, and the view→domain ripple.
+
+- [ ] **Content single-source:** `undtool --emit-fallback` regenerates the compiled fallback rows (`creatures_t1.zig` defs/rules + `tables_t1.zig` tool/upgrade/cosmetic/encounter rows) from `data.z98`; the checked-in output is byte-equal to today's values (content/bind tests stay green). Tier adds `--emit-fallback | cmp` (drift gate). M13 then authors rows once (data file only).
+- [ ] **God-file splits:** `render_text.zig` (msgLine/help/modal/copy) out of `render_term.zig`; `fight_rules.zig` + `fight_tools.zig` out of `fight.zig`; `data_scan.zig`/`data_load.zig`; `save_scan.zig`/`save_io.zig`. Behaviour and goldens identical; soft cap ~600 LOC/file.
+- [ ] **Render decoupling:** `render_term`/`render_art` stop importing `dock`/`economy`/`save_ux`/`journal`/`data`; `nav` builds a prepared view struct (screen id + rows/bars/notice text) and renderers consume it. This is the ripple-stopper before M10/M11 grow the view. Keep the terminal stdout bytes and art golden identical.
+- [ ] Deferred (not M9): `tests/harness.zig` consolidation; `std_gfx_pal`/`std_ddraw_pal` de-duplication.
+- [ ] Full nested tier green + all goldens byte-identical + `quality_smells.sh` green. Commit `refactor(undersanded): split render/fight/data/save + decouple view`.

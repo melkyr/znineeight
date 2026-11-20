@@ -20,6 +20,7 @@ const rng = @import("rng.zig");
 const encounter = @import("encounter.zig");
 const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
+const items = @import("items.zig");
 const fight = @import("fight.zig");
 const tools = @import("tools.zig");
 const game = @import("game.zig");
@@ -39,12 +40,11 @@ pub const EXP_SURFACE: i32 = 12;
 // expedition and never traps under -fsafe.
 const SEED_MASK: u32 = 0x00FFFFFF;
 
-// Both fields are parked here whenever no fight is in progress. A fresh
-// GameState is then never mistaken for an ongoing fight. `def_index` is also
-// the single settled/pending marker: a pending Subdue keeps it live until
+// Both fields are parked at def.NO_FIGHT whenever no fight is in progress. A
+// fresh GameState is then never mistaken for an ongoing fight. `def_index` is
+// also the single settled/pending marker: a pending Subdue keeps it live until
 // resolveSubdueChoice clears it; every settled outcome clears it and leaves the
 // Secured line to the CLS_SECURED log entry.
-pub const NO_FIGHT: i32 = def.NO_FIGHT;
 
 const REST_HEAL: i32 = 30;
 const DOCK_REST_HEAL: i32 = 40;
@@ -108,11 +108,6 @@ fn poolEmpty(g: *def.GameState) bool {
 
 // ---- Loot hold ------------------------------------------------------------
 
-// Keystones are drop-only, used as-is, and never receive the Cargo bonus.
-fn isKeystone(part: i32) bool {
-    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
-}
-
 fn addDropLines(g: *def.GameState, lines: []const def.DropLine, cargo: i32) void {
     // Z98 lowers `g.exp.hold[i]` through a struct copy; go via a pointer so
     // the write reaches the real hold array.
@@ -124,7 +119,7 @@ fn addDropLines(g: *def.GameState, lines: []const def.DropLine, cargo: i32) void
     var p: usize = 0;
     while (p < def.MAX_DROP_LINES and p < lines.len) : (p += 1) {
         if (lines[p].part <= 0 or lines[p].count <= 0) continue;
-        if (isKeystone(lines[p].part)) continue;
+        if (items.isKeystone(lines[p].part)) continue;
         primary = @intCast(i32, p);
         break;
     }
@@ -166,7 +161,7 @@ fn addLoot(g: *def.GameState, cdef: *const def.CreatureDef, outcome: i32) void {
 // ---- Fight state ----------------------------------------------------------
 
 pub fn isInFight(g: *def.GameState) bool {
-    return g.fight.def_index != NO_FIGHT and g.fight.outcome == def.OUT_ONGOING;
+    return g.fight.def_index != def.NO_FIGHT and g.fight.outcome == def.OUT_ONGOING;
 }
 
 pub fn returnToDock(g: *def.GameState) void {
@@ -182,8 +177,8 @@ pub fn returnToDock(g: *def.GameState) void {
 // Escape a fight without recording a flee. Emergency Ascent is not a player
 // flee, so its outcome must not drive renewal.
 fn endAscent(g: *def.GameState) void {
-    g.fight.outcome = NO_FIGHT;
-    g.fight.def_index = NO_FIGHT;
+    g.fight.outcome = def.NO_FIGHT;
+    g.fight.def_index = def.NO_FIGHT;
 }
 
 // Record the settled outcome once. The log lives until startFightDef resets it
@@ -195,9 +190,9 @@ fn logSecured(g: *def.GameState, idx: i32, outcome: i32) void {
 // Settle a fight once its outcome is resolved, or immediately when Hull hits 0
 // while the fight is still technically ongoing (creatureAct leaves it that
 // way). Returns true when the expedition ended (player flee or Hull-0 ascent).
-// def_index == NO_FIGHT is the settled marker, so a second call is a no-op.
+// def_index == def.NO_FIGHT is the settled marker, so a second call is a no-op.
 fn postFight(g: *def.GameState) bool {
-    if (g.fight.def_index == NO_FIGHT) return false;
+    if (g.fight.def_index == def.NO_FIGHT) return false;
     const idx = g.fight.def_index;
     const outcome = g.fight.outcome;
     const zone = g.exp.zone;
@@ -219,7 +214,7 @@ fn postFight(g: *def.GameState) bool {
         // Nothing from this fight; secured hold kept, +1 phase, return travel.
         journal.journalOnFightEnd(&g.world, idx);
         g.world.hull = g.fight.hull;
-        g.fight.def_index = NO_FIGHT;
+        g.fight.def_index = def.NO_FIGHT;
         world.advancePhase(&g.world);
         returnToDock(g);
         return true;
@@ -232,7 +227,7 @@ fn postFight(g: *def.GameState) bool {
         g.world.hull = g.fight.hull;
         logSecured(g, idx, outcome);
         world.markTaken(&g.world, zone, idx, def.OUT_CREATURE_FLED);
-        g.fight.def_index = NO_FIGHT;
+        g.fight.def_index = def.NO_FIGHT;
         return false;
     }
 
@@ -255,7 +250,7 @@ fn postFight(g: *def.GameState) bool {
     logSecured(g, idx, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
     g.world.hull = g.fight.hull;
-    g.fight.def_index = NO_FIGHT;
+    g.fight.def_index = def.NO_FIGHT;
     return false;
 }
 
@@ -266,7 +261,7 @@ fn postFight(g: *def.GameState) bool {
 // Sell adds the creature's sale price in coins.
 //
 // Valid only while `fight.outcome == OUT_SUBDUE` and the pending marker
-// (`def_index != NO_FIGHT`) is still live. The first valid call renews and
+// (`def_index != def.NO_FIGHT`) is still live. The first valid call renews and
 // resolves the choice; it then clears def_index, so a second call no-ops. The
 // CLS_SECURED log entry written by postFight drives the node Secured line.
 
@@ -277,7 +272,7 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
     if (g.exp.active == 0) return;
     if (g.fight.outcome != def.OUT_SUBDUE) return;
     const idx = g.fight.def_index;
-    if (idx == NO_FIGHT) return;
+    if (idx == def.NO_FIGHT) return;
     if (idx < 0 or idx >= creatures.defCount()) return;
 
     const zone = g.exp.zone;
@@ -292,27 +287,10 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
         },
         else => return,
     }
-    g.fight.def_index = NO_FIGHT;
+    g.fight.def_index = def.NO_FIGHT;
 }
 
 // ---- Actions --------------------------------------------------------------
-
-// Owned-tool bits are keyed by tool id (R6: tool 1..7 -> bit 1..7).
-fn toolOwned(w: *const def.World, tool: i32) bool {
-    if (tool < 1 or tool > 7) return false;
-    const bit: u32 = @intCast(u32, tool);
-    const mask: u32 = @intCast(u32, 1) << bit;
-    return (w.tools_owned & mask) != 0;
-}
-
-fn toolKind(tool: i32) i32 {
-    const rows = tables.tools();
-    var i: usize = 0;
-    while (i < rows.len) : (i += 1) {
-        if (rows[i].id == tool) return rows[i].kind;
-    }
-    return -1;
-}
 
 // Zone milestones de-gray the 12 cosmetics (R12: `CosmeticRow.unlock` is a
 // condition id, the stored bits are item indexes 0..11). Derelict bits stay 0
@@ -320,9 +298,9 @@ fn toolKind(tool: i32) i32 {
 fn unlockZoneCosmetics(w: *def.World, zone: i32) void {
     var cond: i32 = 0;
     switch (zone) {
-        0 => cond = tables.UNLOCK_Z1,
-        1 => cond = tables.UNLOCK_Z2,
-        2 => cond = tables.UNLOCK_Z3,
+        0 => cond = def.UNLOCK_Z1,
+        1 => cond = def.UNLOCK_Z2,
+        2 => cond = def.UNLOCK_Z3,
         else => return,
     }
     const rows = tables.cosmetics();
@@ -346,10 +324,10 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     // P22.4: the hold is the persistent dock parts store, kept across depart.
     // P22.5/R6: copy the selected tool, charging activated tools once.
     var selected = g.world.tool_selected;
-    if (!toolOwned(&g.world, selected)) selected = 0;
+    if (!items.toolOwned(&g.world, selected)) selected = 0;
     ep.tool = selected;
     ep.tool_charge = 0;
-    if (selected != 0 and toolKind(selected) == tables.TOOL_KIND_ACTIVATED) {
+    if (selected != 0 and items.toolKind(selected) == def.TOOL_KIND_ACTIVATED) {
         ep.tool_charge = 1;
     }
     ep.tool_broken = 0;
@@ -357,7 +335,7 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     g.log_n = 0;
     unlockZoneCosmetics(&g.world, zone);
 
-    g.fight.def_index = NO_FIGHT;
+    g.fight.def_index = def.NO_FIGHT;
     g.fight.outcome = def.OUT_ONGOING;
     ep.pending_cond = def.COND_NONE;
 
@@ -374,7 +352,7 @@ fn hunt(g: *def.GameState) void {
     if (isInFight(g)) return;
     if (g.exp.fight_index >= world.maxFights(&g.world)) return;
 
-    var idx: i32 = NO_FIGHT;
+    var idx: i32 = def.NO_FIGHT;
     if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) return;
     if (idx < 0) return;
 
@@ -439,7 +417,7 @@ pub fn expeditionStep(g: *def.GameState, action: i32) void {
     // Pending Subdue choice (§7/§9.7): loot is already in the hold, so only
     // Release/Sell may settle. Every field and fight action is refused here
     // before any phase or rng draw.
-    if (g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != NO_FIGHT) {
+    if (g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != def.NO_FIGHT) {
         switch (action) {
             SUB_RELEASE, SUB_SELL => resolveSubdueChoice(g, action),
             else => {},

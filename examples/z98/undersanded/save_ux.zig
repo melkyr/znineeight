@@ -9,6 +9,8 @@ const file_mod = @import("std_file.zig");
 const def = @import("def.zig");
 const game = @import("game.zig");
 const persist = @import("persist.zig");
+const paths = @import("paths.zig");
+const text_scan = @import("text_scan.zig");
 
 pub const QUIT_PROMPT: []const u8 = "Save before quitting? [Y] [N] [Cancel]";
 pub const NEW_GAME_CONFIRM: []const u8 = "Erase this save? [Y] [N]";
@@ -46,54 +48,6 @@ fn eql(a: []const u8, b: []const u8) bool {
 fn lower(c: u8) u8 {
     if (c >= 'A' and c <= 'Z') return c + 32;
     return c;
-}
-
-fn trim(s: []const u8) []const u8 {
-    var start: usize = 0;
-    while (start < s.len and s[start] == ' ') : (start += 1) {}
-    var end: usize = s.len;
-    while (end > start and s[end - 1] == ' ') : (end -= 1) {}
-    return s[start..end];
-}
-
-fn findEq(line: []const u8) ?usize {
-    var i: usize = 0;
-    while (i < line.len) : (i += 1) {
-        if (line[i] == '=') return i;
-    }
-    return null;
-}
-
-fn join(dir: []const u8, name: []const u8, out: []u8) ?[]const u8 {
-    var sep: u8 = '/';
-    if (@isWindows()) sep = '\\';
-
-    var add_sep = false;
-    if (dir.len > 0) {
-        const last = dir[dir.len - 1];
-        if (last != '\\' and last != '/') add_sep = true;
-    }
-
-    var need: usize = dir.len + name.len;
-    if (add_sep) need += 1;
-    if (need > out.len) return null;
-
-    var o: usize = 0;
-    var i: usize = 0;
-    while (i < dir.len) : (i += 1) {
-        out[o] = dir[i];
-        o += 1;
-    }
-    if (add_sep) {
-        out[o] = sep;
-        o += 1;
-    }
-    i = 0;
-    while (i < name.len) : (i += 1) {
-        out[o] = name[i];
-        o += 1;
-    }
-    return out[0..need];
 }
 
 fn withTrailingSep(dir: []const u8, out: []u8) ?[]const u8 {
@@ -183,12 +137,8 @@ pub fn saveSlotName(slot: i32) []const u8 {
     return SAVE0_FILE;
 }
 
-pub fn saveSlotPath(dir: []const u8, slot: i32, out: []u8) ?[]const u8 {
-    return join(dir, saveSlotName(slot), out);
-}
-
-pub fn activeSavePath(dir: []const u8, out: []u8) ?[]const u8 {
-    return saveSlotPath(dir, readSaveSlot(dir), out);
+pub fn saveSlotPath(dir: []const u8, slot: i32, out: []u8) ?[]u8 {
+    return paths.join(dir, saveSlotName(slot), out);
 }
 
 pub fn saveSlotExists(dir: []const u8, slot: i32) bool {
@@ -230,7 +180,7 @@ pub fn eraseSlot(dir: []const u8, slot: i32) void {
 // M12 owns writing this file.
 pub fn readSaveSlot(dir: []const u8) i32 {
     var path_buf: [4096]u8 = undefined;
-    const path = join(dir, OPTIONS_FILE, path_buf[0..]) orelse return 0;
+    const path = paths.join(dir, OPTIONS_FILE, path_buf[0..]) orelse return 0;
     if (!file_mod.exists(path)) return 0;
 
     var storage: [16384]u8 = undefined;
@@ -246,12 +196,12 @@ pub fn readSaveSlot(dir: []const u8) i32 {
         var line = content[start..at];
         if (at < content.len) at += 1;
         if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
-        const t = trim(line);
+        const t = text_scan.trimSpaces(line);
         if (t.len == 0) continue;
-        const eq = findEq(t) orelse continue;
-        const key = trim(t[0..eq]);
+        const eq = text_scan.findEq(t) orelse continue;
+        const key = text_scan.trimSpaces(t[0..eq]);
         if (!eql(key, "save_slot")) continue;
-        const val = trim(t[eq + 1 ..]);
+        const val = text_scan.trimSpaces(t[eq + 1 ..]);
         if (eql(val, "0")) {
             slot = 0;
         } else if (eql(val, "1")) {

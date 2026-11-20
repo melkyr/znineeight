@@ -48,7 +48,7 @@ pub fn main() void {
 
     var g: def.GameState = undefined;
     game.newGame(&g);
-    g.screen = nav.NAV_DOCK;
+    g.screen = def.NAV_DOCK;
     g.world.money = 777;
 
     // Key stream (from nav_help_overlay.sh): '?' Esc '?' q y.
@@ -65,7 +65,7 @@ pub fn main() void {
 
     report("help_overlay_esc_does_not_save", eq(raw, SENTINEL));
     report("help_overlay_q_does_not_prompt_or_save", !file_mod.exists("save.bak"));
-    report("help_overlay_returns_to_dock", g.screen == nav.NAV_DOCK);
+    report("help_overlay_returns_to_dock", g.screen == def.NAV_DOCK);
     report("help_overlay_no_game_mutation", g.world.money == 777);
 
     if (fails != 0) {

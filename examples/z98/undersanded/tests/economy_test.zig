@@ -9,6 +9,7 @@
 
 const io = @import("std_io");
 const os = @import("std_os");
+const def = @import("../def.zig");
 const world = @import("../world.zig");
 const tables = @import("../tables_t1.zig");
 const economy = @import("../economy.zig");
@@ -31,7 +32,7 @@ fn fillExpertise(e: *[10]i32, level: i32) void {
     while (i < e.len) : (i += 1) e[i] = level;
 }
 
-fn findUpgrade(axis: i32, tier: i32) ?*const tables.UpgradeRow {
+fn findUpgrade(axis: i32, tier: i32) ?*const def.UpgradeRow {
     var i: usize = 0;
     while (i < tables.UPGRADES.len) : (i += 1) {
         const row = &tables.UPGRADES[i];

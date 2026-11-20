@@ -16,6 +16,7 @@ const game = @import("../game.zig");
 const creatures = @import("../creatures_t1.zig");
 const fight = @import("../fight.zig");
 const expedition = @import("../expedition.zig");
+const items = @import("../items.zig");
 const render = @import("../render_term.zig");
 
 var fails: usize = 0;
@@ -121,10 +122,6 @@ fn expectedSeed(seed: u32, index: i32) u32 {
     return s;
 }
 
-fn isKeystone(part: i32) bool {
-    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
-}
-
 fn expectedDropHold(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: i32) void {
     var i: usize = 0;
     while (i < def.MAX_PARTS) : (i += 1) h[i] = 0;
@@ -133,7 +130,7 @@ fn expectedDropHold(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: 
     var p: usize = 0;
     while (p < def.MAX_DROP_LINES and p < lines.len) : (p += 1) {
         if (lines[p].part <= 0 or lines[p].count <= 0) continue;
-        if (isKeystone(lines[p].part)) continue;
+        if (items.isKeystone(lines[p].part)) continue;
         primary = @intCast(i32, p);
         break;
     }
@@ -228,7 +225,7 @@ fn startReal(seed: u32, cargo: i32) def.GameState {
 fn driveReal(g: *def.GameState, act: i32) void {
     var guard: i32 = 0;
     while (expedition.isInFight(g) and guard < 80) : (guard += 1) {
-        if (g.screen == fight.SCREEN_FIGHT) {
+        if (g.screen == def.SCREEN_FIGHT) {
             expedition.expeditionStep(g, act);
         } else {
             expedition.expeditionStep(g, def.ACT_ATTEMPT);
@@ -317,7 +314,7 @@ fn tHullZeroKeepsHold() bool {
     if (g.fight.outcome == def.OUT_ONGOING) return false;
     expedition.expeditionStep(&g, expedition.EXP_REST);
     // A settled kill clears def_index; the CLS_SECURED log owns the line.
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
 
     var snap: [def.MAX_PARTS]i32 = undefined;
     copyHold(&snap, &g.exp.hold);
@@ -425,7 +422,7 @@ fn tMaxFightsBlocksHunt() bool {
     if (g.exp.fight_index != 4) return false;
     // A settled creature flee clears def_index; the log owns the line.
     if (g.fight.outcome != def.OUT_CREATURE_FLED) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.exp.active != 1) return false;
     return true;
 }
@@ -635,7 +632,7 @@ fn tCargoBonusPrimaryOnly() bool {
     i = 0;
     while (i < def.MAX_DROP_LINES) : (i += 1) {
         if (cdef.sub[i].part <= 0 or cdef.sub[i].count <= 0) continue;
-        if (isKeystone(cdef.sub[i].part)) continue;
+        if (items.isKeystone(cdef.sub[i].part)) continue;
         primary = @intCast(i32, i);
         break;
     }
@@ -686,7 +683,7 @@ fn tLootTablesExact() bool {
     if (kill.fight.outcome != def.OUT_KILL) return false;
     expectedDropHold(&want, kill_def.kill[0..], 0);
     if (!holdEqual(&kill.exp.hold, &want)) return false;
-    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
+    if (kill.fight.def_index != def.NO_FIGHT) return false;
     const kri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, kill_idx);
     if (kill.world.ready[kri] != kill_cycle + kill_def.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
 
@@ -699,7 +696,7 @@ fn tLootTablesExact() bool {
     if (over.fight.outcome != def.OUT_OVERKILL) return false;
     expectedDropHold(&want, over_def.over[0..], 0);
     if (!holdEqual(&over.exp.hold, &want)) return false;
-    if (over.fight.def_index != expedition.NO_FIGHT) return false;
+    if (over.fight.def_index != def.NO_FIGHT) return false;
     return true;
 }
 
@@ -712,7 +709,7 @@ fn tFleeAddsNothing() bool {
     expedition.expeditionStep(&g, def.ACT_FLEE);
     if (g.fight.outcome != def.OUT_PLAYER_FLED) return false;
     if (g.exp.active != 0) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (!holdAllZero(&g.exp.hold)) return false;
     if (g.world.ready[ri] != 0) return false;
 
@@ -744,7 +741,7 @@ fn tSecuredLineForSettledFights() bool {
     const kill_def = creatures.defAt(kill_idx);
     driveReal(&kill, def.ACT_STRIKE);
     if (kill.fight.outcome != def.OUT_KILL) return false;
-    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
+    if (kill.fight.def_index != def.NO_FIGHT) return false;
     if (kill.fight.flags != kill_def.flags) return false;
     if ((kill.fight.flags & 0x80000000) != 0) return false;
     if (countSecured(&kill) != 1) return false;
@@ -771,7 +768,7 @@ fn tSecuredLineForSettledFights() bool {
     const over_def = creatures.defAt(over_idx);
     driveReal(&over, def.ACT_STRIKE);
     if (over.fight.outcome != def.OUT_OVERKILL) return false;
-    if (over.fight.def_index != expedition.NO_FIGHT) return false;
+    if (over.fight.def_index != def.NO_FIGHT) return false;
     if (over.fight.flags != over_def.flags) return false;
     if ((over.fight.flags & 0x80000000) != 0) return false;
 
@@ -787,7 +784,7 @@ fn tSecuredLineForSettledFights() bool {
     fleeCreature(&fled);
     if (fled.fight.outcome != def.OUT_CREATURE_FLED) return false;
     expedition.expeditionStep(&fled, expedition.EXP_SURFACE);
-    if (fled.fight.def_index != expedition.NO_FIGHT) return false;
+    if (fled.fight.def_index != def.NO_FIGHT) return false;
     if (fled.fight.flags != fled_def.flags) return false;
     if ((fled.fight.flags & 0x80000000) != 0) return false;
     const fled_line = render.securedLine(&fled, line_buf[0..]);
@@ -863,7 +860,7 @@ fn tKillAwardsAndRenews() bool {
     expectedDropHold(&want, cdef.kill[0..], 0);
     if (!holdEqual(&g.exp.hold, &want)) return false;
 
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.fight.flags != cdef.flags) return false;
 
     const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
@@ -895,7 +892,7 @@ fn tDepartParksNoFight() bool {
     g.fight.def_index = 0;
     g.fight.outcome = def.OUT_KILL;
     _ = expedition.depart(&g, 1);
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.fight.outcome != def.OUT_ONGOING) return false;
     if (expedition.isInFight(&g)) return false;
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
@@ -910,7 +907,7 @@ fn tSecuredNoEntryEmpty() bool {
 
     // A normal fight-log row is not a settlement record.
     g.log_n = 1;
-    g.log[0] = def.LogEntry{ .class = def.LOG_NORMAL, .msg_id = fight.MSG_STRIKE, .a = 1, .b = 2 };
+    g.log[0] = def.LogEntry{ .class = def.LOG_NORMAL, .msg_id = def.MSG_STRIKE, .a = 1, .b = 2 };
     if (render.securedLine(&g, buf[0..]).len != 0) return false;
     return true;
 }
@@ -929,7 +926,7 @@ fn tSecuredExactlyOnce() bool {
 
     expedition.expeditionStep(&g, expedition.EXP_REST);
     if (countSecured(&g) != 1) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.fight.flags != cdef.flags) return false;
 
     var snap: [def.MAX_PARTS]i32 = undefined;
@@ -939,7 +936,7 @@ fn tSecuredExactlyOnce() bool {
     expedition.expeditionStep(&g, expedition.EXP_REST);
     if (countSecured(&g) != 1) return false;
     if (!holdEqual(&snap, &g.exp.hold)) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     return true;
 }
 

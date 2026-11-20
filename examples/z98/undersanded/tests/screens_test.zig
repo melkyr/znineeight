@@ -19,6 +19,7 @@ const creatures = @import("../creatures_t1.zig");
 const fight = @import("../fight.zig");
 const expedition = @import("../expedition.zig");
 const render = @import("../render_term.zig");
+const nav = @import("../nav.zig");
 const undtool = @import("../undtool.zig");
 
 const DOCK_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_dock.golden";
@@ -92,7 +93,7 @@ fn realSubdue() def.GameState {
 
     var guard: i32 = 0;
     while (expedition.isInFight(&g) and guard < 60) : (guard += 1) {
-        if (g.screen == fight.SCREEN_FIGHT) {
+        if (g.screen == def.SCREEN_FIGHT) {
             expedition.expeditionStep(&g, def.ACT_RESTRAIN);
         } else {
             expedition.expeditionStep(&g, def.ACT_ATTEMPT);
@@ -124,7 +125,9 @@ fn tDockSaveBlockedLine() bool {
     g.fight.def_index = 0;
     g.fight.outcome = def.OUT_ONGOING;
     var sc: render.Screen = undefined;
-    render.renderDock(&g, &sc);
+    var v: render.View = undefined;
+    nav.prepareDock(&g, &v);
+    render.renderDock(&v, &sc);
     var buf: [8192]u8 = undefined;
     const text = render.dump(&sc, buf[0..]);
     return contains(text, "[Esc] Save - Cannot save during a fight.");
@@ -133,15 +136,18 @@ fn tDockSaveBlockedLine() bool {
 fn tDockSubmenus() bool {
     var g = newGame();
     var sc: render.Screen = undefined;
+    var v: render.View = undefined;
     var buf: [8192]u8 = undefined;
 
-    render.renderRefine(&g, &sc);
+    nav.prepareRefine(&g, &v);
+    render.renderRefine(&v, &sc);
     var text = render.dump(&sc, buf[0..]);
     if (!contains(text, "DOCK - REFINE")) return false;
     if (!contains(text, "Shell Chip x0 -> 0 Chitin")) return false;
     if (!contains(text, "[1-7] Refine material")) return false;
 
-    render.renderUpgrade(&g, &sc);
+    nav.prepareUpgrade(&g, &v);
+    render.renderUpgrade(&v, &sc);
     text = render.dump(&sc, buf[0..]);
     if (!contains(text, "DOCK - UPGRADE")) return false;
     if (!contains(text, "Hull T0 -> T1: Chitin x3")) return false;
@@ -153,7 +159,8 @@ fn tDockSubmenus() bool {
     if (!contains(text, "Steel Plate Tool [rigged] Plate Scrap x3")) return false;
     if (!contains(text, "[1-7] Craft tool")) return false;
 
-    render.renderBuy(&g, &sc);
+    nav.prepareBuy(&g, &v);
+    render.renderBuy(&v, &sc);
     text = render.dump(&sc, buf[0..]);
     if (!contains(text, "DOCK - BUY")) return false;
     if (!contains(text, "Foam White 150 (locked)")) return false;
@@ -240,7 +247,7 @@ fn tRelease() bool {
     if (g.world.money != 0) return false;
     if (world.consumeWariness(&g.world, idx) != world.WARY_RESOLVE_BONUS) return false;
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
 
     // Idempotency: the cleared pending marker makes a second call a no-op.
     const bonus = g.world.release_bonus[1];
@@ -270,7 +277,7 @@ fn tSell() bool {
     if (g.world.release_bonus[1] != 0) return false;
     if (world.consumeWariness(&g.world, idx) != 0) return false;
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
 
     const money = g.world.money;
     expedition.resolveSubdueChoice(&g, expedition.SUB_SELL);

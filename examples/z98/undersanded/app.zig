@@ -17,6 +17,7 @@
 // Direct imports only (no std barrel): the compile graph stays small.
 
 const gfx = @import("std_gfx.zig");
+const gfx_px = @import("std_gfx_px.zig");
 const io = @import("std_io.zig");
 const os = @import("std_os.zig");
 const debug = @import("std_debug.zig");
@@ -29,6 +30,8 @@ const data = @import("data.zig");
 const content_boot = @import("content_boot.zig");
 const game = @import("game.zig");
 const nav = @import("nav.zig");
+const loop_gfx = @import("loop_gfx.zig");
+const persist = @import("persist.zig");
 
 const PATH_MAX: usize = 512;
 const ARENA_SIZE: usize = 256 * 1024;
@@ -42,38 +45,6 @@ var g_crash_dmp: [PATH_MAX]u8 = undefined;
 var g_crash_dmp_len: usize = 0;
 var g_crash_log: [PATH_MAX]u8 = undefined;
 var g_crash_log_len: usize = 0;
-
-fn joinPath(dir: []const u8, name: []const u8, out: []u8) ?[]u8 {
-    var sep: u8 = '/';
-    if (@isWindows()) sep = '\\';
-
-    var add_sep = false;
-    if (dir.len > 0) {
-        const last = dir[dir.len - 1];
-        if (last != '\\' and last != '/') add_sep = true;
-    }
-
-    var need: usize = dir.len + name.len;
-    if (add_sep) need += 1;
-    if (need > out.len) return null;
-
-    var o: usize = 0;
-    var i: usize = 0;
-    while (i < dir.len) : (i += 1) {
-        out[o] = dir[i];
-        o += 1;
-    }
-    if (add_sep) {
-        out[o] = sep;
-        o += 1;
-    }
-    i = 0;
-    while (i < name.len) : (i += 1) {
-        out[o] = name[i];
-        o += 1;
-    }
-    return out[0..need];
-}
 
 // Fatal trap handler. Everything it touches is pre-allocated at startup:
 // the arena/Buf for crash.log and the crash.* path strings. No allocation and
@@ -92,13 +63,32 @@ fn installTrap(writable_dir: []const u8) void {
     g_arena = arena_mod.init(g_arena_buf[0..]);
     g_bt_buf = buf_mod.initCapacity(&g_arena, BT_CAP) catch buf_mod.init(&g_arena);
 
-    if (joinPath(writable_dir, "crash.dmp", g_crash_dmp[0..])) |p| {
+    if (paths.join(writable_dir, "crash.dmp", g_crash_dmp[0..])) |p| {
         g_crash_dmp_len = p.len;
     }
-    if (joinPath(writable_dir, "crash.log", g_crash_log[0..])) |p| {
+    if (paths.join(writable_dir, "crash.log", g_crash_log[0..])) |p| {
         g_crash_log_len = p.len;
     }
     debug.setTrapHandler(onTrap);
+}
+
+fn hasArg(name: []const u8) bool {
+    const nargs = os.argc();
+    var i: usize = 1;
+    while (i < nargs) : (i += 1) {
+        const a = os.argv(i);
+        if (a.len != name.len) continue;
+        var same = true;
+        var k: usize = 0;
+        while (k < a.len) : (k += 1) {
+            if (a[k] != name[k]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return true;
+    }
+    return false;
 }
 
 fn fail(console_mode: bool, msg: []const u8) void {
@@ -140,7 +130,7 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     switch (boot.result) {
         content_boot.BootResult.Loaded => {},
         content_boot.BootResult.Missing => {
-            content_boot.writeFailure(console_mode, content_boot.MSG_MISSING);
+            content_boot.writeFailure(console_mode, def.MSG_MISSING);
             os.exit(1);
             return;
         },
@@ -154,7 +144,7 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     }
 
     var sample_buf: [PATH_MAX]u8 = undefined;
-    const sample_path = joinPath(exe_dir, "sample.txt", sample_buf[0..]) orelse {
+    const sample_path = paths.join(exe_dir, "sample.txt", sample_buf[0..]) orelse {
         fail(console_mode, "UNDERSANDED: sample path too long");
         return;
     };
@@ -164,7 +154,7 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     };
 
     var out_buf: [PATH_MAX]u8 = undefined;
-    const out_path = joinPath(writable_dir, "probe_out.txt", out_buf[0..]) orelse {
+    const out_path = paths.join(writable_dir, "probe_out.txt", out_buf[0..]) orelse {
         fail(console_mode, "UNDERSANDED: probe_out path too long");
         return;
     };
@@ -201,6 +191,28 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
         var s: def.GameState = undefined;
         game.newGame(&s);
         nav.navRun(&s);
+        return;
+    }
+
+    if (!console_mode) {
+        // GUI: one window for the session. px attach is attempted once; null
+        // (or a <16bpp refusal inside attach) means every screen stays cell.
+        const perf_on = hasArg("--perf");
+        if (perf_on) loop_gfx.perfReset();
+
+        var s: def.GameState = undefined;
+        var p: ?*gfx_px.Gfx = gfx_px.gfxPxAttach(g);
+        if (p == null) {
+            persist.logError(writable_dir, "px: attach unavailable; cell fallback");
+        }
+        const reached = loop_gfx.bootGfx(g, &s, writable_dir, perf_on);
+        if (reached) loop_gfx.navRunGfx(&s, p, perf_on);
+
+        if (perf_on) {
+            const line = loop_gfx.perfLine();
+            if (line.len > 0) persist.logError(writable_dir, line);
+        }
+        if (p) |pp| gfx_px.gfxPxClose(pp);
         return;
     }
 

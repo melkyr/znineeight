@@ -71,8 +71,8 @@ fn zeroReport() SimReport {
 }
 
 fn isModal(screen: i32) bool {
-    if (screen == fight.SCREEN_SUBDUE) return true;
-    if (screen == fight.SCREEN_SUBDUE_POST) return true;
+    if (screen == def.SCREEN_SUBDUE) return true;
+    if (screen == def.SCREEN_SUBDUE_POST) return true;
     return false;
 }
 

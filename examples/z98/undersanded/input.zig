@@ -6,7 +6,6 @@
 // decline (identical, consume no RNG).
 
 const def = @import("def.zig");
-const fight = @import("fight.zig");
 const io = @import("std_io.zig");
 
 pub const KEY_ESC: u8 = 27;
@@ -14,16 +13,25 @@ pub const VK_ESC: u16 = 0x1B;
 
 pub const Key = struct { ch: u8, code: u16 };
 
+// Pure gameplay key filter shared by stdin and the window loop: line endings
+// and space are ignored, 0/255 are EOF, every other character passes through.
+pub fn filterKey(k: Key) ?Key {
+    if (k.ch == 0 or k.ch == 255) return null;
+    if (k.ch == 10 or k.ch == 13 or k.ch == ' ') return null;
+    return k;
+}
+
 // Console key source shared by the fight and navigation loops. pal_getchar
 // returns -1 at EOF; std_io.readByte reinterprets that as 255. Treat EOF (and
 // NUL) as a clean end of input so a no-input run terminates.
 pub fn readKey() ?Key {
-    var b = io.readByte();
-    while (b == 10 or b == 13 or b == ' ') {
-        b = io.readByte();
+    while (true) {
+        const b = io.readByte();
+        const k = Key{ .ch = b, .code = 0 };
+        if (filterKey(k)) |f| return f;
+        if (b == 0 or b == 255) return null;
     }
-    if (b == 0 or b == 255) return null;
-    return Key{ .ch = b, .code = 0 };
+    return null;
 }
 
 // Boot first-run keeps Enter (LF/CR): the lore footer is "[Enter] Begin" and
@@ -65,12 +73,12 @@ fn mapFight(k: Key) ?def.Action {
     return null;
 }
 
-// `screen` is GameState.screen (fight.zig SCREEN_*). Esc has no fight action
+// `screen` is GameState.screen (def.SCREEN_*). Esc has no fight action
 // (it opens the menu per §28); inside the subdue modal it declines.
 pub fn mapKey(screen: i32, key: Key) ?def.Action {
-    if (screen == fight.SCREEN_SUBDUE or screen == fight.SCREEN_SUBDUE_POST) {
+    if (screen == def.SCREEN_SUBDUE or screen == def.SCREEN_SUBDUE_POST) {
         return mapModal(key);
     }
-    if (screen == fight.SCREEN_FIGHT) return mapFight(key);
+    if (screen == def.SCREEN_FIGHT) return mapFight(key);
     return null;
 }

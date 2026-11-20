@@ -151,7 +151,7 @@ fn tPlateNegatesArmor() bool {
     begin(&s, &d, noRules());
     if (fight.effectiveArmorPct(&s, &d, noRules()) != 60) return false;
 
-    s.fight.tool = fight.TOOL_PLATE;
+    s.fight.tool = def.TOOL_PLATE;
     s.fight.tool_active = 1;
     return fight.effectiveArmorPct(&s, &d, noRules()) == 100;
 }
@@ -163,7 +163,7 @@ fn tBrineNetIgnoresShell() bool {
     begin(&s, &d, noRules());
     if (fight.effectiveResistRestrain(&s) != 50) return false;
 
-    s.fight.tool = fight.TOOL_BRINE_NET;
+    s.fight.tool = def.TOOL_BRINE_NET;
     s.fight.tool_active = 1;
     return fight.effectiveResistRestrain(&s) == 100;
 }
@@ -178,16 +178,16 @@ fn tCoralShieldElectricEel() bool {
     control.fight.res = 55;
     fight.step(&control, def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 }, &d, creatures.RULES[0..]);
     if (control.fight.hull != 92) return false;
-    if (!hasMsg(&control, fight.MSG_DISCHARGE)) return false;
+    if (!hasMsg(&control, def.MSG_DISCHARGE)) return false;
 
     var s: def.GameState = undefined;
     begin(&s, &d, creatures.RULES[0..]);
     s.fight.res = 55;
-    s.fight.tool = fight.TOOL_CORAL_SHIELD;
+    s.fight.tool = def.TOOL_CORAL_SHIELD;
     s.fight.tool_active = 1;
     fight.step(&s, def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 }, &d, creatures.RULES[0..]);
     if (s.fight.hull != 100) return false;
-    if (hasMsg(&s, fight.MSG_DISCHARGE)) return false;
+    if (hasMsg(&s, def.MSG_DISCHARGE)) return false;
     return true;
 }
 
@@ -199,16 +199,16 @@ fn tCoralShieldAnemoniacus() bool {
     control.fight.hp = 50;
     fight.step(&control, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.RULES[0..]);
     if (control.fight.hull != 90) return false;
-    if (!hasMsg(&control, fight.MSG_DISCHARGE)) return false;
+    if (!hasMsg(&control, def.MSG_DISCHARGE)) return false;
 
     var s: def.GameState = undefined;
     begin(&s, &d, creatures.RULES[0..]);
     s.fight.hp = 50;
-    s.fight.tool = fight.TOOL_CORAL_SHIELD;
+    s.fight.tool = def.TOOL_CORAL_SHIELD;
     s.fight.tool_active = 1;
     fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.RULES[0..]);
     if (s.fight.hull != 100) return false;
-    if (hasMsg(&s, fight.MSG_DISCHARGE)) return false;
+    if (hasMsg(&s, def.MSG_DISCHARGE)) return false;
     return true;
 }
 
@@ -231,7 +231,7 @@ fn fleeOnMaxHit(def_index: i32, hook: bool, want_flee: bool) bool {
     s.fight.player_speed = 99;
     s.fight.rng_state = seedForStrike(fight.STRIKE_MAX);
     if (hook) {
-        s.fight.tool = fight.TOOL_PRESSURE_HOOK;
+        s.fight.tool = def.TOOL_PRESSURE_HOOK;
         s.fight.tool_active = 1;
     }
 
@@ -275,7 +275,7 @@ fn tPressureHookBlocksSetFleeRule() bool {
 
     var s: def.GameState = undefined;
     begin(&s, &d, FLEE_RULE[0..]);
-    s.fight.tool = fight.TOOL_PRESSURE_HOOK;
+    s.fight.tool = def.TOOL_PRESSURE_HOOK;
     s.fight.tool_active = 1;
     fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, FLEE_RULE[0..]);
     if (s.fight.outcome != def.OUT_ONGOING) return false;
@@ -289,8 +289,8 @@ fn tStunSkipsOneAction() bool {
     d.attack = 5;
     var s: def.GameState = undefined;
     begin(&s, &d, noRules());
-    s.world.tools_owned = toolMask(fight.TOOL_ELECTRIC_GLAND);
-    setTool(&s, fight.TOOL_ELECTRIC_GLAND, 1);
+    s.world.tools_owned = toolMask(def.TOOL_ELECTRIC_GLAND);
+    setTool(&s, def.TOOL_ELECTRIC_GLAND, 1);
 
     fight.step(&s, def.Action{ .kind = def.ACT_EQUIP, .arg = 0 }, &d, noRules());
     if (s.fight.tool_active != 1) return false;
@@ -298,13 +298,13 @@ fn tStunSkipsOneAction() bool {
     if (s.exp.tool_charge != 0) return false;
     if (s.fight.pending_stun != 0) return false;
     if (s.fight.hull != 100) return false;
-    if (countMsg(&s, fight.MSG_STUN) != 1) return false;
-    if (hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
+    if (countMsg(&s, def.MSG_STUN) != 1) return false;
+    if (hasMsg(&s, def.MSG_CREATURE_ATTACK)) return false;
 
     // Exactly one action lost: the next creature action lands.
     fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, noRules());
     if (s.fight.hull != 95) return false;
-    if (countMsg(&s, fight.MSG_STUN) != 1) return false;
+    if (countMsg(&s, def.MSG_STUN) != 1) return false;
     return true;
 }
 
@@ -389,7 +389,7 @@ fn tEquipExpToolFallbackEquipsCharge() bool {
     if (s.exp.tool_charge != 0) return false;
     if (s.fight.actions != actions + 1) return false;
     if (s.fight.round != round + 1) return false;
-    return hasMsg(&s, fight.MSG_EQUIP);
+    return hasMsg(&s, def.MSG_EQUIP);
 }
 
 // ---- Fragile --------------------------------------------------------------
@@ -404,8 +404,8 @@ fn tCreatureFirstFragileBlocksEquip() bool {
     var s: def.GameState = undefined;
     begin(&s, &d, noRules());
     setBoat(&s, world.BOAT_PRECISION, 2);
-    s.world.tools_owned = toolMask(fight.TOOL_ELECTRIC_GLAND);
-    setTool(&s, fight.TOOL_ELECTRIC_GLAND, 1);
+    s.world.tools_owned = toolMask(def.TOOL_ELECTRIC_GLAND);
+    setTool(&s, def.TOOL_ELECTRIC_GLAND, 1);
 
     fight.step(&s, def.Action{ .kind = def.ACT_EQUIP, .arg = 0 }, &d, noRules());
 
@@ -416,17 +416,17 @@ fn tCreatureFirstFragileBlocksEquip() bool {
     if (s.fight.tool_charge != 1) return false;
     if (s.exp.tool_charge != 1) return false;
     if (s.fight.pending_stun != 0) return false;
-    if (hasMsg(&s, fight.MSG_STUN)) return false;
-    if (hasMsg(&s, fight.MSG_EQUIP)) return false;
+    if (hasMsg(&s, def.MSG_STUN)) return false;
+    if (hasMsg(&s, def.MSG_EQUIP)) return false;
     return true;
 }
 
 fn tFragileBoundary() bool {
     var g = newGame();
     setBoat(&g, world.BOAT_PRECISION, 1);
-    g.fight.tool = fight.TOOL_PLATE;
+    g.fight.tool = def.TOOL_PLATE;
     g.fight.tool_active = 1;
-    g.exp.tool = fight.TOOL_PLATE;
+    g.exp.tool = def.TOOL_PLATE;
 
     tools.onHullHit(&g, 15);
     if (g.fight.tool_broken != 0) return false;
@@ -446,11 +446,11 @@ fn tFragileBoundary() bool {
 
 fn tRiggedActiveAtFightStart() bool {
     var g = newGame();
-    g.world.tools_owned = toolMask(fight.TOOL_PLATE);
-    g.world.tool_selected = fight.TOOL_PLATE;
+    g.world.tools_owned = toolMask(def.TOOL_PLATE);
+    g.world.tool_selected = def.TOOL_PLATE;
     if (!huntOnce(&g, 0)) return false;
 
-    if (g.fight.tool != fight.TOOL_PLATE) return false;
+    if (g.fight.tool != def.TOOL_PLATE) return false;
     if (g.fight.tool_active != 1) return false;
     if (g.fight.tool_charge != 0) return false;
     if (g.exp.tool_charge != 0) return false;
@@ -460,8 +460,8 @@ fn tRiggedActiveAtFightStart() bool {
 fn tBreakPersistsAcrossFightsAndClearsOnDepart() bool {
     var g = newGame();
     setBoat(&g, world.BOAT_PRECISION, 2);
-    g.world.tools_owned = toolMask(fight.TOOL_PLATE);
-    g.world.tool_selected = fight.TOOL_PLATE;
+    g.world.tools_owned = toolMask(def.TOOL_PLATE);
+    g.world.tool_selected = def.TOOL_PLATE;
     if (!huntOnce(&g, 0)) return false;
 
     tools.onHullHit(&g, 15);
@@ -471,7 +471,7 @@ fn tBreakPersistsAcrossFightsAndClearsOnDepart() bool {
     g.fight.outcome = def.OUT_CREATURE_FLED;
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
     if (!expedition.isInFight(&g)) return false;
-    if (g.fight.tool != fight.TOOL_PLATE) return false;
+    if (g.fight.tool != def.TOOL_PLATE) return false;
     if (g.fight.tool_broken != 1) return false;
     if (g.fight.tool_active != 0) return false;
 
@@ -493,7 +493,7 @@ fn tPeekCreatureAction() bool {
     if (fight.peekCreatureAction(&s, &d, creatures.RULES[0..]) != fight.CREATURE_ACT_FLEE) return false;
 
     // Pressure Hook suppresses the flee prediction too.
-    s.fight.tool = fight.TOOL_PRESSURE_HOOK;
+    s.fight.tool = def.TOOL_PRESSURE_HOOK;
     s.fight.tool_active = 1;
     if (fight.peekCreatureAction(&s, &d, creatures.RULES[0..]) != fight.CREATURE_ACT_ATTACK) return false;
     return true;
@@ -504,7 +504,7 @@ fn tPeekLeavesStateByteIdentical() bool {
     var s: def.GameState = undefined;
     begin(&s, &d, creatures.RULES[0..]);
     s.fight.pending_flee = fight.PENDING_ON;
-    fight.log(&s, def.LOG_NORMAL, fight.MSG_STRIKE, 7, 93);
+    fight.log(&s, def.LOG_NORMAL, def.MSG_STRIKE, 7, 93);
 
     var before = s;
     _ = fight.peekCreatureAction(&s, &d, creatures.RULES[0..]);

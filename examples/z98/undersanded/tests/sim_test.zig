@@ -131,9 +131,9 @@ fn tModalAttempt() bool {
     s.exp.fight_index = 0;
     fight.startFightDef(&s, 0, &d, noRules());
 
-    s.screen = fight.SCREEN_SUBDUE;
+    s.screen = def.SCREEN_SUBDUE;
     if (sim.chooseAction(&s, &d).kind != def.ACT_ATTEMPT) return false;
-    s.screen = fight.SCREEN_SUBDUE_POST;
+    s.screen = def.SCREEN_SUBDUE_POST;
     if (sim.chooseAction(&s, &d).kind != def.ACT_ATTEMPT) return false;
     return true;
 }

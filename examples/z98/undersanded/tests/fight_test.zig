@@ -154,7 +154,7 @@ fn tOverkillEndsFight() bool {
 
     if (s.fight.outcome != def.OUT_OVERKILL) return false;
     if (s.fight.hull != hull_before) return false;
-    if (hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
+    if (hasMsg(&s, def.MSG_CREATURE_ATTACK)) return false;
     return true;
 }
 
@@ -172,7 +172,7 @@ fn tSubdueSilentSuccess() bool {
 
     if (s.fight.outcome != def.OUT_SUBDUE) return false;
     if (s.fight.hull != hull_before) return false;
-    if (hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
+    if (hasMsg(&s, def.MSG_CREATURE_ATTACK)) return false;
     return true;
 }
 
@@ -186,7 +186,7 @@ fn tSubdueModalAttemptSuccess() bool {
     s.fight.res = 5;
 
     doStep(&s, def.ACT_RESTRAIN, &d);
-    if (s.screen != fight.SCREEN_SUBDUE) return false;
+    if (s.screen != def.SCREEN_SUBDUE) return false;
     if (s.fight.outcome != def.OUT_ONGOING) return false;
 
     const hull_before = s.fight.hull;
@@ -194,7 +194,7 @@ fn tSubdueModalAttemptSuccess() bool {
 
     if (s.fight.outcome != def.OUT_SUBDUE) return false;
     if (s.fight.hull != hull_before) return false;
-    if (hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
+    if (hasMsg(&s, def.MSG_CREATURE_ATTACK)) return false;
     return true;
 }
 
@@ -210,7 +210,7 @@ fn tLastSurgeAndCreatureActs() bool {
     s.fight.hp = 40;
 
     doStep(&s, def.ACT_RESTRAIN, &d);
-    if (s.screen != fight.SCREEN_SUBDUE) return false;
+    if (s.screen != def.SCREEN_SUBDUE) return false;
 
     doStep(&s, def.ACT_ATTEMPT, &d);
 
@@ -219,8 +219,8 @@ fn tLastSurgeAndCreatureActs() bool {
     if (s.fight.surge_atk_applied != 1) return false;
     if (s.fight.res != 25) return false;
     if (!hasMsg(&s, def.MSG_LAST_SURGE)) return false;
-    if (!hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
-    if (msgIndex(&s, def.MSG_LAST_SURGE) > msgIndex(&s, fight.MSG_CREATURE_ATTACK)) return false;
+    if (!hasMsg(&s, def.MSG_CREATURE_ATTACK)) return false;
+    if (msgIndex(&s, def.MSG_LAST_SURGE) > msgIndex(&s, def.MSG_CREATURE_ATTACK)) return false;
     if (s.fight.hull != 90) return false;
     if (fight.effectiveAttack(&s, &d, noRules()) != 10) return false;
     if (fight.effectiveSpeed(&s, &d, noRules()) != 3) return false;
@@ -309,8 +309,8 @@ fn tCouplingAfterCreatureAttack() bool {
 
     if (s.fight.res != 48) return false;
     if (s.fight.hull != 93) return false;
-    const ai = msgIndex(&s, fight.MSG_CREATURE_ATTACK);
-    const ci = msgIndex(&s, fight.MSG_COUPLING);
+    const ai = msgIndex(&s, def.MSG_CREATURE_ATTACK);
+    const ci = msgIndex(&s, def.MSG_COUPLING);
     if (ai < 0 or ci < 0) return false;
     if (ai > ci) return false;
     return true;
@@ -470,8 +470,8 @@ fn tDeathBeforeSubdue() bool {
 
     if (s.fight.outcome == def.OUT_SUBDUE) return false;
     if (s.fight.outcome != def.OUT_OVERKILL) return false;
-    if (hasMsg(&s, fight.MSG_SUBDUE_OK)) return false;
-    if (!hasMsg(&s, fight.MSG_OVERKILL)) return false;
+    if (hasMsg(&s, def.MSG_SUBDUE_OK)) return false;
+    if (!hasMsg(&s, def.MSG_OVERKILL)) return false;
     return true;
 }
 
@@ -503,7 +503,7 @@ fn tDischargeMysticElectricEel() bool {
 
     doStepWith(&s, def.ACT_RESTRAIN, &d, creatures.RULES[0..]);
 
-    if (msgA(&s, fight.MSG_DISCHARGE) != 8) return false;
+    if (msgA(&s, def.MSG_DISCHARGE) != 8) return false;
     if ((s.fight.rule_consumed & @intCast(u32, 1)) == 0) return false;
     return true;
 }
@@ -516,7 +516,7 @@ fn tDischargeAnemoniacus() bool {
 
     doStepWith(&s, def.ACT_STRIKE, &d, creatures.RULES[0..]);
 
-    if (msgA(&s, fight.MSG_DISCHARGE) != 10) return false;
+    if (msgA(&s, def.MSG_DISCHARGE) != 10) return false;
     return true;
 }
 
@@ -574,7 +574,7 @@ fn tFreezingPerchFlee() bool {
     doStepWith(&s, def.ACT_STRIKE, &d, creatures.RULES[0..]);
 
     if (s.fight.outcome != def.OUT_CREATURE_FLED) return false;
-    if (hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
+    if (hasMsg(&s, def.MSG_CREATURE_ATTACK)) return false;
     return true;
 }
 
@@ -669,7 +669,7 @@ fn tTurnOrderTiePlayerFirst() bool {
 
     doStep(&s, def.ACT_STRIKE, &d);
     if (s.log_n < 2) return false;
-    if (s.log[0].msg_id != fight.MSG_STRIKE) return false;
+    if (s.log[0].msg_id != def.MSG_STRIKE) return false;
     return true;
 }
 
@@ -704,7 +704,7 @@ fn tArmorPersistentRuleTiming() bool {
     above.fight.prev_hp = 80;
     if (fight.effectiveArmorPct(&above, &d, ARMOR_RULES[0..]) != 100) return false;
     doStepWith(&above, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
-    const above_dmg = msgA(&above, fight.MSG_STRIKE);
+    const above_dmg = msgA(&above, def.MSG_STRIKE);
     if (above_dmg < fight.STRIKE_MIN or above_dmg > fight.STRIKE_MAX) return false;
 
     // Below threshold: rule armor 50 applies on that same action.
@@ -714,7 +714,7 @@ fn tArmorPersistentRuleTiming() bool {
     below.fight.prev_hp = 49;
     if (fight.effectiveArmorPct(&below, &d, ARMOR_RULES[0..]) != 50) return false;
     doStepWith(&below, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
-    const below_dmg = msgA(&below, fight.MSG_STRIKE);
+    const below_dmg = msgA(&below, def.MSG_STRIKE);
     if (below_dmg < 7 or below_dmg > 12) return false;
 
     // Crossing action in a fresh state: the cached armor still holds the base
@@ -726,7 +726,7 @@ fn tArmorPersistentRuleTiming() bool {
     crossed.fight.prev_hp = 80;
     if (crossed.fight.active_armor_pct != 100) return false;
     doStepWith(&crossed, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
-    const crossed_dmg = msgA(&crossed, fight.MSG_STRIKE);
+    const crossed_dmg = msgA(&crossed, def.MSG_STRIKE);
     if (crossed_dmg < 7 or crossed_dmg > 12) return false;
     return true;
 }
@@ -744,12 +744,12 @@ fn tDeclineCopyCouplingVsPlain() bool {
     begin(&thrash, &d, noRules());
     thrash.fight.res = 5;
     doStep(&thrash, def.ACT_RESTRAIN, &d);
-    if (thrash.screen != fight.SCREEN_SUBDUE) return false;
+    if (thrash.screen != def.SCREEN_SUBDUE) return false;
     thrash.fight.hp = 80;
     thrash.fight.res = 0;
     thrash.log_n = 0;
     doStep(&thrash, def.ACT_DECLINE, &d);
-    if (!hasMsg(&thrash, fight.MSG_DECLINE)) return false;
+    if (!hasMsg(&thrash, def.MSG_DECLINE)) return false;
     if (hasMsg(&thrash, def.MSG_DECLINE_PLAIN)) return false;
 
     // Despair live (HP below 30%, Resolve above 50%): plain copy, because only
@@ -758,26 +758,26 @@ fn tDeclineCopyCouplingVsPlain() bool {
     begin(&despair, &d, noRules());
     despair.fight.res = 5;
     doStep(&despair, def.ACT_RESTRAIN, &d);
-    if (despair.screen != fight.SCREEN_SUBDUE) return false;
+    if (despair.screen != def.SCREEN_SUBDUE) return false;
     despair.fight.hp = 20;
     despair.fight.res = 80;
     despair.log_n = 0;
     doStep(&despair, def.ACT_DECLINE, &d);
     if (!hasMsg(&despair, def.MSG_DECLINE_PLAIN)) return false;
-    if (hasMsg(&despair, fight.MSG_DECLINE)) return false;
+    if (hasMsg(&despair, def.MSG_DECLINE)) return false;
 
     // Neither coupling live: plain copy.
     var plain: def.GameState = undefined;
     begin(&plain, &d, noRules());
     plain.fight.res = 5;
     doStep(&plain, def.ACT_RESTRAIN, &d);
-    if (plain.screen != fight.SCREEN_SUBDUE) return false;
+    if (plain.screen != def.SCREEN_SUBDUE) return false;
     plain.fight.hp = 40;
     plain.fight.res = 0;
     plain.log_n = 0;
     doStep(&plain, def.ACT_DECLINE, &d);
     if (!hasMsg(&plain, def.MSG_DECLINE_PLAIN)) return false;
-    if (hasMsg(&plain, fight.MSG_DECLINE)) return false;
+    if (hasMsg(&plain, def.MSG_DECLINE)) return false;
     return true;
 }
 
@@ -792,7 +792,7 @@ fn tSteelTunaSpeedImmediate() bool {
 
     doStep(&s, def.ACT_RESTRAIN, &d);
     if (s.log_n < 2) return false;
-    if (s.log[0].msg_id != fight.MSG_RESTRAIN) return false;
+    if (s.log[0].msg_id != def.MSG_RESTRAIN) return false;
     return true;
 }
 
@@ -804,7 +804,7 @@ fn tCreatureFasterActsFirst() bool {
 
     doStep(&s, def.ACT_STRIKE, &d);
     if (s.log_n < 2) return false;
-    if (s.log[0].msg_id != fight.MSG_CREATURE_ATTACK) return false;
+    if (s.log[0].msg_id != def.MSG_CREATURE_ATTACK) return false;
     return true;
 }
 
@@ -819,19 +819,19 @@ fn tDeclineNoRngAndGate() bool {
     s.fight.res = 5;
 
     doStep(&s, def.ACT_RESTRAIN, &d);
-    if (s.screen != fight.SCREEN_SUBDUE) return false;
+    if (s.screen != def.SCREEN_SUBDUE) return false;
 
     const rng_before = s.fight.rng_state;
     doStep(&s, def.ACT_DECLINE, &d);
     if (s.fight.rng_state != rng_before) return false;
     if (s.fight.subdue_declined != 1) return false;
-    if (s.screen != fight.SCREEN_FIGHT) return false;
+    if (s.screen != def.SCREEN_FIGHT) return false;
 
     s.fight.outcome = def.OUT_ONGOING;
     s.fight.hp = 100;
     s.fight.res = 0;
     doStep(&s, def.ACT_STRIKE, &d);
-    if (s.screen != fight.SCREEN_FIGHT) return false;
+    if (s.screen != def.SCREEN_FIGHT) return false;
     if (s.fight.subdue_declined != 1) return false;
 
     s.fight.outcome = def.OUT_ONGOING;
@@ -839,7 +839,7 @@ fn tDeclineNoRngAndGate() bool {
     s.fight.res = 0;
     s.fight.hp = 100;
     doStep(&s, def.ACT_STRIKE, &d);
-    if (s.screen != fight.SCREEN_SUBDUE) return false;
+    if (s.screen != def.SCREEN_SUBDUE) return false;
     return true;
 }
 
@@ -853,7 +853,7 @@ fn tCreatureAttackHull() bool {
     game.gameStep(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 });
 
     if (s.fight.hull != before - 8) return false;
-    if (msgA(&s, fight.MSG_CREATURE_ATTACK) != 8) return false;
+    if (msgA(&s, def.MSG_CREATURE_ATTACK) != 8) return false;
     return true;
 }
 
@@ -1030,7 +1030,7 @@ fn tPhasingStrikeAndRestrain() bool {
     const hp_before = solid.fight.hp;
     doStepWith(&solid, def.ACT_STRIKE, &d, noRules());
     if (solid.fight.hp >= hp_before) return false;
-    if (hasMsg(&solid, fight.MSG_PHASE)) return false;
+    if (hasMsg(&solid, def.MSG_PHASE)) return false;
 
     var phase: def.GameState = undefined;
     begin(&phase, &d, noRules());
@@ -1038,20 +1038,20 @@ fn tPhasingStrikeAndRestrain() bool {
     const phase_hp = phase.fight.hp;
     doStepWith(&phase, def.ACT_STRIKE, &d, noRules());
     if (phase.fight.hp != phase_hp) return false;
-    if (!hasMsg(&phase, fight.MSG_PHASE)) return false;
-    if (hasMsg(&phase, fight.MSG_STRIKE)) return false;
+    if (!hasMsg(&phase, def.MSG_PHASE)) return false;
+    if (hasMsg(&phase, def.MSG_STRIKE)) return false;
 
     var solid_r: def.GameState = undefined;
     begin(&solid_r, &d, noRules());
     solid_r.fight.round = 1;
     doStepWith(&solid_r, def.ACT_RESTRAIN, &d, noRules());
-    const solid_dmg = msgA(&solid_r, fight.MSG_RESTRAIN);
+    const solid_dmg = msgA(&solid_r, def.MSG_RESTRAIN);
 
     var phase_r: def.GameState = undefined;
     begin(&phase_r, &d, noRules());
     phase_r.fight.round = 3;
     doStepWith(&phase_r, def.ACT_RESTRAIN, &d, noRules());
-    const phase_dmg = msgA(&phase_r, fight.MSG_RESTRAIN);
+    const phase_dmg = msgA(&phase_r, def.MSG_RESTRAIN);
 
     if (solid_dmg < 0 or solid_dmg > 9) return false;
     if (phase_dmg < 10) return false;
@@ -1066,8 +1066,8 @@ fn tDecoyRoundOneAndLure() bool {
     const before = s.fight.hp;
     doStepWith(&s, def.ACT_STRIKE, &d, creatures.RULES[0..]);
     if (s.fight.hp != before) return false;
-    if (!hasMsg(&s, fight.MSG_DECOY)) return false;
-    if (hasMsg(&s, fight.MSG_STRIKE)) return false;
+    if (!hasMsg(&s, def.MSG_DECOY)) return false;
+    if (hasMsg(&s, def.MSG_STRIKE)) return false;
 
     const round_two = s.fight.hp;
     doStepWith(&s, def.ACT_STRIKE, &d, creatures.RULES[0..]);
@@ -1075,12 +1075,12 @@ fn tDecoyRoundOneAndLure() bool {
 
     var lure: def.GameState = undefined;
     begin(&lure, &d, creatures.RULES[0..]);
-    lure.fight.tool = fight.TOOL_LURE;
+    lure.fight.tool = def.TOOL_LURE;
     lure.fight.tool_active = 1;
     const lure_before = lure.fight.hp;
     doStepWith(&lure, def.ACT_STRIKE, &d, creatures.RULES[0..]);
     if (lure.fight.hp >= lure_before) return false;
-    if (hasMsg(&lure, fight.MSG_DECOY)) return false;
+    if (hasMsg(&lure, def.MSG_DECOY)) return false;
     return true;
 }
 
@@ -1103,19 +1103,19 @@ fn tBlindRollAndLure() bool {
     const hp_before = miss.fight.hp;
     doStepWith(&miss, def.ACT_STRIKE, &d, creatures.RULES[0..]);
     if (miss.fight.hp != hp_before) return false;
-    if (!hasMsg(&miss, fight.MSG_BLIND)) return false;
+    if (!hasMsg(&miss, def.MSG_BLIND)) return false;
     if (miss.fight.pending_blind != 0) return false;
     if (miss.fight.rng_state != expected_state) return false;
 
     var lure: def.GameState = undefined;
     begin(&lure, &d, creatures.RULES[0..]);
     lure.fight.pending_blind = 100;
-    lure.fight.tool = fight.TOOL_LURE;
+    lure.fight.tool = def.TOOL_LURE;
     lure.fight.tool_active = 1;
     const lure_hp = lure.fight.hp;
     doStepWith(&lure, def.ACT_STRIKE, &d, creatures.RULES[0..]);
     if (lure.fight.hp >= lure_hp) return false;
-    if (hasMsg(&lure, fight.MSG_BLIND)) return false;
+    if (hasMsg(&lure, def.MSG_BLIND)) return false;
     return true;
 }
 
@@ -1161,7 +1161,7 @@ fn tInkCadenceAndConsumer() bool {
     var sonar: def.GameState = undefined;
     begin(&sonar, &sd, creatures.RULES[0..]);
     sonar.fight.round = 3;
-    sonar.fight.tool = fight.TOOL_SONAR;
+    sonar.fight.tool = def.TOOL_SONAR;
     sonar.fight.tool_active = 1;
     doStepWith(&sonar, def.ACT_RESTRAIN, &sd, creatures.RULES[0..]);
     if (sonar.fight.pending_ink != 0) return false;
@@ -1178,7 +1178,7 @@ fn tInkCadenceAndConsumer() bool {
     if (ink.fight.outcome == def.OUT_PLAYER_FLED) return false;
     if (ink.fight.pending_ink != 0) return false;
     if (ink.fight.rng_state != after) return false;
-    if (!hasMsg(&ink, fight.MSG_INK)) return false;
+    if (!hasMsg(&ink, def.MSG_INK)) return false;
     return true;
 }
 
@@ -1191,14 +1191,14 @@ fn tLureSonarReveals() bool {
     // Other creatures print no new Lure line even when the tool is active.
     var plain: def.GameState = undefined;
     begin(&plain, &d, noRules());
-    plain.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_LURE);
-    plain.fight.tool = fight.TOOL_LURE;
+    plain.world.tools_owned = @intCast(u32, 1) << @intCast(u32, def.TOOL_LURE);
+    plain.fight.tool = def.TOOL_LURE;
     plain.fight.tool_charge = 1;
-    plain.exp.tool = fight.TOOL_LURE;
+    plain.exp.tool = def.TOOL_LURE;
     plain.exp.tool_charge = 1;
     plain.exp.tool_broken = 0;
     doStepWith(&plain, def.ACT_EQUIP, &d, noRules());
-    if (hasMsg(&plain, fight.MSG_LURE)) return false;
+    if (hasMsg(&plain, def.MSG_LURE)) return false;
 
     // Phasing keeps the Solid/Phase reveal.
     var ghost = creatures.defAt(14);
@@ -1206,28 +1206,28 @@ fn tLureSonarReveals() bool {
     var lure: def.GameState = undefined;
     begin(&lure, &ghost, noRules());
     lure.fight.round = 3;
-    lure.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_LURE);
-    lure.fight.tool = fight.TOOL_LURE;
+    lure.world.tools_owned = @intCast(u32, 1) << @intCast(u32, def.TOOL_LURE);
+    lure.fight.tool = def.TOOL_LURE;
     lure.fight.tool_charge = 1;
-    lure.exp.tool = fight.TOOL_LURE;
+    lure.exp.tool = def.TOOL_LURE;
     lure.exp.tool_charge = 1;
     lure.exp.tool_broken = 0;
     doStepWith(&lure, def.ACT_EQUIP, &ghost, noRules());
-    if (!hasMsg(&lure, fight.MSG_LURE)) return false;
-    if (msgA(&lure, fight.MSG_LURE) != fight.PHASE_PHASED) return false;
+    if (!hasMsg(&lure, def.MSG_LURE)) return false;
+    if (msgA(&lure, def.MSG_LURE) != fight.PHASE_PHASED) return false;
 
     var sonar: def.GameState = undefined;
     begin(&sonar, &d, noRules());
-    sonar.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_SONAR);
-    sonar.fight.tool = fight.TOOL_SONAR;
+    sonar.world.tools_owned = @intCast(u32, 1) << @intCast(u32, def.TOOL_SONAR);
+    sonar.fight.tool = def.TOOL_SONAR;
     sonar.fight.tool_charge = 1;
-    sonar.exp.tool = fight.TOOL_SONAR;
+    sonar.exp.tool = def.TOOL_SONAR;
     sonar.exp.tool_charge = 1;
     sonar.exp.tool_broken = 0;
     doStepWith(&sonar, def.ACT_EQUIP, &d, noRules());
-    if (!hasMsg(&sonar, fight.MSG_SONAR)) return false;
-    if (msgA(&sonar, fight.MSG_SONAR) != fight.effectiveSpeed(&sonar, &d, noRules())) return false;
-    if (msgA(&sonar, fight.MSG_SONAR) != 9) return false;
+    if (!hasMsg(&sonar, def.MSG_SONAR)) return false;
+    if (msgA(&sonar, def.MSG_SONAR) != fight.effectiveSpeed(&sonar, &d, noRules())) return false;
+    if (msgA(&sonar, def.MSG_SONAR) != 9) return false;
 
     // Ghost-Ray flip: Sonar encodes Phase as the tens digit of the action code.
     var ghost_flip = creatures.defAt(14);
@@ -1235,15 +1235,15 @@ fn tLureSonarReveals() bool {
     var flip: def.GameState = undefined;
     begin(&flip, &ghost_flip, noRules());
     flip.fight.round = 3;
-    flip.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_SONAR);
-    flip.fight.tool = fight.TOOL_SONAR;
+    flip.world.tools_owned = @intCast(u32, 1) << @intCast(u32, def.TOOL_SONAR);
+    flip.fight.tool = def.TOOL_SONAR;
     flip.fight.tool_charge = 1;
-    flip.exp.tool = fight.TOOL_SONAR;
+    flip.exp.tool = def.TOOL_SONAR;
     flip.exp.tool_charge = 1;
     flip.exp.tool_broken = 0;
     doStepWith(&flip, def.ACT_EQUIP, &ghost_flip, noRules());
-    if (!hasMsg(&flip, fight.MSG_SONAR)) return false;
-    if (msgB(&flip, fight.MSG_SONAR) != 11) return false;
+    if (!hasMsg(&flip, def.MSG_SONAR)) return false;
+    if (msgB(&flip, def.MSG_SONAR) != 11) return false;
     return true;
 }
 
@@ -1255,7 +1255,7 @@ fn tLureDecoyTrueTargetCopy() bool {
     var plain: def.GameState = undefined;
     begin(&plain, &d, creatures.RULES[0..]);
     doStepWith(&plain, def.ACT_STRIKE, &d, creatures.RULES[0..]);
-    if (hasMsg(&plain, fight.MSG_LURE)) return false;
+    if (hasMsg(&plain, def.MSG_LURE)) return false;
     var plain_sc: render.Screen = undefined;
     render.renderFrame(&plain, &d, &plain_sc);
     var plain_buf: [4096]u8 = undefined;
@@ -1264,15 +1264,15 @@ fn tLureDecoyTrueTargetCopy() bool {
 
     var lure: def.GameState = undefined;
     begin(&lure, &d, creatures.RULES[0..]);
-    lure.world.tools_owned = @intCast(u32, 1) << @intCast(u32, fight.TOOL_LURE);
-    lure.fight.tool = fight.TOOL_LURE;
+    lure.world.tools_owned = @intCast(u32, 1) << @intCast(u32, def.TOOL_LURE);
+    lure.fight.tool = def.TOOL_LURE;
     lure.fight.tool_charge = 1;
-    lure.exp.tool = fight.TOOL_LURE;
+    lure.exp.tool = def.TOOL_LURE;
     lure.exp.tool_charge = 1;
     lure.exp.tool_broken = 0;
     doStepWith(&lure, def.ACT_EQUIP, &d, creatures.RULES[0..]);
-    if (!hasMsg(&lure, fight.MSG_LURE)) return false;
-    if (msgA(&lure, fight.MSG_LURE) != fight.LURE_REVEAL_DECOY) return false;
+    if (!hasMsg(&lure, def.MSG_LURE)) return false;
+    if (msgA(&lure, def.MSG_LURE) != fight.LURE_REVEAL_DECOY) return false;
 
     var lure_sc: render.Screen = undefined;
     render.renderFrame(&lure, &d, &lure_sc);
@@ -1375,7 +1375,7 @@ const FightRun = struct {
 };
 
 fn isModal(screen: i32) bool {
-    return screen == fight.SCREEN_SUBDUE or screen == fight.SCREEN_SUBDUE_POST;
+    return screen == def.SCREEN_SUBDUE or screen == def.SCREEN_SUBDUE_POST;
 }
 
 fn actionFor(ch: u8, arg_out: *i32) i32 {
@@ -1446,8 +1446,8 @@ fn runInto(s: *def.GameState, def_index: i32, pattern: []const u8, modal_mode: i
     r.res = s.fight.res;
     r.surges = s.fight.surge_count;
     r.switches = s.fight.switches;
-    r.discharges = countMsg(s, fight.MSG_DISCHARGE);
-    r.couplings = countMsg(s, fight.MSG_COUPLING);
+    r.discharges = countMsg(s, def.MSG_DISCHARGE);
+    r.couplings = countMsg(s, def.MSG_COUPLING);
     return r;
 }
 

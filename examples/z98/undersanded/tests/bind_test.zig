@@ -271,7 +271,7 @@ fn tMissingCopyAndExit() bool {
     if (!changeDir(MISSING_DIR)) return false;
     const boot = bootMissingFromCwd();
     if (boot.result != content_boot.BootResult.Missing) return false;
-    if (!eq(content_boot.MSG_MISSING, MISSING_MSG)) return false;
+    if (!eq(def.MSG_MISSING, MISSING_MSG)) return false;
     const code = childExitIn(MISSING_DIR);
     if (!changeDir("/tmp")) return false;
     if (code == 0 or code < 0) return false;

@@ -1582,10 +1582,271 @@ Kickoff rulings (spec §38 P27; user-authorized "3. A"):
   art subdue modal, exported `msgLine` + parity test.
 - **Allowlist delta only what is used** (`StretchDIBits`; `SetWindowLongA` only
   if the fixed-size path needs it) — recorded here when implemented and gated
-  by `check_win9x_imports.sh`.
+  by `check_win9x_imports.sh`. **Recorded M9 Task 2 delta:** GDI32 adds
+  `StretchDIBits` (24-bit DIB px fallback), USER32 adds `SetWindowLongA`
+  (standalone px fixed-size frame) and `IsWindowVisible` (probe visibility
+  evidence). No `CreateDIBSection` was needed: the DIB pixels are a fixed
+  module buffer passed to `StretchDIBits`. The typed surface `GetSurfaceDesc`
+  query is a COM vtable slot, not a PE import.
 - **D24/D25:** new atlas/table data uses explicit `[N]T{...}` literals; no
   array-returning APIs. (`examples/torrent_example_defects.md` D24/D25).
 - **Tier split:** native core/art/loop tests + `tier_edit.sh` (byte-identical)
   = gate; px probe, `tier_edit_gui.sh`, Wine runs = SLOW evidence, loud skip.
 
 Task 0 records the M8/`tier_edit` baseline at the amended HEAD before code.
+
+### M9 quality cut (P28)
+
+The final two M9 tasks are the tech-debt cut before M10/M13 (user-authorized):
+
+- **Task 8 — smell removal (mechanical):** ids only in `def.zig`; `items.zig`
+  owns tool/material ownership/kind; `paths.join` + `text_scan.zig` own the
+  path/text primitives; dead/alias layers removed; `tests/quality_smells.sh`
+  (grep + LOC) runs in the tier. Golden-identical.
+- **Task 9 — structural refactor:** compiled content fallback generated from
+  `data.z98` (`undtool --emit-fallback` + byte-equal diff gate; M13 authors
+  once); `render_text`/`fight_rules`/`fight_tools`/`data_scan`/`data_load`/
+  `save_scan`/`save_io` splits; renderers stop importing
+  dock/economy/save_ux/journal/data and consume a prepared view struct.
+  Golden-identical; any golden drift = STOP.
+- Deferred: test-harness consolidation; PAL de-duplication.
+- Task 5 fix round (review Important): share `input.filterKey` with
+  `loop_gfx` (10/13/space parity; raw for lore) and update the obsolete
+  `tests/tier_m1_std.sh` SLOW `under.exe` evidence to launch → window check →
+  kill (loud skip without Wine/Xvfb).
+
+#### Baseline + facts
+
+Baseline at HEAD `32e85ba4c05695d20f14ad9b01d5ac2ff2d5b71c` (branch
+`undersanded/m9`), seed v151 compiler `/tmp/seed151_build/zig1_5_clean`
+md5 `a2fc81055dc1cb7a67099fe3934d22ee`:
+
+```
+ZIG=/tmp/seed151_build/zig1_5_clean OUT=/tmp/m9_t0_m8 sh examples/z98/undersanded/tests/tier_m8_content.sh
+-> TIER_M8 PASS 52 passed / 0 failed
+ZIG=/tmp/seed151_build/zig1_5_clean OUT=/tmp/m9_t0_edit sh examples/z98/z9edit/tests/tier_edit.sh
+-> TIER_EDIT PASS (== tier_edit summary: 38 passed, 0 failed ==)
+   lexer md5 3x: dcc81009e9a36c86e4d90e104c439871 (run1 = run2 = run3)
+   compile max RSS: 5848 KiB
+```
+
+Facts verified in this tree:
+
+- **Opaque `Gfx`.** `std_gfx.zig:17-18` states the opaque contract; private
+  `GfxState` at `:69-79`, public `Gfx = struct { opaque: *GfxState }` at `:81`.
+  No cell buffer or raw COM pointer is app-reachable.
+- **PAL surface placeholders.** In `std_gfx_pal.zig` the vtbl slots are still
+  `extern "stdcall" fn() void` for `BltFast` (`:442`), `GetPixelFormat`
+  (`:456`, placeholder), `Lock` (`:460`), `Unlock` (`:467`). Typed already:
+  `Blt` (`:440`, returns `u32`) and `Restore` (`:462`,
+  `fn(iface: *void) u32`). Public: `State` (`:564`), `open` (`:1078`),
+  `waitEvent` (`:1663`), `pollEvent` (`:1694`).
+- **No px format today.** `makeSurface` (`std_gfx_pal.zig:779-795`) sets only
+  `DDSD_CAPS` for the primary (`:782-783`) and
+  `DDSD_CAPS|DDSD_WIDTH|DDSD_HEIGHT` + `DDSCAPS_OFFSCREENPLAIN` for the
+  offscreen (`:785-786`); the calls are `:1059-1061`. Format fields exist in
+  `DdSurfaceDesc2` (`:333-340`) but `zeroDesc` leaves them zero (`:365-372`),
+  and the constants cover only `DDSCAPS_PRIMARYSURFACE`/`OFFSCREENPLAIN`/
+  `DDSD_CAPS|HEIGHT|WIDTH` (`:64-68`). The surface is 32-bit
+  (`std_gfx.zig:8`; `std_gfx_pal.zig:6-8`). px needs its own 16bpp 565
+  offscreen created with `DDSD_PIXELFORMAT` + `DDSCAPS_SYSTEMMEMORY`, plus a
+  typed `GetPixelFormat` query at open.
+- **Allowlist delta is exactly the used symbols.**
+  `scripts/win32_cross/check_win9x_imports.sh:34` GDI32 ends
+  `... SelectObject SetBkMode SetTextColor TextOutA`; `:35` USER32 ends
+  `... SetWindowTextA ShowWindow TranslateMessage UnregisterClassA UpdateWindow`.
+  Neither list contains `StretchDIBits` or `SetWindowLongA`; add each only
+  when the px code actually imports it, and keep the script green.
+- **`render_term` art facts** (art rendering must match):
+  - Hidden Speed: `speedRevealed` (`render_term.zig:120-123`) is the journal
+    bit for `fight.def_index` or active Sonar; the `SPD ??` branch
+    (`:385-390`) prints `??` when false and calls `effectiveSpeed` only when
+    revealed.
+  - Full tool status: `renderToolStatus` (`:347-370`) draws
+    `TOOL <name> <kind> charge N broken yes/no active yes/no`; called on row 6
+    (`:396`).
+  - Subdue modal: `renderFrame` early-returns to `renderModal` for
+    `SCREEN_SUBDUE`/`SCREEN_SUBDUE_POST` (`:375-378`); copy/actions at
+    `:323-336` (`SUBDUE ATTEMPT`, chance row, Last Surge copy,
+    `[A]ttempt   [F] Fight on   [Esc] Cancel`).
+  - Zero-max bar guard: `barFill` returns 0 when `max <= 0 or width <= 0`
+    before dividing (`:125-133`, guard `:126`); keeps the boss `max_res = 0`
+    case safe.
+  - `msgLine` is private (`render_term.zig:174`); M9 must export/share it (or
+    duplicate it byte-identically) for the art log and a parity test.
+  - Mid-fight help overlay: `nav.zig:289-298` handles `?` on every screen
+    (including mid-fight) and any key dismisses it; `drawCurrent` renders the
+    page first (`:361-365`). Art mode draws the same overlay or documents the
+    terminal fallback.
+- **D24/D25 guard.** New atlas/table data uses explicit `[N]T{...}` literals;
+  no array-returning APIs. Reference: `examples/torrent_example_defects.md`
+  (D24/D25).
+- **Art font:** `font8x16.zig` is the public-domain IBM VGA/MCGA ROM 8x16 font `VGA8.F16` (source URL and sha256 in the file header).
+
+### M10 amendment review (M9 Task 7)
+
+Read `2026-11-12-undersanded-m10-assets-pipeline-plan.md` against the landed
+M9 interfaces (`sf/src/std_gfx_px_core.zig:21-27` `Sprite`, `:134-201`
+`pxCoreBlit/BlitPart`, `:318-329` memory `gfxPxBlit/BlitPart`;
+`render_art.zig`; `tests/px_test.zig:35` art golden; `tests/tier_m9_px.sh`)
+and spec §23.1/§30/§35. Verdict: **amendment required**. The `.ZSP` header
+already fits `Sprite` (`w/h u16 LE` widen to `u32`, `key u8`, one `ramp u8`)
+and `pxCoreBlitPart` already does indexed→565 via `lut[]` with key skip, so M9
+needs no code change. But M10 does not yet pin recolor derivation, the
+manifest/recolor ledger, canonical-RLE re-encoding, the missing
+`--validate-assets` hook, or the art-golden re-pin.
+
+**1. Pin the recolor LUT API and ledger (blocking).** M10 says "ramp
+assignment" but the decoder contract has no recolor path. Add to `zsp.zig`:
+
+```zig
+pub fn zspRecolorLut(out: *[256]u16, base: *const [256]u16,
+                     from_ramp: u8, to_ramp: u8) void
+```
+
+Exact rule: copy `base` to `out`; require `from_ramp <= 15`, `to_ramp <= 15`,
+`from_ramp != to_ramp`, and reject `from_ramp == 0` for creature recolors
+(ramp 0 is the outline/UI ramp); for every `i < 255` with
+`i >> 4 == from_ramp`, set `shade = i & 15` and
+`out[i] = base[to_ramp * 16 + shade]`; when `to_ramp == 15 and shade == 15`
+use `base[254]` because index 255 is the key (ramp 15 has only 15 usable
+shades); always leave `out[255] = base[255]`. Recolor uses the same base
+pixels: `Sprite{ .idx = base.idx, .lut = out, .w = base.w, .h = base.h,
+.key = base.key }`, with one 512-byte LUT per loaded variant. No new `.ZSP`
+per recolor.
+
+`assets.man` must carry both asset and variant records (exact line forms):
+`A <name8.3> <kind> <w> <h> <encoded_bytes> <allowed_ramps_csv>` and
+`V <variant_id> <base8.3> <from_ramp> <to_ramp>`. `A.name8.3`, `V.base8.3`,
+and the `F` name are checked as lowercase 8.3 (≤8-char base, ≤3-char
+extension, no spaces); the full `A` list is exactly the 26 files `eel00
+tuna00 crab00 jelly00 barn00 anem00 ray00 squid00 angler00 wrasse00 boss00
+bg_a bg_b bg_c bg_d bg_dock boat00 fig_merm fig_angl fig_krak flag_pen
+flag_ref flag_trn dec_barn dec_sqid dec_boss`, plus `F font8x16 95 16`.
+`V.variant_id` is a symbolic id, not a filename. The validator must require
+every `V.base8.3` to be an `A` row, `from_ramp` to equal that row's `.ZSP`
+header ramp, every demo def to have exactly one mapping (base defs map to
+their `A` row, recolors to their `V` row), and no orphan/duplicate variants.
+
+Pin the actual mapping (def id -> base, from -> to); base defs are identity
+rows and get no `V`: id1->eel00, id4->tuna00, id7->crab00, id8->jelly00,
+id9->barn00, id10->anem00, id13->ray00, id14->squid00, id15->angler00,
+id16->wrasse00, id17->boss00 (Armor, see below). The six non-flex recolors:
+id2 eel00 6->1 (Mystic Electric Eel), id3 eel00 6->5 (Mileel), id5 tuna00
+7->14 (Rust Tuna), id6 tuna00 7->10 (Tunisteel), id11 crab00 8->11 (Coral
+Crab), id12 jelly00 9->5 (Abyssal Lantern-Jelly). Flex recolors: id18 anem00
+11->5 (Anemoniacus), id19 tuna00 7->1 (Freezing Perch, icy). Base ramps from
+§30: eel00=6, tuna00=7, crab00=8, jelly00=9, barn00=10, anem00=11, ray00=12,
+squid00=13, angler00=14, wrasse00=15.
+
+Boss identity contract (option A: Armor = base, no `V` row). `boss00`
+header.ramp = 10 (Armor); `id=17` maps directly to `A boss00` and has no `V`
+row. Four non-identity boss `V` rows use `base8.3=boss00`, `from_ramp=10`:
+`boss00:sliver 10->2`, `boss00:hoard 10->4`, `boss00:drown 10->13`,
+`boss00:blur 10->5`. Thus the boss has five identities (base/Armor + four
+`V` rows), all `from_ramp != to_ramp`; the validator must not create an
+identity `V` row for id=17 or Armor.
+
+Boat paint uses the same helper, not a new asset: re-blit `boat00.idx` with a
+paint LUT (`from_ramp` = hull ramp, `to_ramp` = cosmetic paint ramp) clipped
+to the authored hull rect via `pxCoreBlitPart`/`gfxPxBlitPart`; record the
+hull rect in NOTES. M11's `base → paint → decal → figurehead → flag` order
+then needs no new pixel data.
+
+**2. Make canonical RLE an actual check.** M10 Task 1 currently checks only
+"counts 1–255 within bounds"; that accepts non-canonical runs and lets
+byte-exact goldens drift. Add `zspCanonicalEncode(pix, w, h, out) usize` (one
+run per maximal stretch; for a stretch >255 emit greedy 255-byte runs, then
+the remainder 1..255) and have `validateAsset` re-encode the decoded pixels
+and byte-compare the data section. The decoder golden and regeneration recipe
+then share one canonical rule.
+
+**3. Fix decoder/validator sequencing and pin the output contract.** The
+decode golden belongs to Task 2's `zsp.zig` unit test; File Structure line 23
+also gives `validate_assets.zig` a "decode golden compare", but Task 1
+precedes Task 2. Move `zsp.zig` before `validate_assets.zig` or move that
+check to Task 2; `validate_assets.zig` must import the one decoder, never
+duplicate it. Pin: success sets `sprite.w/h` from the header, `sprite.idx = pix.ptr`,
+`sprite.lut = out_lut.ptr`, `sprite.key = header.key`,
+`pix_len.* = w*h`; requires `pix.len >= w*h`; fills all 256 `u16` from the
+512-byte embedded palette (`flags == 0`, `reserved == 0`); on any failure
+returns false without writing outside `pix`. Caller/arena owns both `pix` and
+`out_lut`; the decoder never allocates.
+
+**4. Add the missing `--validate-assets` hook; no `--emit-*` now.** This tree
+has no such dispatcher case (`undtool.zig:416-` parses only
+`--sim/--replay/--test-rules/--dump-grid/--dump-defs/--save-roundtrip/
+--play/--fight/--screen/--creature/--seed/--hull`). M10 must add
+`--validate-assets <manifest> [assets_dir]` to `undtool.zig` (exit 0 valid,
+2 usage/invalid as existing `fail`) and list `undtool.zig` in the M10 file
+structure; `undtool_native.zig` already forwards. No `--emit-*` is needed by
+M10: `--emit-fallback` is the unlanded M9 Task 9 content hook, not assets.
+
+**5. Re-pin the art golden once.** `art_fight.golden` is the M9 stand-in
+checksum (`px_test.zig:35`), so M10 Task 4's sprite wiring necessarily changes
+it. Regenerate it exactly once with the same `goldenFight` fixture (seed 98,
+def 0) in that commit, update the `tier_m9_px.sh:12/:287` "never regenerated"
+comments to say M10 re-pinned it, and have M10 Task 5 assert the art golden
+plus M8/M9 terminal `--dump-grid` goldens byte-identical. Otherwise M10 turns
+the M9 tier red. Keep `render_art` pure: load `assets/out/*.zsp` through a
+small file/arena loader (new `assets.zig`, or equivalent) and pass decoded
+`Sprite`s in; no file I/O in `render_art`.
+
+**6. Manifest/font and budget accounting.** `font8x16` is landed compiled code
+(`font8x16.zig`, 95×16 = 1,520 bytes), not a `.ZSP`; either drop it from
+`assets.man` or add an explicit non-`.ZSP` `F font8x16 95 16` record and
+never expect `font8x16.zsp`. Compute the gate from the manifest: indexed
+bytes = sum of `w*h` over distinct `A` `.ZSP` rows (recolors and boss ramps
+must not multiply base pixels), LUT bytes = 512 × `A` rows + 512 × `V` rows.
+Gates: indexed ≤1.35 MB; indexed + LUTs ≤2 MB sprite arena (§35); each
+background encoded ≤120 KB; demo RLE disk ≤400 KB (spec §35's 300–400 KB
+range, not the plan's "≈300 KB").
+
+### M9 Task 8 ownership map (P28)
+
+Mechanical smell cut; all M1–M9 goldens stay byte-identical.
+
+- **IDs:** `NAV_*`, `SCREEN_*` (including `SCREEN_W/H`), `MSG_*`, `OUT_*`,
+  `TOOL_*` (ids and kinds), `UNLOCK_*`, `NO_FIGHT` live only in `def.zig`.
+  Consumers spell `def.<ID>`; no aliases or duplicates remain.
+- **Tools:** `items.zig` owns `toolKind`, `isRigged`, `isActivated`,
+  `toolOwned` (owned-bit keyed by tool id). `tools.zig` keeps its public API
+  and delegates; `dock.zig`, `expedition.zig`, `render_term.zig`, and tests
+  consume `items`.
+- **Paths/text:** `paths.join(dir,name,out)` is the one platform-separator
+  join for saves/config (`persist.zig`, `save_ux.zig`); `paths.pathJoin83`
+  stays for 8.3 asset names. `text_scan.zig` owns `stripCR`, `trimSpaces`,
+  `findEq`, `appendText`, `appendInt`, `appendUint`; `data.zig`,
+  `persist.zig` (Buf wrappers only format digits via `text_scan`),
+  `save_ux.zig`, `nav.zig`, `perf.zig`, and `undtool.zig` consume them.
+- **Allowed dependency direction:** domain/logic modules (def, world, fight,
+  expedition, dock, items, tools, data, persist, text_scan, paths) never
+  import render modules. Renderers (`render_term`, `render_art`, `loop_gfx`)
+  may import domain modules. IDs flow one way from `def`.
+- **Content source:** `data.z98` remains the authored content source; Task 9
+  owns generating the compiled-in fallback and any split/decoupling.
+- **Gate:** `tests/quality_smells.sh` (grep + LOC, shell only) runs as a
+  required case in `tests/tier_m9_px.sh`.
+
+### M9 Task 9 phase 1: generated fallback + module splits
+
+Behaviour-preserving structural cut; all M1–M9 goldens stay byte-identical.
+
+- **Content single source:** `undtool --emit-fallback <outdir>` loads
+  `data.z98` and writes `<outdir>/fallback_rows.zig` (deterministic; no
+  timestamps). The checked-in `fallback_rows.zig` is that output;
+  `creatures_t1.zig` and `tables_t1.zig` consume it and keep their public API
+  (`DEFS`, `defAt`, `defCount`, `rules`, `rows`, `tools`, `upgrades`,
+  `cosmetics`, `zoneCost`, `zoneIsBoss`, override behavior). `tests/tier_m9_px.sh`
+  regenerates twice, proves determinism, and `cmp`s against the checked-in file.
+- **Splits:** `render_text.zig` owns the cell canvas + log/tool/modal/help copy
+  (render_term and render_art import it); `fight_rules.zig` + `fight_tools.zig`
+  own derived-stat/effect math and equipped-tool predicates; `data_scan.zig` +
+  `data_load.zig` split the scanner and loader (`data.zig` is the hub);
+  `save_scan.zig` + `save_io.zig` split the read path and image builder
+  (`persist.zig` is the hub and keeps the `fs_*` seams).
+- **Z98 note:** aliases to functions (`pub const f = sub.f`) emit invalid C
+  globals in this compiler, so hubs use thin forwarding wrappers; constants and
+  array values still alias directly. Array sizes in `data_scan` use `ROW_MAX`
+  (D27); this compiler is import-order sensitive, so keep nav's `data` import
+  before `render_term`.

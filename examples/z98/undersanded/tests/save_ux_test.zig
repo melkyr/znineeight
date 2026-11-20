@@ -237,10 +237,10 @@ fn tSaveErrorVersionOne() bool {
     if (!contains(text, "[F]resh  [B]ackup slot  [Q]uit")) return false;
     if (contains(text, "Continue")) return false;
 
-    g.screen = nav.NAV_SAVE_ERR;
+    g.screen = def.NAV_SAVE_ERR;
     var st = nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = save_ux.saveErrKind(err),
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -321,8 +321,8 @@ fn tFirstRun() bool {
     };
     def.content_override = null;
 
-    if (g.screen != nav.NAV_DOCK) return false;
-    if (g.screen == nav.NAV_MENU) return false;
+    if (g.screen != def.NAV_DOCK) return false;
+    if (g.screen == def.NAV_MENU) return false;
     if (g.world.money != 0) return false;
     if (g.world.field_record_written != 0) return false;
     if (g.world.boss_variants_seen != 0) return false;
@@ -547,8 +547,8 @@ fn key(c: u8) input.Key {
 }
 
 fn tBootRouting() bool {
-    if (nav.bootStartScreen(true) != nav.NAV_MENU) return false;
-    if (nav.bootStartScreen(false) != nav.NAV_LORE) return false;
+    if (nav.bootStartScreen(true) != def.NAV_MENU) return false;
+    if (nav.bootStartScreen(false) != def.NAV_LORE) return false;
     if (nav.menuAction(key('c')) != nav.BOOT_ACT_CONTINUE) return false;
     if (nav.menuAction(key('N')) != nav.BOOT_ACT_NEW) return false;
     if (nav.menuAction(key('o')) != nav.BOOT_ACT_OPTIONS) return false;
@@ -582,15 +582,15 @@ fn tBootFreshFirstRun() bool {
     removeIfExists(bak);
     removeIfExists(options);
 
-    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != nav.NAV_LORE) return false;
+    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != def.NAV_LORE) return false;
     if (!nav.firstRunAdvance(key(13))) return false;
 
     var g: def.GameState = undefined;
     save_ux.firstRunBeginSlot(&g, prefix, 0) catch return false;
-    if (g.screen != nav.NAV_DOCK) return false;
-    if (g.screen == nav.NAV_MENU) return false;
+    if (g.screen != def.NAV_DOCK) return false;
+    if (g.screen == def.NAV_MENU) return false;
     if (!file_mod.exists(save0)) return false;
-    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != nav.NAV_MENU) return false;
+    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != def.NAV_MENU) return false;
 
     var w: def.World = undefined;
     var exp: def.Expedition = undefined;
@@ -615,7 +615,7 @@ fn tBootContinueLoads() bool {
     save_ux.loadSlot(&g, prefix, 0) catch return false;
     if (g.world.cycle != 77) return false;
     if (g.world.money != 123) return false;
-    if (g.screen != nav.NAV_DOCK) return false;
+    if (g.screen != def.NAV_DOCK) return false;
     if (g.fight.def_index != def.NO_FIGHT) return false;
     return true;
 }
@@ -682,11 +682,11 @@ fn tBootBadVersionFresh() bool {
     if (nav.errorAction(key('f')) != nav.BOOT_ACT_FRESH) return false;
     save_ux.eraseSlot(prefix, 0);
     if (file_mod.exists(save0)) return false;
-    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != nav.NAV_LORE) return false;
+    if (nav.bootStartScreen(save_ux.saveSlotExists(prefix, 0)) != def.NAV_LORE) return false;
 
     var fresh: def.GameState = undefined;
     save_ux.firstRunBeginSlot(&fresh, prefix, 0) catch return false;
-    if (fresh.screen != nav.NAV_DOCK) return false;
+    if (fresh.screen != def.NAV_DOCK) return false;
     if (!file_mod.exists(save0)) return false;
     return true;
 }
@@ -741,7 +741,7 @@ fn tBootBackupSlot() bool {
     save_ux.loadSlot(&g, prefix, slot) catch return false;
     if (g.world.cycle != 22) return false;
     if (g.world.money != 20) return false;
-    if (g.screen != nav.NAV_DOCK) return false;
+    if (g.screen != def.NAV_DOCK) return false;
 
     if (nav.errorAction(key('q')) != nav.BOOT_ACT_QUIT) return false;
     return true;
