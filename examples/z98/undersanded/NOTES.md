@@ -1682,3 +1682,99 @@ Facts verified in this tree:
   no array-returning APIs. Reference: `examples/torrent_example_defects.md`
   (D24/D25).
 - **Art font:** `font8x16.zig` is the public-domain IBM VGA/MCGA ROM 8x16 font `VGA8.F16` (source URL and sha256 in the file header).
+
+### M10 amendment review (M9 Task 7)
+
+Read `2026-11-12-undersanded-m10-assets-pipeline-plan.md` against the landed
+M9 interfaces (`sf/src/std_gfx_px_core.zig:21-30` `Sprite`, `:134-208`
+`pxCoreBlit/BlitPart`, `:318-329` memory `gfxPxBlit/BlitPart`;
+`render_art.zig`; `tests/px_test.zig:35` art golden; `tests/tier_m9_px.sh`)
+and spec §23.1/§30/§35. Verdict: **amendment required**. The `.ZSP` header
+already fits `Sprite` (`w/h u16 LE` widen to `u32`, `key u8`, one `ramp u8`)
+and `pxCoreBlitPart` already does indexed→565 via `lut[]` with key skip, so M9
+needs no code change. But M10 does not yet pin recolor derivation, the
+manifest/recolor ledger, canonical-RLE re-encoding, the missing
+`--validate-assets` hook, or the art-golden re-pin.
+
+**1. Pin the recolor LUT API and ledger (blocking).** M10 says "ramp
+assignment" but the decoder contract has no recolor path. Add to `zsp.zig`:
+
+```zig
+pub fn zspRecolorLut(out: *[256]u16, base: *const [256]u16,
+                     from_ramp: u8, to_ramp: u8) void
+```
+
+Exact rule: copy `base` to `out`; require `from_ramp <= 15`, `to_ramp <= 15`,
+`from_ramp != to_ramp`, and reject `from_ramp == 0` for creature recolors
+(ramp 0 is the outline/UI ramp); for every `i < 255` with
+`i >> 4 == from_ramp`, set `shade = i & 15` and
+`out[i] = base[to_ramp * 16 + shade]`; when `to_ramp == 15 and shade == 15`
+use `base[254]` because index 255 is the key (ramp 15 has only 15 usable
+shades); always leave `out[255] = base[255]`. Recolor uses the same base
+pixels: `Sprite{ .idx = base.idx, .lut = out, .w = base.w, .h = base.h,
+.key = base.key }`, with one 512-byte LUT per loaded variant. No new `.ZSP`
+per recolor.
+
+`assets.man` must carry both asset and variant records (exact line forms):
+`A <name8.3> <kind> <w> <h> <encoded_bytes> <allowed_ramps_csv>` and
+`V <variant_id> <base8.3> <from_ramp> <to_ramp>`. `variant_id` is the
+`CreatureDef.id` from `data.z98` for the 19 demo defs, and
+`boss00:<armor|sliver|hoard|drown|blur>` for the five boss ramps. The
+validator must require every `V.base8.3` to be an `A` row, `from_ramp` to equal
+that row's `.ZSP` header ramp, every demo def id to have exactly one `V` row,
+the five boss variants to exist, and no orphan/duplicate variants. Pin the 11
+base ramps from §30 in `A` rows: eel00=6, tuna00=7, crab00=8, jelly00=9,
+barn00=10, anem00=11, ray00=12, squid00=13, angler00=14, wrasse00=15;
+`boss00`'s header ramp must equal its Armor variant's ramp.
+
+Boat paint uses the same helper, not a new asset: re-blit `boat00.idx` with a
+paint LUT (`from_ramp` = hull ramp, `to_ramp` = cosmetic paint ramp) clipped
+to the authored hull rect via `pxCoreBlitPart`/`gfxPxBlitPart`; record the
+hull rect in NOTES. M11's `base → paint → decal → figurehead → flag` order
+then needs no new pixel data.
+
+**2. Make canonical RLE an actual check.** M10 Task 1 currently checks only
+"counts 1–255 within bounds"; that accepts non-canonical runs and lets
+byte-exact goldens drift. Add `zspCanonicalEncode(pix, w, h, out) usize` (one
+run per maximal stretch, split stretches >255) and have `validateAsset`
+re-encode the decoded pixels and byte-compare the data section. The decoder
+golden and regeneration recipe then share one canonical rule.
+
+**3. Fix decoder/validator sequencing and pin the output contract.** Task 1
+says the validator does a "decode golden compare" but Task 2 creates `zsp.zig`
+afterward. Move `zsp.zig` before `validate_assets.zig` (or move that check to
+Task 2); `validate_assets.zig` must import the one decoder, never duplicate
+it. Pin: success sets `sprite.w/h` from the header, `sprite.idx = pix.ptr`,
+`sprite.lut = out_lut.ptr`, `sprite.key = header.key`,
+`pix_len.* = w*h`; requires `pix.len >= w*h`; fills all 256 `u16` from the
+512-byte embedded palette (`flags == 0`, `reserved == 0`); on any failure
+returns false without writing outside `pix`. Caller/arena owns both `pix` and
+`out_lut`; the decoder never allocates.
+
+**4. Add the missing `--validate-assets` hook; no `--emit-*` now.** This tree
+has no such dispatcher case (`undtool.zig:416-` parses only
+`--sim/--replay/--test-rules/--dump-grid/--dump-defs/--save-roundtrip/
+--play/--fight/--screen/--creature/--seed/--hull`). M10 must add
+`--validate-assets <manifest> [assets_dir]` to `undtool.zig` (exit 0 valid,
+2 usage/invalid as existing `fail`) and list `undtool.zig` in the M10 file
+structure; `undtool_native.zig` already forwards. No `--emit-*` is needed by
+M10: `--emit-fallback` is the unlanded M9 Task 9 content hook, not assets.
+
+**5. Re-pin the art golden once.** `art_fight.golden` is the M9 stand-in
+checksum (`px_test.zig:35`), so M10 Task 4's sprite wiring necessarily changes
+it. Regenerate it exactly once with the same `goldenFight` fixture (seed 98,
+def 0) in that commit, update the `tier_m9_px.sh:12/:287` "never regenerated"
+comments to say M10 re-pinned it, and have M10 Task 5 assert the art golden
+plus M8/M9 terminal `--dump-grid` goldens byte-identical. Otherwise M10 turns
+the M9 tier red. Keep `render_art` pure: load `assets/out/*.zsp` through a
+small file/arena loader (new `assets.zig`, or equivalent) and pass decoded
+`Sprite`s in; no file I/O in `render_art`.
+
+**6. Manifest/font and budget accounting.** `font8x16` is landed compiled code
+(`font8x16.zig`, 95×16 = 1,520 bytes), not a `.ZSP`; either drop it from
+`assets.man` or add an explicit non-`.ZSP` `F font8x16 95 16` record and
+never expect `font8x16.zsp`. Compute the gate from the manifest: indexed
+bytes = sum of `w*h` over distinct `A` `.ZSP` rows (recolors and 5 boss ramps
+must not multiply base pixels), LUT bytes = 512 × `A` rows + 512 × `V` rows;
+indexed ≤1.35 MB, each background encoded ≤120 KB, demo RLE disk ≤400 KB
+(spec §35's 300–400 KB range, not the plan's "≈300 KB").
