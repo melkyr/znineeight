@@ -1661,3 +1661,4 @@ Facts verified in this tree:
 - **D24/D25 guard.** New atlas/table data uses explicit `[N]T{...}` literals;
   no array-returning APIs. Reference: `examples/torrent_example_defects.md`
   (D24/D25).
+- **Art font:** `font8x16.zig` is the public-domain IBM VGA/MCGA ROM 8x16 font `VGA8.F16` (source URL and sha256 in the file header).

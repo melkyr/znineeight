@@ -200,6 +200,50 @@ pub fn pxCoreBlit(sf: *Surface, dx: i32, dy: i32, s: *const Sprite) void {
         @intCast(i32, s.w), @intCast(i32, s.h));
 }
 
+// 1bpp glyph blit: `bits` is `h` rows of `w` bits (w <= 8), one byte per row,
+// MSB = leftmost pixel. Every cell writes fg or bg, so callers get a solid
+// glyph cell (the art font's 8x16 atlas uses w=8, h=16). Clipped like fill.
+pub fn pxCoreBlit1bpp(sf: *Surface, dx: i32, dy: i32, bits: [*]const u8,
+    w: i32, h: i32, fg: u16, bg: u16) void {
+    if (w <= 0 or h <= 0 or w > 8) return;
+    var x0 = dx;
+    var y0 = dy;
+    var x1 = dx + w;
+    var y1 = dy + h;
+    var sx: i32 = 0;
+    var sy: i32 = 0;
+    if (x0 < 0) {
+        sx = 0 - x0;
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        sy = 0 - y0;
+        y0 = 0;
+    }
+    const sw = @intCast(i32, sf.w);
+    const sh = @intCast(i32, sf.h);
+    if (x1 > sw) x1 = sw;
+    if (y1 > sh) y1 = sh;
+    if (x0 >= x1 or y0 >= y1) return;
+
+    var yy = y0;
+    while (yy < y1) : (yy += 1) {
+        const row = sf.pixels + @intCast(usize, yy) * @intCast(usize, sf.pitch);
+        const brow = bits[@intCast(usize, sy + (yy - y0))];
+        var xx = x0;
+        while (xx < x1) : (xx += 1) {
+            const bit_x = sx + (xx - x0);
+            const shift: u32 = @intCast(u32, bit_x);
+            const mask: u8 = @intCast(u8, @intCast(u32, 128) >> shift);
+            if ((brow & mask) != 0) {
+                storePixel(row, xx, fg);
+            } else {
+                storePixel(row, xx, bg);
+            }
+        }
+    }
+}
+
 pub fn pxCoreDump(sf: *const Surface, out: []u8) void {
     const w: usize = @intCast(usize, sf.w);
     const h: usize = @intCast(usize, sf.h);

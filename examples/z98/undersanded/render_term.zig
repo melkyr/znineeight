@@ -117,7 +117,7 @@ fn journalMaskHas(s: *const def.GameState, d: i32) bool {
     return (s.world.journal_mask[word] & m) != 0;
 }
 
-fn speedRevealed(s: *const def.GameState) bool {
+pub fn speedRevealed(s: *const def.GameState) bool {
     if (journalMaskHas(s, s.fight.def_index)) return true;
     return s.fight.tool_active != 0 and s.fight.tool == fight.TOOL_SONAR;
 }
@@ -171,7 +171,7 @@ pub fn roleName(role: i32) []const u8 {
     }
 }
 
-fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
+pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
     var p: usize = 0;
     switch (e.msg_id) {
         fight.MSG_STRIKE => {
@@ -320,7 +320,7 @@ fn renderLog(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef, y0
     }
 }
 
-fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) void {
+pub fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) void {
     _ = put(sc, 2, 2, "SUBDUE ATTEMPT");
     var x = put(sc, 2, 3, creatureName(d));
     x = put(sc, x, 3, " - ");
@@ -344,7 +344,7 @@ fn toolKindFor(id: i32) i32 {
     return -1;
 }
 
-fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
+pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
     var x = put(sc, 0, y, "TOOL  ");
     x = put(sc, x, y, toolName(s.fight.tool));
     x = put(sc, x, y, "  ");
