@@ -66,6 +66,22 @@ pub const NavState = struct {
     help_page: i32,
     tip: i32,
     journal_sel: i32,
+    // Boot-only: 0 none, 1 awaiting the New Game Y/N answer. navStep never
+    // reads it, so console nav behaviour is unchanged.
+    boot_pending: i32,
+};
+
+pub const BootOut = struct {
+    screen: i32,
+    done: bool,
+    quit: bool,
+    msg_len: usize,
+};
+
+pub const NavIntercept = struct {
+    handled: bool,
+    quit: bool,
+    msg: []const u8,
 };
 
 fn lower(c: u8) u8 {
@@ -356,45 +372,139 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     }
 }
 
-pub fn drawCurrent(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
-    var sc: render.Screen = undefined;
+pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) void {
     if (st.help_page != HELP_PAGE_NONE) {
         const page = journal.helpPage(g.screen) orelse "(manual text unavailable)";
-        render.renderHelp(page, &sc);
-        return render.dump(&sc, out);
+        render.renderHelp(page, sc);
+        return;
     }
     if (expedition.isInFight(g)) {
         var d = creatures.defAt(g.fight.def_index);
-        render.renderFrame(g, &d, &sc);
+        render.renderFrame(g, &d, sc);
     } else switch (g.screen) {
-        NAV_MAP => render.renderMap(g, &sc),
-        NAV_NODE, NAV_SETTLE => render.renderNode(g, &sc),
-        NAV_REFINE => render.renderRefine(g, &sc),
-        NAV_UPGRADE => render.renderUpgrade(g, &sc),
-        NAV_CRAFT => render.renderCraft(g, &sc),
-        NAV_BUY => render.renderBuy(g, &sc),
-        NAV_TOOLS => render.renderTools(g, &sc),
-        NAV_LORE => render.renderLore(save_ux.manualPageOne(), &sc),
-        NAV_MENU => render.renderMenu(&sc),
-        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), &sc),
-        NAV_JOURNAL => render.renderJournal(g, st.journal_sel, &sc),
+        NAV_MAP => render.renderMap(g, sc),
+        NAV_NODE, NAV_SETTLE => render.renderNode(g, sc),
+        NAV_REFINE => render.renderRefine(g, sc),
+        NAV_UPGRADE => render.renderUpgrade(g, sc),
+        NAV_CRAFT => render.renderCraft(g, sc),
+        NAV_BUY => render.renderBuy(g, sc),
+        NAV_TOOLS => render.renderTools(g, sc),
+        NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
+        NAV_MENU => render.renderMenu(sc),
+        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
+        NAV_JOURNAL => render.renderJournal(g, st.journal_sel, sc),
         NAV_HELP => {
             const page = journal.helpPage(g.screen) orelse "(manual text unavailable)";
-            render.renderHelp(page, &sc);
+            render.renderHelp(page, sc);
         },
-        else => render.renderDock(g, &sc),
+        else => render.renderDock(g, sc),
     }
+}
+
+pub fn drawCurrent(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
+    var sc: render.Screen = undefined;
+    drawScreen(g, st, &sc);
     return render.dump(&sc, out);
 }
 
-fn writeRarePreview(g: *def.GameState, st: *const NavState) void {
-    const parts = dock.refineParts(g, st.armed);
-    const total = parts * dock.refinePerPart(g, st.armed);
-    io.write("Rare batch: ");
-    io.printInt(parts);
-    io.write(" parts -> ");
-    io.printInt(total);
-    io.write(" materials (expertise +1). Press again to confirm; Esc cancels.\n");
+fn appendText(out: []u8, p: *usize, text: []const u8) void {
+    var i: usize = 0;
+    while (i < text.len and p.* < out.len) : (i += 1) {
+        out[p.*] = text[i];
+        p.* += 1;
+    }
+}
+
+fn appendInt(out: []u8, p: *usize, value: i32) void {
+    var v = value;
+    var neg = false;
+    if (v < 0) {
+        neg = true;
+        v = 0 - v;
+    }
+    var tmp: [12]u8 = undefined;
+    var n: usize = 0;
+    if (v == 0) {
+        tmp[0] = '0';
+        n = 1;
+    } else {
+        while (v > 0 and n < tmp.len) {
+            tmp[n] = @intCast(u8, @intCast(u32, v % 10) + 48);
+            n += 1;
+            v = v / 10;
+        }
+    }
+    if (neg and p.* < out.len) {
+        out[p.*] = '-';
+        p.* += 1;
+    }
+    while (n > 0 and p.* < out.len) {
+        n -= 1;
+        out[p.*] = tmp[n];
+        p.* += 1;
+    }
+}
+
+pub fn navTipLine(st: *const NavState) []const u8 {
+    if (st.tip != TIP_NONE) {
+        if (journal.tooltip(st.tip - 1)) |tip| return tip;
+    }
+    return "";
+}
+
+pub fn navResultLine(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
+    if (st.last >= 0) return dock.resultText(st.last);
+    if (st.last == NAV_RESULT_PREVIEW) {
+        const parts = dock.refineParts(g, st.armed);
+        const total = parts * dock.refinePerPart(g, st.armed);
+        var at: usize = 0;
+        appendText(out, &at, "Rare batch: ");
+        appendInt(out, &at, parts);
+        appendText(out, &at, " parts -> ");
+        appendInt(out, &at, total);
+        appendText(out, &at, " materials (expertise +1). Press again to confirm; Esc cancels.");
+        return out[0..at];
+    }
+    return "";
+}
+
+pub fn navQuitKey(g: *const def.GameState, st: *const NavState, key: input.Key) bool {
+    if (st.help_page != HELP_PAGE_NONE) return false;
+    if (g.screen != NAV_DOCK) return false;
+    return isChar(key, 'q') and save_ux.quitPromptNeeded(g);
+}
+
+// Shared interception used by both navRun (stdout) and navRunGfx (window):
+// help owns the next key, dock Esc saves, dock Q arms the save/quit prompt.
+// answer carries the second key only when navQuitKey returned true.
+pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
+    key: input.Key, answer: ?input.Key) NavIntercept {
+    if (st.help_page != HELP_PAGE_NONE) {
+        st.help_page = HELP_PAGE_NONE;
+        return NavIntercept{ .handled = true, .quit = false, .msg = "" };
+    }
+    if (g.screen == NAV_DOCK) {
+        if (isEsc(key)) {
+            const save = save_ux.dockSave(g, dir);
+            return NavIntercept{ .handled = true, .quit = false, .msg = save.text };
+        }
+        if (isChar(key, 'q') and save_ux.quitPromptNeeded(g)) {
+            if (answer) |a| {
+                const decision = save_ux.quitDecision(g, dir, a.ch);
+                return NavIntercept{
+                    .handled = true,
+                    .quit = decision.quit,
+                    .msg = decision.text,
+                };
+            }
+            return NavIntercept{
+                .handled = true,
+                .quit = false,
+                .msg = save_ux.QUIT_PROMPT,
+            };
+        }
+    }
+    return NavIntercept{ .handled = false, .quit = false, .msg = "" };
 }
 
 // Interactive console loop: render, prompt, read one key, step. EOF exits.
@@ -416,57 +526,192 @@ pub fn navRun(g: *def.GameState) void {
         .help_page = HELP_PAGE_NONE,
         .tip = TIP_NONE,
         .journal_sel = 0,
+        .boot_pending = 0,
     };
     var buf: [8192]u8 = undefined;
+    var line_buf: [256]u8 = undefined;
 
     while (true) {
         io.write(drawCurrent(g, &st, buf[0..]));
         io.write("> ");
         const key = input.readKey() orelse return;
 
-        // A help overlay owns the next key: dismiss it and consume the key
-        // before the dock save/quit intercept or any field action can run.
-        if (st.help_page != HELP_PAGE_NONE) {
-            st.help_page = HELP_PAGE_NONE;
-            continue;
+        var answer: ?input.Key = null;
+        if (navQuitKey(g, &st, key)) {
+            io.write(save_ux.QUIT_PROMPT);
+            io.write("\n");
+            answer = input.readKey() orelse return;
         }
 
-        if (g.screen == NAV_DOCK) {
-            if (isEsc(key)) {
-                const save = save_ux.dockSave(g, dir);
-                io.write(save.text);
+        const it = navIntercept(g, &st, dir, key, answer);
+        if (it.handled) {
+            if (it.msg.len > 0) {
+                io.write(it.msg);
                 io.write("\n");
-                continue;
             }
-            if (isChar(key, 'q') and save_ux.quitPromptNeeded(g)) {
-                io.write(save_ux.QUIT_PROMPT);
-                io.write("\n");
-                const answer = input.readKey() orelse return;
-                const decision = save_ux.quitDecision(g, dir, answer.ch);
-                if (decision.text.len > 0) {
-                    io.write(decision.text);
-                    io.write("\n");
-                }
-                if (decision.quit) return;
-                continue;
-            }
+            if (it.quit) return;
+            continue;
         }
 
         const next = navStep(g, &st, key);
         if (next == NAV_QUIT) return;
-        if (st.tip != TIP_NONE) {
-            if (journal.tooltip(st.tip - 1)) |tip| {
-                io.write(tip);
-                io.write("\n");
-            }
-        }
-        if (st.last >= 0) {
-            io.write(dock.resultText(st.last));
+        const tip = navTipLine(&st);
+        if (tip.len > 0) {
+            io.write(tip);
             io.write("\n");
-        } else if (st.last == NAV_RESULT_PREVIEW) {
-            writeRarePreview(g, &st);
+        }
+        const line = navResultLine(g, &st, line_buf[0..]);
+        if (line.len > 0) {
+            io.write(line);
+            io.write("\n");
         }
     }
+}
+
+// Pure boot frame for the shared boot machine (stdout and gfx drivers).
+pub fn bootDraw(g: *def.GameState, st: *const NavState, screen: i32,
+    sc: *render.Screen) void {
+    _ = g;
+    if (st.help_page != HELP_PAGE_NONE) {
+        const page = journal.helpPage(screen) orelse "(manual text unavailable)";
+        render.renderHelp(page, sc);
+        return;
+    }
+    switch (screen) {
+        NAV_MENU => render.renderMenu(sc),
+        NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
+        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
+        else => render.renderLore(save_ux.manualPageOne(), sc),
+    }
+}
+
+// Pure one-key boot step. `msg` receives the New Game confirmation to show
+// BEFORE the next key is read; st.boot_pending remembers that the next key is
+// the Y/N answer (no draw/prompt in between, matching the original stdout).
+pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
+    screen: i32, key: input.Key, msg: []u8) BootOut {
+    var out = BootOut{
+        .screen = screen,
+        .done = false,
+        .quit = false,
+        .msg_len = 0,
+    };
+
+    if (st.boot_pending != 0) {
+        st.boot_pending = 0;
+        if (confirmAction(key) != BOOT_ACT_YES) return out;
+        game.newGame(g);
+        const slot = save_ux.readSaveSlot(dir);
+        const saved = save_ux.saveToSlot(g, dir, slot);
+        if (!saved.ok) {
+            st.save_err_kind = save_ux.ERR_KIND_IO;
+            out.screen = NAV_SAVE_ERR;
+            return out;
+        }
+        g.screen = NAV_DOCK;
+        out.screen = NAV_DOCK;
+        out.done = true;
+        return out;
+    }
+
+    if (st.help_page != HELP_PAGE_NONE) {
+        st.help_page = HELP_PAGE_NONE;
+        return out;
+    }
+
+    if (screen == NAV_MENU) {
+        if (key.ch == '?') {
+            st.help_page = journal.helpPageNumber(screen);
+            return out;
+        }
+        const act = menuAction(key);
+        if (act == BOOT_ACT_CONTINUE) {
+            const slot = save_ux.readSaveSlot(dir);
+            save_ux.loadSlot(g, dir, slot) catch |e| {
+                st.save_err_kind = save_ux.saveErrKind(e);
+                out.screen = NAV_SAVE_ERR;
+                return out;
+            };
+            g.screen = NAV_DOCK;
+            out.screen = NAV_DOCK;
+            out.done = true;
+            return out;
+        }
+        if (act == BOOT_ACT_NEW) {
+            st.boot_pending = 1;
+            var at: usize = 0;
+            appendText(msg, &at, save_ux.NEW_GAME_CONFIRM);
+            out.msg_len = at;
+            return out;
+        }
+        if (act == BOOT_ACT_OPTIONS) return out;
+        if (act == BOOT_ACT_QUIT) {
+            out.quit = true;
+            return out;
+        }
+        return out;
+    }
+
+    if (screen == NAV_LORE) {
+        if (key.ch == '?') {
+            st.help_page = journal.helpPageNumber(screen);
+            return out;
+        }
+        if (!firstRunAdvance(key)) return out;
+        const slot = save_ux.readSaveSlot(dir);
+        save_ux.firstRunBeginSlot(g, dir, slot) catch |e| {
+            st.save_err_kind = save_ux.saveErrKind(e);
+            out.screen = NAV_SAVE_ERR;
+            return out;
+        };
+        out.screen = g.screen;
+        out.done = true;
+        return out;
+    }
+
+    if (screen == NAV_SAVE_ERR) {
+        if (key.ch == '?') {
+            st.help_page = journal.helpPageNumber(screen);
+            return out;
+        }
+        const act = errorAction(key);
+        if (act == BOOT_ACT_FRESH) {
+            save_ux.eraseSlot(dir, save_ux.readSaveSlot(dir));
+            out.screen = NAV_LORE;
+            return out;
+        }
+        if (act == BOOT_ACT_BACKUP) {
+            // Adopt the other slot only after it loads. On failure keep the
+            // original failed slot so [F]resh erases the right file.
+            const other = save_ux.otherSlot(save_ux.readSaveSlot(dir));
+            save_ux.loadSlot(g, dir, other) catch |e| {
+                st.save_err_kind = save_ux.saveErrKind(e);
+                out.screen = NAV_SAVE_ERR;
+                return out;
+            };
+            g.screen = NAV_DOCK;
+            out.screen = NAV_DOCK;
+            out.done = true;
+            return out;
+        }
+        if (act == BOOT_ACT_QUIT) {
+            out.quit = true;
+            return out;
+        }
+        return out;
+    }
+
+    return out;
+}
+
+// Shared boot initialisation: reset the GameState, run startup recovery, and
+// return the first screen for the active options.cfg slot. Both the stdout
+// driver and the gfx driver call this before their own key loops.
+pub fn bootReset(g: *def.GameState, dir: []const u8) i32 {
+    game.newGame(g);
+    persist.recoverAtBoot(dir);
+    const slot = save_ux.readSaveSlot(dir);
+    return bootStartScreen(save_ux.saveSlotExists(dir, slot));
 }
 
 // Boot entry: recovery -> options.cfg slot -> menu when that slot has a save,
@@ -474,11 +719,7 @@ pub fn navRun(g: *def.GameState) void {
 // caller then runs navRun) and false when the player quits or input ends.
 pub fn boot(g: *def.GameState, dir: []const u8) bool {
     // app.zig passes an uninitialised GameState; boot owns the first draw.
-    game.newGame(g);
-    persist.recoverAtBoot(dir);
-
-    var slot = save_ux.readSaveSlot(dir);
-    var screen = bootStartScreen(save_ux.saveSlotExists(dir, slot));
+    var screen = bootReset(g, dir);
     var st = NavState{
         .armed = 0,
         .last = NAV_RESULT_NONE,
@@ -486,106 +727,36 @@ pub fn boot(g: *def.GameState, dir: []const u8) bool {
         .help_page = HELP_PAGE_NONE,
         .tip = TIP_NONE,
         .journal_sel = 0,
+        .boot_pending = 0,
     };
+    var sc: render.Screen = undefined;
     var buf: [8192]u8 = undefined;
+    var msg: [256]u8 = undefined;
 
     while (true) {
-        g.screen = screen;
-        io.write(drawCurrent(g, &st, buf[0..]));
-
-        // `?` works on the boot screens too; any key dismisses the page and
-        // returns to the same screen without taking a menu/first-run action.
-        if (st.help_page != HELP_PAGE_NONE) {
+        const pending = st.boot_pending != 0;
+        if (!pending) {
+            g.screen = screen;
+            bootDraw(g, &st, screen, &sc);
+            io.write(render.dump(&sc, buf[0..]));
             io.write("> ");
-            _ = input.readKey() orelse return false;
-            st.help_page = HELP_PAGE_NONE;
-            continue;
         }
 
-        if (screen == NAV_MENU) {
-            io.write("> ");
-            const key = input.readKey() orelse return false;
-            if (key.ch == '?') {
-                st.help_page = journal.helpPageNumber(screen);
-                continue;
-            }
-            const act = menuAction(key);
-            if (act == BOOT_ACT_CONTINUE) {
-                save_ux.loadSlot(g, dir, slot) catch |e| {
-                    st.save_err_kind = save_ux.saveErrKind(e);
-                    screen = NAV_SAVE_ERR;
-                    continue;
-                };
-                g.screen = NAV_DOCK;
-                return true;
-            }
-            if (act == BOOT_ACT_NEW) {
-                io.write(save_ux.NEW_GAME_CONFIRM);
-                io.write("\n");
-                const answer = input.readKey() orelse return false;
-                if (confirmAction(answer) != BOOT_ACT_YES) continue;
-                game.newGame(g);
-                const out = save_ux.saveToSlot(g, dir, slot);
-                if (!out.ok) {
-                    st.save_err_kind = save_ux.ERR_KIND_IO;
-                    screen = NAV_SAVE_ERR;
-                    continue;
-                }
-                g.screen = NAV_DOCK;
-                return true;
-            }
-            if (act == BOOT_ACT_OPTIONS) continue;
-            if (act == BOOT_ACT_QUIT) return false;
-            continue;
+        var key: input.Key = undefined;
+        if (!pending and screen == NAV_LORE and st.help_page == HELP_PAGE_NONE) {
+            key = input.readKeyRaw() orelse return false;
+        } else {
+            key = input.readKey() orelse return false;
         }
 
-        if (screen == NAV_LORE) {
-            io.write("> ");
-            const key = input.readKeyRaw() orelse return false;
-            if (key.ch == '?') {
-                st.help_page = journal.helpPageNumber(screen);
-                continue;
-            }
-            if (!firstRunAdvance(key)) continue;
-            save_ux.firstRunBeginSlot(g, dir, slot) catch |e| {
-                st.save_err_kind = save_ux.saveErrKind(e);
-                screen = NAV_SAVE_ERR;
-                continue;
-            };
-            return true;
+        const out = bootKey(g, &st, dir, screen, key, msg[0..]);
+        if (out.msg_len > 0) {
+            io.write(msg[0..out.msg_len]);
+            io.write("\n");
         }
-
-        if (screen == NAV_SAVE_ERR) {
-            io.write("> ");
-            const key = input.readKey() orelse return false;
-            if (key.ch == '?') {
-                st.help_page = journal.helpPageNumber(screen);
-                continue;
-            }
-            const act = errorAction(key);
-            if (act == BOOT_ACT_FRESH) {
-                save_ux.eraseSlot(dir, slot);
-                screen = NAV_LORE;
-                continue;
-            }
-            if (act == BOOT_ACT_BACKUP) {
-                // Adopt the other slot only after it loads. On failure keep the
-                // original failed slot so [F]resh erases the right file.
-                const other = save_ux.otherSlot(slot);
-                save_ux.loadSlot(g, dir, other) catch |e| {
-                    st.save_err_kind = save_ux.saveErrKind(e);
-                    screen = NAV_SAVE_ERR;
-                    continue;
-                };
-                slot = other;
-                g.screen = NAV_DOCK;
-                return true;
-            }
-            if (act == BOOT_ACT_QUIT) return false;
-            continue;
-        }
-
-        screen = bootStartScreen(save_ux.saveSlotExists(dir, slot));
+        screen = out.screen;
+        if (out.done) return true;
+        if (out.quit) return false;
     }
     return false;
 }

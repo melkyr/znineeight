@@ -1,7 +1,7 @@
 // main.zig — UNDERSANDED GUI entry (WINDOWS_GUI, spec §26).
 //
-// Thin entry: open the terminal-mode std_gfx window titled UNDERSANDED, run
-// the shared skeleton, then close cleanly.
+// Thin entry: open the one std_gfx window titled UNDERSANDED, run the shared
+// playable loop, then close cleanly.
 
 const gfx = @import("std_gfx.zig");
 const app = @import("app.zig");

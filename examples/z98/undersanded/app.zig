@@ -17,6 +17,7 @@
 // Direct imports only (no std barrel): the compile graph stays small.
 
 const gfx = @import("std_gfx.zig");
+const gfx_px = @import("std_gfx_px.zig");
 const io = @import("std_io.zig");
 const os = @import("std_os.zig");
 const debug = @import("std_debug.zig");
@@ -29,6 +30,8 @@ const data = @import("data.zig");
 const content_boot = @import("content_boot.zig");
 const game = @import("game.zig");
 const nav = @import("nav.zig");
+const loop_gfx = @import("loop_gfx.zig");
+const persist = @import("persist.zig");
 
 const PATH_MAX: usize = 512;
 const ARENA_SIZE: usize = 256 * 1024;
@@ -99,6 +102,25 @@ fn installTrap(writable_dir: []const u8) void {
         g_crash_log_len = p.len;
     }
     debug.setTrapHandler(onTrap);
+}
+
+fn hasArg(name: []const u8) bool {
+    const nargs = os.argc();
+    var i: usize = 1;
+    while (i < nargs) : (i += 1) {
+        const a = os.argv(i);
+        if (a.len != name.len) continue;
+        var same = true;
+        var k: usize = 0;
+        while (k < a.len) : (k += 1) {
+            if (a[k] != name[k]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return true;
+    }
+    return false;
 }
 
 fn fail(console_mode: bool, msg: []const u8) void {
@@ -201,6 +223,28 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
         var s: def.GameState = undefined;
         game.newGame(&s);
         nav.navRun(&s);
+        return;
+    }
+
+    if (!console_mode) {
+        // GUI: one window for the session. px attach is attempted once; null
+        // (or a <16bpp refusal inside attach) means every screen stays cell.
+        const perf_on = hasArg("--perf");
+        if (perf_on) loop_gfx.perfReset();
+
+        var s: def.GameState = undefined;
+        var p: ?*gfx_px.Gfx = gfx_px.gfxPxAttach(g);
+        if (p == null) {
+            persist.logError(writable_dir, "px: attach unavailable; cell fallback");
+        }
+        const reached = loop_gfx.bootGfx(g, &s, writable_dir, perf_on);
+        if (reached) loop_gfx.navRunGfx(&s, p, perf_on);
+
+        if (perf_on) {
+            const line = loop_gfx.perfLine();
+            if (line.len > 0) persist.logError(writable_dir, line);
+        }
+        if (p) |pp| gfx_px.gfxPxClose(pp);
         return;
     }
 
