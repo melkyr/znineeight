@@ -2064,3 +2064,66 @@ regenerated; style set **signed off**.
 512×(26+12) = 19,456 B; indexed + LUTs = 1,147,696 B ≤ 2 MB. Each background
 encoded ≤ 6,044 B (bg_d) ≤ 120 KB. All 26 A files total 62,956 B encoded
 ≤ 400 KB. Validator rc 0 on the real manifest + `assets/out`.
+
+### M11 amendment review (M10 Task 6)
+
+Reviewed `2026-11-12-undersanded-m11-boss-score-plan.md` at `4e2c6a4a`
+against the M10 artifacts and spec §15/§19/§30. Verdict: **no design
+amendment needed**; the plan's boss/boat/score ownership matches the landed
+M10 split. The plan-text clarifications are recorded below.
+
+**Boss contract confirmed.** `assets/out/boss00.zsp` header is **96×96**,
+key 255, ramp **10**; `assets/assets.man` has
+`A boss00 creature 96 96 2250 0,2,4,10`, and exactly four boss V rows:
+`boss00:sliver 10->2`, `boss00:hoard 10->4`, `boss00:drown 10->13`,
+`boss00:blur 10->5`. There is no boss identity V row: `id17` maps to
+`A boss00` (Armor) directly. The five identities are therefore base/Armor
+plus the four V recolors, not five V rows. `validate_assets.zig` pins the
+same ledger, and `assets.zig` decodes the base plus all four boss LUTs into
+the asset arena.
+
+**A/V manifest availability.** `assets.man` is committed with the exact
+26 A + 12 V + `F font8x16 95 16` ledger. All M11-consumed names/ramps are
+present: `boss00` (ramp 10), its four V rows, `boat00` (200×150, header
+ramp 1, allowed `0,1,10`), and the nine 64×64 cosmetic overlays
+(`fig_merm`, `fig_angl`, `fig_krak`, `flag_pen`, `flag_ref`, `flag_trn`,
+`dec_barn`, `dec_sqid`, `dec_boss`). `assets.zig`'s `A_NAMES` pins the
+same order. M11 should note the loader currently exposes `spriteForDef`
+only; boss V rows have symbolic ids (`var_def_ids = -1`), so
+`spriteForDef(17)` always returns Armor. M11 needs a variant/overlay lookup
+(an `assets.zig` addition) or must use the pinned V order; this is M11
+implementation work, not an M10 data gap.
+
+**Boat/score ownership confirmed.** `assets/out/boat00.zsp` and the nine
+overlay `.zsp` files are committed and validated. M10 wires only creature
+sprites plus the resident zone background: `render_art.ArtAssets` carries
+only `bg`/`sprite`, `loop_gfx.artView` only calls `ensureBackgroundZone` +
+`spriteForDef`, and `boss.zig`/`score.zig` do not exist yet. Boat render,
+the blit order (base -> paint ramp -> decal -> figurehead -> flag), the
+overlays, the boss screen, and the three-panel score/Field Record remain
+M11-owned.
+
+**M11 plan text: stale/contradictory, no design change.**
+
+- The plan's "`boss00` sprite × 5 ramp recolors" and "boss screen (5 ramp
+  recolors)" are realized by the base/Armor row plus four V rows (above).
+  Treat Armor as the identity base, not a fifth V row.
+- The architecture line says `boss_variants_seen`, `boss_kills`, and
+  `runReset` are "persisted via M7". `boss_variants_seen`/`boss_kills` (and
+  the Field Record/Last Run rows) are persisted by M7 (`save_io.zig`/
+  `save_scan.zig`); `runReset` is an M5 `world.zig` function, not a saved
+  field. M11 Task 0 already states the correct `runReset` check.
+- M11's File Structure lists `boss.zig`, `score.zig`, `render_art.zig`,
+  `render_term.zig`, tests/goldens but not `assets.zig`; the boss-variant
+  lookup above will need that file (or an equivalent). File-list addition
+  only.
+- Tiebreak reminder (not a contradiction): `World.boat` indices are H=0,
+  S=1, C=2, O=3, P=4 (`world.zig`), while the required variant tiebreak is
+  H>P>C>O>S. M11's pinned helper must encode the tiebreak order explicitly,
+  not scan `boat[0..4]` or max the array.
+
+Task 0's existing-state checks are already true in the committed tree:
+`data.z98` id17 has `subdue_chance=-1`, HP 300, Speed 7, Attack 10, and
+respawn kill/overkill 20/40; `def.World` already carries
+`boss_variants_seen`, `boss_kills`, `field_record_written`, `field_record`,
+and `last_run`.
