@@ -1595,6 +1595,26 @@ Kickoff rulings (spec §38 P27; user-authorized "3. A"):
 
 Task 0 records the M8/`tier_edit` baseline at the amended HEAD before code.
 
+### M9 quality cut (P28)
+
+The final two M9 tasks are the tech-debt cut before M10/M13 (user-authorized):
+
+- **Task 8 — smell removal (mechanical):** ids only in `def.zig`; `items.zig`
+  owns tool/material ownership/kind; `paths.join` + `text_scan.zig` own the
+  path/text primitives; dead/alias layers removed; `tests/quality_smells.sh`
+  (grep + LOC) runs in the tier. Golden-identical.
+- **Task 9 — structural refactor:** compiled content fallback generated from
+  `data.z98` (`undtool --emit-fallback` + byte-equal diff gate; M13 authors
+  once); `render_text`/`fight_rules`/`fight_tools`/`data_scan`/`data_load`/
+  `save_scan`/`save_io` splits; renderers stop importing
+  dock/economy/save_ux/journal/data and consume a prepared view struct.
+  Golden-identical; any golden drift = STOP.
+- Deferred: test-harness consolidation; PAL de-duplication.
+- Task 5 fix round (review Important): share `input.filterKey` with
+  `loop_gfx` (10/13/space parity; raw for lore) and update the obsolete
+  `tests/tier_m1_std.sh` SLOW `under.exe` evidence to launch → window check →
+  kill (loud skip without Wine/Xvfb).
+
 #### Baseline + facts
 
 Baseline at HEAD `32e85ba4c05695d20f14ad9b01d5ac2ff2d5b71c` (branch
