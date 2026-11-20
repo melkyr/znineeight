@@ -3,9 +3,9 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D24**.
+deleted numbers are not reused. Next free slot: **D26**.
 
-Open: **D16, D17, D18, D19, D20, D21, D22, D23**.
+Open: **D16, D17, D18, D19, D20, D21, D22, D23, D24, D25**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -534,3 +534,148 @@ those modules.
 **Not this defect.** Block dropping after `return`, stack probe, bounds
 check, optimization level, and basename collisions were all tested and ruled
 out.
+
+---
+
+## D24 — Untyped nested array literal of structs is zero-filled as int (invalid C / silent drop)
+
+**Status:** OPEN (deferred — documented workaround, no compiler fix authorized).
+
+**Symptom.** A struct field of array-of-struct type initialised with an untyped
+nested array literal (`.cost = .{ slot(...), ... }`) dumps cleanly
+(`-ffast --output-dir` rc=0) but the emitted C does not materialise the rows:
+the module initializer builds a tuple temporary, discards it
+(`(void)zT_1.cost;`), then zero-fills the field with a scalar
+(`zT_1.cost[_j] = 0;`). For struct elements that is invalid C
+(`incompatible types when assigning to type 'CostSlot' from type 'int'`); for
+an element type that accepts scalar `0`, the same zero-fill would compile and
+silently drop the rows (that variant was not separately probed).
+
+**Minimal repro (Zig source shape).**
+
+```zig
+const CostSlot = struct { kind: i32, amt: i32 };
+const ToolRow = struct { id: i32, cost: [3]CostSlot };
+
+fn slot(kind: i32, amt: i32) CostSlot {
+    return CostSlot{ .kind = kind, .amt = amt };
+}
+const NONE_SLOT = CostSlot{ .kind = 0, .amt = 0 };
+
+pub const TOOLS = [_]ToolRow{
+    .{ .id = 1, .cost = .{ slot(2, 3), NONE_SLOT, NONE_SLOT } }, // untyped: broken
+};
+pub const TOOLS_TYPED = [_]ToolRow{
+    .{ .id = 1, .cost = [3]CostSlot{ slot(2, 3), NONE_SLOT, NONE_SLOT } }, // control
+};
+```
+
+Command:
+`/tmp/seed151_build/zig1_5_clean -ffast --output-dir /tmp/d24_probe/out /tmp/d24_probe/main.zig`
+→ dump rc=0; then
+`sh /tmp/d24_probe/out/build_target.sh linux /tmp/d24_probe/out/prog`
+→ build rc=1:
+
+```text
+main_3DF5832C.c: In function 'zF_780653D2___module_init':
+main_3DF5832C.c:127:25: error: incompatible types when assigning to type 'zT_5F22A424_CostSlot' from type 'int'
+  127 |         zT_1.cost[_j] = 0;
+```
+
+plus `warning: variable 'zT_00790750_Tup_564 zT_4' set but not used` for the
+discarded tuple. The explicit-type control emits an array temporary and a byte
+copy instead (`zT_19` / `memcpy`-style loop) and compiles.
+
+**Classification.** Lowering of an untyped nested array literal whose elements
+come from helper calls / named constants (the observed trigger) produces a
+tuple expression plus a scalar zero-fill of the array field, instead of
+materialising the array. With an explicit element type the same values lower
+correctly. Observed on seed v151 (md5 `a2fc81055dc1cb7a67099fe3934d22ee`),
+found during Undersanded M5 Task 0 while authoring `tables_t1.zig`.
+
+**Scope / impact.** No `sf/src` table uses untyped nested array literals, so
+the shipped std surface is unaffected. In-repo workaround is effective: every
+table row array carries an explicit element type
+(`examples/z98/undersanded/tables_t1.zig:182+`, e.g. `[3]CostSlot{...}`), and
+the content/tier gates keep it pinned. Any program using the untyped form gets
+invalid C (struct elements) or silently zeroed rows (scalar elements).
+
+**Workaround.** Annotate the nested literal: `[N]T{ ... }` (the shipped tables
+form).
+
+**Evidence.** Probe `/tmp/d24_probe/main.zig` (repo-external; re-verified
+2026-11-19 with seed v151). Generated `out/main_3DF5832C.c` module-init region
+shows the discarded tuple and `zT_1.cost[_j] = 0;`. Discovery record:
+`/tmp/undersanded-m5-ledger-final.md:50` (ruling R14).
+
+**Note.** Doc-only. Emitting the tuple copy for untyped nested literals (or
+rejecting the form with a diagnostic) is separately authorized.
+
+---
+
+## D25 — Returning a fixed-size array emits a C function returning an array
+
+**Status:** OPEN (deferred — documented workaround, no compiler fix authorized).
+
+**Symptom.** A function with return type `[N]T` dumps cleanly
+(`-ffast --output-dir` rc=0) but the emitted C is invalid: the prototype is a
+C function returning an array type, and the call site assigns to an array.
+gcc rejects both.
+
+**Minimal repro (Zig source shape).**
+
+```zig
+const MaterialAmt = struct { kind: i32, amt: i32 };
+
+fn costRow() [3]MaterialAmt {
+    var out: [3]MaterialAmt = [3]MaterialAmt{
+        .{ .kind = 1, .amt = 2 },
+        .{ .kind = 3, .amt = 4 },
+        .{ .kind = 5, .amt = 6 },
+    };
+    return out;
+}
+
+pub fn main() void {
+    var row: [3]MaterialAmt = costRow();
+    ...
+}
+```
+
+Command: seed v151
+`-ffast --output-dir /tmp/d25_probe/out /tmp/d25_probe/main.zig` → dump rc=0;
+then `sh /tmp/d25_probe/out/build_target.sh linux /tmp/d25_probe/out/prog`
+→ build rc=1:
+
+```text
+main_3DF5832C.h:10:33: error: 'zF_EAC2F6BC_costRow' declared as function returning an array
+main_3DF5832C.c:3:33: error: 'zF_EAC2F6BC_costRow' declared as function returning an array
+main_3DF5832C.c:55:12: warning: returning 'zT_7974CA2A_MaterialAmt *' from a function with return type 'int' makes integer from pointer without a cast
+main_3DF5832C.c:73:10: error: assignment to expression with array type
+   73 |     zT_1 = zF_EAC2F6BC_costRow();
+```
+
+**Classification.** C cannot return or assign arrays by value, so an
+array-typed return must be lowered structurally (out-param, hidden result
+pointer, or copy into a caller slot). The emitter instead uses the array
+typedef as the C function's return type, making both the prototype and the
+call site invalid. Same C-level root as D17 (`?[N]T` optional payload copy) but
+a distinct surface: D17 covers optional-array unwrapping; this covers a plain
+fixed-array return and call-site assignment.
+
+**Scope / impact.** No `sf/src` function returns a fixed array, so the shipped
+std surface is unaffected. Found while adding `economy.upgradeCost`
+(Undersanded M5 Task 1). Shipped workaround is
+`upgradeCost(axis, tier, out: *[3]MaterialAmt) void`
+(`examples/z98/undersanded/economy.zig:62`) with every call site and test on
+the out-param form. D17 already blocks the optional variant.
+
+**Workaround.** Return via out-param (`*[N]T`) or a struct wrapper; shipped
+out-param.
+
+**Evidence.** Probe `/tmp/d25_probe/main.zig` (repo-external; re-verified
+2026-11-19 with seed v151). Generated `out/main_3DF5832C.h` / `.c` lines above.
+Discovery record: `/tmp/undersanded-m5-ledger-final.md:51` (ruling R15).
+
+**Note.** Doc-only. Structural array-return emission (or a reject diagnostic)
+is separately authorized; a D17 fix, if taken, should cover both surfaces.
