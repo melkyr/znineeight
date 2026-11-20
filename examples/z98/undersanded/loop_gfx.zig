@@ -254,7 +254,14 @@ pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
         notice_len = 0;
 
         const fight_art = g.screen == fight.SCREEN_FIGHT;
-        const key = readWindowKey(win, fight_art) orelse return;
+        const raw_key = readWindowKey(win, fight_art) orelse return;
+        var key: input.Key = undefined;
+        const filtered = input.filterKey(raw_key);
+        if (filtered) |k| {
+            key = k;
+        } else {
+            continue;
+        }
 
         if (quit_armed) {
             quit_armed = false;

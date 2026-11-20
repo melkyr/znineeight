@@ -128,6 +128,50 @@ fn tCap() bool {
     return p.n == perf.MAX_FRAMES;
 }
 
+// The pure filter is the one contract both stdin readKey and the window
+// gameplay loop apply: line endings/space ignored, 0/255 end the stream.
+fn filterStream(stream: []const u8, out: []u8) usize {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < stream.len) : (i += 1) {
+        const k = input.Key{ .ch = stream[i], .code = 0 };
+        if (input.filterKey(k)) |f| {
+            if (n < out.len) {
+                out[n] = f.ch;
+                n += 1;
+            }
+        } else if (stream[i] == 0 or stream[i] == 255) {
+            break;
+        }
+    }
+    return n;
+}
+
+fn tKeyFilterParity() bool {
+    const stream = [_]u8{ 10, 13, ' ', 'd', '2', ' ', 27, 'q' };
+    const expected = [_]u8{ 'd', '2', 27, 'q' };
+    var got: [8]u8 = undefined;
+    const n = filterStream(stream[0..], got[0..]);
+    if (n != expected.len) return false;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (got[i] != expected[i]) return false;
+    }
+
+    const eof0 = [_]u8{ 'd', 0, '2' };
+    const eof255 = [_]u8{ 'd', 255, '2' };
+    if (filterStream(eof0[0..], got[0..]) != 1 or got[0] != 'd') return false;
+    if (filterStream(eof255[0..], got[0..]) != 1 or got[0] != 'd') return false;
+
+    if (input.filterKey(input.Key{ .ch = 10, .code = 0 }) != null) return false;
+    if (input.filterKey(input.Key{ .ch = 13, .code = 0 }) != null) return false;
+    if (input.filterKey(input.Key{ .ch = ' ', .code = 0 }) != null) return false;
+    if (input.filterKey(input.Key{ .ch = 0, .code = 0 }) != null) return false;
+    if (input.filterKey(input.Key{ .ch = 255, .code = 0 }) != null) return false;
+    if (input.filterKey(input.Key{ .ch = '?', .code = 0 }) == null) return false;
+    return true;
+}
+
 fn renderOk(g: *def.GameState, st: *const nav.NavState, expect: []const u8) bool {
     var sc: render.Screen = undefined;
     var buf: [8192]u8 = undefined;
@@ -191,6 +235,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     report("format_pinned_shape", tFormatShape());
     report("ticks_to_ms_and_sort", tTicksAndSort());
     report("sample_cap", tCap());
+    report("key_filter_parity", tKeyFilterParity());
     report("scripted_walk_dock_map_node_fight_settle_dock", tWalk());
 
     if (fails != 0) {

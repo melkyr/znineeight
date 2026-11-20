@@ -14,16 +14,25 @@ pub const VK_ESC: u16 = 0x1B;
 
 pub const Key = struct { ch: u8, code: u16 };
 
+// Pure gameplay key filter shared by stdin and the window loop: line endings
+// and space are ignored, 0/255 are EOF, every other character passes through.
+pub fn filterKey(k: Key) ?Key {
+    if (k.ch == 0 or k.ch == 255) return null;
+    if (k.ch == 10 or k.ch == 13 or k.ch == ' ') return null;
+    return k;
+}
+
 // Console key source shared by the fight and navigation loops. pal_getchar
 // returns -1 at EOF; std_io.readByte reinterprets that as 255. Treat EOF (and
 // NUL) as a clean end of input so a no-input run terminates.
 pub fn readKey() ?Key {
-    var b = io.readByte();
-    while (b == 10 or b == 13 or b == ' ') {
-        b = io.readByte();
+    while (true) {
+        const b = io.readByte();
+        const k = Key{ .ch = b, .code = 0 };
+        if (filterKey(k)) |f| return f;
+        if (b == 0 or b == 255) return null;
     }
-    if (b == 0 or b == 255) return null;
-    return Key{ .ch = b, .code = 0 };
+    return null;
 }
 
 // Boot first-run keeps Enter (LF/CR): the lore footer is "[Enter] Begin" and

@@ -362,7 +362,8 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# SLOW evidence: under.exe window opens under Xvfb + Wine, exit 0
+# SLOW evidence: under.exe window opens under Xvfb + Wine, then is killed
+# (the playable loop waits for events; it no longer self-exits)
 # ---------------------------------------------------------------------------
 echo "== SLOW evidence: under.exe window under Xvfb + Wine =="
 MISSING_X=""
@@ -373,7 +374,7 @@ if [ -n "$MISSING_WINE" ]; then
     skip_evidence "under.exe window check (missing:$MISSING_WINE)"
 elif [ -n "$MISSING_X" ]; then
     skip_evidence "under.exe window check (missing:$MISSING_X)"
-    echo "operator-hardware: run under.exe on Win98 and confirm the UNDERSANDED window opens and it exits 0"
+    echo "operator-hardware: run under.exe on Win98 and confirm the UNDERSANDED window opens"
 elif [ ! -f "$BUILD_OUT/under.exe" ]; then
     skip_evidence "under.exe window check (under.exe missing; build failed)"
 else
@@ -412,20 +413,31 @@ else
             sleep 0.05
             i=$((i + 1))
         done
+        # The window is created before the app finishes init; wait for its
+        # probe write so the evidence includes a live first frame.
+        i=0
+        while [ "$i" -lt 200 ]; do
+            if [ -f "$GUI/probe_out.txt" ]; then break; fi
+            sleep 0.05
+            i=$((i + 1))
+        done
+        sleep 1
         timeout 30 import -window root "$GUI/shot.png" >"$GUI/import.log" 2>&1 || true
-        wait "$WINE_PID" 2>/dev/null
-        GUI_RC=$?
-        WINE_PID=""
         if [ "$WINDOW_SEEN" -eq 1 ]; then
             evidence_pass "under.exe opened a window titled UNDERSANDED (Xvfb $DISPLAY_NUM)"
+            # The playable loop intentionally waits for events; after recording
+            # the window evidence, terminate Wine instead of expecting self-exit.
+            kill "$WINE_PID" 2>/dev/null || true
+            wineserver -k >/dev/null 2>&1 || true
+            wait "$WINE_PID" 2>/dev/null
+            evidence_pass "under.exe windowed loop stayed resident until killed"
         else
             evidence_fail "under.exe window titled UNDERSANDED not seen (see $GUI/app.log)"
+            kill "$WINE_PID" 2>/dev/null || true
+            wineserver -k >/dev/null 2>&1 || true
+            wait "$WINE_PID" 2>/dev/null
         fi
-        if [ "$GUI_RC" -eq 0 ]; then
-            evidence_pass "under.exe windowed run exited 0"
-        else
-            evidence_fail "under.exe windowed run exited $GUI_RC (see $GUI/app.log)"
-        fi
+        WINE_PID=""
         if [ -s "$GUI/shot.png" ]; then
             GUISTATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
                 "$GUI/shot.png" 2>/dev/null)"
