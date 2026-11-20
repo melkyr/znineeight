@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300" shape-rendering="crispEdges">
+<rect width="640" height="300" fill="#3A2408"/>
+<rect y="0" width="640" height="210" fill="#5A3A18"/>
+<rect y="210" width="640" height="90" fill="#241608"/>
+<g fill="#8A6230">
+<rect x="0" y="0" width="640" height="12"/>
+<rect x="0" y="200" width="640" height="10"/>
+<rect x="70" y="12" width="16" height="198"/>
+<rect x="330" y="12" width="16" height="198"/>
+<rect x="560" y="12" width="16" height="188"/>
+</g>
+<g fill="#241608">
+<rect x="0" y="238" width="640" height="5"/>
+<rect x="0" y="270" width="640" height="5"/>
+<rect x="0" y="296" width="640" height="4"/>
+</g>
+<rect x="390" y="36" width="170" height="120" fill="#0A1420"/>
+<rect x="398" y="44" width="154" height="104" fill="#0E5A72"/>
+<rect x="398" y="96" width="154" height="52" fill="#0A1420"/>
+<g fill="#1E9AB8">
+<polygon points="414,44 430,44 406,148 392,148"/>
+<polygon points="494,44 510,44 486,148 470,148"/>
+</g>
+<g fill="#0A1420">
+<rect x="430" y="112" width="10" height="4"/>
+<rect x="452" y="120" width="10" height="4"/>
+<rect x="474" y="108" width="10" height="4"/>
+</g>
+<rect x="386" y="32" width="178" height="6" fill="#8A6230"/>
+<rect x="386" y="154" width="178" height="6" fill="#8A6230"/>
+<g fill="#8A6230">
+<rect x="100" y="96" width="90" height="70"/>
+<rect x="210" y="120" width="70" height="54"/>
+</g>
+<g fill="#5A3A18">
+<rect x="108" y="106" width="74" height="4"/>
+<rect x="108" y="120" width="60" height="4"/>
+<rect x="108" y="134" width="70" height="4"/>
+<rect x="108" y="148" width="46" height="4"/>
+<rect x="218" y="130" width="54" height="4"/>
+<rect x="218" y="144" width="40" height="4"/>
+<rect x="218" y="158" width="50" height="4"/>
+</g>
+<g fill="#D49A28">
+<rect x="142" y="92" width="6" height="6"/>
+<rect x="242" y="116" width="6" height="6"/>
+</g>
+<rect x="150" y="170" width="10" height="40" fill="#0A1420"/>
+<polygon points="130,210 180,210 192,238 118,238" fill="#8A6230"/>
+<polygon points="136,214 174,214 184,234 126,234" fill="#D49A28"/>
+<rect x="148" y="218" width="14" height="14" fill="#D49A28"/>
+<g fill="#5A3A18">
+<rect x="40" y="248" width="120" height="50"/>
+<rect x="470" y="244" width="130" height="52"/>
+</g>
+<g fill="#8A6230">
+<rect x="48" y="256" width="104" height="8"/>
+<rect x="478" y="252" width="114" height="8"/>
+</g>
+</svg>

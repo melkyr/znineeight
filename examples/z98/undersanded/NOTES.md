@@ -2022,3 +2022,45 @@ it; terminal/M8/M9 `--dump-grid` goldens stay byte-identical.
 
 **Skeletons.** `assets/` (SVG sources) and `assets/out/` (`.ZSP` outputs) are
 created empty in this task; contents land in Task 3.
+
+### M10 Task 3 — demo art set, corrections, style sign-off
+
+**Artifacts.** `assets/` now holds all 26 authored SVG sources; `assets/out/`
+holds the 26 matching `.zsp` files; `assets/assets.man` is the exact 26 A +
+12 V + `F font8x16 95 16` ledger. No converter, script, or `.py` file is
+committed (P19).
+
+**Conversion provenance (transitory, uncommitted).** `rsvg-convert` was not
+available, so the host used ImageMagick 6 `convert -background none +antialias`
+with raw RGBA output at each SVG's declared 1:1 size (no resampling). The
+throwaway script lived only in `/tmp`; it mapped `alpha<128` to index 255,
+enforced the 1px ramp-0/shade-0 outline on every alpha sprite's mask, asserted
+every non-key pixel was inside that asset's allowed ramps, and wrote canonical
+RLE (one run per maximal stretch, 1..255, greedy 255 split) into `ZSP1` +
+16-byte header + 512-byte RGB565 palette + runs. `+antialias` produced only
+exact palette colours (binary alpha), so no blend/fringe pixels reached the
+encoder. `undtool --validate-assets` re-decoded, re-encoded and byte-compared
+the result: exit 0.
+
+**Source corrections applied.** `boss00` is a fresh 96×96 ramp-10 re-authoring
+(outline 0, body 10, sensor eye 2, lamps 4; the 160×160 ramp-14 source was not
+used). `bg_dock` is re-authored at 640×300 with 7 colours. `bg_b` drops to 8
+colours (the extra ramp-6 band merges into ramp 1; ramp-8 highlights replace
+the ramp-8 Hi speckles). `bg_c` drops to 8 colours and its `#6AE0C0` glow
+rectangles become `#5DD5B5` (ramp-15 shade 14, non-key). `wrasse00`
+fills/eyes likewise move from key `#6AE0C0` to `#5DD5B5`. `boat00` snaps the
+off-palette `#D8E2EA` highlight to ramp-0 Hi `#9AAABA` and replaces the three
+porthole circles with 16/12/8-sided polygons.
+
+**Side-by-side style sign-off.** The 11 bases were reviewed together as one
+set (decoded `.zsp` pixels, six per row): eel00, tuna00, crab00, jelly00,
+barn00, anem00, then ray00, squid00, angler00, wrasse00, boss00. They share the
+same 1px ramp-0 silhouette weight, flat banded shading, centred 96×96 mass,
+and a consistent eye/feature scale; the gray ramp-10 Armor boss reads as the
+same set while staying distinct from the ten coloured bases. No base was
+regenerated; style set **signed off**.
+
+**Budgets (measured after conversion).** Indexed = 1,128,240 B; LUTs =
+512×(26+12) = 19,456 B; indexed + LUTs = 1,147,696 B ≤ 2 MB. Each background
+encoded ≤ 6,044 B (bg_d) ≤ 120 KB. All 26 A files total 62,956 B encoded
+≤ 400 KB. Validator rc 0 on the real manifest + `assets/out`.

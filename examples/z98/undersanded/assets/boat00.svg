@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150" shape-rendering="crispEdges">
+<g stroke="#0A1420" stroke-width="1" stroke-linejoin="miter">
+<polygon points="30,74 46,50 120,42 168,54 182,74 168,96 120,108 46,100" fill="#5A6A7A"/>
+<polygon points="30,74 12,58 8,74 12,92" fill="#5A6A7A"/>
+<polygon points="96,42 104,22 124,22 130,44" fill="#5A6A7A"/>
+<polygon points="168,58 190,50 194,66 176,72" fill="#3A4248"/>
+<polygon points="168,90 190,98 194,84 176,78" fill="#3A4248"/>
+</g>
+<g stroke="none">
+<polygon points="38,74 52,56 120,49 162,60 174,74 162,90 120,101 52,94" fill="#9AAABA"/>
+<polygon points="56,62 120,55 156,64 166,74 150,72 118,64 60,68" fill="#9AAABA"/>
+<rect x="46" y="78" width="126" height="3" fill="#2A3A4A"/>
+<rect x="56" y="88" width="104" height="3" fill="#2A3A4A"/>
+<polygon points="112,56 118,57 123,61 127,66 128,72 127,78 123,83 118,87 112,88 106,87 101,83 97,78 96,72 97,66 101,61 106,57" fill="#2A3A4A"/>
+<polygon points="112,60 118,62 122,66 124,72 122,78 118,82 112,84 106,82 102,78 100,72 102,66 106,62" fill="#0E5A72"/>
+<polygon points="112,64 118,66 120,72 118,78 112,80 106,78 104,72 106,66" fill="#1E9AB8"/>
+<polygon points="106,66 116,66 110,74 104,74" fill="#5FD4EC"/>
+<g fill="#2A3A4A">
+<rect x="60" y="60" width="4" height="4"/><rect x="76" y="58" width="4" height="4"/><rect x="140" y="62" width="4" height="4"/><rect x="156" y="68" width="4" height="4"/>
+<rect x="60" y="92" width="4" height="4"/><rect x="80" y="95" width="4" height="4"/><rect x="140" y="94" width="4" height="4"/><rect x="156" y="88" width="4" height="4"/>
+</g>
+<polygon points="100,26 122,26 126,40 100,40" fill="#9AAABA"/>
+<rect x="106" y="30" width="12" height="6" fill="#0E5A72"/>
+<polygon points="34,74 18,64 16,74 18,86" fill="#9AAABA"/>
+<rect x="176" y="62" width="14" height="4" fill="#6A747C"/>
+<rect x="176" y="86" width="14" height="4" fill="#6A747C"/>
+<polygon points="24,54 34,48 38,56 28,60" fill="#3A4248"/>
+<polygon points="24,96 34,102 38,94 28,90" fill="#3A4248"/>
+</g>
+</svg>
