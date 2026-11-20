@@ -1850,3 +1850,27 @@ Behaviour-preserving structural cut; all M1–M9 goldens stay byte-identical.
   array values still alias directly. Array sizes in `data_scan` use `ROW_MAX`
   (D27); this compiler is import-order sensitive, so keep nav's `data` import
   before `render_term`.
+
+## M10 preflight (P29 rulings applied)
+
+- **Palette contract:** anchors at shade indices **0/5/10/15**; linear 8-bit
+  interpolation with integer round-to-nearest; RGB565 round-to-nearest. Index
+  255 is the key, so ramp 15 has 15 usable shades; recolor `15/15` uses
+  `base[254]`.
+- **Boss:** `boss00` is re-authored at **96×96** with header ramp **10**
+  (Armor). `id=17` maps to `A boss00` with no V row; four boss V rows are
+  `10→2` (sliver), `10→4` (hoard), `10→13` (drown), `10→5` (blur). The
+  available 160×160 ramp-14 boss SVG is not the M10 source; do not copy it.
+- **Manifest:** exactly 26 A files + 12 V rows + `F font8x16 95 16`; A is the
+  only indexed-byte source, V adds a 512-byte LUT. The exact A/V ledger and
+  allowed ramps are in the M10 plan Global Constraints.
+- **Scope:** M10 wires creature sprites + one resident zone background into the
+  art fight and re-pins `art_fight.golden` once. Boat render, overlays, and the
+  score screen stay M11. `font8x16.zig` already exists (M9); verify provenance,
+  do not re-import.
+- **Order:** `zsp.zig` (decoder + `zspRecolorLut` + `zspCanonicalEncode`)
+  lands before `validate_assets.zig`; the validator re-encodes and byte-compares,
+  checks embedded palette equality, exact A/V/F ledger, per-asset allowed
+  ramps, and def→base/V coverage.
+- **Budget:** indexed (distinct A rows) ≤1.35 MB; indexed+LUTs ≤2 MB; each
+  background encoded ≤120 KB; demo RLE disk ≤400 KB.
