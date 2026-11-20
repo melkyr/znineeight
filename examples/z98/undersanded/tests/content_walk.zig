@@ -92,7 +92,7 @@ fn driveFight(g: *def.GameState) bool {
     var guard: i32 = 0;
     while (guard < 400) : (guard += 1) {
         if (expedition.isInFight(g)) {
-            if (g.screen == fight.SCREEN_SUBDUE or g.screen == fight.SCREEN_SUBDUE_POST) {
+            if (g.screen == def.SCREEN_SUBDUE or g.screen == def.SCREEN_SUBDUE_POST) {
                 expedition.expeditionStep(g, def.ACT_ATTEMPT);
             } else if (g.fight.hp * 100 > g.fight.max_hp * 50) {
                 expedition.expeditionStep(g, def.ACT_STRIKE);
@@ -101,7 +101,7 @@ fn driveFight(g: *def.GameState) bool {
             }
             continue;
         }
-        if (g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != expedition.NO_FIGHT) {
+        if (g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != def.NO_FIGHT) {
             expedition.expeditionStep(g, expedition.SUB_SELL);
             continue;
         }

@@ -123,11 +123,11 @@ fn triggerSubdue(g: *def.GameState) bool {
     const idx = prepare(g);
     g.fight.hp = 1;
     g.fight.res = 0;
-    g.screen = fight.SCREEN_SUBDUE;
+    g.screen = def.SCREEN_SUBDUE;
     var guard: i32 = 0;
     while (g.fight.outcome == def.OUT_ONGOING and guard < 50) : (guard += 1) {
-        if (g.screen != fight.SCREEN_SUBDUE and g.screen != fight.SCREEN_SUBDUE_POST) {
-            g.screen = fight.SCREEN_SUBDUE;
+        if (g.screen != def.SCREEN_SUBDUE and g.screen != def.SCREEN_SUBDUE_POST) {
+            g.screen = def.SCREEN_SUBDUE;
             g.fight.res = 0;
             g.fight.hp = 1;
         }
@@ -180,23 +180,23 @@ fn tViewedIndicator() bool {
 }
 
 fn tHelpMap() bool {
-    if (journal.helpPageNumber(nav.NAV_DOCK) != 1) return false;
-    if (journal.helpPageNumber(nav.NAV_MAP) != 5) return false;
-    if (journal.helpPageNumber(nav.NAV_NODE) != 2) return false;
-    if (journal.helpPageNumber(fight.SCREEN_FIGHT) != 2) return false;
-    if (journal.helpPageNumber(fight.SCREEN_SUBDUE) != 2) return false;
-    if (journal.helpPageNumber(nav.NAV_SETTLE) != 3) return false;
-    if (journal.helpPageNumber(nav.NAV_REFINE) != 4) return false;
-    if (journal.helpPageNumber(nav.NAV_CRAFT) != 4) return false;
-    if (journal.helpPageNumber(nav.NAV_TOOLS) != 6) return false;
-    if (journal.helpPageNumber(nav.NAV_JOURNAL) != 7) return false;
+    if (journal.helpPageNumber(def.NAV_DOCK) != 1) return false;
+    if (journal.helpPageNumber(def.NAV_MAP) != 5) return false;
+    if (journal.helpPageNumber(def.NAV_NODE) != 2) return false;
+    if (journal.helpPageNumber(def.SCREEN_FIGHT) != 2) return false;
+    if (journal.helpPageNumber(def.SCREEN_SUBDUE) != 2) return false;
+    if (journal.helpPageNumber(def.NAV_SETTLE) != 3) return false;
+    if (journal.helpPageNumber(def.NAV_REFINE) != 4) return false;
+    if (journal.helpPageNumber(def.NAV_CRAFT) != 4) return false;
+    if (journal.helpPageNumber(def.NAV_TOOLS) != 6) return false;
+    if (journal.helpPageNumber(def.NAV_JOURNAL) != 7) return false;
 
-    if (journal.helpPage(nav.NAV_DOCK)) |text| {
+    if (journal.helpPage(def.NAV_DOCK)) |text| {
         if (!contains(text, "pressure and patience")) return false;
     } else {
         return false;
     }
-    if (journal.helpPage(nav.NAV_MAP)) |text| {
+    if (journal.helpPage(def.NAV_MAP)) |text| {
         if (!contains(text, "Days and nights alternate")) return false;
     } else {
         return false;
@@ -227,7 +227,7 @@ fn tTooltipOnce() bool {
     g.exp.zone = 0;
     var st = nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = 0,
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -256,7 +256,7 @@ fn tHelpOverlayNoAction() bool {
     g.exp.zone = 0;
     var st = nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = 0,
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -267,7 +267,7 @@ fn tHelpOverlayNoAction() bool {
     const hull = g.fight.hull;
     const rng = g.fight.rng_state;
     _ = nav.navStep(&g, &st, input.Key{ .ch = '?', .code = 0 });
-    if (st.help_page != journal.helpPageNumber(fight.SCREEN_FIGHT)) return false;
+    if (st.help_page != journal.helpPageNumber(def.SCREEN_FIGHT)) return false;
     // Dismissing the overlay consumes the key but changes no fight state.
     _ = nav.navStep(&g, &st, input.Key{ .ch = 's', .code = 0 });
     if (st.help_page != nav.HELP_PAGE_NONE) return false;
@@ -287,10 +287,10 @@ fn tJournalScreenAndOpen() bool {
     if (!contains(text, "Mystic Eel")) return false;
     if (!contains(text, "*NEW*")) return false;
 
-    g.screen = nav.NAV_JOURNAL;
+    g.screen = def.NAV_JOURNAL;
     var st = nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = 0,
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -392,7 +392,7 @@ fn tSpeedRevealSurvivesSave() bool {
     // Sonar always reveals exact Speed even without a journal entry.
     game.newGame(&g2);
     game.startFight(&g2, 2);
-    g2.fight.tool = fight.TOOL_SONAR;
+    g2.fight.tool = def.TOOL_SONAR;
     g2.fight.tool_active = 1;
     render.renderFrame(&g2, &d, &sc);
     return contains(render.dump(&sc, buf[0..]), "SPD 6");

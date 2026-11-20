@@ -16,9 +16,6 @@ const render = @import("render_term.zig");
 const font = @import("font8x16.zig");
 const px = @import("std_gfx_px_core.zig");
 
-pub const SCREEN_W: i32 = 640;
-pub const SCREEN_H: i32 = 480;
-
 pub const GLYPH_W: i32 = 8;
 pub const GLYPH_H: i32 = 16;
 pub const LINE_H: i32 = 16;
@@ -245,7 +242,7 @@ fn logEntry(s: *const def.GameState, slot: i32) def.LogEntry {
 pub fn layoutFight(s: *const def.GameState, out: *[MAX_WIDGETS]Widget) i32 {
     var n: i32 = 0;
 
-    out[@intCast(usize, n)] = makeWidget(0, HUD_Y, SCREEN_W, HUD_H, W_HUD,
+    out[@intCast(usize, n)] = makeWidget(0, HUD_Y, def.SCREEN_W, HUD_H, W_HUD,
         s.exp.zone, s.world.phase, s.exp.fight_index,
         toolSig(s), s.world.money);
     n += 1;
@@ -283,7 +280,7 @@ pub fn layoutFight(s: *const def.GameState, out: *[MAX_WIDGETS]Widget) i32 {
     while (slot < LOG_LINES) : (slot += 1) {
         const e = logEntry(s, slot);
         out[@intCast(usize, n)] = makeWidget(0, LOG_Y + slot * LINE_H,
-            SCREEN_W, LINE_H, W_LOG, slot, e.msg_id, e.a, 0, e.b);
+            def.SCREEN_W, LINE_H, W_LOG, slot, e.msg_id, e.a, 0, e.b);
         n += 1;
     }
 
@@ -315,7 +312,7 @@ fn rectMerge(a: Rect, b: Rect) Rect {
 }
 
 fn fullRect() Rect {
-    return Rect{ .x = 0, .y = 0, .w = SCREEN_W, .h = SCREEN_H };
+    return Rect{ .x = 0, .y = 0, .w = def.SCREEN_W, .h = def.SCREEN_H };
 }
 
 pub fn coalesceRects(rects: []const Rect, out: []Rect) i32 {
@@ -584,7 +581,7 @@ fn widgetRect(w: *const Widget) Rect {
 }
 
 fn drawModal(sf: *px.Surface, s: *const def.GameState) void {
-    px.pxCoreFill(sf, 0, 0, SCREEN_W, SCREEN_H, C_BG);
+    px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
     const panel = Rect{ .x = 80, .y = 96, .w = 480, .h = 280 };
     px.pxCoreFill(sf, panel.x, panel.y, panel.w, panel.h, C_PANEL);
     drawDottedRect(sf, panel.x, panel.y, panel.w, panel.h, C_BORDER);
@@ -602,11 +599,11 @@ fn drawModal(sf: *px.Surface, s: *const def.GameState) void {
 }
 
 fn drawHelp(sf: *px.Surface, help_text: []const u8) void {
-    px.pxCoreFill(sf, 0, 0, SCREEN_W, SCREEN_H, C_BG);
+    px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
     var sc: render.Screen = undefined;
     render.renderHelp(help_text, &sc);
     drawScreenBlock(sf, &sc,
-        Rect{ .x = 0, .y = 0, .w = SCREEN_W, .h = SCREEN_H },
+        Rect{ .x = 0, .y = 0, .w = def.SCREEN_W, .h = def.SCREEN_H },
         false, C_TEXT, C_BG);
 }
 
@@ -617,8 +614,8 @@ fn markFull() void {
 
 pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
     help_text: []const u8, full: bool) void {
-    const modal = s.screen == fight.SCREEN_SUBDUE
-        or s.screen == fight.SCREEN_SUBDUE_POST;
+    const modal = s.screen == def.SCREEN_SUBDUE
+        or s.screen == def.SCREEN_SUBDUE_POST;
     const help = help_text.len > 0;
 
     if (help) {
@@ -650,7 +647,7 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
     var rn: i32 = 0;
 
     if (mode_changed) {
-        px.pxCoreFill(sf, 0, 0, SCREEN_W, SCREEN_H, C_BG);
+        px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             drawWidget(sf, &next[@intCast(usize, i)], s);

@@ -162,7 +162,7 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     switch (boot.result) {
         content_boot.BootResult.Loaded => {},
         content_boot.BootResult.Missing => {
-            content_boot.writeFailure(console_mode, content_boot.MSG_MISSING);
+            content_boot.writeFailure(console_mode, def.MSG_MISSING);
             os.exit(1);
             return;
         },

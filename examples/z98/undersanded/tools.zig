@@ -1,40 +1,28 @@
 // tools.zig — UNDERSANDED tool lifecycle helpers (spec §10, P22.2/P22.5).
 //
-// Every id/kind/cost reads `tables_t1.TOOLS`; this module only owns the
-// behaviour that depends on the current GameState: ownership, EQUIP gating,
-// and the fragile-tool break roll. No I/O, no RNG, flat state only.
+// Id/kind/ownership live in items.zig; this module keeps the public lifecycle
+// API and owns only the behaviour that depends on the current GameState:
+// EQUIP gating and the fragile-tool break roll. No I/O, no RNG, flat state.
 
 const def = @import("def.zig");
 const world = @import("world.zig");
-const tables = @import("tables_t1.zig");
+const items = @import("items.zig");
 
 // §10 fragile rule: Precision T2+ and one incoming hit of at least 15 Hull.
 pub const FRAGILE_MIN_PRECISION_TIER: i32 = 2;
 pub const FRAGILE_MIN_HIT: i32 = 15;
 
-fn findKind(tool: i32) i32 {
-    const rows = tables.tools();
-    var i: usize = 0;
-    while (i < rows.len) : (i += 1) {
-        if (rows[i].id == tool) return rows[i].kind;
-    }
-    return -1;
-}
-
 pub fn isRigged(tool: i32) bool {
-    return findKind(tool) == tables.TOOL_KIND_RIGGED;
+    return items.isRigged(tool);
 }
 
 pub fn isActivated(tool: i32) bool {
-    return findKind(tool) == tables.TOOL_KIND_ACTIVATED;
+    return items.isActivated(tool);
 }
 
 // Owned-tool bits are keyed by tool id (R6: tool 1..7 -> bit 1..7).
 pub fn isOwned(w: *const def.World, tool: i32) bool {
-    if (tool < 1 or tool > 7) return false;
-    const bit: u32 = @intCast(u32, tool);
-    const mask: u32 = @intCast(u32, 1) << bit;
-    return (w.tools_owned & mask) != 0;
+    return items.toolOwned(w, tool);
 }
 
 // Activated tools only: one charge per expedition, spent via EQUIP. Rigged

@@ -2,7 +2,7 @@
 //
 // Resolves data.z98 beside the exe dir, loads/validates it, and installs the
 // static override. Both game entries and the tool paths call this; the copy
-// strings live here so the startup fatal path and its native tests agree.
+// strings live in def.zig so the startup fatal path and its tests agree.
 
 const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
@@ -11,10 +11,6 @@ const parse = @import("std_parse");
 const def = @import("def.zig");
 const data = @import("data.zig");
 const validate = @import("validate.zig");
-
-pub const MSG_MISSING: []const u8 = "Content file missing. Reinstall from CD.";
-pub const MSG_DAMAGED_PREFIX: []const u8 = "Content file is damaged at line ";
-pub const MSG_DAMAGED_SUFFIX: []const u8 = ". Reinstall from CD.";
 
 pub const BootResult = enum { Loaded, Missing, Damaged };
 
@@ -79,11 +75,11 @@ pub fn writeFailure(console_mode: bool, msg: []const u8) void {
 
 pub fn damagedText(line: i32, out: []u8) []const u8 {
     var at: usize = 0;
-    append(out, &at, MSG_DAMAGED_PREFIX);
+    append(out, &at, def.MSG_DAMAGED_PREFIX);
     var ibuf: [16]u8 = undefined;
     const digits = parse.itoa(ibuf[0..], normalizedLine(line));
     append(out, &at, digits);
-    append(out, &at, MSG_DAMAGED_SUFFIX);
+    append(out, &at, def.MSG_DAMAGED_SUFFIX);
     return out[0..at];
 }
 

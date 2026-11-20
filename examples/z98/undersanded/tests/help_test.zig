@@ -68,20 +68,20 @@ fn pageEquals(screen: i32, key: []const u8) bool {
 }
 
 fn tPageMap() bool {
-    if (journal.helpPageNumber(nav.NAV_DOCK) != 1) return false;
-    if (journal.helpPageNumber(nav.NAV_MAP) != 5) return false;
-    if (journal.helpPageNumber(nav.NAV_NODE) != 2) return false;
-    if (journal.helpPageNumber(fight.SCREEN_FIGHT) != 2) return false;
-    if (journal.helpPageNumber(fight.SCREEN_SUBDUE) != 2) return false;
-    if (journal.helpPageNumber(nav.NAV_SETTLE) != 3) return false;
-    if (journal.helpPageNumber(nav.NAV_REFINE) != 4) return false;
-    if (journal.helpPageNumber(nav.NAV_CRAFT) != 4) return false;
-    if (journal.helpPageNumber(nav.NAV_TOOLS) != 6) return false;
-    if (journal.helpPageNumber(nav.NAV_JOURNAL) != 7) return false;
-    if (journal.helpPageNumber(nav.NAV_BUY) != 8) return false;
+    if (journal.helpPageNumber(def.NAV_DOCK) != 1) return false;
+    if (journal.helpPageNumber(def.NAV_MAP) != 5) return false;
+    if (journal.helpPageNumber(def.NAV_NODE) != 2) return false;
+    if (journal.helpPageNumber(def.SCREEN_FIGHT) != 2) return false;
+    if (journal.helpPageNumber(def.SCREEN_SUBDUE) != 2) return false;
+    if (journal.helpPageNumber(def.NAV_SETTLE) != 3) return false;
+    if (journal.helpPageNumber(def.NAV_REFINE) != 4) return false;
+    if (journal.helpPageNumber(def.NAV_CRAFT) != 4) return false;
+    if (journal.helpPageNumber(def.NAV_TOOLS) != 6) return false;
+    if (journal.helpPageNumber(def.NAV_JOURNAL) != 7) return false;
+    if (journal.helpPageNumber(def.NAV_BUY) != 8) return false;
     // Unknown/boot screens fall back to page 1 so `?` works everywhere.
     if (journal.helpPageNumber(-999) != 1) return false;
-    if (journal.helpPageNumber(nav.NAV_HELP) != 1) return false;
+    if (journal.helpPageNumber(def.NAV_HELP) != 1) return false;
     return true;
 }
 
@@ -91,14 +91,14 @@ fn tPagesPresent() bool {
         const text = data.textFind(MANUAL_KEYS[i]) orelse return false;
         if (text.len == 0) return false;
     }
-    if (!pageEquals(nav.NAV_DOCK, "manual.1")) return false;
-    if (!pageEquals(nav.NAV_NODE, "manual.2")) return false;
-    if (!pageEquals(nav.NAV_SETTLE, "manual.3")) return false;
-    if (!pageEquals(nav.NAV_REFINE, "manual.4")) return false;
-    if (!pageEquals(nav.NAV_MAP, "manual.5")) return false;
-    if (!pageEquals(nav.NAV_TOOLS, "manual.6")) return false;
-    if (!pageEquals(nav.NAV_JOURNAL, "manual.7")) return false;
-    if (!pageEquals(nav.NAV_BUY, "manual.8")) return false;
+    if (!pageEquals(def.NAV_DOCK, "manual.1")) return false;
+    if (!pageEquals(def.NAV_NODE, "manual.2")) return false;
+    if (!pageEquals(def.NAV_SETTLE, "manual.3")) return false;
+    if (!pageEquals(def.NAV_REFINE, "manual.4")) return false;
+    if (!pageEquals(def.NAV_MAP, "manual.5")) return false;
+    if (!pageEquals(def.NAV_TOOLS, "manual.6")) return false;
+    if (!pageEquals(def.NAV_JOURNAL, "manual.7")) return false;
+    if (!pageEquals(def.NAV_BUY, "manual.8")) return false;
     return true;
 }
 
@@ -112,15 +112,15 @@ fn renderPage(screen: i32, buf: []u8) ?[]const u8 {
 fn tRenderDeterministic() bool {
     var b1: [8192]u8 = undefined;
     var b2: [8192]u8 = undefined;
-    const a = renderPage(nav.NAV_DOCK, b1[0..]) orelse return false;
+    const a = renderPage(def.NAV_DOCK, b1[0..]) orelse return false;
     if (!contains(a, "UNDERSANDED  HELP")) return false;
     if (!contains(a, "pressure and patience")) return false;
     if (!contains(a, "[Any key] Back")) return false;
-    const repeated = renderPage(nav.NAV_DOCK, b2[0..]) orelse return false;
+    const repeated = renderPage(def.NAV_DOCK, b2[0..]) orelse return false;
     if (!eq(a, repeated)) return false;
 
     var b3: [8192]u8 = undefined;
-    const map = renderPage(nav.NAV_MAP, b3[0..]) orelse return false;
+    const map = renderPage(def.NAV_MAP, b3[0..]) orelse return false;
     return contains(map, "Days and nights alternate");
 }
 
@@ -132,7 +132,7 @@ fn tOverlayNoAction() bool {
     g.exp.zone = 0;
     var st = nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = 0,
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -143,7 +143,7 @@ fn tOverlayNoAction() bool {
     const hull = g.fight.hull;
     const rng = g.fight.rng_state;
     _ = nav.navStep(&g, &st, input.Key{ .ch = '?', .code = 0 });
-    if (st.help_page != journal.helpPageNumber(fight.SCREEN_FIGHT)) return false;
+    if (st.help_page != journal.helpPageNumber(def.SCREEN_FIGHT)) return false;
     // Dismissing consumes the key but forwards no fight action.
     _ = nav.navStep(&g, &st, input.Key{ .ch = 's', .code = 0 });
     if (st.help_page != nav.HELP_PAGE_NONE) return false;

@@ -39,7 +39,7 @@ fn key(c: u8) input.Key {
 fn newNav() nav.NavState {
     return nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = 0,
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -195,17 +195,17 @@ fn tWalk() bool {
     game.newGame(&g);
     var st = newNav();
 
-    if (nav.navStep(&g, &st, key('d')) != nav.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('d')) != def.NAV_MAP) return false;
     if (!renderOk(&g, &st, "UNDERSANDED  MAP")) return false;
 
-    if (nav.navStep(&g, &st, key('2')) != nav.NAV_NODE) return false;
+    if (nav.navStep(&g, &st, key('2')) != def.NAV_NODE) return false;
     if (!renderOk(&g, &st, "UNDERSANDED  NODE")) return false;
 
     _ = nav.navStep(&g, &st, key('h'));
     var guard: i32 = 0;
     while (expedition.isInFight(&g) and guard < 200) : (guard += 1) {
         if (!renderArtOk(&g)) return false;
-        if (g.screen == fight.SCREEN_SUBDUE or g.screen == fight.SCREEN_SUBDUE_POST) {
+        if (g.screen == def.SCREEN_SUBDUE or g.screen == def.SCREEN_SUBDUE_POST) {
             _ = nav.navStep(&g, &st, key('a'));
             if (!renderOk(&g, &st, "")) return false;
         } else if (g.fight.hp * 100 > g.fight.max_hp * 50) {
@@ -217,13 +217,13 @@ fn tWalk() bool {
         }
     }
     if (expedition.isInFight(&g)) return false;
-    if (g.screen != nav.NAV_SETTLE) return false;
+    if (g.screen != def.NAV_SETTLE) return false;
     if (!renderOk(&g, &st, "UNDERSANDED  NODE")) return false;
 
-    if (nav.navStep(&g, &st, key('r')) != nav.NAV_NODE) return false;
+    if (nav.navStep(&g, &st, key('r')) != def.NAV_NODE) return false;
     if (!renderOk(&g, &st, "UNDERSANDED  NODE")) return false;
 
-    if (nav.navStep(&g, &st, key('s')) != nav.NAV_DOCK) return false;
+    if (nav.navStep(&g, &st, key('s')) != def.NAV_DOCK) return false;
     if (!renderOk(&g, &st, "UNDERSANDED  DOCK")) return false;
     return true;
 }

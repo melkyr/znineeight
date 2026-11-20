@@ -4,6 +4,8 @@
 // feeds high-res tick deltas here and app.zig appends the one summary line to
 // errors.log when `under.exe --perf` exits. Frame timings are never a gate.
 
+const text_scan = @import("text_scan.zig");
+
 pub const MAX_FRAMES: usize = 1024;
 
 pub const Perf = struct {
@@ -64,44 +66,6 @@ pub fn percentileSorted(sorted: []const i64, pct: i32) i64 {
     return sorted[@intCast(usize, rank - 1)];
 }
 
-fn appendInt(out: []u8, p: *usize, value: i64) void {
-    var v = value;
-    var neg = false;
-    if (v < 0) {
-        neg = true;
-        v = 0 - v;
-    }
-    var tmp: [24]u8 = undefined;
-    var n: usize = 0;
-    if (v == 0) {
-        tmp[0] = '0';
-        n = 1;
-    } else {
-        while (v > 0 and n < tmp.len) {
-            tmp[n] = @intCast(u8, @intCast(u32, v % 10) + 48);
-            n += 1;
-            v = v / 10;
-        }
-    }
-    if (neg and p.* < out.len) {
-        out[p.*] = '-';
-        p.* += 1;
-    }
-    while (n > 0 and p.* < out.len) {
-        n -= 1;
-        out[p.*] = tmp[n];
-        p.* += 1;
-    }
-}
-
-fn appendText(out: []u8, p: *usize, text: []const u8) void {
-    var i: usize = 0;
-    while (i < text.len and p.* < out.len) : (i += 1) {
-        out[p.*] = text[i];
-        p.* += 1;
-    }
-}
-
 // One line, no trailing newline: `perf frames=N p50=Xms p95=Yms p99=Zms`.
 pub fn format(p: *const Perf, out: []u8) []const u8 {
     var scratch: [MAX_FRAMES]i64 = undefined;
@@ -111,14 +75,14 @@ pub fn format(p: *const Perf, out: []u8) []const u8 {
     const p99 = percentileSorted(scratch[0..n], 99);
 
     var at: usize = 0;
-    appendText(out, &at, "perf frames=");
-    appendInt(out, &at, @intCast(i64, n));
-    appendText(out, &at, " p50=");
-    appendInt(out, &at, p50);
-    appendText(out, &at, "ms p95=");
-    appendInt(out, &at, p95);
-    appendText(out, &at, "ms p99=");
-    appendInt(out, &at, p99);
-    appendText(out, &at, "ms");
+    text_scan.appendText(out, &at, "perf frames=");
+    text_scan.appendInt(out, &at, @intCast(i64, n));
+    text_scan.appendText(out, &at, " p50=");
+    text_scan.appendInt(out, &at, p50);
+    text_scan.appendText(out, &at, "ms p95=");
+    text_scan.appendInt(out, &at, p95);
+    text_scan.appendText(out, &at, "ms p99=");
+    text_scan.appendInt(out, &at, p99);
+    text_scan.appendText(out, &at, "ms");
     return out[0..at];
 }

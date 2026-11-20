@@ -350,7 +350,19 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# FAST 6: nested M8 (which nests M7 -> ... -> M1) + propagation non-vacuity
+# FAST 6: mechanical owner/registry quality smells
+# ---------------------------------------------------------------------------
+echo "== FAST: quality smells (owners/ids/LOC) =="
+SMELLS_LOG="$OUT/quality_smells.log"
+if sh "$TESTS/quality_smells.sh" >"$SMELLS_LOG" 2>&1; then
+    pass_case "quality_smells.sh green"
+else
+    fail_case "quality_smells.sh failed (see $SMELLS_LOG)"
+fi
+tail -8 "$SMELLS_LOG" | indent
+
+# ---------------------------------------------------------------------------
+# FAST 7: nested M8 (which nests M7 -> ... -> M1) + propagation non-vacuity
 # ---------------------------------------------------------------------------
 echo "== FAST: M8 regression (tier_m8_content.sh) =="
 nested_m8() {

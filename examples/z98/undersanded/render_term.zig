@@ -14,6 +14,7 @@ const world = @import("world.zig");
 const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
 const dock = @import("dock.zig");
+const items = @import("items.zig");
 const economy = @import("economy.zig");
 const save_ux = @import("save_ux.zig");
 const journal = @import("journal.zig");
@@ -119,7 +120,7 @@ fn journalMaskHas(s: *const def.GameState, d: i32) bool {
 
 pub fn speedRevealed(s: *const def.GameState) bool {
     if (journalMaskHas(s, s.fight.def_index)) return true;
-    return s.fight.tool_active != 0 and s.fight.tool == fight.TOOL_SONAR;
+    return s.fight.tool_active != 0 and s.fight.tool == def.TOOL_SONAR;
 }
 
 fn barFill(value: i32, max: i32, width: i32) i32 {
@@ -174,50 +175,50 @@ pub fn roleName(role: i32) []const u8 {
 pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
     var p: usize = 0;
     switch (e.msg_id) {
-        fight.MSG_STRIKE => {
+        def.MSG_STRIKE => {
             p = copyInto(out, p, "You Strike for ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " HP.");
         },
-        fight.MSG_RESTRAIN => {
+        def.MSG_RESTRAIN => {
             p = copyInto(out, p, "You Restrain for ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " Resolve.");
         },
-        fight.MSG_CREATURE_ATTACK => {
+        def.MSG_CREATURE_ATTACK => {
             p = copyInto(out, p, "Creature hits you for ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " Hull.");
         },
-        fight.MSG_SUBDUE_OK => {
+        def.MSG_SUBDUE_OK => {
             p = copyInto(out, p, "Subdued ");
             p = copyInto(out, p, creatureName(d));
             p = copyInto(out, p, " (");
             p = intInto(out, p, d.subdue_chance);
             p = copyInto(out, p, "%).");
         },
-        fight.MSG_SUBDUE_FAIL => {
+        def.MSG_SUBDUE_FAIL => {
             p = copyInto(out, p, "Subdue failed - ");
             p = copyInto(out, p, creatureName(d));
             p = copyInto(out, p, " surges! (");
             p = intInto(out, p, d.subdue_chance);
             p = copyInto(out, p, "%).");
         },
-        fight.MSG_KILL => {
+        def.MSG_KILL => {
             p = copyInto(out, p, "Kill. Overshoot ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " (margin ");
             p = intInto(out, p, e.b);
             p = copyInto(out, p, ").");
         },
-        fight.MSG_OVERKILL => {
+        def.MSG_OVERKILL => {
             p = copyInto(out, p, "Overkill. Overshoot ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " (margin ");
             p = intInto(out, p, e.b);
             p = copyInto(out, p, ").");
         },
-        fight.MSG_COUPLING => {
+        def.MSG_COUPLING => {
             if (e.b == 2) {
                 p = copyInto(out, p, "It recovers ");
                 p = intInto(out, p, e.a);
@@ -228,41 +229,41 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
                 p = copyInto(out, p, " Resolve (Thrash).");
             }
         },
-        fight.MSG_DECLINE => {
+        def.MSG_DECLINE => {
             p = copyInto(out, p, "You hold off. Its will begins to recover.");
         },
         def.MSG_DECLINE_PLAIN => {
             p = copyInto(out, p, "The creature recovers its footing.");
         },
-        fight.MSG_PLAYER_FLED => {
+        def.MSG_PLAYER_FLED => {
             p = copyInto(out, p, "You flee.");
         },
-        fight.MSG_CREATURE_FLED => {
+        def.MSG_CREATURE_FLED => {
             p = copyInto(out, p, "The creature flees.");
         },
-        fight.MSG_EQUIP => {
+        def.MSG_EQUIP => {
             p = copyInto(out, p, "You ready tool ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, ".");
         },
-        fight.MSG_DISCHARGE => {
+        def.MSG_DISCHARGE => {
             p = copyInto(out, p, "Discharge: ");
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " Hull.");
         },
-        fight.MSG_BLIND => {
+        def.MSG_BLIND => {
             p = copyInto(out, p, "Blinded - the next Strike misses.");
         },
-        fight.MSG_INK => {
+        def.MSG_INK => {
             p = copyInto(out, p, "Ink clouds the water - your action is chosen for you.");
         },
-        fight.MSG_DECOY => {
+        def.MSG_DECOY => {
             p = copyInto(out, p, "Your Strike tears through a decoy.");
         },
-        fight.MSG_PHASE => {
+        def.MSG_PHASE => {
             p = copyInto(out, p, "The ray phases - your Strike passes through it.");
         },
-        fight.MSG_LURE => {
+        def.MSG_LURE => {
             p = copyInto(out, p, "The lure reveals ");
             if (e.a == fight.LURE_REVEAL_DECOY) {
                 p = copyInto(out, p, "the real target - the decoy cannot hide.");
@@ -272,7 +273,7 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
                 p = copyInto(out, p, "Solid.");
             }
         },
-        fight.MSG_SONAR => {
+        def.MSG_SONAR => {
             const next = e.b % 10;
             const phase = e.b / 10;
             p = copyInto(out, p, "Sonar: Speed ");
@@ -372,7 +373,7 @@ pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
 pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Screen) void {
     clear(sc);
 
-    if (s.screen == fight.SCREEN_SUBDUE or s.screen == fight.SCREEN_SUBDUE_POST) {
+    if (s.screen == def.SCREEN_SUBDUE or s.screen == def.SCREEN_SUBDUE_POST) {
         renderModal(sc, s, d);
         return;
     }
@@ -504,8 +505,8 @@ pub fn toolName(id: i32) []const u8 {
 }
 
 fn toolKindName(kind: i32) []const u8 {
-    if (kind == tables.TOOL_KIND_ACTIVATED) return "activated";
-    if (kind == tables.TOOL_KIND_RIGGED) return "rigged";
+    if (kind == def.TOOL_KIND_ACTIVATED) return "activated";
+    if (kind == def.TOOL_KIND_RIGGED) return "rigged";
     return "unknown";
 }
 
@@ -524,12 +525,12 @@ fn ownedToolCount(w: *const def.World) i32 {
     var n: i32 = 0;
     var id: i32 = 1;
     while (id <= 7) : (id += 1) {
-        if (dock.toolOwned(w, id)) n += 1;
+        if (items.toolOwned(w, id)) n += 1;
     }
     return n;
 }
 
-fn putCost(sc: *Screen, x: i32, y: i32, cost: [3]tables.CostSlot) i32 {
+fn putCost(sc: *Screen, x: i32, y: i32, cost: [3]def.CostSlot) i32 {
     var p = x;
     var any = false;
     var i: usize = 0;
@@ -545,7 +546,7 @@ fn putCost(sc: *Screen, x: i32, y: i32, cost: [3]tables.CostSlot) i32 {
     return p;
 }
 
-fn putUpgradeCost(sc: *Screen, x: i32, y: i32, cost: [3]tables.CostSlot) i32 {
+fn putUpgradeCost(sc: *Screen, x: i32, y: i32, cost: [3]def.CostSlot) i32 {
     var p = x;
     var any = false;
     var i: usize = 0;
@@ -685,14 +686,14 @@ pub fn renderUpgrade(s: *const def.GameState, sc: *Screen) void {
                 .{ .kind = 0, .amt = 0 },
             };
             economy.upgradeCost(axis, tier + 1, &cost);
-            var slots: [3]tables.CostSlot = [3]tables.CostSlot{
+            var slots: [3]def.CostSlot = [3]def.CostSlot{
                 .{ .kind = 0, .amt = 0 },
                 .{ .kind = 0, .amt = 0 },
                 .{ .kind = 0, .amt = 0 },
             };
             var i: usize = 0;
             while (i < 3) : (i += 1) {
-                slots[i] = tables.CostSlot{ .kind = cost[i].kind, .amt = cost[i].amt };
+                slots[i] = def.CostSlot{ .kind = cost[i].kind, .amt = cost[i].amt };
             }
             _ = putUpgradeCost(sc, x, y, slots);
         }
@@ -718,7 +719,7 @@ pub fn renderCraft(s: *const def.GameState, sc: *Screen) void {
         x = put(sc, x, y, toolKindName(row.kind));
         x = put(sc, x, y, "] ");
         x = putCost(sc, x, y, row.cost);
-        if (dock.toolOwned(&s.world, row.id)) _ = put(sc, x, y, " (owned)");
+        if (items.toolOwned(&s.world, row.id)) _ = put(sc, x, y, " (owned)");
     }
 
     _ = put(sc, 0, 12, "[1-7] Craft tool  [Esc] Back");
@@ -772,7 +773,7 @@ pub fn renderTools(s: *const def.GameState, sc: *Screen) void {
         if (s.world.tool_selected == id) {
             p = put(sc, p, y, " *selected*");
         }
-        if (!dock.toolOwned(&s.world, id)) {
+        if (!items.toolOwned(&s.world, id)) {
             _ = put(sc, p, y, " (not owned)");
         }
     }

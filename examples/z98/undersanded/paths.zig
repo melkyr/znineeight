@@ -77,10 +77,9 @@ pub fn pathJoin83(dir: []const u8, name: []const u8, out: []u8) ?[]u8 {
     return out[0..need];
 }
 
-// Join `dir` and "probe.tmp" with the platform separator (not pathJoin83,
-// which hardcodes the Win98 backslash).
-fn probePath(dir: []const u8, out: []u8) ?[]u8 {
-    const name = "probe.tmp";
+// Join `dir` and `name` with the platform separator (not pathJoin83, which
+// hardcodes the Win98 backslash).
+pub fn join(dir: []const u8, name: []const u8, out: []u8) ?[]u8 {
     var sep: u8 = '/';
     if (@isWindows()) sep = '\\';
 
@@ -102,6 +101,10 @@ fn probePath(dir: []const u8, out: []u8) ?[]u8 {
     }
     str.copy(out[o..], name);
     return out[0..need];
+}
+
+fn probePath(dir: []const u8, out: []u8) ?[]u8 {
+    return join(dir, "probe.tmp", out);
 }
 
 fn ensureDir(path: []const u8) void {

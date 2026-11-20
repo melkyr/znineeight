@@ -126,7 +126,7 @@ fn readWindowKey(g: *gfx.Gfx, fight_art: bool) ?input.Key {
 fn artMode(g: *def.GameState, p: ?*px.Gfx) bool {
     if (p == null) return false;
     if (expedition.isInFight(g)) return true;
-    if (g.screen == fight.SCREEN_SUBDUE or g.screen == fight.SCREEN_SUBDUE_POST) return true;
+    if (g.screen == def.SCREEN_SUBDUE or g.screen == def.SCREEN_SUBDUE_POST) return true;
     return false;
 }
 
@@ -187,7 +187,7 @@ pub fn bootGfx(win: *gfx.Gfx, gs: *def.GameState, dir: []const u8,
     var screen = nav.bootReset(gs, dir);
     var st = nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = 0,
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -223,12 +223,12 @@ pub fn bootGfx(win: *gfx.Gfx, gs: *def.GameState, dir: []const u8,
 // Playable navigation loop with cell screens and the art fight.
 pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
     const win = g_win orelse return;
-    if (g.screen != nav.NAV_MAP and g.screen != nav.NAV_NODE and g.screen != nav.NAV_SETTLE
-        and g.screen != nav.NAV_REFINE and g.screen != nav.NAV_UPGRADE
-        and g.screen != nav.NAV_CRAFT and g.screen != nav.NAV_BUY and g.screen != nav.NAV_TOOLS
-        and g.screen != nav.NAV_LORE and g.screen != nav.NAV_MENU and g.screen != nav.NAV_SAVE_ERR
-        and g.screen != nav.NAV_JOURNAL and g.screen != nav.NAV_HELP) {
-        g.screen = nav.NAV_DOCK;
+    if (g.screen != def.NAV_MAP and g.screen != def.NAV_NODE and g.screen != def.NAV_SETTLE
+        and g.screen != def.NAV_REFINE and g.screen != def.NAV_UPGRADE
+        and g.screen != def.NAV_CRAFT and g.screen != def.NAV_BUY and g.screen != def.NAV_TOOLS
+        and g.screen != def.NAV_LORE and g.screen != def.NAV_MENU and g.screen != def.NAV_SAVE_ERR
+        and g.screen != def.NAV_JOURNAL and g.screen != def.NAV_HELP) {
+        g.screen = def.NAV_DOCK;
     }
 
     var p_opt = px0;
@@ -236,7 +236,7 @@ pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
     const dir = paths.dataDirOrFallback(dir_buf[0..]);
     var st = nav.NavState{
         .armed = 0,
-        .last = nav.NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = 0,
         .help_page = nav.HELP_PAGE_NONE,
         .tip = nav.TIP_NONE,
@@ -253,7 +253,7 @@ pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
         p_opt = drawScene(win, g, p_opt, &st, notice_buf[0..notice_len], perf_on);
         notice_len = 0;
 
-        const fight_art = g.screen == fight.SCREEN_FIGHT;
+        const fight_art = g.screen == def.SCREEN_FIGHT;
         const raw_key = readWindowKey(win, fight_art) orelse return;
         var key: input.Key = undefined;
         const filtered = input.filterKey(raw_key);
@@ -287,7 +287,7 @@ pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
         }
 
         const next = nav.navStep(g, &st, key);
-        if (next == nav.NAV_QUIT) return;
+        if (next == def.NAV_QUIT) return;
         const tip = nav.navTipLine(&st);
         if (tip.len > 0) {
             notice_len = copyNotice(notice_buf[0..], tip);

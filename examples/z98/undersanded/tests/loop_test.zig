@@ -69,7 +69,7 @@ fn driveSubdue(g: *def.GameState) i32 {
     var actions: i32 = 0;
     var guard: i32 = 0;
     while (expedition.isInFight(g) and guard < 200) : (guard += 1) {
-        if (g.screen == fight.SCREEN_SUBDUE or g.screen == fight.SCREEN_SUBDUE_POST) {
+        if (g.screen == def.SCREEN_SUBDUE or g.screen == def.SCREEN_SUBDUE_POST) {
             expedition.expeditionStep(g, def.ACT_ATTEMPT);
         } else if (g.fight.hp * 100 > g.fight.max_hp * 50) {
             expedition.expeditionStep(g, def.ACT_STRIKE);
@@ -85,7 +85,7 @@ fn driveKill(g: *def.GameState) i32 {
     var actions: i32 = 0;
     var guard: i32 = 0;
     while (expedition.isInFight(g) and guard < 200) : (guard += 1) {
-        if (g.screen == fight.SCREEN_SUBDUE or g.screen == fight.SCREEN_SUBDUE_POST) {
+        if (g.screen == def.SCREEN_SUBDUE or g.screen == def.SCREEN_SUBDUE_POST) {
             expedition.expeditionStep(g, def.ACT_ATTEMPT);
         } else if (g.fight.res * 100 > g.fight.max_res * 50) {
             expedition.expeditionStep(g, def.ACT_RESTRAIN);
@@ -131,20 +131,20 @@ fn fullLoop() bool {
     const f1_out = s.fight.outcome;
     if (f1_out != def.OUT_SUBDUE) return false;
     const f1_idx = s.fight.def_index;
-    if (f1_idx == expedition.NO_FIGHT) return false;
+    if (f1_idx == def.NO_FIGHT) return false;
     if (s.exp.hold_n <= 0) return false;
 
     expedition.expeditionStep(&s, expedition.SUB_RELEASE);
     if (s.world.release_bonus[1] != 8) return false;
     if (!isWary(&s.world, f1_idx)) return false;
-    if (s.fight.def_index != expedition.NO_FIGHT) return false;
+    if (s.fight.def_index != def.NO_FIGHT) return false;
 
     s.world.hull = 200;
     expedition.expeditionStep(&s, expedition.EXP_HUNT);
     const f2_actions = driveKill(&s);
     const f2_out = s.fight.outcome;
     if (f2_out != def.OUT_KILL) return false;
-    if (s.fight.def_index != expedition.NO_FIGHT) return false;
+    if (s.fight.def_index != def.NO_FIGHT) return false;
 
     expedition.expeditionStep(&s, expedition.EXP_SURFACE);
     if (s.exp.active != 0) return false;

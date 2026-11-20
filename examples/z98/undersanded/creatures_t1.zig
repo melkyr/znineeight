@@ -49,15 +49,7 @@ pub const PART_GLASS_PANE: i32 = 7;
 pub const PART_HOOKED_BARBEL: i32 = 8;
 pub const PART_STEEL_FINS: i32 = 9;
 
-// Counter-tool ids (§14.5). Plate=1 and Brine Net=2 match fight.TOOL_*; the
-// rest are reserved for M5/M8 wiring and are inert here.
-pub const TOOL_PLATE: i32 = 1;
-pub const TOOL_BRINE_NET: i32 = 2;
-pub const TOOL_ELECTRIC_GLAND: i32 = 3;
-pub const TOOL_LURE: i32 = 4;
-pub const TOOL_PRESSURE_HOOK: i32 = 5;
-pub const TOOL_SONAR: i32 = 6;
-pub const TOOL_CORAL_SHIELD: i32 = 7;
+// Counter-tool ids (§14.5) live in def.TOOL_*.
 
 fn drop(part: i32, count: i32) def.DropLine {
     return def.DropLine{ .part = part, .count = count };
@@ -313,7 +305,7 @@ fn rustTuna() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
-    d.counter_tool = TOOL_PRESSURE_HOOK;
+    d.counter_tool = def.TOOL_PRESSURE_HOOK;
     d.sub[0] = drop(PART_PLATE_SCRAP, 2);
     d.sub[1] = drop(PART_SHELL_CHIP, 2);
     d.kill[0] = drop(PART_SHELL_CHIP, 2);
@@ -341,7 +333,7 @@ fn kelpCrab() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
-    d.counter_tool = TOOL_BRINE_NET;
+    d.counter_tool = def.TOOL_BRINE_NET;
     d.sub[0] = drop(PART_CORAL_BUD, 2);
     d.sub[1] = drop(PART_SHELL_CHIP, 2);
     d.kill[0] = drop(PART_CORAL_BUD, 1);
@@ -368,7 +360,7 @@ fn brineJelly() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
-    d.counter_tool = TOOL_ELECTRIC_GLAND;
+    d.counter_tool = def.TOOL_ELECTRIC_GLAND;
     d.sub[0] = drop(PART_BRINE_VIAL, 3);
     d.sub[1] = drop(PART_SHELL_CHIP, 1);
     d.kill[0] = drop(PART_BRINE_VIAL, 1);
@@ -397,7 +389,7 @@ fn chitinBarnacle() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
-    d.counter_tool = TOOL_PLATE;
+    d.counter_tool = def.TOOL_PLATE;
     d.sub[0] = drop(PART_SHELL_CHIP, 4);
     d.sub[1] = drop(PART_CORAL_BUD, 1);
     d.kill[0] = drop(PART_SHELL_CHIP, 2);
@@ -427,7 +419,7 @@ fn sparkAnemone() def.CreatureDef {
     d.respawn[0] = 3;
     d.respawn[1] = 9;
     d.respawn[2] = 15;
-    d.counter_tool = TOOL_CORAL_SHIELD;
+    d.counter_tool = def.TOOL_CORAL_SHIELD;
     d.rule_start = 3;
     d.rule_count = 1;
     d.sub[0] = drop(PART_GLAND_SAC, 2);
@@ -462,7 +454,7 @@ fn mileel() def.CreatureDef {
     d.respawn[0] = 4;
     d.respawn[1] = 12;
     d.respawn[2] = 20;
-    d.counter_tool = TOOL_PRESSURE_HOOK;
+    d.counter_tool = def.TOOL_PRESSURE_HOOK;
     d.sub[0] = drop(PART_GLAND_SAC, 4);
     d.sub[1] = drop(PART_SHELL_CHIP, 2);
     d.sub[2] = drop(PART_HOOKED_BARBEL, 1);
@@ -497,7 +489,7 @@ fn tunisteel() def.CreatureDef {
     d.respawn[0] = 4;
     d.respawn[1] = 12;
     d.respawn[2] = 20;
-    d.counter_tool = TOOL_PLATE;
+    d.counter_tool = def.TOOL_PLATE;
     d.sub[0] = drop(PART_PLATE_SCRAP, 4);
     d.sub[1] = drop(PART_SHELL_CHIP, 2);
     d.sub[2] = drop(PART_STEEL_FINS, 2);
@@ -527,7 +519,7 @@ fn coralCrab() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
-    d.counter_tool = TOOL_BRINE_NET;
+    d.counter_tool = def.TOOL_BRINE_NET;
     d.sub[0] = drop(PART_CORAL_BUD, 3);
     d.sub[1] = drop(PART_SHELL_CHIP, 2);
     d.kill[0] = drop(PART_CORAL_BUD, 1);
@@ -556,7 +548,7 @@ fn abyssalLanternJelly() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
-    d.counter_tool = TOOL_LURE;
+    d.counter_tool = def.TOOL_LURE;
     d.sub[0] = drop(PART_GLOW_POLYP, 2);
     d.sub[1] = drop(PART_BRINE_VIAL, 3);
     d.kill[0] = drop(PART_GLOW_POLYP, 1);
@@ -586,7 +578,7 @@ fn neonGhostRay() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
-    d.counter_tool = TOOL_SONAR;
+    d.counter_tool = def.TOOL_SONAR;
     d.sub[0] = drop(PART_GLOW_POLYP, 4);
     d.sub[1] = drop(PART_BRINE_VIAL, 2);
     d.kill[0] = drop(PART_GLOW_POLYP, 1);
@@ -617,7 +609,7 @@ fn glassSquid() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
-    d.counter_tool = TOOL_SONAR;
+    d.counter_tool = def.TOOL_SONAR;
     d.sub[0] = drop(PART_GLASS_PANE, 4);
     d.sub[1] = drop(PART_BRINE_VIAL, 2);
     d.kill[0] = drop(PART_GLASS_PANE, 1);
@@ -649,7 +641,7 @@ fn brineAngler() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
-    d.counter_tool = TOOL_LURE;
+    d.counter_tool = def.TOOL_LURE;
     d.sub[0] = drop(PART_GLOW_POLYP, 2);
     d.sub[1] = drop(PART_BRINE_VIAL, 2);
     d.kill[0] = drop(PART_GLOW_POLYP, 1);
@@ -682,7 +674,7 @@ fn ironcladWrasse() def.CreatureDef {
     d.respawn[0] = 6;
     d.respawn[1] = 18;
     d.respawn[2] = 30;
-    d.counter_tool = TOOL_PLATE;
+    d.counter_tool = def.TOOL_PLATE;
     d.sub[0] = drop(PART_PLATE_SCRAP, 3);
     d.sub[1] = drop(PART_CORAL_BUD, 2);
     d.sub[2] = drop(PART_GLASS_PANE, 2);
@@ -711,7 +703,7 @@ fn derelict() def.CreatureDef {
     d.respawn[0] = 20;
     d.respawn[1] = 20;
     d.respawn[2] = 40;
-    d.counter_tool = TOOL_PLATE;
+    d.counter_tool = def.TOOL_PLATE;
     d.kill[0] = drop(PART_PLATE_SCRAP, 5);
     d.kill[1] = drop(PART_GLAND_SAC, 3);
     d.kill[2] = drop(PART_GLOW_POLYP, 3);

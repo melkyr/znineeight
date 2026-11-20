@@ -6,7 +6,6 @@
 // decline (identical, consume no RNG).
 
 const def = @import("def.zig");
-const fight = @import("fight.zig");
 const io = @import("std_io.zig");
 
 pub const KEY_ESC: u8 = 27;
@@ -74,12 +73,12 @@ fn mapFight(k: Key) ?def.Action {
     return null;
 }
 
-// `screen` is GameState.screen (fight.zig SCREEN_*). Esc has no fight action
+// `screen` is GameState.screen (def.SCREEN_*). Esc has no fight action
 // (it opens the menu per §28); inside the subdue modal it declines.
 pub fn mapKey(screen: i32, key: Key) ?def.Action {
-    if (screen == fight.SCREEN_SUBDUE or screen == fight.SCREEN_SUBDUE_POST) {
+    if (screen == def.SCREEN_SUBDUE or screen == def.SCREEN_SUBDUE_POST) {
         return mapModal(key);
     }
-    if (screen == fight.SCREEN_FIGHT) return mapFight(key);
+    if (screen == def.SCREEN_FIGHT) return mapFight(key);
     return null;
 }

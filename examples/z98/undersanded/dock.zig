@@ -8,6 +8,7 @@
 const def = @import("def.zig");
 const world = @import("world.zig");
 const tables = @import("tables_t1.zig");
+const items = @import("items.zig");
 const economy = @import("economy.zig");
 
 // Result vocabulary (0 = success; every other value is a documented refusal).
@@ -54,13 +55,6 @@ pub fn refinePerPart(g: *const def.GameState, material: i32) i32 {
     return economy.refineYield(exp, economy.isDeepMaterial(material));
 }
 
-pub fn toolOwned(w: *const def.World, tool: i32) bool {
-    if (tool < 1 or tool > 7) return false;
-    const bit: u32 = @intCast(u32, tool);
-    const mask: u32 = @intCast(u32, 1) << bit;
-    return (w.tools_owned & mask) != 0;
-}
-
 pub fn cosmeticBit(index: i32) u32 {
     if (index < 0 or index >= def.MAX_COSMETICS) return 0;
     return @intCast(u32, 1) << @intCast(u32, index);
@@ -85,7 +79,7 @@ fn recountHold(g: *def.GameState) void {
     g.exp.hold_n = n;
 }
 
-fn findTool(tool: i32) ?*const tables.ToolRow {
+fn findTool(tool: i32) ?*const def.ToolRow {
     const rows = tables.tools();
     var i: usize = 0;
     while (i < rows.len) : (i += 1) {
@@ -94,7 +88,7 @@ fn findTool(tool: i32) ?*const tables.ToolRow {
     return null;
 }
 
-fn findUpgrade(axis: i32, tier: i32) ?*const tables.UpgradeRow {
+fn findUpgrade(axis: i32, tier: i32) ?*const def.UpgradeRow {
     const rows = tables.upgrades();
     var i: usize = 0;
     while (i < rows.len) : (i += 1) {
@@ -203,7 +197,7 @@ pub fn dockUpgrade(g: *def.GameState, axis: i32) i32 {
 // missing part or when the bit is already set; no phase on refusal.
 pub fn dockCraft(g: *def.GameState, tool: i32) i32 {
     if (tool < 1 or tool > 7) return DOCK_ERR_INVALID;
-    if (toolOwned(&g.world, tool)) return DOCK_ERR_ALREADY;
+    if (items.toolOwned(&g.world, tool)) return DOCK_ERR_ALREADY;
     const row = findTool(tool) orelse return DOCK_ERR_INVALID;
     const ep = &g.exp;
 
@@ -253,7 +247,7 @@ pub fn dockBuy(g: *def.GameState, cosmetic: i32) i32 {
 // Tool 0 clears the selection.
 pub fn dockSelectTool(g: *def.GameState, tool: i32) i32 {
     if (tool < 0 or tool > 7) return DOCK_ERR_INVALID;
-    if (tool != 0 and !toolOwned(&g.world, tool)) return DOCK_ERR_NOT_OWNED;
+    if (tool != 0 and !items.toolOwned(&g.world, tool)) return DOCK_ERR_NOT_OWNED;
     g.world.tool_selected = tool;
     return DOCK_OK;
 }

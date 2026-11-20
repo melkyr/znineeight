@@ -134,7 +134,7 @@ fn baseFight(g: *def.GameState) void {
     g.fight.tool_broken = 0;
     g.fight.tool_active = 1;
     g.fight.round = 1;
-    g.screen = fight.SCREEN_FIGHT;
+    g.screen = def.SCREEN_FIGHT;
 }
 
 fn goldenFight(g: *def.GameState) void {
@@ -142,14 +142,14 @@ fn goldenFight(g: *def.GameState) void {
     setJournalBit(g, g.fight.def_index);
     g.log_n = 3;
     g.log[0] = def.LogEntry{
-        .class = def.LOG_NORMAL, .msg_id = fight.MSG_STRIKE, .a = 17, .b = 0,
+        .class = def.LOG_NORMAL, .msg_id = def.MSG_STRIKE, .a = 17, .b = 0,
     };
     g.log[1] = def.LogEntry{
-        .class = def.LOG_NORMAL, .msg_id = fight.MSG_CREATURE_ATTACK,
+        .class = def.LOG_NORMAL, .msg_id = def.MSG_CREATURE_ATTACK,
         .a = 9, .b = 91,
     };
     g.log[2] = def.LogEntry{
-        .class = def.LOG_NORMAL, .msg_id = fight.MSG_INK, .a = 0, .b = 0,
+        .class = def.LOG_NORMAL, .msg_id = def.MSG_INK, .a = 0, .b = 0,
     };
 }
 
@@ -284,7 +284,7 @@ fn tSurfaceLostRepaint() bool {
     core.pxCoreMarkSurfaceLost(handle.opaque);
     if (!core.pxCoreSurfaceLost(handle.opaque)) return false;
     sf = core.pxCoreSurface(handle.opaque);
-    core.pxCoreFill(&sf, 0, 0, art.SCREEN_W, art.SCREEN_H, 0xDEAD);
+    core.pxCoreFill(&sf, 0, 0, def.SCREEN_W, def.SCREEN_H, 0xDEAD);
     if (fnv(core.gfxPxDump(handle)) == c1) return false;
 
     core.pxCoreMarkRestored(handle.opaque);

@@ -33,6 +33,7 @@ const buf_mod = @import("std_buf");
 const data = @import("data.zig");
 const content_boot = @import("content_boot.zig");
 const persist = @import("persist.zig");
+const text_scan = @import("text_scan.zig");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
@@ -171,7 +172,7 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
     } else if (eq(screen_id, "menu")) {
         render.renderMenu(&sc);
     } else if (eq(screen_id, "help")) {
-        // Canonical `?` page from the dock (nav.NAV_DOCK = 10 -> manual.1).
+        // Canonical `?` page from the dock (def.NAV_DOCK = 10 -> manual.1).
         render.renderHelp(journal.helpPage(10) orelse "(manual text unavailable)", &sc);
     } else if (eq(screen_id, "journal")) {
         // Fresh install: every entry is still "- unrecorded -".
@@ -188,81 +189,18 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
 // it through the same gameStep path the sim/UI use, then serializes the exact
 // fight log as `<class>:<msg_id>:<a>:<b>;` per entry (the fight_test format).
 
-fn appendStr(buf: []u8, pos: *usize, text: []const u8) void {
-    var i: usize = 0;
-    while (i < text.len and pos.* < buf.len) : (i += 1) {
-        buf[pos.*] = text[i];
-        pos.* += 1;
-    }
-}
-
-fn appendInt(buf: []u8, pos: *usize, v: i32) void {
-    if (pos.* >= buf.len) return;
-    if (v == 0) {
-        buf[pos.*] = '0';
-        pos.* += 1;
-        return;
-    }
-    var n: u32 = 0;
-    var neg = false;
-    if (v < 0) {
-        neg = true;
-        n = @intCast(u32, 0 - v);
-    } else {
-        n = @intCast(u32, v);
-    }
-    var tmp: [16]u8 = undefined;
-    var t: usize = 0;
-    while (n > 0) {
-        tmp[t] = @intCast(u8, '0' + @intCast(i32, n % 10));
-        n = n / 10;
-        t += 1;
-    }
-    if (neg and pos.* < buf.len) {
-        buf[pos.*] = '-';
-        pos.* += 1;
-    }
-    while (t > 0 and pos.* < buf.len) {
-        t -= 1;
-        buf[pos.*] = tmp[t];
-        pos.* += 1;
-    }
-}
-
-fn appendUint(buf: []u8, pos: *usize, v: u32) void {
-    if (pos.* >= buf.len) return;
-    if (v == 0) {
-        buf[pos.*] = '0';
-        pos.* += 1;
-        return;
-    }
-    var n: u32 = v;
-    var tmp: [16]u8 = undefined;
-    var t: usize = 0;
-    while (n > 0) {
-        tmp[t] = @intCast(u8, '0' + @intCast(i32, n % 10));
-        n = n / 10;
-        t += 1;
-    }
-    while (t > 0 and pos.* < buf.len) {
-        t -= 1;
-        buf[pos.*] = tmp[t];
-        pos.* += 1;
-    }
-}
-
 fn appendLog(buf: []u8, pos: *usize, s: *const def.GameState) void {
     var i: i32 = 0;
     while (i < s.log_n) : (i += 1) {
         const e = s.log[@intCast(usize, i)];
-        appendInt(buf, pos, e.class);
-        appendStr(buf, pos, ":");
-        appendInt(buf, pos, e.msg_id);
-        appendStr(buf, pos, ":");
-        appendInt(buf, pos, e.a);
-        appendStr(buf, pos, ":");
-        appendInt(buf, pos, e.b);
-        appendStr(buf, pos, ";");
+        text_scan.appendInt(buf, pos, @intCast(i64, e.class));
+        text_scan.appendText(buf, pos, ":");
+        text_scan.appendInt(buf, pos, @intCast(i64, e.msg_id));
+        text_scan.appendText(buf, pos, ":");
+        text_scan.appendInt(buf, pos, @intCast(i64, e.a));
+        text_scan.appendText(buf, pos, ":");
+        text_scan.appendInt(buf, pos, @intCast(i64, e.b));
+        text_scan.appendText(buf, pos, ";");
     }
 }
 
@@ -292,13 +230,13 @@ pub fn replayLine(path: []const u8, out: []u8) ?[]const u8 {
     }
 
     var pos: usize = 0;
-    appendStr(out, &pos, "replay outcome=");
-    appendInt(out, &pos, s.fight.outcome);
-    appendStr(out, &pos, " actions=");
-    appendInt(out, &pos, applied);
-    appendStr(out, &pos, " rng=");
-    appendUint(out, &pos, s.fight.rng_state);
-    appendStr(out, &pos, " log=");
+    text_scan.appendText(out, &pos, "replay outcome=");
+    text_scan.appendInt(out, &pos, @intCast(i64, s.fight.outcome));
+    text_scan.appendText(out, &pos, " actions=");
+    text_scan.appendInt(out, &pos, @intCast(i64, applied));
+    text_scan.appendText(out, &pos, " rng=");
+    text_scan.appendUint(out, &pos, @intCast(u64, s.fight.rng_state));
+    text_scan.appendText(out, &pos, " log=");
     appendLog(out, &pos, &s);
     return out[0..pos];
 }

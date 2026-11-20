@@ -4,9 +4,9 @@
 // game state only through the dock/expedition entry points. All I/O lives in
 // navRun (one stdin key per frame); there is no gfx and no RNG of our own.
 //
-// Nav screen ids live here and stay disjoint from fight.SCREEN_* (0..2).
+// Nav screen ids live in def and stay disjoint from def.SCREEN_* (0..2).
 // GameState.screen carries the nav id while navigating; fight.zig overwrites
-// it with SCREEN_FIGHT/SCREEN_SUBDUE when a fight starts.
+// it with def.SCREEN_FIGHT/def.SCREEN_SUBDUE when a fight starts.
 //
 // UI-only state (the rare-batch two-press confirm and the last dock result)
 // lives in NavState, never GameState (R16).
@@ -24,25 +24,7 @@ const game = @import("game.zig");
 const persist = @import("persist.zig");
 const journal = @import("journal.zig");
 const fight = @import("fight.zig");
-
-pub const NAV_DOCK: i32 = 10;
-pub const NAV_MAP: i32 = 11;
-pub const NAV_NODE: i32 = 12;
-pub const NAV_SETTLE: i32 = 13;
-pub const NAV_REFINE: i32 = 14;
-pub const NAV_UPGRADE: i32 = 15;
-pub const NAV_CRAFT: i32 = 16;
-pub const NAV_BUY: i32 = 17;
-pub const NAV_TOOLS: i32 = 18;
-pub const NAV_LORE: i32 = 19;
-pub const NAV_MENU: i32 = 20;
-pub const NAV_SAVE_ERR: i32 = 21;
-pub const NAV_JOURNAL: i32 = 22;
-pub const NAV_HELP: i32 = 23;
-pub const NAV_QUIT: i32 = -1;
-
-pub const NAV_RESULT_NONE: i32 = -100;
-pub const NAV_RESULT_PREVIEW: i32 = -101;
+const text_scan = @import("text_scan.zig");
 
 pub const HELP_PAGE_NONE: i32 = 0;
 pub const TIP_NONE: i32 = 0;
@@ -95,8 +77,8 @@ fn isChar(k: input.Key, c: u8) bool {
 
 // Boot routing is pure: the caller decides whether the active slot save exists.
 pub fn bootStartScreen(save_exists: bool) i32 {
-    if (save_exists) return NAV_MENU;
-    return NAV_LORE;
+    if (save_exists) return def.NAV_MENU;
+    return def.NAV_LORE;
 }
 
 pub fn menuAction(k: input.Key) i32 {
@@ -137,9 +119,9 @@ fn isPending(g: *const def.GameState) bool {
 
 // Pending choice -> settle, otherwise an active expedition -> node, else dock.
 fn deriveScreen(g: *const def.GameState) i32 {
-    if (isPending(g)) return NAV_SETTLE;
-    if (g.exp.active != 0) return NAV_NODE;
-    return NAV_DOCK;
+    if (isPending(g)) return def.NAV_SETTLE;
+    if (g.exp.active != 0) return def.NAV_NODE;
+    return def.NAV_DOCK;
 }
 
 fn setScreen(g: *def.GameState, screen: i32) i32 {
@@ -147,7 +129,7 @@ fn setScreen(g: *def.GameState, screen: i32) i32 {
     return screen;
 }
 
-// A field action may start a fight; keep fight.zig's SCREEN_* in that case so
+// A field action may start a fight; keep def.SCREEN_* in that case so
 // the next key still maps through input.mapKey.
 fn screenAfterField(g: *def.GameState) i32 {
     if (expedition.isInFight(g)) return g.screen;
@@ -156,15 +138,15 @@ fn screenAfterField(g: *def.GameState) i32 {
 
 fn dockStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     st.armed = 0;
-    if (isChar(key, 'q')) return NAV_QUIT;
-    if (isChar(key, 'd')) return setScreen(g, NAV_MAP);
+    if (isChar(key, 'q')) return def.NAV_QUIT;
+    if (isChar(key, 'd')) return setScreen(g, def.NAV_MAP);
     if (isChar(key, 't')) expedition.restAtDock(g);
-    if (isChar(key, 'r')) return setScreen(g, NAV_REFINE);
-    if (isChar(key, 'u')) return setScreen(g, NAV_UPGRADE);
-    if (isChar(key, 'c')) return setScreen(g, NAV_CRAFT);
-    if (isChar(key, 'b')) return setScreen(g, NAV_BUY);
-    if (isChar(key, 'e')) return setScreen(g, NAV_TOOLS);
-    return setScreen(g, NAV_DOCK);
+    if (isChar(key, 'r')) return setScreen(g, def.NAV_REFINE);
+    if (isChar(key, 'u')) return setScreen(g, def.NAV_UPGRADE);
+    if (isChar(key, 'c')) return setScreen(g, def.NAV_CRAFT);
+    if (isChar(key, 'b')) return setScreen(g, def.NAV_BUY);
+    if (isChar(key, 'e')) return setScreen(g, def.NAV_TOOLS);
+    return setScreen(g, def.NAV_DOCK);
 }
 
 // Refine sub-menu: common parts execute on one press; Glow Polyp (6) and Glass
@@ -173,51 +155,51 @@ fn dockStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
 fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) {
         st.armed = 0;
-        return setScreen(g, NAV_DOCK);
+        return setScreen(g, def.NAV_DOCK);
     }
 
     if (key.ch >= '1' and key.ch <= '7') {
         const material: i32 = @intCast(i32, key.ch - '0');
         if (st.armed != 0 and st.armed != material) {
             st.armed = 0;
-            return setScreen(g, NAV_REFINE);
+            return setScreen(g, def.NAV_REFINE);
         }
         if (dock.isRareRefine(material) and st.armed != material
             and dock.refineParts(g, material) > 0) {
             st.armed = material;
-            st.last = NAV_RESULT_PREVIEW;
-            return setScreen(g, NAV_REFINE);
+            st.last = def.NAV_RESULT_PREVIEW;
+            return setScreen(g, def.NAV_REFINE);
         }
         st.armed = 0;
         st.last = dock.dockRefine(g, material);
-        return setScreen(g, NAV_REFINE);
+        return setScreen(g, def.NAV_REFINE);
     }
 
     // Any other key cancels a pending rare-batch confirm.
     st.armed = 0;
-    return setScreen(g, NAV_REFINE);
+    return setScreen(g, def.NAV_REFINE);
 }
 
 fn upgradeStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
-    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     if (key.ch >= '1' and key.ch <= '5') {
         const axis: i32 = @intCast(i32, key.ch - '1');
         st.last = dock.dockUpgrade(g, axis);
     }
-    return setScreen(g, NAV_UPGRADE);
+    return setScreen(g, def.NAV_UPGRADE);
 }
 
 fn craftStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
-    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     if (key.ch >= '1' and key.ch <= '7') {
         const tool: i32 = @intCast(i32, key.ch - '0');
         st.last = dock.dockCraft(g, tool);
     }
-    return setScreen(g, NAV_CRAFT);
+    return setScreen(g, def.NAV_CRAFT);
 }
 
 fn buyStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
-    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     const c = lower(key.ch);
     if (c >= '1' and c <= '9') {
         const cosmetic: i32 = @intCast(i32, c - '1');
@@ -226,36 +208,36 @@ fn buyStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         const cosmetic: i32 = @intCast(i32, 9 + (c - 'a'));
         st.last = dock.dockBuy(g, cosmetic);
     }
-    return setScreen(g, NAV_BUY);
+    return setScreen(g, def.NAV_BUY);
 }
 
 fn toolsStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
-    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     if (isChar(key, '0')) {
         st.last = dock.dockSelectTool(g, 0);
     } else if (key.ch >= '1' and key.ch <= '7') {
         const tool: i32 = @intCast(i32, key.ch - '0');
         st.last = dock.dockSelectTool(g, tool);
     }
-    return setScreen(g, NAV_TOOLS);
+    return setScreen(g, def.NAV_TOOLS);
 }
 
 fn mapStep(g: *def.GameState, key: input.Key) i32 {
-    if (isEsc(key)) return setScreen(g, NAV_DOCK);
+    if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
 
     if (key.ch >= '1' and key.ch <= '8') {
         const zone: i32 = @intCast(i32, key.ch - '1');
         _ = expedition.depart(g, zone);
-        return setScreen(g, NAV_NODE);
+        return setScreen(g, def.NAV_NODE);
     }
 
     if (key.ch == '9' and render.bossGateOpen(g)) {
         _ = expedition.depart(g, 8);
-        return setScreen(g, NAV_NODE);
+        return setScreen(g, def.NAV_NODE);
     }
 
     // Locked boss or any other key stays on the map.
-    return setScreen(g, NAV_MAP);
+    return setScreen(g, def.NAV_MAP);
 }
 
 fn nodeStep(g: *def.GameState, key: input.Key) i32 {
@@ -271,13 +253,13 @@ fn nodeStep(g: *def.GameState, key: input.Key) i32 {
         expedition.expeditionStep(g, expedition.EXP_SURFACE);
         return setScreen(g, screenAfterField(g));
     }
-    return setScreen(g, NAV_NODE);
+    return setScreen(g, def.NAV_NODE);
 }
 
 fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (st.journal_sel > 0) {
         if (isEsc(key)) st.journal_sel = 0;
-        return setScreen(g, NAV_JOURNAL);
+        return setScreen(g, def.NAV_JOURNAL);
     }
     if (isEsc(key)) {
         st.journal_sel = 0;
@@ -294,12 +276,12 @@ fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (idx >= 0 and idx < creatures.defCount()) {
         if (journal.journalOpen(&g.world, idx)) st.journal_sel = idx + 1;
     }
-    return setScreen(g, NAV_JOURNAL);
+    return setScreen(g, def.NAV_JOURNAL);
 }
 
 // Next screen id for one key. Mutates game state only via dock/expedition.
 pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
-    st.last = NAV_RESULT_NONE;
+    st.last = def.NAV_RESULT_NONE;
     st.tip = TIP_NONE;
 
     // (0) Help overlay: `?` works on every screen (including mid-fight) and
@@ -331,20 +313,20 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
                 }
             }
         }
-        // Keep fight.zig's SCREEN_* while the fight runs; only an ended fight
+        // Keep def.SCREEN_* while the fight runs; only an ended fight
         // hands the screen back to nav.
         return setScreen(g, screenAfterField(g));
     }
 
     // `J` opens the Journal everywhere but mid-fight (including settle/submenus).
-    if (isChar(key, 'j') and g.screen != NAV_JOURNAL) {
+    if (isChar(key, 'j') and g.screen != def.NAV_JOURNAL) {
         st.journal_sel = 0;
-        return setScreen(g, NAV_JOURNAL);
+        return setScreen(g, def.NAV_JOURNAL);
     }
 
     // (2) A pending Subdue choice must be settled before anything else.
     if (isPending(g)) {
-        if (g.screen != NAV_SETTLE) return setScreen(g, NAV_SETTLE);
+        if (g.screen != def.NAV_SETTLE) return setScreen(g, def.NAV_SETTLE);
         if (isChar(key, 'r')) {
             expedition.resolveSubdueChoice(g, expedition.SUB_RELEASE);
         } else if (isChar(key, 's')) {
@@ -356,18 +338,18 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     // (3) Field and dock sub-menu screens. An uninitialised screen id is
     // treated as the dock.
     switch (g.screen) {
-        NAV_MAP => return mapStep(g, key),
-        NAV_NODE => return nodeStep(g, key),
-        NAV_REFINE => return refineStep(g, st, key),
-        NAV_UPGRADE => return upgradeStep(g, st, key),
-        NAV_CRAFT => return craftStep(g, st, key),
-        NAV_BUY => return buyStep(g, st, key),
-        NAV_TOOLS => return toolsStep(g, st, key),
-        NAV_LORE => return setScreen(g, NAV_LORE),
-        NAV_MENU => return setScreen(g, NAV_MENU),
-        NAV_SAVE_ERR => return setScreen(g, NAV_SAVE_ERR),
-        NAV_JOURNAL => return journalStep(g, st, key),
-        NAV_HELP => return setScreen(g, NAV_HELP),
+        def.NAV_MAP => return mapStep(g, key),
+        def.NAV_NODE => return nodeStep(g, key),
+        def.NAV_REFINE => return refineStep(g, st, key),
+        def.NAV_UPGRADE => return upgradeStep(g, st, key),
+        def.NAV_CRAFT => return craftStep(g, st, key),
+        def.NAV_BUY => return buyStep(g, st, key),
+        def.NAV_TOOLS => return toolsStep(g, st, key),
+        def.NAV_LORE => return setScreen(g, def.NAV_LORE),
+        def.NAV_MENU => return setScreen(g, def.NAV_MENU),
+        def.NAV_SAVE_ERR => return setScreen(g, def.NAV_SAVE_ERR),
+        def.NAV_JOURNAL => return journalStep(g, st, key),
+        def.NAV_HELP => return setScreen(g, def.NAV_HELP),
         else => return dockStep(g, st, key),
     }
 }
@@ -382,18 +364,18 @@ pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) vo
         var d = creatures.defAt(g.fight.def_index);
         render.renderFrame(g, &d, sc);
     } else switch (g.screen) {
-        NAV_MAP => render.renderMap(g, sc),
-        NAV_NODE, NAV_SETTLE => render.renderNode(g, sc),
-        NAV_REFINE => render.renderRefine(g, sc),
-        NAV_UPGRADE => render.renderUpgrade(g, sc),
-        NAV_CRAFT => render.renderCraft(g, sc),
-        NAV_BUY => render.renderBuy(g, sc),
-        NAV_TOOLS => render.renderTools(g, sc),
-        NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
-        NAV_MENU => render.renderMenu(sc),
-        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
-        NAV_JOURNAL => render.renderJournal(g, st.journal_sel, sc),
-        NAV_HELP => {
+        def.NAV_MAP => render.renderMap(g, sc),
+        def.NAV_NODE, def.NAV_SETTLE => render.renderNode(g, sc),
+        def.NAV_REFINE => render.renderRefine(g, sc),
+        def.NAV_UPGRADE => render.renderUpgrade(g, sc),
+        def.NAV_CRAFT => render.renderCraft(g, sc),
+        def.NAV_BUY => render.renderBuy(g, sc),
+        def.NAV_TOOLS => render.renderTools(g, sc),
+        def.NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
+        def.NAV_MENU => render.renderMenu(sc),
+        def.NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
+        def.NAV_JOURNAL => render.renderJournal(g, st.journal_sel, sc),
+        def.NAV_HELP => {
             const page = journal.helpPage(g.screen) orelse "(manual text unavailable)";
             render.renderHelp(page, sc);
         },
@@ -407,44 +389,6 @@ pub fn drawCurrent(g: *def.GameState, st: *const NavState, out: []u8) []const u8
     return render.dump(&sc, out);
 }
 
-fn appendText(out: []u8, p: *usize, text: []const u8) void {
-    var i: usize = 0;
-    while (i < text.len and p.* < out.len) : (i += 1) {
-        out[p.*] = text[i];
-        p.* += 1;
-    }
-}
-
-fn appendInt(out: []u8, p: *usize, value: i32) void {
-    var v = value;
-    var neg = false;
-    if (v < 0) {
-        neg = true;
-        v = 0 - v;
-    }
-    var tmp: [12]u8 = undefined;
-    var n: usize = 0;
-    if (v == 0) {
-        tmp[0] = '0';
-        n = 1;
-    } else {
-        while (v > 0 and n < tmp.len) {
-            tmp[n] = @intCast(u8, @intCast(u32, v % 10) + 48);
-            n += 1;
-            v = v / 10;
-        }
-    }
-    if (neg and p.* < out.len) {
-        out[p.*] = '-';
-        p.* += 1;
-    }
-    while (n > 0 and p.* < out.len) {
-        n -= 1;
-        out[p.*] = tmp[n];
-        p.* += 1;
-    }
-}
-
 pub fn navTipLine(st: *const NavState) []const u8 {
     if (st.tip != TIP_NONE) {
         if (journal.tooltip(st.tip - 1)) |tip| return tip;
@@ -454,15 +398,15 @@ pub fn navTipLine(st: *const NavState) []const u8 {
 
 pub fn navResultLine(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
     if (st.last >= 0) return dock.resultText(st.last);
-    if (st.last == NAV_RESULT_PREVIEW) {
+    if (st.last == def.NAV_RESULT_PREVIEW) {
         const parts = dock.refineParts(g, st.armed);
         const total = parts * dock.refinePerPart(g, st.armed);
         var at: usize = 0;
-        appendText(out, &at, "Rare batch: ");
-        appendInt(out, &at, parts);
-        appendText(out, &at, " parts -> ");
-        appendInt(out, &at, total);
-        appendText(out, &at, " materials (expertise +1). Press again to confirm; Esc cancels.");
+        text_scan.appendText(out, &at, "Rare batch: ");
+        text_scan.appendInt(out, &at, @intCast(i64, parts));
+        text_scan.appendText(out, &at, " parts -> ");
+        text_scan.appendInt(out, &at, @intCast(i64, total));
+        text_scan.appendText(out, &at, " materials (expertise +1). Press again to confirm; Esc cancels.");
         return out[0..at];
     }
     return "";
@@ -470,7 +414,7 @@ pub fn navResultLine(g: *def.GameState, st: *const NavState, out: []u8) []const 
 
 pub fn navQuitKey(g: *const def.GameState, st: *const NavState, key: input.Key) bool {
     if (st.help_page != HELP_PAGE_NONE) return false;
-    if (g.screen != NAV_DOCK) return false;
+    if (g.screen != def.NAV_DOCK) return false;
     return isChar(key, 'q') and save_ux.quitPromptNeeded(g);
 }
 
@@ -483,7 +427,7 @@ pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
         st.help_page = HELP_PAGE_NONE;
         return NavIntercept{ .handled = true, .quit = false, .msg = "" };
     }
-    if (g.screen == NAV_DOCK) {
+    if (g.screen == def.NAV_DOCK) {
         if (isEsc(key)) {
             const save = save_ux.dockSave(g, dir);
             return NavIntercept{ .handled = true, .quit = false, .msg = save.text };
@@ -509,19 +453,19 @@ pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
 
 // Interactive console loop: render, prompt, read one key, step. EOF exits.
 pub fn navRun(g: *def.GameState) void {
-    if (g.screen != NAV_MAP and g.screen != NAV_NODE and g.screen != NAV_SETTLE
-        and g.screen != NAV_REFINE and g.screen != NAV_UPGRADE
-        and g.screen != NAV_CRAFT and g.screen != NAV_BUY and g.screen != NAV_TOOLS
-        and g.screen != NAV_LORE and g.screen != NAV_MENU and g.screen != NAV_SAVE_ERR
-        and g.screen != NAV_JOURNAL and g.screen != NAV_HELP) {
-        g.screen = NAV_DOCK;
+    if (g.screen != def.NAV_MAP and g.screen != def.NAV_NODE and g.screen != def.NAV_SETTLE
+        and g.screen != def.NAV_REFINE and g.screen != def.NAV_UPGRADE
+        and g.screen != def.NAV_CRAFT and g.screen != def.NAV_BUY and g.screen != def.NAV_TOOLS
+        and g.screen != def.NAV_LORE and g.screen != def.NAV_MENU and g.screen != def.NAV_SAVE_ERR
+        and g.screen != def.NAV_JOURNAL and g.screen != def.NAV_HELP) {
+        g.screen = def.NAV_DOCK;
     }
 
     var dir_buf: [4096]u8 = undefined;
     const dir = paths.dataDirOrFallback(dir_buf[0..]);
     var st = NavState{
         .armed = 0,
-        .last = NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = save_ux.ERR_KIND_NONE,
         .help_page = HELP_PAGE_NONE,
         .tip = TIP_NONE,
@@ -554,7 +498,7 @@ pub fn navRun(g: *def.GameState) void {
         }
 
         const next = navStep(g, &st, key);
-        if (next == NAV_QUIT) return;
+        if (next == def.NAV_QUIT) return;
         const tip = navTipLine(&st);
         if (tip.len > 0) {
             io.write(tip);
@@ -578,9 +522,9 @@ pub fn bootDraw(g: *def.GameState, st: *const NavState, screen: i32,
         return;
     }
     switch (screen) {
-        NAV_MENU => render.renderMenu(sc),
-        NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
-        NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
+        def.NAV_MENU => render.renderMenu(sc),
+        def.NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
+        def.NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
         else => render.renderLore(save_ux.manualPageOne(), sc),
     }
 }
@@ -605,11 +549,11 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         const saved = save_ux.saveToSlot(g, dir, slot);
         if (!saved.ok) {
             st.save_err_kind = save_ux.ERR_KIND_IO;
-            out.screen = NAV_SAVE_ERR;
+            out.screen = def.NAV_SAVE_ERR;
             return out;
         }
-        g.screen = NAV_DOCK;
-        out.screen = NAV_DOCK;
+        g.screen = def.NAV_DOCK;
+        out.screen = def.NAV_DOCK;
         out.done = true;
         return out;
     }
@@ -619,7 +563,7 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         return out;
     }
 
-    if (screen == NAV_MENU) {
+    if (screen == def.NAV_MENU) {
         if (key.ch == '?') {
             st.help_page = journal.helpPageNumber(screen);
             return out;
@@ -629,18 +573,18 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
             const slot = save_ux.readSaveSlot(dir);
             save_ux.loadSlot(g, dir, slot) catch |e| {
                 st.save_err_kind = save_ux.saveErrKind(e);
-                out.screen = NAV_SAVE_ERR;
+                out.screen = def.NAV_SAVE_ERR;
                 return out;
             };
-            g.screen = NAV_DOCK;
-            out.screen = NAV_DOCK;
+            g.screen = def.NAV_DOCK;
+            out.screen = def.NAV_DOCK;
             out.done = true;
             return out;
         }
         if (act == BOOT_ACT_NEW) {
             st.boot_pending = 1;
             var at: usize = 0;
-            appendText(msg, &at, save_ux.NEW_GAME_CONFIRM);
+            text_scan.appendText(msg, &at, save_ux.NEW_GAME_CONFIRM);
             out.msg_len = at;
             return out;
         }
@@ -652,7 +596,7 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         return out;
     }
 
-    if (screen == NAV_LORE) {
+    if (screen == def.NAV_LORE) {
         if (key.ch == '?') {
             st.help_page = journal.helpPageNumber(screen);
             return out;
@@ -661,7 +605,7 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         const slot = save_ux.readSaveSlot(dir);
         save_ux.firstRunBeginSlot(g, dir, slot) catch |e| {
             st.save_err_kind = save_ux.saveErrKind(e);
-            out.screen = NAV_SAVE_ERR;
+            out.screen = def.NAV_SAVE_ERR;
             return out;
         };
         out.screen = g.screen;
@@ -669,7 +613,7 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         return out;
     }
 
-    if (screen == NAV_SAVE_ERR) {
+    if (screen == def.NAV_SAVE_ERR) {
         if (key.ch == '?') {
             st.help_page = journal.helpPageNumber(screen);
             return out;
@@ -677,7 +621,7 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         const act = errorAction(key);
         if (act == BOOT_ACT_FRESH) {
             save_ux.eraseSlot(dir, save_ux.readSaveSlot(dir));
-            out.screen = NAV_LORE;
+            out.screen = def.NAV_LORE;
             return out;
         }
         if (act == BOOT_ACT_BACKUP) {
@@ -686,11 +630,11 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
             const other = save_ux.otherSlot(save_ux.readSaveSlot(dir));
             save_ux.loadSlot(g, dir, other) catch |e| {
                 st.save_err_kind = save_ux.saveErrKind(e);
-                out.screen = NAV_SAVE_ERR;
+                out.screen = def.NAV_SAVE_ERR;
                 return out;
             };
-            g.screen = NAV_DOCK;
-            out.screen = NAV_DOCK;
+            g.screen = def.NAV_DOCK;
+            out.screen = def.NAV_DOCK;
             out.done = true;
             return out;
         }
@@ -722,7 +666,7 @@ pub fn boot(g: *def.GameState, dir: []const u8) bool {
     var screen = bootReset(g, dir);
     var st = NavState{
         .armed = 0,
-        .last = NAV_RESULT_NONE,
+        .last = def.NAV_RESULT_NONE,
         .save_err_kind = save_ux.ERR_KIND_NONE,
         .help_page = HELP_PAGE_NONE,
         .tip = TIP_NONE,
@@ -743,7 +687,7 @@ pub fn boot(g: *def.GameState, dir: []const u8) bool {
         }
 
         var key: input.Key = undefined;
-        if (!pending and screen == NAV_LORE and st.help_page == HELP_PAGE_NONE) {
+        if (!pending and screen == def.NAV_LORE and st.help_page == HELP_PAGE_NONE) {
             key = input.readKeyRaw() orelse return false;
         } else {
             key = input.readKey() orelse return false;

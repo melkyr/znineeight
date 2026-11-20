@@ -12,6 +12,7 @@ const buf_mod = @import("std_buf.zig");
 const def = @import("def.zig");
 const creatures = @import("creatures_t1.zig");
 const tables_t1 = @import("tables_t1.zig");
+const text_scan = @import("text_scan.zig");
 
 // §25.10 row-line cap (bytes, \r excluded).
 pub const MAX_LINE: usize = 4096;
@@ -35,21 +36,6 @@ fn eql(a: []const u8, b: []const u8) bool {
     return true;
 }
 
-fn stripCR(line: []const u8) []const u8 {
-    if (line.len > 0 and line[line.len - 1] == '\r') {
-        return line[0 .. line.len - 1];
-    }
-    return line;
-}
-
-fn trimSpaces(s: []const u8) []const u8 {
-    var start: usize = 0;
-    while (start < s.len and s[start] == ' ') : (start += 1) {}
-    var end: usize = s.len;
-    while (end > start and s[end - 1] == ' ') : (end -= 1) {}
-    return s[start..end];
-}
-
 pub fn sectionId(name: []const u8) i32 {
     if (eql(name, "creatures")) return 0;
     if (eql(name, "rules")) return 1;
@@ -65,10 +51,10 @@ pub fn sectionId(name: []const u8) i32 {
 // 0 blank/comment, 1 header, 2 section, 3 row, 4 error. Stateless: unknown
 // section names and unknown row keys are later loader/validator concerns.
 pub fn classifyLine(line: []const u8) i32 {
-    const s = stripCR(line);
+    const s = text_scan.stripCR(line);
     if (s.len > MAX_LINE) return 4;
 
-    const t = trimSpaces(s);
+    const t = text_scan.trimSpaces(s);
     if (t.len == 0) return 0;
     if (t[0] == '#') return 0;
 
@@ -97,7 +83,7 @@ pub fn classifyLine(line: []const u8) i32 {
 // kept. Rejects missing '=', empty key/value, duplicate key, and > ROW_MAX
 // fields. All-or-nothing: out and n are written only on success.
 pub fn parseRowKV(line: []const u8, out: *[ROW_MAX]RowField, n: *usize) bool {
-    const s = stripCR(line);
+    const s = text_scan.stripCR(line);
     if (s.len > MAX_LINE) return false;
 
     var tmp: [ROW_MAX]RowField = undefined;
@@ -108,16 +94,11 @@ pub fn parseRowKV(line: []const u8, out: *[ROW_MAX]RowField, n: *usize) bool {
     while (i <= s.len) : (i += 1) {
         if (i != s.len and s[i] != ',') continue;
 
-        const field = trimSpaces(s[start..i]);
-        var eq: usize = 0;
-        var found: bool = false;
-        while (eq < field.len and !found) : (eq += 1) {
-            if (field[eq] == '=') found = true;
-        }
-        if (!found) return false;
+        const field = text_scan.trimSpaces(s[start..i]);
+        const eq = text_scan.findEq(field) orelse return false;
 
-        const key = trimSpaces(field[0..eq - 1]);
-        const val = trimSpaces(field[eq..]);
+        const key = text_scan.trimSpaces(field[0..eq]);
+        const val = text_scan.trimSpaces(field[eq + 1 ..]);
         if (key.len == 0 or val.len == 0) return false;
 
         var k: usize = 0;
@@ -558,7 +539,7 @@ const RULE_KEYS = [8][]const u8{
     "owner", "cond_op", "cond_a", "cond_b", "effect_op", "effect_a", "effect_b", "timing",
 };
 
-const TOOL_KEYS = [8][]const u8{
+const toolKeys = [8][]const u8{
     "id", "kind", "cost0_kind", "cost0_amt", "cost1_kind", "cost1_amt",
     "cost2_kind", "cost2_amt",
 };
@@ -693,7 +674,7 @@ fn parseRule(fields: []const RowField, n: usize, line: i32, owner: *i32, out: *d
 fn parseTool(fields: []const RowField, n: usize, line: i32, out: *def.ToolRow) LoadErr!void {
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        if (!keyIn(TOOL_KEYS[0..], fields[i].key)) {
+        if (!keyIn(toolKeys[0..], fields[i].key)) {
             err_line = line;
             return error.DamagedLine;
         }
@@ -865,7 +846,7 @@ fn beginTextEntry(content: []u8, t: *def.Tables, line: []const u8, pos: usize, e
         finishTextValue(content, t, val_start.*, val_end.*);
         active.* = false;
     }
-    const key = trimSpaces(line[0..eq]);
+    const key = text_scan.trimSpaces(line[0..eq]);
     if (key.len == 0 or !textKeyKnown(key)) return failLine(line_no);
     const tcount: usize = @intCast(usize, t.text_count);
     var ki: usize = 0;
@@ -963,13 +944,10 @@ pub fn loadFile(arena: *arena_mod.Arena, path: []const u8, tables: *def.Tables) 
     while (pos < content.len) {
         var eol = pos;
         while (eol < content.len and content[eol] != '\n') : (eol += 1) {}
-        var line = content[pos..eol];
-        if (line.len > 0 and line[line.len - 1] == '\r') {
-            line = line[0 .. line.len - 1];
-        }
+        const line = text_scan.stripCR(content[pos..eol]);
         line_no += 1;
 
-        const t = trimSpaces(line);
+        const t = text_scan.trimSpaces(line);
 
         if (!header_ok) {
             if (t.len == 0 or t[0] == '#') {

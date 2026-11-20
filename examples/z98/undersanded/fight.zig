@@ -54,14 +54,6 @@ pub const STAT_RES: i32 = 2;
 
 pub const GRUDGE_ARMOR_PCT: i32 = 30;
 
-pub const TOOL_PLATE: i32 = 1;
-pub const TOOL_BRINE_NET: i32 = 2;
-pub const TOOL_ELECTRIC_GLAND: i32 = 3;
-pub const TOOL_LURE: i32 = 4;
-pub const TOOL_PRESSURE_HOOK: i32 = 5;
-pub const TOOL_SONAR: i32 = 6;
-pub const TOOL_CORAL_SHIELD: i32 = 7;
-
 pub const FLEE_HIT_PCT: i32 = 1;
 
 // Phasing (§25.8): Solid/Phase every 2 rounds, locked Phase below 30% HP.
@@ -80,33 +72,6 @@ pub const INK_ACT_MAX: i32 = 2;
 // Sonar lookahead vocabulary (M8: latch-aware attack/flee prediction).
 pub const CREATURE_ACT_ATTACK: i32 = 1;
 pub const CREATURE_ACT_FLEE: i32 = 2;
-
-// ---- Screens / log message ids -------------------------------------------
-
-pub const SCREEN_FIGHT: i32 = 0;
-pub const SCREEN_SUBDUE: i32 = 1;
-pub const SCREEN_SUBDUE_POST: i32 = 2;
-
-pub const MSG_STRIKE: i32 = 2;
-pub const MSG_RESTRAIN: i32 = 3;
-pub const MSG_CREATURE_ATTACK: i32 = 4;
-pub const MSG_SUBDUE_OK: i32 = 5;
-pub const MSG_SUBDUE_FAIL: i32 = 6;
-pub const MSG_KILL: i32 = 7;
-pub const MSG_OVERKILL: i32 = 8;
-pub const MSG_COUPLING: i32 = 9;
-pub const MSG_DECLINE: i32 = 10;
-pub const MSG_PLAYER_FLED: i32 = 11;
-pub const MSG_CREATURE_FLED: i32 = 12;
-pub const MSG_EQUIP: i32 = 13;
-pub const MSG_DISCHARGE: i32 = 14;
-pub const MSG_STUN: i32 = 17;
-pub const MSG_BLIND: i32 = 18;
-pub const MSG_INK: i32 = 19;
-pub const MSG_DECOY: i32 = 20;
-pub const MSG_PHASE: i32 = 21;
-pub const MSG_LURE: i32 = 22;
-pub const MSG_SONAR: i32 = 23;
 
 // ---- Log ------------------------------------------------------------------
 
@@ -201,7 +166,7 @@ pub fn startFightDef(s: *def.GameState, def_index: i32, cdef: *const def.Creatur
         s.log[i] = def.LogEntry{ .class = 0, .msg_id = 0, .a = 0, .b = 0 };
     }
     s.exp.pending_cond = def.COND_NONE;
-    s.screen = SCREEN_FIGHT;
+    s.screen = def.SCREEN_FIGHT;
 }
 
 // ---- Grudges (§10) --------------------------------------------------------
@@ -396,7 +361,7 @@ pub fn effectiveArmorPct(s: *const def.GameState, cdef: *const def.CreatureDef, 
     }
 
     if (s.fight.flags & def.F_GRUDGE_ARMOR != 0) a = GRUDGE_ARMOR_PCT;
-    if (s.fight.tool_active != 0 and s.fight.tool == TOOL_PLATE) a = PERCENT_BASE;
+    if (s.fight.tool_active != 0 and s.fight.tool == def.TOOL_PLATE) a = PERCENT_BASE;
     return a;
 }
 
@@ -404,24 +369,24 @@ pub fn effectiveResistRestrain(s: *const def.GameState) i32 {
     var r = s.fight.active_resist_restrain;
     if ((s.fight.flags & def.F_PHASING) != 0) r = phasingResist(s);
     if (r <= 0) r = PERCENT_BASE;
-    if (s.fight.tool_active != 0 and s.fight.tool == TOOL_BRINE_NET) r = PERCENT_BASE;
+    if (s.fight.tool_active != 0 and s.fight.tool == def.TOOL_BRINE_NET) r = PERCENT_BASE;
     return r;
 }
 
 fn hookActive(s: *const def.GameState) bool {
-    return s.fight.tool_active != 0 and s.fight.tool == TOOL_PRESSURE_HOOK;
+    return s.fight.tool_active != 0 and s.fight.tool == def.TOOL_PRESSURE_HOOK;
 }
 
 fn shieldActive(s: *const def.GameState) bool {
-    return s.fight.tool_active != 0 and s.fight.tool == TOOL_CORAL_SHIELD;
+    return s.fight.tool_active != 0 and s.fight.tool == def.TOOL_CORAL_SHIELD;
 }
 
 fn lureActive(s: *const def.GameState) bool {
-    return s.fight.tool_active != 0 and s.fight.tool == TOOL_LURE;
+    return s.fight.tool_active != 0 and s.fight.tool == def.TOOL_LURE;
 }
 
 fn sonarActive(s: *const def.GameState) bool {
-    return s.fight.tool_active != 0 and s.fight.tool == TOOL_SONAR;
+    return s.fight.tool_active != 0 and s.fight.tool == def.TOOL_SONAR;
 }
 
 fn resetActive(s: *def.GameState, cdef: *const def.CreatureDef) void {
@@ -452,7 +417,7 @@ fn applyEffect(s: *def.GameState, e: def.Effect, timing: i32) void {
             s.fight.hull -= d;
             if (s.fight.hull < 0) s.fight.hull = 0;
             s.fight.hull_spent += d;
-            log(s, def.LOG_NORMAL, MSG_DISCHARGE, d, s.fight.hull);
+            log(s, def.LOG_NORMAL, def.MSG_DISCHARGE, d, s.fight.hull);
         },
         behavior.SET_ARMOR => {
             s.fight.active_armor_pct = e.a;
@@ -556,12 +521,12 @@ fn subdueSuccess(s: *def.GameState, cdef: *const def.CreatureDef) bool {
 
 fn finishSubdue(s: *def.GameState) void {
     s.fight.outcome = def.OUT_SUBDUE;
-    s.screen = SCREEN_FIGHT;
-    log(s, def.LOG_NORMAL, MSG_SUBDUE_OK, 0, 0);
+    s.screen = def.SCREEN_FIGHT;
+    log(s, def.LOG_NORMAL, def.MSG_SUBDUE_OK, 0, 0);
 }
 
 fn finishSurgeFailure(s: *def.GameState) void {
-    log(s, def.LOG_WARN, MSG_SUBDUE_FAIL, 0, 0);
+    log(s, def.LOG_WARN, def.MSG_SUBDUE_FAIL, 0, 0);
     lastSurge(s);
 }
 
@@ -575,10 +540,10 @@ fn checkDeath(s: *def.GameState) bool {
     const out = deathOutcomeFor(overshoot, m);
     s.fight.outcome = out;
 
-    var msg = MSG_KILL;
+    var msg = def.MSG_KILL;
     var class = def.LOG_NORMAL;
     if (out == def.OUT_OVERKILL) {
-        msg = MSG_OVERKILL;
+        msg = def.MSG_OVERKILL;
         class = def.LOG_WARN;
     }
     log(s, class, msg, overshoot, m);
@@ -628,15 +593,15 @@ fn strike(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavi
     }
 
     if (phase_miss) {
-        log(s, def.LOG_NORMAL, MSG_PHASE, 0, 0);
+        log(s, def.LOG_NORMAL, def.MSG_PHASE, 0, 0);
         return;
     }
     if (decoy_miss) {
-        log(s, def.LOG_NORMAL, MSG_DECOY, 0, 0);
+        log(s, def.LOG_NORMAL, def.MSG_DECOY, 0, 0);
         return;
     }
     if (blind_miss) {
-        log(s, def.LOG_NORMAL, MSG_BLIND, 0, 0);
+        log(s, def.LOG_NORMAL, def.MSG_BLIND, 0, 0);
         return;
     }
 
@@ -645,7 +610,7 @@ fn strike(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavi
     if (dmg < 0) dmg = 0;
 
     s.fight.hp -= dmg;
-    log(s, def.LOG_NORMAL, MSG_STRIKE, dmg, s.fight.hp);
+    log(s, def.LOG_NORMAL, def.MSG_STRIKE, dmg, s.fight.hp);
 
     if (cdef.flee_kind == FLEE_HIT_PCT and cdef.flee_th > 0) {
         if (hitExceedsPct(dmg, s.fight.max_hp, cdef.flee_th)) {
@@ -660,7 +625,7 @@ fn restrain(s: *def.GameState) void {
     if (dmg < 0) dmg = 0;
 
     s.fight.res -= dmg;
-    log(s, def.LOG_NORMAL, MSG_RESTRAIN, dmg, s.fight.res);
+    log(s, def.LOG_NORMAL, def.MSG_RESTRAIN, dmg, s.fight.res);
 }
 
 fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
@@ -685,29 +650,29 @@ fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
             s.fight.tool_charge -= 1;
             if (s.fight.tool_charge < 0) s.fight.tool_charge = 0;
             s.exp.tool_charge = s.fight.tool_charge;
-            log(s, def.LOG_NORMAL, MSG_EQUIP, s.fight.tool, 0);
-            if (s.fight.tool == TOOL_ELECTRIC_GLAND) s.fight.pending_stun = 1;
-            if (s.fight.tool == TOOL_LURE) {
+            log(s, def.LOG_NORMAL, def.MSG_EQUIP, s.fight.tool, 0);
+            if (s.fight.tool == def.TOOL_ELECTRIC_GLAND) s.fight.pending_stun = 1;
+            if (s.fight.tool == def.TOOL_LURE) {
                 // Lure reveals only creatures whose identity is concealed:
                 // Solid/Phase for a phaser, the true target for a decoy.
                 if ((cdef.flags & def.F_PHASING) != 0) {
-                    log(s, def.LOG_NORMAL, MSG_LURE, phaseState(s), 0);
+                    log(s, def.LOG_NORMAL, def.MSG_LURE, phaseState(s), 0);
                 } else if ((cdef.flags & def.F_DECOY) != 0) {
-                    log(s, def.LOG_NORMAL, MSG_LURE, LURE_REVEAL_DECOY, 0);
+                    log(s, def.LOG_NORMAL, def.MSG_LURE, LURE_REVEAL_DECOY, 0);
                 }
             }
-            if (s.fight.tool == TOOL_SONAR) {
+            if (s.fight.tool == def.TOOL_SONAR) {
                 var reveal = peekCreatureAction(s, cdef, rules);
                 // Sonar also shows the Ghost-Ray phase flip (encoded as tens).
                 if ((cdef.flags & def.F_PHASING) != 0) {
                     reveal += phaseState(s) * 10;
                 }
-                log(s, def.LOG_NORMAL, MSG_SONAR, effectiveSpeed(s, cdef, rules), reveal);
+                log(s, def.LOG_NORMAL, def.MSG_SONAR, effectiveSpeed(s, cdef, rules), reveal);
             }
         },
         def.ACT_FLEE => {
             s.fight.outcome = def.OUT_PLAYER_FLED;
-            log(s, def.LOG_NORMAL, MSG_PLAYER_FLED, 0, 0);
+            log(s, def.LOG_NORMAL, def.MSG_PLAYER_FLED, 0, 0);
         },
         else => {},
     }
@@ -719,14 +684,14 @@ fn creatureAct(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const b
     // Electric Gland stun: exactly one creature action is lost.
     if (s.fight.pending_stun != 0) {
         s.fight.pending_stun = 0;
-        log(s, def.LOG_NORMAL, MSG_STUN, 0, 0);
+        log(s, def.LOG_NORMAL, def.MSG_STUN, 0, 0);
         return;
     }
 
     if (s.fight.pending_flee != 0 and !hookActive(s)) {
         s.fight.pending_flee = 0;
         s.fight.outcome = def.OUT_CREATURE_FLED;
-        log(s, def.LOG_NORMAL, MSG_CREATURE_FLED, 0, 0);
+        log(s, def.LOG_NORMAL, def.MSG_CREATURE_FLED, 0, 0);
         return;
     }
 
@@ -736,7 +701,7 @@ fn creatureAct(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const b
     s.fight.hull -= dmg;
     s.fight.hull_spent += dmg;
     if (s.fight.hull < 0) s.fight.hull = 0;
-    log(s, def.LOG_NORMAL, MSG_CREATURE_ATTACK, dmg, s.fight.hull);
+    log(s, def.LOG_NORMAL, def.MSG_CREATURE_ATTACK, dmg, s.fight.hull);
 
     // Fragile tools: a single incoming hit, not cumulative damage.
     tools.onHullHit(s, dmg);
@@ -747,12 +712,12 @@ fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
         var regen = cdef.thrash_regen;
         if (regen == 0) regen = def.COUPLING_REGEN_DEFAULT;
         s.fight.res = std_math.min(s.fight.max_res, s.fight.res + regen);
-        log(s, def.LOG_NORMAL, MSG_COUPLING, regen, 1);
+        log(s, def.LOG_NORMAL, def.MSG_COUPLING, regen, 1);
     } else if (belowPct(s.fight.hp, s.fight.max_hp, DESPAIR_GATE_PCT) and abovePct(s.fight.res, s.fight.max_res, DESPAIR_RES_GATE_PCT)) {
         var regen = cdef.despair_regen;
         if (regen == 0) regen = def.COUPLING_REGEN_DEFAULT;
         s.fight.hp = std_math.min(s.fight.max_hp, s.fight.hp + regen);
-        log(s, def.LOG_NORMAL, MSG_COUPLING, regen, 2);
+        log(s, def.LOG_NORMAL, def.MSG_COUPLING, regen, 2);
     }
 
     s.fight.round += 1;
@@ -763,14 +728,14 @@ fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
 // ---- Modal resume ---------------------------------------------------------
 
 fn resolveModal(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
-    const post = s.screen == SCREEN_SUBDUE_POST;
+    const post = s.screen == def.SCREEN_SUBDUE_POST;
 
     if (a.kind == def.ACT_ATTEMPT) {
         if (subdueSuccess(s, cdef)) {
             finishSubdue(s);
             return;
         }
-        s.screen = SCREEN_FIGHT;
+        s.screen = def.SCREEN_FIGHT;
         finishSurgeFailure(s);
         if (!post) {
             creatureAct(s, cdef, rules);
@@ -785,11 +750,11 @@ fn resolveModal(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
         // §9.3: the recovering-will copy is Thrash-only (Resolve regen); Despair
         // HP regen does not promise the will returning.
         if (belowPct(s.fight.res, s.fight.max_res, THRASH_GATE_PCT) and abovePct(s.fight.hp, s.fight.max_hp, THRASH_GATE_PCT)) {
-            log(s, def.LOG_NORMAL, MSG_DECLINE, 0, 0);
+            log(s, def.LOG_NORMAL, def.MSG_DECLINE, 0, 0);
         } else {
             log(s, def.LOG_NORMAL, def.MSG_DECLINE_PLAIN, 0, 0);
         }
-        s.screen = SCREEN_FIGHT;
+        s.screen = def.SCREEN_FIGHT;
         if (!post) {
             creatureAct(s, cdef, rules);
             if (s.fight.outcome != def.OUT_ONGOING) return;
@@ -804,7 +769,7 @@ fn resolveModal(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
 pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
     if (s.fight.outcome != def.OUT_ONGOING) return;
 
-    if (s.screen == SCREEN_SUBDUE or s.screen == SCREEN_SUBDUE_POST) {
+    if (s.screen == def.SCREEN_SUBDUE or s.screen == def.SCREEN_SUBDUE_POST) {
         resolveModal(s, a, cdef, rules);
         return;
     }
@@ -831,7 +796,7 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
                 forced = def.ACT_EQUIP;
             }
             act = def.Action{ .kind = forced, .arg = 0 };
-            log(s, def.LOG_NORMAL, MSG_INK, forced, 0);
+            log(s, def.LOG_NORMAL, def.MSG_INK, forced, 0);
         }
     }
 
@@ -875,9 +840,9 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
             finishSurgeFailure(s);
         } else {
             if (creature_acted) {
-                s.screen = SCREEN_SUBDUE_POST;
+                s.screen = def.SCREEN_SUBDUE_POST;
             } else {
-                s.screen = SCREEN_SUBDUE;
+                s.screen = def.SCREEN_SUBDUE;
             }
             return;
         }

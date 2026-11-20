@@ -228,7 +228,7 @@ fn startReal(seed: u32, cargo: i32) def.GameState {
 fn driveReal(g: *def.GameState, act: i32) void {
     var guard: i32 = 0;
     while (expedition.isInFight(g) and guard < 80) : (guard += 1) {
-        if (g.screen == fight.SCREEN_FIGHT) {
+        if (g.screen == def.SCREEN_FIGHT) {
             expedition.expeditionStep(g, act);
         } else {
             expedition.expeditionStep(g, def.ACT_ATTEMPT);
@@ -317,7 +317,7 @@ fn tHullZeroKeepsHold() bool {
     if (g.fight.outcome == def.OUT_ONGOING) return false;
     expedition.expeditionStep(&g, expedition.EXP_REST);
     // A settled kill clears def_index; the CLS_SECURED log owns the line.
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
 
     var snap: [def.MAX_PARTS]i32 = undefined;
     copyHold(&snap, &g.exp.hold);
@@ -425,7 +425,7 @@ fn tMaxFightsBlocksHunt() bool {
     if (g.exp.fight_index != 4) return false;
     // A settled creature flee clears def_index; the log owns the line.
     if (g.fight.outcome != def.OUT_CREATURE_FLED) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.exp.active != 1) return false;
     return true;
 }
@@ -686,7 +686,7 @@ fn tLootTablesExact() bool {
     if (kill.fight.outcome != def.OUT_KILL) return false;
     expectedDropHold(&want, kill_def.kill[0..], 0);
     if (!holdEqual(&kill.exp.hold, &want)) return false;
-    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
+    if (kill.fight.def_index != def.NO_FIGHT) return false;
     const kri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, kill_idx);
     if (kill.world.ready[kri] != kill_cycle + kill_def.respawn[@intCast(usize, world.RESPAWN_KILL)]) return false;
 
@@ -699,7 +699,7 @@ fn tLootTablesExact() bool {
     if (over.fight.outcome != def.OUT_OVERKILL) return false;
     expectedDropHold(&want, over_def.over[0..], 0);
     if (!holdEqual(&over.exp.hold, &want)) return false;
-    if (over.fight.def_index != expedition.NO_FIGHT) return false;
+    if (over.fight.def_index != def.NO_FIGHT) return false;
     return true;
 }
 
@@ -712,7 +712,7 @@ fn tFleeAddsNothing() bool {
     expedition.expeditionStep(&g, def.ACT_FLEE);
     if (g.fight.outcome != def.OUT_PLAYER_FLED) return false;
     if (g.exp.active != 0) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (!holdAllZero(&g.exp.hold)) return false;
     if (g.world.ready[ri] != 0) return false;
 
@@ -744,7 +744,7 @@ fn tSecuredLineForSettledFights() bool {
     const kill_def = creatures.defAt(kill_idx);
     driveReal(&kill, def.ACT_STRIKE);
     if (kill.fight.outcome != def.OUT_KILL) return false;
-    if (kill.fight.def_index != expedition.NO_FIGHT) return false;
+    if (kill.fight.def_index != def.NO_FIGHT) return false;
     if (kill.fight.flags != kill_def.flags) return false;
     if ((kill.fight.flags & 0x80000000) != 0) return false;
     if (countSecured(&kill) != 1) return false;
@@ -771,7 +771,7 @@ fn tSecuredLineForSettledFights() bool {
     const over_def = creatures.defAt(over_idx);
     driveReal(&over, def.ACT_STRIKE);
     if (over.fight.outcome != def.OUT_OVERKILL) return false;
-    if (over.fight.def_index != expedition.NO_FIGHT) return false;
+    if (over.fight.def_index != def.NO_FIGHT) return false;
     if (over.fight.flags != over_def.flags) return false;
     if ((over.fight.flags & 0x80000000) != 0) return false;
 
@@ -787,7 +787,7 @@ fn tSecuredLineForSettledFights() bool {
     fleeCreature(&fled);
     if (fled.fight.outcome != def.OUT_CREATURE_FLED) return false;
     expedition.expeditionStep(&fled, expedition.EXP_SURFACE);
-    if (fled.fight.def_index != expedition.NO_FIGHT) return false;
+    if (fled.fight.def_index != def.NO_FIGHT) return false;
     if (fled.fight.flags != fled_def.flags) return false;
     if ((fled.fight.flags & 0x80000000) != 0) return false;
     const fled_line = render.securedLine(&fled, line_buf[0..]);
@@ -863,7 +863,7 @@ fn tKillAwardsAndRenews() bool {
     expectedDropHold(&want, cdef.kill[0..], 0);
     if (!holdEqual(&g.exp.hold, &want)) return false;
 
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.fight.flags != cdef.flags) return false;
 
     const ri: usize = @intCast(usize, 1) * def.MAX_CREATURES + @intCast(usize, idx);
@@ -895,7 +895,7 @@ fn tDepartParksNoFight() bool {
     g.fight.def_index = 0;
     g.fight.outcome = def.OUT_KILL;
     _ = expedition.depart(&g, 1);
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.fight.outcome != def.OUT_ONGOING) return false;
     if (expedition.isInFight(&g)) return false;
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
@@ -910,7 +910,7 @@ fn tSecuredNoEntryEmpty() bool {
 
     // A normal fight-log row is not a settlement record.
     g.log_n = 1;
-    g.log[0] = def.LogEntry{ .class = def.LOG_NORMAL, .msg_id = fight.MSG_STRIKE, .a = 1, .b = 2 };
+    g.log[0] = def.LogEntry{ .class = def.LOG_NORMAL, .msg_id = def.MSG_STRIKE, .a = 1, .b = 2 };
     if (render.securedLine(&g, buf[0..]).len != 0) return false;
     return true;
 }
@@ -929,7 +929,7 @@ fn tSecuredExactlyOnce() bool {
 
     expedition.expeditionStep(&g, expedition.EXP_REST);
     if (countSecured(&g) != 1) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     if (g.fight.flags != cdef.flags) return false;
 
     var snap: [def.MAX_PARTS]i32 = undefined;
@@ -939,7 +939,7 @@ fn tSecuredExactlyOnce() bool {
     expedition.expeditionStep(&g, expedition.EXP_REST);
     if (countSecured(&g) != 1) return false;
     if (!holdEqual(&snap, &g.exp.hold)) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
     return true;
 }
 

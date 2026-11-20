@@ -8,8 +8,6 @@
 const def = @import("def.zig");
 const world = @import("world.zig");
 
-pub const EncounterRow = def.EncounterRow;
-
 pub const PHASE_DAY: i32 = 0;
 pub const PHASE_NIGHT: i32 = 1;
 
@@ -21,75 +19,75 @@ pub const PHASE_NIGHT: i32 = 1;
 pub const ZONE_COST: [def.MAX_ZONES]i32 = .{ 1, 2, 3, 3, 4, 4, 5, 5, 5, 0, 0, 0 };
 pub const ZONE_IS_BOSS: [def.MAX_ZONES]i32 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 };
 
-pub const EMPTY = [0]EncounterRow{};
+pub const EMPTY = [0]def.EncounterRow{};
 
 // ---- Z1 — The Shallows (rare chance 0%) ----------------------------------
 
-pub const Z1_DAY = [_]EncounterRow{
-    EncounterRow{ .def_index = 0, .weight = 30 }, // Mystic Eel
-    EncounterRow{ .def_index = 2, .weight = 30 }, // Steel Tuna
-    EncounterRow{ .def_index = 5, .weight = 20 }, // Rust Tuna
-    EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
-    EncounterRow{ .def_index = 9, .weight = 10 }, // Spark Anemone
+pub const Z1_DAY = [_]def.EncounterRow{
+    def.EncounterRow{ .def_index = 0, .weight = 30 }, // Mystic Eel
+    def.EncounterRow{ .def_index = 2, .weight = 30 }, // Steel Tuna
+    def.EncounterRow{ .def_index = 5, .weight = 20 }, // Rust Tuna
+    def.EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
+    def.EncounterRow{ .def_index = 9, .weight = 10 }, // Spark Anemone
 };
 
-pub const Z1_NIGHT = [_]EncounterRow{
-    EncounterRow{ .def_index = 1, .weight = 40 }, // Mystic Electric Eel
-    EncounterRow{ .def_index = 0, .weight = 30 }, // Mystic Eel
-    EncounterRow{ .def_index = 5, .weight = 15 }, // Rust Tuna
-    EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
-    EncounterRow{ .def_index = 9, .weight = 5 }, // Spark Anemone
+pub const Z1_NIGHT = [_]def.EncounterRow{
+    def.EncounterRow{ .def_index = 1, .weight = 40 }, // Mystic Electric Eel
+    def.EncounterRow{ .def_index = 0, .weight = 30 }, // Mystic Eel
+    def.EncounterRow{ .def_index = 5, .weight = 15 }, // Rust Tuna
+    def.EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
+    def.EncounterRow{ .def_index = 9, .weight = 5 }, // Spark Anemone
 };
 
 // ---- Z2 — The Reef --------------------------------------------------------
 
-pub const Z2_DAY = [_]EncounterRow{
-    EncounterRow{ .def_index = 11, .weight = 15 }, // Tunisteel (named)
-    EncounterRow{ .def_index = 0, .weight = 15 }, // Mystic Eel
-    EncounterRow{ .def_index = 2, .weight = 10 }, // Steel Tuna
-    EncounterRow{ .def_index = 5, .weight = 10 }, // Rust Tuna
-    EncounterRow{ .def_index = 10, .weight = 10 }, // Mileel (named)
-    EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
-    EncounterRow{ .def_index = 8, .weight = 10 }, // Chitin Barnacle
-    EncounterRow{ .def_index = 9, .weight = 5 }, // Spark Anemone
-    EncounterRow{ .def_index = 12, .weight = 5 }, // Coral Crab (rare)
-    EncounterRow{ .def_index = 3, .weight = 10 }, // Anemoniacus (rare)
+pub const Z2_DAY = [_]def.EncounterRow{
+    def.EncounterRow{ .def_index = 11, .weight = 15 }, // Tunisteel (named)
+    def.EncounterRow{ .def_index = 0, .weight = 15 }, // Mystic Eel
+    def.EncounterRow{ .def_index = 2, .weight = 10 }, // Steel Tuna
+    def.EncounterRow{ .def_index = 5, .weight = 10 }, // Rust Tuna
+    def.EncounterRow{ .def_index = 10, .weight = 10 }, // Mileel (named)
+    def.EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
+    def.EncounterRow{ .def_index = 8, .weight = 10 }, // Chitin Barnacle
+    def.EncounterRow{ .def_index = 9, .weight = 5 }, // Spark Anemone
+    def.EncounterRow{ .def_index = 12, .weight = 5 }, // Coral Crab (rare)
+    def.EncounterRow{ .def_index = 3, .weight = 10 }, // Anemoniacus (rare)
 };
 
-pub const Z2_NIGHT = [_]EncounterRow{
-    EncounterRow{ .def_index = 1, .weight = 20 }, // Mystic Electric Eel
-    EncounterRow{ .def_index = 7, .weight = 15 }, // Brine Jelly
-    EncounterRow{ .def_index = 0, .weight = 15 }, // Mystic Eel
-    EncounterRow{ .def_index = 5, .weight = 10 }, // Rust Tuna
-    EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
-    EncounterRow{ .def_index = 8, .weight = 10 }, // Chitin Barnacle
-    EncounterRow{ .def_index = 12, .weight = 10 }, // Coral Crab (rare)
-    EncounterRow{ .def_index = 3, .weight = 10 }, // Anemoniacus (rare)
+pub const Z2_NIGHT = [_]def.EncounterRow{
+    def.EncounterRow{ .def_index = 1, .weight = 20 }, // Mystic Electric Eel
+    def.EncounterRow{ .def_index = 7, .weight = 15 }, // Brine Jelly
+    def.EncounterRow{ .def_index = 0, .weight = 15 }, // Mystic Eel
+    def.EncounterRow{ .def_index = 5, .weight = 10 }, // Rust Tuna
+    def.EncounterRow{ .def_index = 6, .weight = 10 }, // Kelp Crab
+    def.EncounterRow{ .def_index = 8, .weight = 10 }, // Chitin Barnacle
+    def.EncounterRow{ .def_index = 12, .weight = 10 }, // Coral Crab (rare)
+    def.EncounterRow{ .def_index = 3, .weight = 10 }, // Anemoniacus (rare)
 };
 
 // ---- Z3 — Trench-Edge -----------------------------------------------------
 
-pub const Z3_DAY = [_]EncounterRow{
-    EncounterRow{ .def_index = 17, .weight = 20 }, // Ironclad Wrasse (rare)
-    EncounterRow{ .def_index = 12, .weight = 15 }, // Coral Crab (rare)
-    EncounterRow{ .def_index = 5, .weight = 20 }, // Rust Tuna
-    EncounterRow{ .def_index = 6, .weight = 20 }, // Kelp Crab
-    EncounterRow{ .def_index = 8, .weight = 15 }, // Chitin Barnacle
-    EncounterRow{ .def_index = 4, .weight = 10 }, // Freezing Perch (rare)
+pub const Z3_DAY = [_]def.EncounterRow{
+    def.EncounterRow{ .def_index = 17, .weight = 20 }, // Ironclad Wrasse (rare)
+    def.EncounterRow{ .def_index = 12, .weight = 15 }, // Coral Crab (rare)
+    def.EncounterRow{ .def_index = 5, .weight = 20 }, // Rust Tuna
+    def.EncounterRow{ .def_index = 6, .weight = 20 }, // Kelp Crab
+    def.EncounterRow{ .def_index = 8, .weight = 15 }, // Chitin Barnacle
+    def.EncounterRow{ .def_index = 4, .weight = 10 }, // Freezing Perch (rare)
 };
 
-pub const Z3_NIGHT = [_]EncounterRow{
-    EncounterRow{ .def_index = 12, .weight = 10 }, // Coral Crab (rare)
-    EncounterRow{ .def_index = 13, .weight = 15 }, // Abyssal Lantern-Jelly (rare)
-    EncounterRow{ .def_index = 14, .weight = 15 }, // Neon Ghost-Ray (rare)
-    EncounterRow{ .def_index = 15, .weight = 10 }, // Glass Squid (rare)
-    EncounterRow{ .def_index = 16, .weight = 15 }, // Brine Angler (rare)
-    EncounterRow{ .def_index = 7, .weight = 15 }, // Brine Jelly
-    EncounterRow{ .def_index = 8, .weight = 10 }, // Chitin Barnacle
-    EncounterRow{ .def_index = 4, .weight = 10 }, // Freezing Perch (rare)
+pub const Z3_NIGHT = [_]def.EncounterRow{
+    def.EncounterRow{ .def_index = 12, .weight = 10 }, // Coral Crab (rare)
+    def.EncounterRow{ .def_index = 13, .weight = 15 }, // Abyssal Lantern-Jelly (rare)
+    def.EncounterRow{ .def_index = 14, .weight = 15 }, // Neon Ghost-Ray (rare)
+    def.EncounterRow{ .def_index = 15, .weight = 10 }, // Glass Squid (rare)
+    def.EncounterRow{ .def_index = 16, .weight = 15 }, // Brine Angler (rare)
+    def.EncounterRow{ .def_index = 7, .weight = 15 }, // Brine Jelly
+    def.EncounterRow{ .def_index = 8, .weight = 10 }, // Chitin Barnacle
+    def.EncounterRow{ .def_index = 4, .weight = 10 }, // Freezing Perch (rare)
 };
 
-pub fn fallbackRows(zone: i32, phase: i32) []const EncounterRow {
+pub fn fallbackRows(zone: i32, phase: i32) []const def.EncounterRow {
     switch (zone) {
         0 => {
             if (phase == PHASE_NIGHT) return Z1_NIGHT[0..];
@@ -107,7 +105,7 @@ pub fn fallbackRows(zone: i32, phase: i32) []const EncounterRow {
     }
 }
 
-pub fn rows(zone: i32, phase: i32) []const EncounterRow {
+pub fn rows(zone: i32, phase: i32) []const def.EncounterRow {
     if (def.content_override) |t| {
         if (zone < 0 or zone >= def.MAX_ZONES or phase < 0 or phase > 1) {
             return EMPTY[0..];
@@ -121,7 +119,7 @@ pub fn rows(zone: i32, phase: i32) []const EncounterRow {
     return fallbackRows(zone, phase);
 }
 
-pub fn tools() []const ToolRow {
+pub fn tools() []const def.ToolRow {
     if (def.content_override) |t| {
         const n: usize = @intCast(usize, t.tool_count);
         return t.tools[0..n];
@@ -129,7 +127,7 @@ pub fn tools() []const ToolRow {
     return TOOLS[0..];
 }
 
-pub fn upgrades() []const UpgradeRow {
+pub fn upgrades() []const def.UpgradeRow {
     if (def.content_override) |t| {
         const n: usize = @intCast(usize, t.upgrade_count);
         return t.upgrades[0..n];
@@ -137,7 +135,7 @@ pub fn upgrades() []const UpgradeRow {
     return UPGRADES[0..];
 }
 
-pub fn cosmetics() []const CosmeticRow {
+pub fn cosmetics() []const def.CosmeticRow {
     if (def.content_override) |t| {
         const n: usize = @intCast(usize, t.cosmetic_count);
         return t.cosmetics[0..n];
@@ -159,39 +157,33 @@ pub fn zoneIsBoss(i: i32) i32 {
 
 // ---- §10 tools -----------------------------------------------------------
 //
-// Tool ids match `creatures_t1.TOOL_*` counter-tool ids. Costs are keystone
+// Tool ids match `def.TOOL_*` counter-tool ids. Costs are keystone
 // parts as-is; material ids are the §14.1 source part ids (R7).
 
-pub const TOOL_KIND_ACTIVATED: i32 = 0;
-pub const TOOL_KIND_RIGGED: i32 = 1;
+// Two-field cost slot for the dock tables. `kind` 0 = unused slot;
+// otherwise a part id (1..9).
 
-// Two-field cost slot local to the dock/M6 tables. `kind` 0 = unused slot;
-// otherwise a part id (1..9). Task 1's `MaterialAmt` is a separate type.
-pub const CostSlot = def.CostSlot;
-
-pub const ToolRow = def.ToolRow;
-
-fn slot(kind: i32, amt: i32) CostSlot {
-    return CostSlot{ .kind = kind, .amt = amt };
+fn slot(kind: i32, amt: i32) def.CostSlot {
+    return def.CostSlot{ .kind = kind, .amt = amt };
 }
 
-const NONE_SLOT = CostSlot{ .kind = 0, .amt = 0 };
+const NONE_SLOT = def.CostSlot{ .kind = 0, .amt = 0 };
 
-pub const TOOLS = [_]ToolRow{
+pub const TOOLS = [_]def.ToolRow{
     // Steel Plate Tool | Rigged | Plate Scrap ×3
-    .{ .id = 1, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(2, 3), NONE_SLOT, NONE_SLOT } },
+    .{ .id = 1, .kind = def.TOOL_KIND_RIGGED, .cost = [3]def.CostSlot{ slot(2, 3), NONE_SLOT, NONE_SLOT } },
     // Brine Net | Rigged | Brine Vial ×2, Shell Chip ×1
-    .{ .id = 2, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(4, 2), slot(1, 1), NONE_SLOT } },
+    .{ .id = 2, .kind = def.TOOL_KIND_RIGGED, .cost = [3]def.CostSlot{ slot(4, 2), slot(1, 1), NONE_SLOT } },
     // Electric Gland | Activated | Gland Sac ×3
-    .{ .id = 3, .kind = TOOL_KIND_ACTIVATED, .cost = [3]CostSlot{ slot(3, 3), NONE_SLOT, NONE_SLOT } },
+    .{ .id = 3, .kind = def.TOOL_KIND_ACTIVATED, .cost = [3]def.CostSlot{ slot(3, 3), NONE_SLOT, NONE_SLOT } },
     // Bioluminescent Lure | Activated | Glow Polyp ×2, Glass Pane ×1
-    .{ .id = 4, .kind = TOOL_KIND_ACTIVATED, .cost = [3]CostSlot{ slot(6, 2), slot(7, 1), NONE_SLOT } },
+    .{ .id = 4, .kind = def.TOOL_KIND_ACTIVATED, .cost = [3]def.CostSlot{ slot(6, 2), slot(7, 1), NONE_SLOT } },
     // Pressure Hook | Rigged | Hooked Barbel ×1, Shell Chip ×2, Coral Bud ×1
-    .{ .id = 5, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(8, 1), slot(1, 2), slot(5, 1) } },
+    .{ .id = 5, .kind = def.TOOL_KIND_RIGGED, .cost = [3]def.CostSlot{ slot(8, 1), slot(1, 2), slot(5, 1) } },
     // Sonar Ping | Activated | Glass Pane ×2, Gland Sac ×1
-    .{ .id = 6, .kind = TOOL_KIND_ACTIVATED, .cost = [3]CostSlot{ slot(7, 2), slot(3, 1), NONE_SLOT } },
+    .{ .id = 6, .kind = def.TOOL_KIND_ACTIVATED, .cost = [3]def.CostSlot{ slot(7, 2), slot(3, 1), NONE_SLOT } },
     // Coral Shield | Rigged | Coral Bud ×2, Plate Scrap ×1
-    .{ .id = 7, .kind = TOOL_KIND_RIGGED, .cost = [3]CostSlot{ slot(5, 2), slot(2, 1), NONE_SLOT } },
+    .{ .id = 7, .kind = def.TOOL_KIND_RIGGED, .cost = [3]def.CostSlot{ slot(5, 2), slot(2, 1), NONE_SLOT } },
 };
 
 // ---- §11 upgrade costs ---------------------------------------------------
@@ -201,29 +193,27 @@ pub const TOOLS = [_]ToolRow{
 // Plate, 3 Gland, 4 Brine, 5 Coral, 6 Luminescence, 7 Glass; 8/9 are the
 // Hooked Barbel / Steel Fins keystone parts.
 
-pub const UpgradeRow = def.UpgradeRow;
-
-pub const UPGRADES = [_]UpgradeRow{
+pub const UPGRADES = [_]def.UpgradeRow{
     // Hull
-    .{ .axis = world.BOAT_HULL, .tier = 1, .cost = [3]CostSlot{ slot(1, 3), NONE_SLOT, NONE_SLOT } },
-    .{ .axis = world.BOAT_HULL, .tier = 2, .cost = [3]CostSlot{ slot(1, 6), slot(2, 2), NONE_SLOT } },
-    .{ .axis = world.BOAT_HULL, .tier = 3, .cost = [3]CostSlot{ slot(1, 10), slot(2, 4), NONE_SLOT } },
+    .{ .axis = world.BOAT_HULL, .tier = 1, .cost = [3]def.CostSlot{ slot(1, 3), NONE_SLOT, NONE_SLOT } },
+    .{ .axis = world.BOAT_HULL, .tier = 2, .cost = [3]def.CostSlot{ slot(1, 6), slot(2, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_HULL, .tier = 3, .cost = [3]def.CostSlot{ slot(1, 10), slot(2, 4), NONE_SLOT } },
     // Precision
-    .{ .axis = world.BOAT_PRECISION, .tier = 1, .cost = [3]CostSlot{ slot(3, 2), slot(6, 1), NONE_SLOT } },
-    .{ .axis = world.BOAT_PRECISION, .tier = 2, .cost = [3]CostSlot{ slot(3, 4), slot(6, 2), NONE_SLOT } },
-    .{ .axis = world.BOAT_PRECISION, .tier = 3, .cost = [3]CostSlot{ slot(3, 8), slot(6, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_PRECISION, .tier = 1, .cost = [3]def.CostSlot{ slot(3, 2), slot(6, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_PRECISION, .tier = 2, .cost = [3]def.CostSlot{ slot(3, 4), slot(6, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_PRECISION, .tier = 3, .cost = [3]def.CostSlot{ slot(3, 8), slot(6, 2), NONE_SLOT } },
     // Cargo
-    .{ .axis = world.BOAT_CARGO, .tier = 1, .cost = [3]CostSlot{ slot(4, 3), slot(5, 1), NONE_SLOT } },
-    .{ .axis = world.BOAT_CARGO, .tier = 2, .cost = [3]CostSlot{ slot(4, 6), slot(5, 2), NONE_SLOT } },
-    .{ .axis = world.BOAT_CARGO, .tier = 3, .cost = [3]CostSlot{ slot(4, 10), slot(5, 4), NONE_SLOT } },
+    .{ .axis = world.BOAT_CARGO, .tier = 1, .cost = [3]def.CostSlot{ slot(4, 3), slot(5, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_CARGO, .tier = 2, .cost = [3]def.CostSlot{ slot(4, 6), slot(5, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_CARGO, .tier = 3, .cost = [3]def.CostSlot{ slot(4, 10), slot(5, 4), NONE_SLOT } },
     // Oxygen
-    .{ .axis = world.BOAT_OXYGEN, .tier = 1, .cost = [3]CostSlot{ slot(5, 3), slot(4, 1), NONE_SLOT } },
-    .{ .axis = world.BOAT_OXYGEN, .tier = 2, .cost = [3]CostSlot{ slot(5, 6), slot(4, 2), NONE_SLOT } },
-    .{ .axis = world.BOAT_OXYGEN, .tier = 3, .cost = [3]CostSlot{ slot(5, 10), slot(4, 4), NONE_SLOT } },
+    .{ .axis = world.BOAT_OXYGEN, .tier = 1, .cost = [3]def.CostSlot{ slot(5, 3), slot(4, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_OXYGEN, .tier = 2, .cost = [3]def.CostSlot{ slot(5, 6), slot(4, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_OXYGEN, .tier = 3, .cost = [3]def.CostSlot{ slot(5, 10), slot(4, 4), NONE_SLOT } },
     // Speed
-    .{ .axis = world.BOAT_SPEED, .tier = 1, .cost = [3]CostSlot{ slot(7, 2), slot(3, 1), NONE_SLOT } },
-    .{ .axis = world.BOAT_SPEED, .tier = 2, .cost = [3]CostSlot{ slot(7, 2), slot(3, 2), NONE_SLOT } },
-    .{ .axis = world.BOAT_SPEED, .tier = 3, .cost = [3]CostSlot{ slot(7, 4), slot(3, 4), slot(9, 2) } },
+    .{ .axis = world.BOAT_SPEED, .tier = 1, .cost = [3]def.CostSlot{ slot(7, 2), slot(3, 1), NONE_SLOT } },
+    .{ .axis = world.BOAT_SPEED, .tier = 2, .cost = [3]def.CostSlot{ slot(7, 2), slot(3, 2), NONE_SLOT } },
+    .{ .axis = world.BOAT_SPEED, .tier = 3, .cost = [3]def.CostSlot{ slot(7, 4), slot(3, 4), slot(9, 2) } },
 };
 
 // ---- §11 cosmetics -------------------------------------------------------
@@ -231,24 +221,17 @@ pub const UPGRADES = [_]UpgradeRow{
 // Twelve fixed items in §11 order (bit 0..11). Prices total 2,100 coins.
 // Unlock milestones: zone-first-arrival bits (set by M5) or Derelict kill.
 
-pub const UNLOCK_Z1: i32 = 1;
-pub const UNLOCK_Z2: i32 = 2;
-pub const UNLOCK_Z3: i32 = 3;
-pub const UNLOCK_DERELICT: i32 = 4;
-
-pub const CosmeticRow = def.CosmeticRow;
-
-pub const COSMETICS = [_]CosmeticRow{
-    .{ .name = "Foam White", .price = 150, .unlock = UNLOCK_Z1 },
-    .{ .name = "Abyss Teal", .price = 175, .unlock = UNLOCK_Z2 },
-    .{ .name = "Leviathan Black", .price = 200, .unlock = UNLOCK_Z3 },
-    .{ .name = "Gull Skull", .price = 150, .unlock = UNLOCK_Z1 },
-    .{ .name = "Lantern Jaw", .price = 175, .unlock = UNLOCK_Z2 },
-    .{ .name = "Derelict Cog", .price = 200, .unlock = UNLOCK_DERELICT },
-    .{ .name = "Patched Pennant", .price = 150, .unlock = UNLOCK_Z1 },
-    .{ .name = "Reef Signal", .price = 175, .unlock = UNLOCK_Z3 },
-    .{ .name = "Trench Mark", .price = 200, .unlock = UNLOCK_DERELICT },
-    .{ .name = "Barnacle Stamp", .price = 150, .unlock = UNLOCK_Z2 },
-    .{ .name = "Glass Squid", .price = 175, .unlock = UNLOCK_Z3 },
-    .{ .name = "Boss Sigil", .price = 200, .unlock = UNLOCK_DERELICT },
+pub const COSMETICS = [_]def.CosmeticRow{
+    .{ .name = "Foam White", .price = 150, .unlock = def.UNLOCK_Z1 },
+    .{ .name = "Abyss Teal", .price = 175, .unlock = def.UNLOCK_Z2 },
+    .{ .name = "Leviathan Black", .price = 200, .unlock = def.UNLOCK_Z3 },
+    .{ .name = "Gull Skull", .price = 150, .unlock = def.UNLOCK_Z1 },
+    .{ .name = "Lantern Jaw", .price = 175, .unlock = def.UNLOCK_Z2 },
+    .{ .name = "Derelict Cog", .price = 200, .unlock = def.UNLOCK_DERELICT },
+    .{ .name = "Patched Pennant", .price = 150, .unlock = def.UNLOCK_Z1 },
+    .{ .name = "Reef Signal", .price = 175, .unlock = def.UNLOCK_Z3 },
+    .{ .name = "Trench Mark", .price = 200, .unlock = def.UNLOCK_DERELICT },
+    .{ .name = "Barnacle Stamp", .price = 150, .unlock = def.UNLOCK_Z2 },
+    .{ .name = "Glass Squid", .price = 175, .unlock = def.UNLOCK_Z3 },
+    .{ .name = "Boss Sigil", .price = 200, .unlock = def.UNLOCK_DERELICT },
 };

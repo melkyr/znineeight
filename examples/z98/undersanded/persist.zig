@@ -14,6 +14,8 @@ const def = @import("def.zig");
 const data = @import("data.zig");
 const creatures = @import("creatures_t1.zig");
 const world = @import("world.zig");
+const paths = @import("paths.zig");
+const text_scan = @import("text_scan.zig");
 
 pub const SaveErr = error{ Missing, BadVersion, BadDataVersion, BadHash, BadId, Damaged, Io };
 
@@ -74,53 +76,8 @@ fn dirOf(path: []const u8) []const u8 {
     return path[0..0];
 }
 
-fn joinInto(dir: []const u8, name: []const u8, out: []u8) ?[]const u8 {
-    var sep: u8 = '/';
-    if (@isWindows()) sep = '\\';
-
-    var add_sep = false;
-    if (dir.len > 0) {
-        const last = dir[dir.len - 1];
-        if (last != '/' and last != '\\') add_sep = true;
-    }
-
-    var need: usize = dir.len + name.len;
-    if (add_sep) need += 1;
-    if (need > out.len) return null;
-
-    var o: usize = 0;
-    var i: usize = 0;
-    while (i < dir.len) : (i += 1) {
-        out[o] = dir[i];
-        o += 1;
-    }
-    if (add_sep) {
-        out[o] = sep;
-        o += 1;
-    }
-    var j: usize = 0;
-    while (j < name.len) : (j += 1) {
-        out[o] = name[j];
-        o += 1;
-    }
-    return out[0..need];
-}
-
-fn siblingInto(path: []const u8, name: []const u8, out: []u8) ?[]const u8 {
-    return joinInto(dirOf(path), name, out);
-}
-
-fn stripCR(line: []const u8) []const u8 {
-    if (line.len > 0 and line[line.len - 1] == '\r') return line[0 .. line.len - 1];
-    return line;
-}
-
-fn trim(s: []const u8) []const u8 {
-    var start: usize = 0;
-    while (start < s.len and s[start] == ' ') : (start += 1) {}
-    var end: usize = s.len;
-    while (end > start and s[end - 1] == ' ') : (end -= 1) {}
-    return s[start..end];
+fn siblingInto(path: []const u8, name: []const u8, out: []u8) ?[]u8 {
+    return paths.join(dirOf(path), name, out);
 }
 
 fn nextLine(content: []const u8, at: *usize, out: *Line) bool {
@@ -167,21 +124,13 @@ fn parseScalar(line: []const u8, key: *[]const u8, val: *[]const u8) bool {
     return true;
 }
 
-fn findEq(line: []const u8) ?usize {
-    var i: usize = 0;
-    while (i < line.len) : (i += 1) {
-        if (line[i] == '=') return i;
-    }
-    return null;
-}
-
 fn parseI32Array(val: []const u8, out: []i32) bool {
     var count: usize = 0;
     var start: usize = 0;
     var i: usize = 0;
     while (i <= val.len) : (i += 1) {
         if (i != val.len and val[i] != ',') continue;
-        const part = trim(val[start..i]);
+        const part = text_scan.trimSpaces(val[start..i]);
         if (part.len == 0) return false;
         if (count >= out.len) return false;
         out[count] = data.parseI32(part) orelse return false;
@@ -197,7 +146,7 @@ fn parseU32Array(val: []const u8, out: []u32) bool {
     var i: usize = 0;
     while (i <= val.len) : (i += 1) {
         if (i != val.len and val[i] != ',') continue;
-        const part = trim(val[start..i]);
+        const part = text_scan.trimSpaces(val[start..i]);
         if (part.len == 0) return false;
         if (count >= out.len) return false;
         out[count] = parse.parseUint(part) orelse return false;
@@ -247,13 +196,17 @@ fn maskBitsValid(mask: *const [2]u32, def_count: i32) bool {
 }
 
 fn appendInt(out: *buf_mod.Buf, v: i32) void {
-    var tmp: [16]u8 = undefined;
-    buf_mod.append(out, parse.itoa(tmp[0..], v)) catch {};
+    var tmp: [24]u8 = undefined;
+    var n: usize = 0;
+    text_scan.appendInt(tmp[0..], &n, @intCast(i64, v));
+    buf_mod.append(out, tmp[0..n]) catch {};
 }
 
 fn appendUint(out: *buf_mod.Buf, v: u32) void {
-    var tmp: [16]u8 = undefined;
-    buf_mod.append(out, parse.utoa(tmp[0..], v)) catch {};
+    var tmp: [24]u8 = undefined;
+    var n: usize = 0;
+    text_scan.appendUint(tmp[0..], &n, @intCast(u64, v));
+    buf_mod.append(out, tmp[0..n]) catch {};
 }
 
 fn hexChar(nib: u32) u8 {
@@ -504,7 +457,7 @@ fn verifyCrcFile(path: []const u8) SaveErr!void {
     var hash: u32 = 0;
 
     while (nextLine(content, &at, &line)) {
-        const t = stripCR(content[line.start..line.end]);
+        const t = text_scan.stripCR(content[line.start..line.end]);
         if (t.len == 0) return error.Damaged;
         if (t.len > MAX_LINE) return error.Damaged;
         if (saw_hash) return error.Damaged;
@@ -538,7 +491,7 @@ fn verifyCrcFile(path: []const u8) SaveErr!void {
 
 pub fn logError(dir: []const u8, msg: []const u8) void {
     var path_buf: [4096]u8 = undefined;
-    const path = joinInto(dir, "errors.log", path_buf[0..]) orelse return;
+    const path = paths.join(dir, "errors.log", path_buf[0..]) orelse return;
     var abuf: [1]u8 = undefined;
     var arena = arena_mod.init(abuf[0..]);
     var f = file_mod.open(&arena, path, file_mod.Mode.Append) catch return;
@@ -556,11 +509,11 @@ pub fn logError(dir: []const u8, msg: []const u8) void {
 // save.tmp. Call before any fresh-install decision (Task 3b wires boot).
 pub fn recoverAtBoot(dir: []const u8) void {
     var save_buf: [4096]u8 = undefined;
-    const save0 = joinInto(dir, "save0.dat", save_buf[0..]) orelse return;
+    const save0 = paths.join(dir, "save0.dat", save_buf[0..]) orelse return;
     var bak_buf: [4096]u8 = undefined;
-    const bak = joinInto(dir, "save.bak", bak_buf[0..]) orelse return;
+    const bak = paths.join(dir, "save.bak", bak_buf[0..]) orelse return;
     var tmp_buf: [4096]u8 = undefined;
-    const tmp = joinInto(dir, "save.tmp", tmp_buf[0..]) orelse return;
+    const tmp = paths.join(dir, "save.tmp", tmp_buf[0..]) orelse return;
 
     if (!file_mod.exists(save0) and file_mod.exists(bak)) {
         fs_rename(bak, save0) catch {
@@ -635,7 +588,7 @@ pub fn saveBackupSlot(dir: []const u8, w: *const def.World, exp: *const def.Expe
     const bytes = buf_mod.slice(&out);
 
     var slot_buf: [4096]u8 = undefined;
-    const slot = joinInto(dir, "save1.dat", slot_buf[0..]) orelse return SaveErr.Io;
+    const slot = paths.join(dir, "save1.dat", slot_buf[0..]) orelse return SaveErr.Io;
     file_mod.writeAll(slot, bytes) catch |e| return mapFileError(e);
     logError(dir, "backup slot written: save1.dat");
 }
@@ -658,7 +611,7 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
     var hash: u32 = 0;
 
     while (nextLine(content, &at, &line)) {
-        const t = stripCR(content[line.start..line.end]);
+        const t = text_scan.stripCR(content[line.start..line.end]);
         if (t.len == 0) return error.Damaged;
         if (t.len > MAX_LINE) return error.Damaged;
         if (saw_hash) return error.Damaged;
@@ -723,7 +676,7 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
     var saw_journal_viewed = false;
 
     while (nextLine(content, &at, &line)) {
-        const t = stripCR(content[line.start..line.end]);
+        const t = text_scan.stripCR(content[line.start..line.end]);
         if (t.len == 0) return error.Damaged;
         if (t[0] == '[') {
             var name: []const u8 = "";
@@ -737,20 +690,20 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
         if (section == -1 or section == SEC_CRC) continue;
         if (section == SEC_OPTIONS) continue;
 
-        const eq = findEq(t) orelse return error.Damaged;
-        const raw_key = trim(t[0..eq]);
+        const eq = text_scan.findEq(t) orelse return error.Damaged;
+        const raw_key = text_scan.trimSpaces(t[0..eq]);
         if (raw_key.len == 0) return error.Damaged;
 
         if (section == SEC_WORLD) {
             if (eql(raw_key, "seen_mask") or eql(raw_key, "wary_mask")) {
-                const val = trim(t[eq + 1 ..]);
+                const val = text_scan.trimSpaces(t[eq + 1 ..]);
                 var mask: *[2]u32 = &tw.seen_mask;
                 const bit: u32 = if (eql(raw_key, "seen_mask")) 0 else 1;
                 if (bit == 1) mask = &tw.wary_mask;
                 if (!parseU32Array(val, mask[0..])) return error.Damaged;
                 if (!markSeen(&seen, 0, if (bit == 0) 2 else 6)) return error.Damaged;
             } else if (eql(raw_key, "expertise") or eql(raw_key, "materials")) {
-                const val = trim(t[eq + 1 ..]);
+                const val = text_scan.trimSpaces(t[eq + 1 ..]);
                 const arr: *[def.MAX_MATERIALS]i32 = if (eql(raw_key, "expertise")) &tw.expertise else &tw.materials;
                 if (!parseI32Array(val, arr[0..])) return error.Damaged;
                 if (!markSeen(&seen, 0, if (eql(raw_key, "expertise")) 9 else 10)) return error.Damaged;
@@ -796,12 +749,12 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
                 }
             }
         } else if (section == SEC_BOAT) {
-            const val = trim(t[eq + 1 ..]);
+            const val = text_scan.trimSpaces(t[eq + 1 ..]);
             if (!eql(raw_key, "boat")) return error.Damaged;
             if (!parseI32Array(val, tw.boat[0..])) return error.Damaged;
             if (!markSeen(&seen, 1, 0)) return error.Damaged;
         } else if (section == SEC_COOLDOWNS) {
-            const val = trim(t[eq + 1 ..]);
+            const val = text_scan.trimSpaces(t[eq + 1 ..]);
             if (eql(raw_key, "ready")) {
                 if (!parseI32Array(val, tw.ready[0..])) return error.Damaged;
                 if (!markSeen(&seen, 2, 0)) return error.Damaged;
@@ -816,11 +769,11 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
             }
         } else if (section == SEC_JOURNAL) {
             if (eql(raw_key, "journal_mask")) {
-                const val = trim(t[eq + 1 ..]);
+                const val = text_scan.trimSpaces(t[eq + 1 ..]);
                 if (!parseU32Array(val, tw.journal_mask[0..])) return error.Damaged;
                 if (!markSeen(&seen, 3, 0)) return error.Damaged;
             } else if (eql(raw_key, "journal_viewed")) {
-                const val = trim(t[eq + 1 ..]);
+                const val = text_scan.trimSpaces(t[eq + 1 ..]);
                 if (saw_journal_viewed) return error.Damaged;
                 if (!parseU32Array(val, tw.journal_viewed[0..])) return error.Damaged;
                 saw_journal_viewed = true;
@@ -837,7 +790,7 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
             }
         } else if (section == SEC_EXPEDITION) {
             if (eql(raw_key, "hold")) {
-                const val = trim(t[eq + 1 ..]);
+                const val = text_scan.trimSpaces(t[eq + 1 ..]);
                 if (!parseI32Array(val, te.hold[0..])) return error.Damaged;
                 if (!markSeen(&seen, 4, 4)) return error.Damaged;
             } else {
@@ -877,7 +830,7 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
             }
         } else if (section == SEC_SCORE) {
             if (eql(raw_key, "field_record") or eql(raw_key, "last_run")) {
-                const val = trim(t[eq + 1 ..]);
+                const val = text_scan.trimSpaces(t[eq + 1 ..]);
                 const fr: *def.FieldRecord = &tw.field_record;
                 const lr: *def.LastRun = &tw.last_run;
                 if (eql(raw_key, "field_record")) {

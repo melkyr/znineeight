@@ -1801,3 +1801,29 @@ must not multiply base pixels), LUT bytes = 512 × `A` rows + 512 × `V` rows.
 Gates: indexed ≤1.35 MB; indexed + LUTs ≤2 MB sprite arena (§35); each
 background encoded ≤120 KB; demo RLE disk ≤400 KB (spec §35's 300–400 KB
 range, not the plan's "≈300 KB").
+
+### M9 Task 8 ownership map (P28)
+
+Mechanical smell cut; all M1–M9 goldens stay byte-identical.
+
+- **IDs:** `NAV_*`, `SCREEN_*` (including `SCREEN_W/H`), `MSG_*`, `OUT_*`,
+  `TOOL_*` (ids and kinds), `UNLOCK_*`, `NO_FIGHT` live only in `def.zig`.
+  Consumers spell `def.<ID>`; no aliases or duplicates remain.
+- **Tools:** `items.zig` owns `toolKind`, `isRigged`, `isActivated`,
+  `toolOwned` (owned-bit keyed by tool id). `tools.zig` keeps its public API
+  and delegates; `dock.zig`, `expedition.zig`, `render_term.zig`, and tests
+  consume `items`.
+- **Paths/text:** `paths.join(dir,name,out)` is the one platform-separator
+  join for saves/config (`persist.zig`, `save_ux.zig`); `paths.pathJoin83`
+  stays for 8.3 asset names. `text_scan.zig` owns `stripCR`, `trimSpaces`,
+  `findEq`, `appendText`, `appendInt`, `appendUint`; `data.zig`,
+  `persist.zig` (Buf wrappers only format digits via `text_scan`),
+  `save_ux.zig`, `nav.zig`, `perf.zig`, and `undtool.zig` consume them.
+- **Allowed dependency direction:** domain/logic modules (def, world, fight,
+  expedition, dock, items, tools, data, persist, text_scan, paths) never
+  import render modules. Renderers (`render_term`, `render_art`, `loop_gfx`)
+  may import domain modules. IDs flow one way from `def`.
+- **Content source:** `data.z98` remains the authored content source; Task 9
+  owns generating the compiled-in fallback and any split/decoupling.
+- **Gate:** `tests/quality_smells.sh` (grep + LOC, shell only) runs as a
+  required case in `tests/tier_m9_px.sh`.

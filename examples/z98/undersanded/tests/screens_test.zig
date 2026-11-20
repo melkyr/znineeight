@@ -92,7 +92,7 @@ fn realSubdue() def.GameState {
 
     var guard: i32 = 0;
     while (expedition.isInFight(&g) and guard < 60) : (guard += 1) {
-        if (g.screen == fight.SCREEN_FIGHT) {
+        if (g.screen == def.SCREEN_FIGHT) {
             expedition.expeditionStep(&g, def.ACT_RESTRAIN);
         } else {
             expedition.expeditionStep(&g, def.ACT_ATTEMPT);
@@ -240,7 +240,7 @@ fn tRelease() bool {
     if (g.world.money != 0) return false;
     if (world.consumeWariness(&g.world, idx) != world.WARY_RESOLVE_BONUS) return false;
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
 
     // Idempotency: the cleared pending marker makes a second call a no-op.
     const bonus = g.world.release_bonus[1];
@@ -270,7 +270,7 @@ fn tSell() bool {
     if (g.world.release_bonus[1] != 0) return false;
     if (world.consumeWariness(&g.world, idx) != 0) return false;
     if (g.world.ready[ri] != cycle + cdef.respawn[@intCast(usize, world.RESPAWN_SUBDUE)]) return false;
-    if (g.fight.def_index != expedition.NO_FIGHT) return false;
+    if (g.fight.def_index != def.NO_FIGHT) return false;
 
     const money = g.world.money;
     expedition.resolveSubdueChoice(&g, expedition.SUB_SELL);

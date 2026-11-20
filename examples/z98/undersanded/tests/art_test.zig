@@ -102,7 +102,7 @@ fn baseFight(g: *def.GameState) void {
     g.fight.tool_broken = 0;
     g.fight.tool_active = 1;
     g.fight.round = 1;
-    g.screen = fight.SCREEN_FIGHT;
+    g.screen = def.SCREEN_FIGHT;
 }
 
 fn goldenFight(g: *def.GameState) void {
@@ -110,14 +110,14 @@ fn goldenFight(g: *def.GameState) void {
     setJournalBit(g, g.fight.def_index);
     g.log_n = 3;
     g.log[0] = def.LogEntry{
-        .class = def.LOG_NORMAL, .msg_id = fight.MSG_STRIKE, .a = 17, .b = 0,
+        .class = def.LOG_NORMAL, .msg_id = def.MSG_STRIKE, .a = 17, .b = 0,
     };
     g.log[1] = def.LogEntry{
-        .class = def.LOG_NORMAL, .msg_id = fight.MSG_CREATURE_ATTACK,
+        .class = def.LOG_NORMAL, .msg_id = def.MSG_CREATURE_ATTACK,
         .a = 9, .b = 91,
     };
     g.log[2] = def.LogEntry{
-        .class = def.LOG_NORMAL, .msg_id = fight.MSG_INK, .a = 0, .b = 0,
+        .class = def.LOG_NORMAL, .msg_id = def.MSG_INK, .a = 0, .b = 0,
     };
 }
 
@@ -269,7 +269,7 @@ fn tSpeedReveal() bool {
     var mask: *[2]u32 = &g.world.journal_mask;
     mask[0] = 0;
     mask[1] = 0;
-    g.fight.tool = fight.TOOL_SONAR;
+    g.fight.tool = def.TOOL_SONAR;
     g.fight.tool_active = 1;
     if (!render.speedRevealed(&g)) return false;
     w = findWidget(&g, art.W_STATS, -1);
@@ -395,7 +395,7 @@ fn tDirtyActionArea() bool {
     g.exp.fight_index = 0;
     g.world.phase = 1;
     g.fight.margin_pct = 10;
-    g.screen = fight.SCREEN_FIGHT;
+    g.screen = def.SCREEN_FIGHT;
 
     art.resetFrame();
     _ = renderInto(&g, "", true);
@@ -462,7 +462,7 @@ fn tModalHelpDeterministic() bool {
     var g: def.GameState = undefined;
     baseFight(&g);
 
-    g.screen = fight.SCREEN_SUBDUE;
+    g.screen = def.SCREEN_SUBDUE;
     art.resetFrame();
     const m1 = fnv(renderInto(&g, "", true));
     art.resetFrame();
@@ -480,7 +480,7 @@ fn tModalHelpDeterministic() bool {
     }
     if (!found) return false;
 
-    g.screen = fight.SCREEN_FIGHT;
+    g.screen = def.SCREEN_FIGHT;
     art.resetFrame();
     const fight_cs = fnv(renderInto(&g, "", true));
     art.resetFrame();

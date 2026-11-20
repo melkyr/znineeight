@@ -130,7 +130,7 @@ fn tGrudgeArmorAndPlate() bool {
     if (g.fight.flags & def.F_GRUDGE_ARMOR == 0) return false;
     if (fight.effectiveArmorPct(&g, &d, creatures.RULES[0..]) != GRUDGE_ARMOR_PCT) return false;
 
-    g.fight.tool = fight.TOOL_PLATE;
+    g.fight.tool = def.TOOL_PLATE;
     g.fight.tool_active = 1;
     return fight.effectiveArmorPct(&g, &d, creatures.RULES[0..]) == fight.PERCENT_BASE;
 }

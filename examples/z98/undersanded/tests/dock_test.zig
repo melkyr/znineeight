@@ -14,6 +14,7 @@ const world = @import("../world.zig");
 const game = @import("../game.zig");
 const expedition = @import("../expedition.zig");
 const dock = @import("../dock.zig");
+const items = @import("../items.zig");
 const economy = @import("../economy.zig");
 
 var fails: usize = 0;
@@ -231,7 +232,7 @@ fn tCraftDeductsParts() bool {
 
     if (dock.dockCraft(&g, 3) != dock.DOCK_OK) return false;
     if (g.exp.hold[3] != 1) return false;
-    if (!dock.toolOwned(&g.world, 3)) return false;
+    if (!items.toolOwned(&g.world, 3)) return false;
     if (g.world.field_phases != 1) return false;
     if (g.world.rng_state != rng) return false;
 
@@ -243,7 +244,7 @@ fn tCraftDeductsParts() bool {
     var h = newGame();
     setHold(&h, 2, 2); // Plate Scrap x2; Steel Plate Tool needs x3
     if (dock.dockCraft(&h, 1) != dock.DOCK_ERR_NEED_PARTS) return false;
-    if (dock.toolOwned(&h.world, 1)) return false;
+    if (items.toolOwned(&h.world, 1)) return false;
     if (h.exp.hold[2] != 2) return false;
     if (h.world.field_phases != 0) return false;
     return true;

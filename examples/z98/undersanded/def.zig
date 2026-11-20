@@ -203,6 +203,54 @@ pub const ACT_DECLINE: i32 = 6;
 
 pub const Action = struct { kind: i32, arg: i32 };
 
+// ---- Tool ids / kinds (§10, §14.5) ---------------------------------------
+
+pub const TOOL_PLATE: i32 = 1;
+pub const TOOL_BRINE_NET: i32 = 2;
+pub const TOOL_ELECTRIC_GLAND: i32 = 3;
+pub const TOOL_LURE: i32 = 4;
+pub const TOOL_PRESSURE_HOOK: i32 = 5;
+pub const TOOL_SONAR: i32 = 6;
+pub const TOOL_CORAL_SHIELD: i32 = 7;
+
+pub const TOOL_KIND_ACTIVATED: i32 = 0;
+pub const TOOL_KIND_RIGGED: i32 = 1;
+
+pub const UNLOCK_Z1: i32 = 1;
+pub const UNLOCK_Z2: i32 = 2;
+pub const UNLOCK_Z3: i32 = 3;
+pub const UNLOCK_DERELICT: i32 = 4;
+
+// ---- Screen ids -----------------------------------------------------------
+
+pub const SCREEN_FIGHT: i32 = 0;
+pub const SCREEN_SUBDUE: i32 = 1;
+pub const SCREEN_SUBDUE_POST: i32 = 2;
+
+pub const SCREEN_W: i32 = 640;
+pub const SCREEN_H: i32 = 480;
+
+// ---- Nav screen ids -------------------------------------------------------
+
+pub const NAV_DOCK: i32 = 10;
+pub const NAV_MAP: i32 = 11;
+pub const NAV_NODE: i32 = 12;
+pub const NAV_SETTLE: i32 = 13;
+pub const NAV_REFINE: i32 = 14;
+pub const NAV_UPGRADE: i32 = 15;
+pub const NAV_CRAFT: i32 = 16;
+pub const NAV_BUY: i32 = 17;
+pub const NAV_TOOLS: i32 = 18;
+pub const NAV_LORE: i32 = 19;
+pub const NAV_MENU: i32 = 20;
+pub const NAV_SAVE_ERR: i32 = 21;
+pub const NAV_JOURNAL: i32 = 22;
+pub const NAV_HELP: i32 = 23;
+pub const NAV_QUIT: i32 = -1;
+
+pub const NAV_RESULT_NONE: i32 = -100;
+pub const NAV_RESULT_PREVIEW: i32 = -101;
+
 // No fight is in progress: FightState.def_index is parked at this sentinel.
 pub const NO_FIGHT: i32 = -1;
 
@@ -244,11 +292,36 @@ pub const COUPLING_REGEN_DEFAULT: i32 = 5;
 // The Last Surge flavor line is the one §40-authored row for M2.
 
 pub const MSG_LAST_SURGE: i32 = 1;
-// Decline copy used when no coupling regen is active (fight.MSG_DECLINE keeps
-// the active-regen wording). Next free id after fight.zig's MSG_* table.
+pub const MSG_STRIKE: i32 = 2;
+pub const MSG_RESTRAIN: i32 = 3;
+pub const MSG_CREATURE_ATTACK: i32 = 4;
+pub const MSG_SUBDUE_OK: i32 = 5;
+pub const MSG_SUBDUE_FAIL: i32 = 6;
+pub const MSG_KILL: i32 = 7;
+pub const MSG_OVERKILL: i32 = 8;
+pub const MSG_COUPLING: i32 = 9;
+pub const MSG_DECLINE: i32 = 10;
+pub const MSG_PLAYER_FLED: i32 = 11;
+pub const MSG_CREATURE_FLED: i32 = 12;
+pub const MSG_EQUIP: i32 = 13;
+pub const MSG_DISCHARGE: i32 = 14;
+// Decline copy used when no coupling regen is active (MSG_DECLINE keeps the
+// active-regen wording).
 pub const MSG_DECLINE_PLAIN: i32 = 15;
 // Settlement record for the Secured line; renders the static row below.
 pub const MSG_SECURED: i32 = 16;
+pub const MSG_STUN: i32 = 17;
+pub const MSG_BLIND: i32 = 18;
+pub const MSG_INK: i32 = 19;
+pub const MSG_DECOY: i32 = 20;
+pub const MSG_PHASE: i32 = 21;
+pub const MSG_LURE: i32 = 22;
+pub const MSG_SONAR: i32 = 23;
+
+// Content boot error copy (spec §25.10, §33).
+pub const MSG_MISSING: []const u8 = "Content file missing. Reinstall from CD.";
+pub const MSG_DAMAGED_PREFIX: []const u8 = "Content file is damaged at line ";
+pub const MSG_DAMAGED_SUFFIX: []const u8 = ". Reinstall from CD.";
 
 pub const MsgRow = struct { id: i32, text: []const u8 };
 
