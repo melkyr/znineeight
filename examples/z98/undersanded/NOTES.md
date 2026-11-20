@@ -1953,6 +1953,12 @@ change source art):
   palette hex (ramp-0 hi is `#9AAABA`), so it must snap to a locked ramp-0
   shade; `boat00.svg` portholes are `<circle>` and must become 16/12/8-sided
   polygons. The allowed sets above are safe supersets for those corrections.
+- **Source key-colour collision (must fix in Task 3).** `wrasse00` source
+  fills/eyes and the `bg_c` glow rectangles use `#6AE0C0`, which is ramp-15 Hi
+  = shade 15 = index 255 = the transparency key. The validator's "allowed
+  ramps ∪ key" rule cannot catch an opaque key-coloured source fill. Remap or
+  re-author those pixels to a non-key shade (shade <=14; recolor `15/15` uses
+  `base[254]`). The allowed ramp sets are unchanged.
 
 **A/V/F ledger (binding).**
 
