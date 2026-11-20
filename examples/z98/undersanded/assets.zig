@@ -14,6 +14,7 @@
 const file_mod = @import("std_file");
 const arena_mod = @import("std_arena");
 const parse = @import("std_parse");
+const str = @import("std_str");
 const paths = @import("paths.zig");
 const zsp = @import("zsp.zig");
 const px = @import("std_gfx_px_core.zig");
@@ -93,19 +94,19 @@ pub fn spriteForDef(a: *const Assets, def_id: i32) ?*const px.Sprite {
     return null;
 }
 
-pub fn backgroundForZone(a: *const Assets, zone: i32) ?*const px.Sprite {
-    var idx: i32 = A_BG_A;
-    if (zone == 0) {
-        idx = A_BG_A;
-    } else if (zone == 1) {
-        idx = A_BG_B;
-    } else if (zone == 2) {
-        idx = A_BG_C;
-    } else if (zone == 8) {
-        idx = A_BG_D;
-    }
-    return &a.sprites[@intCast(usize, idx)];
+fn isBackgroundA(a: i32) bool {
+    return a >= A_BG_A and a <= 15;
 }
+
+fn bgIndexForZone(zone: i32) i32 {
+    if (zone == 1) return A_BG_B;
+    if (zone == 2) return A_BG_C;
+    if (zone == 8) return A_BG_D;
+    return A_BG_A;
+}
+
+const BG_W: usize = 640;
+const BG_H: usize = 300;
 
 var g_assets: Assets = undefined;
 var g_loaded: bool = false;
@@ -115,6 +116,17 @@ var g_file_buf: [MAX_ASSET_FILE]u8 = undefined;
 var g_file_arena: arena_mod.Arena = undefined;
 var g_asset_buf: [MAX_ASSET_ARENA]u8 = undefined;
 var g_asset_arena: arena_mod.Arena = undefined;
+
+// Exactly one resident background at a time. On-demand zone switches decode
+// into this one pixel buffer and its LUT; the previous background is evicted
+// by overwrite (no per-background arena allocation).
+var g_bg_pix: [BG_W * BG_H]u8 = undefined;
+var g_bg_lut: [256]u16 = undefined;
+var g_bg_sprite: px.Sprite = undefined;
+var g_bg_a: i32 = -1;
+var g_bg_loaded: bool = false;
+var g_assets_dir_buf: [PATH_MAX]u8 = undefined;
+var g_assets_dir_len: usize = 0;
 
 fn eq(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
@@ -202,6 +214,64 @@ fn decodeAsset(assets_dir: []const u8, name: []const u8, a: i32) bool {
     return true;
 }
 
+fn decodeBackground(assets_dir: []const u8, name: []const u8, a: i32) bool {
+    var out_buf: [PATH_MAX]u8 = undefined;
+    const out_dir = paths.join(assets_dir, "out", out_buf[0..]) orelse return false;
+
+    var name_buf: [MAX_NAME]u8 = undefined;
+    const file_name = buildFileName(name, name_buf[0..]) orelse return false;
+
+    var path_buf: [PATH_MAX]u8 = undefined;
+    const path = paths.join(out_dir, file_name, path_buf[0..]) orelse return false;
+
+    arena_mod.reset(&g_file_arena);
+    const data = file_mod.readAll(&g_file_arena, path) catch return false;
+    if (data.len < HEADER_BYTES + 512) return false;
+
+    const w = readU16(data, 4);
+    const h = readU16(data, 6);
+    if (@intCast(usize, w) != BG_W or @intCast(usize, h) != BG_H) return false;
+    const total: usize = BG_W * BG_H;
+
+    var sprite: px.Sprite = undefined;
+    var pix_len: i32 = 0;
+    var lut: *[256]u16 = &g_bg_lut;
+    if (!zsp.zspDecode(data, &sprite, lut, g_bg_pix[0..total], &pix_len)) {
+        g_bg_loaded = false;
+        g_bg_a = -1;
+        return false;
+    }
+    if (pix_len != @intCast(i32, total)) {
+        g_bg_loaded = false;
+        g_bg_a = -1;
+        return false;
+    }
+    g_bg_sprite = sprite;
+    g_bg_a = a;
+    g_bg_loaded = true;
+    return true;
+}
+
+// Decode the zone's background only when it differs from the resident one.
+// The loop calls this before rendering; render_art still receives a pointer
+// and performs no file I/O.
+pub fn ensureBackgroundZone(zone: i32) ?*const px.Sprite {
+    if (!g_loaded) return null;
+    const idx = bgIndexForZone(zone);
+    if (g_bg_loaded and g_bg_a == idx) return &g_bg_sprite;
+    if (g_assets_dir_len == 0) return null;
+
+    const a: usize = @intCast(usize, idx);
+    if (!decodeBackground(g_assets_dir_buf[0..g_assets_dir_len], A_NAMES[a], idx)) {
+        return null;
+    }
+    return &g_bg_sprite;
+}
+
+pub fn backgroundLoaded() bool {
+    return g_bg_loaded;
+}
+
 fn parseFromTo(token: []const u8, out: *u8) bool {
     const v = parse.parseInt(token) orelse return false;
     if (v < 0 or v > 15) return false;
@@ -277,6 +347,8 @@ fn buildVariants(manifest: []const u8) bool {
 // previous decoded set is dropped and callers use the placeholder fallback.
 pub fn load(assets_dir: []const u8) bool {
     g_loaded = false;
+    g_bg_loaded = false;
+    g_bg_a = -1;
 
     var manifest_path_buf: [PATH_MAX]u8 = undefined;
     const manifest_path =
@@ -313,7 +385,9 @@ pub fn load(assets_dir: []const u8) bool {
         if (a < 0) return false;
         const idx: usize = @intCast(usize, a);
         if (seen[idx]) return false;
-        if (!decodeAsset(assets_dir, name, a)) return false;
+        if (!isBackgroundA(a)) {
+            if (!decodeAsset(assets_dir, name, a)) return false;
+        }
         seen[idx] = true;
         a_count += 1;
     }
@@ -324,6 +398,9 @@ pub fn load(assets_dir: []const u8) bool {
         if (!seen[i]) return false;
     }
     if (!buildVariants(manifest)) return false;
+    if (assets_dir.len > g_assets_dir_buf.len) return false;
+    str.copy(g_assets_dir_buf[0..], assets_dir);
+    g_assets_dir_len = assets_dir.len;
 
     g_loaded = true;
     return true;

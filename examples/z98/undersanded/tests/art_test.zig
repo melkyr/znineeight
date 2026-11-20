@@ -128,7 +128,7 @@ var empty_px: [1]u8 = [1]u8{0};
 fn assetView(g: *const def.GameState) art.ArtAssets {
     var view = art.ArtAssets{ .bg = null, .sprite = null };
     const a = assets.current() orelse return view;
-    view.bg = assets.backgroundForZone(a, g.exp.zone);
+    view.bg = assets.ensureBackgroundZone(g.exp.zone);
     if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
         const d = creatures.defAt(g.fight.def_index);
         view.sprite = assets.spriteForDef(a, d.id);
@@ -597,20 +597,51 @@ fn parseHex(text: []const u8) u32 {
     return v;
 }
 
+fn spriteHash(sprite: *const core.Sprite) u32 {
+    const total: usize = @intCast(usize, sprite.w) * @intCast(usize, sprite.h);
+    return fnv(sprite.idx[0..total]);
+}
+
 fn tAssetsDecode() bool {
     const a = assets.current() orelse return false;
     if (assets.spriteForDef(a, 1) == null) return false;
     if (assets.spriteForDef(a, 17) == null) return false;
     if (assets.spriteForDef(a, 2) == null) return false;
     if (assets.spriteForDef(a, 19) == null) return false;
-    if (assets.backgroundForZone(a, 0) == null) return false;
-    if (assets.backgroundForZone(a, 1) == null) return false;
-    if (assets.backgroundForZone(a, 2) == null) return false;
-    if (assets.backgroundForZone(a, 8) == null) return false;
-    if (assets.backgroundForZone(a, 99) == null) return false;
     const base = assets.spriteForDef(a, 1) orelse return false;
     const recolor = assets.spriteForDef(a, 2) orelse return false;
     return base.lut != recolor.lut;
+}
+
+fn tBackgroundResidency() bool {
+    if (!assets.load(ASSETS_DIR)) return false;
+    if (assets.backgroundLoaded()) return false;
+
+    const s0 = assets.ensureBackgroundZone(0) orelse return false;
+    if (!assets.backgroundLoaded()) return false;
+    const buf = s0.idx;
+    const h0 = spriteHash(s0);
+    if (spriteHash(assets.ensureBackgroundZone(99) orelse return false) != h0) {
+        return false;
+    }
+
+    const s1 = assets.ensureBackgroundZone(1) orelse return false;
+    if (s1.idx != buf) return false;
+    const h1 = spriteHash(s1);
+    if (h1 == h0) return false;
+
+    const s2 = assets.ensureBackgroundZone(2) orelse return false;
+    if (s2.idx != buf) return false;
+    const h2 = spriteHash(s2);
+    if (h2 == h0 or h2 == h1) return false;
+
+    const s8 = assets.ensureBackgroundZone(8) orelse return false;
+    if (s8.idx != buf) return false;
+    const h8 = spriteHash(s8);
+    if (h8 == h0 or h8 == h1 or h8 == h2) return false;
+
+    const s0b = assets.ensureBackgroundZone(0) orelse return false;
+    return s0b.idx == buf and spriteHash(s0b) == h0;
 }
 
 fn tAssetsMissingFallback() bool {
@@ -663,6 +694,7 @@ pub fn main() void {
     report("msg_line_parity_all_ids", tMsgLineParity());
     report("modal_help_deterministic", tModalHelpDeterministic());
     report("assets_manifest_decode_26a_12v", tAssetsDecode());
+    report("background_one_resident_slot", tBackgroundResidency());
     report("assets_missing_fallback_deterministic", tAssetsMissingFallback());
     report("golden_art_fight_640x480", tGolden());
 

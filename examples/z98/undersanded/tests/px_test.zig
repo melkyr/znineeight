@@ -159,7 +159,7 @@ fn goldenFight(g: *def.GameState) void {
 fn assetView(g: *const def.GameState) art.ArtAssets {
     var view = art.ArtAssets{ .bg = null, .sprite = null };
     const a = assets.current() orelse return view;
-    view.bg = assets.backgroundForZone(a, g.exp.zone);
+    view.bg = assets.ensureBackgroundZone(g.exp.zone);
     if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
         const d = creatures.defAt(g.fight.def_index);
         view.sprite = assets.spriteForDef(a, d.id);
