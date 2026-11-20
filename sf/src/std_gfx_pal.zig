@@ -738,6 +738,23 @@ pub fn pxFixClient(st: *State, w: u32, h: u32) bool {
     return SetWindowPos(st.hwnd, nullVoid(), 0, 0, ow, oh, flags) != 0;
 }
 
+// Size the outer window so its client area is exactly w x h. Unlike
+// pxFixClient this keeps the caller's style (under.exe's cell window stays
+// resizable); AdjustWindowRect accounts for the caption/border.
+pub fn setClientSize(st: *State, w: u32, h: u32) bool {
+    if (isNull(st.hwnd)) return false;
+    if (w == 0 or h == 0 or w > 0x7FFF or h > 0x7FFF) return false;
+    var rc = Rect{ .left = 0, .top = 0, .right = @intCast(i32, w), .bottom = @intCast(i32, h) };
+    if (AdjustWindowRect(@ptrCast(*void, &rc), WS_OVERLAPPEDWINDOW, 0) == 0) return false;
+    const ow: i32 = rc.right - rc.left;
+    const oh: i32 = rc.bottom - rc.top;
+    const flags: u32 = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
+    if (SetWindowPos(st.hwnd, nullVoid(), 0, 0, ow, oh, flags) == 0) return false;
+    st.last_client_w = w;
+    st.last_client_h = h;
+    return true;
+}
+
 pub fn pxWindowVisible(hwnd: *void) bool {
     if (isNull(hwnd)) return false;
     return IsWindowVisible(hwnd) != 0;

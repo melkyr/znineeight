@@ -40,10 +40,6 @@ pub fn resultText(code: i32) []const u8 {
     }
 }
 
-pub fn isRareRefine(material: i32) bool {
-    return material == economy.MAT_LUM or material == economy.MAT_GLASS;
-}
-
 pub fn refineParts(g: *const def.GameState, material: i32) i32 {
     if (material < economy.MAT_CHITIN or material > economy.MAT_GLASS) return 0;
     return g.exp.hold[@intCast(usize, material)];

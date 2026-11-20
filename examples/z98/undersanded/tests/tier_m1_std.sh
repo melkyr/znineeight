@@ -423,6 +423,32 @@ else
 
         if [ "$WINDOW_SEEN" -eq 1 ]; then
             evidence_pass "under.exe opened a window titled UNDERSANDED (Xvfb $DISPLAY_NUM)"
+            # 80x30 cells at 8x16 need a 640x480 client so row 29 is on-screen.
+            # The window exists before main calls gfxSetClientSize, so poll the
+            # geometry until it settles instead of sampling the creation size.
+            GW=""
+            GH=""
+            GEOM_OK=0
+            i=0
+            while [ "$i" -lt 200 ]; do
+                if xwininfo -name UNDERSANDED >"$GUI/xwininfo.txt" 2>&1; then
+                    GW="$(grep -m1 'Width:' "$GUI/xwininfo.txt" | cut -d: -f2 | tr -d ' ')"
+                    GH="$(grep -m1 'Height:' "$GUI/xwininfo.txt" | cut -d: -f2 | tr -d ' ')"
+                    if [ "$GW" = "640" ] && [ "$GH" = "480" ]; then
+                        GEOM_OK=1
+                        break
+                    fi
+                fi
+                sleep 0.05
+                i=$((i + 1))
+            done
+            if [ "$GEOM_OK" -eq 1 ]; then
+                evidence_pass "under.exe client geometry is 640x480 (all 30 cell rows visible)"
+            elif [ -n "$GW" ] && [ -n "$GH" ]; then
+                evidence_fail "under.exe client geometry ${GW}x${GH}, want 640x480"
+            else
+                evidence_fail "xwininfo could not read the UNDERSANDED client geometry"
+            fi
             # The window is created before init completes; wait for the probe
             # write (also bounded) so the evidence covers a live first frame.
             PROBE_SEEN=0

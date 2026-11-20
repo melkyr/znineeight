@@ -46,38 +46,6 @@ var g_crash_dmp_len: usize = 0;
 var g_crash_log: [PATH_MAX]u8 = undefined;
 var g_crash_log_len: usize = 0;
 
-fn joinPath(dir: []const u8, name: []const u8, out: []u8) ?[]u8 {
-    var sep: u8 = '/';
-    if (@isWindows()) sep = '\\';
-
-    var add_sep = false;
-    if (dir.len > 0) {
-        const last = dir[dir.len - 1];
-        if (last != '\\' and last != '/') add_sep = true;
-    }
-
-    var need: usize = dir.len + name.len;
-    if (add_sep) need += 1;
-    if (need > out.len) return null;
-
-    var o: usize = 0;
-    var i: usize = 0;
-    while (i < dir.len) : (i += 1) {
-        out[o] = dir[i];
-        o += 1;
-    }
-    if (add_sep) {
-        out[o] = sep;
-        o += 1;
-    }
-    i = 0;
-    while (i < name.len) : (i += 1) {
-        out[o] = name[i];
-        o += 1;
-    }
-    return out[0..need];
-}
-
 // Fatal trap handler. Everything it touches is pre-allocated at startup:
 // the arena/Buf for crash.log and the crash.* path strings. No allocation and
 // no path resolution happen here (spec §33).
@@ -95,10 +63,10 @@ fn installTrap(writable_dir: []const u8) void {
     g_arena = arena_mod.init(g_arena_buf[0..]);
     g_bt_buf = buf_mod.initCapacity(&g_arena, BT_CAP) catch buf_mod.init(&g_arena);
 
-    if (joinPath(writable_dir, "crash.dmp", g_crash_dmp[0..])) |p| {
+    if (paths.join(writable_dir, "crash.dmp", g_crash_dmp[0..])) |p| {
         g_crash_dmp_len = p.len;
     }
-    if (joinPath(writable_dir, "crash.log", g_crash_log[0..])) |p| {
+    if (paths.join(writable_dir, "crash.log", g_crash_log[0..])) |p| {
         g_crash_log_len = p.len;
     }
     debug.setTrapHandler(onTrap);
@@ -176,7 +144,7 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     }
 
     var sample_buf: [PATH_MAX]u8 = undefined;
-    const sample_path = joinPath(exe_dir, "sample.txt", sample_buf[0..]) orelse {
+    const sample_path = paths.join(exe_dir, "sample.txt", sample_buf[0..]) orelse {
         fail(console_mode, "UNDERSANDED: sample path too long");
         return;
     };
@@ -186,7 +154,7 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
     };
 
     var out_buf: [PATH_MAX]u8 = undefined;
-    const out_path = joinPath(writable_dir, "probe_out.txt", out_buf[0..]) orelse {
+    const out_path = paths.join(writable_dir, "probe_out.txt", out_buf[0..]) orelse {
         fail(console_mode, "UNDERSANDED: probe_out path too long");
         return;
     };

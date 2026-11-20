@@ -62,40 +62,6 @@ fn tryLoadContent() void {
     _ = content_boot.loadFromDir(&arena, &data.g_tables, dir);
 }
 
-fn joinOutPath(dir: []const u8, name: []const u8, out: []u8) ?[]const u8 {
-    var sep: u8 = '/';
-    if (@isWindows()) sep = '\\';
-
-    var need: usize = name.len;
-    var add_sep = false;
-    if (dir.len > 0) {
-        need += dir.len;
-        const last = dir[dir.len - 1];
-        if (last != '/' and last != '\\') {
-            add_sep = true;
-            need += 1;
-        }
-    }
-    if (need > out.len) return null;
-
-    var at: usize = 0;
-    var i: usize = 0;
-    while (i < dir.len) : (i += 1) {
-        out[at] = dir[i];
-        at += 1;
-    }
-    if (add_sep) {
-        out[at] = sep;
-        at += 1;
-    }
-    i = 0;
-    while (i < name.len) : (i += 1) {
-        out[at] = name[i];
-        at += 1;
-    }
-    return out[0..need];
-}
-
 // Load data.z98 (never the compiled fallback) and write the checked-in Z98
 // module. 0 = written, 2 = load/write failure.
 fn emitFallback(outdir: []const u8) i32 {
@@ -116,7 +82,7 @@ fn emitFallback(outdir: []const u8) i32 {
     fallback_emit.emit(&data.g_tables, &out);
 
     var path_buf: [600]u8 = undefined;
-    const path = joinOutPath(outdir, "fallback_rows.zig", path_buf[0..]) orelse {
+    const path = paths.join(outdir, "fallback_rows.zig", path_buf[0..]) orelse {
         fail("undtool: --emit-fallback output path too long");
         return 2;
     };
@@ -247,7 +213,7 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
         render.renderMenu(&sc);
     } else if (eq(screen_id, "help")) {
         // Canonical `?` page from the dock (def.NAV_DOCK = 10 -> manual.1).
-        render.renderHelp(journal.helpPage(10) orelse "(manual text unavailable)", &sc);
+        render.renderHelp(journal.helpPage(def.NAV_DOCK) orelse "(manual text unavailable)", &sc);
     } else if (eq(screen_id, "journal")) {
         // Fresh install: every entry is still "- unrecorded -".
         var v: render.View = undefined;

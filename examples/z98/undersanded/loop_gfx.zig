@@ -138,6 +138,7 @@ fn drawArtFrame(g: *def.GameState, p: *px.Gfx, st: *const nav.NavState,
     if (st.help_page != nav.HELP_PAGE_NONE) {
         help_text = journal.helpPage(g.screen) orelse "(manual text unavailable)";
     }
+    art.shakeUpdate(g, time.highRes(), time.highResFreq());
     art.renderScreen(&sf, g, help_text, true);
 
     if (notice.len > 0) {

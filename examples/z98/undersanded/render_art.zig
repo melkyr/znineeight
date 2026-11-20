@@ -15,6 +15,7 @@ const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const render_text = @import("render_text.zig");
 const font = @import("font8x16.zig");
+const tween = @import("tween.zig");
 const px = @import("std_gfx_px_core.zig");
 
 pub const GLYPH_W: i32 = 8;
@@ -39,6 +40,11 @@ pub const SPRITE_H: i32 = 96;
 pub const STATS_X: i32 = 120;
 
 pub const BAR_H: i32 = 24;
+
+// Subdue-failure screen shake (§13.1/§31): a deterministic tween sweep that
+// decays to zero. The offset is applied to every art drawing primitive.
+pub const SHAKE_X: i32 = 4;
+pub const SHAKE_Y: i32 = 2;
 
 pub const MAX_WIDGETS: usize = 64;
 pub const MAX_PRESENT: usize = 32;
@@ -100,6 +106,16 @@ var g_help: bool = false;
 var g_dirty: [MAX_PRESENT]Rect = undefined;
 var g_dirty_n: i32 = 0;
 
+var g_shake_tx: tween.Tween = undefined;
+var g_shake_ty: tween.Tween = undefined;
+var g_shake_on: bool = false;
+var g_shake_primed: bool = false;
+var g_shake_fails: i32 = 0;
+var g_shake_dx: i32 = 0;
+var g_shake_dy: i32 = 0;
+var g_prev_shake_dx: i32 = 0;
+var g_prev_shake_dy: i32 = 0;
+
 pub fn resetFrame() void {
     g_have = false;
     g_prev_n = 0;
@@ -107,6 +123,13 @@ pub fn resetFrame() void {
     g_def = -2;
     g_help = false;
     g_dirty_n = 0;
+    g_shake_on = false;
+    g_shake_primed = false;
+    g_shake_fails = 0;
+    g_shake_dx = 0;
+    g_shake_dy = 0;
+    g_prev_shake_dx = 0;
+    g_prev_shake_dy = 0;
 }
 
 pub fn dirtyRects(out: []Rect) i32 {
@@ -115,6 +138,58 @@ pub fn dirtyRects(out: []Rect) i32 {
         out[@intCast(usize, i)] = g_dirty[i];
     }
     return g_dirty_n;
+}
+
+fn subdueFailCount(s: *const def.GameState) i32 {
+    var n: i32 = 0;
+    var i: i32 = 0;
+    while (i < s.log_n and i < @intCast(i32, def.MAX_LOG)) : (i += 1) {
+        if (s.log[@intCast(usize, i)].msg_id == def.MSG_SUBDUE_FAIL) n += 1;
+    }
+    return n;
+}
+
+fn shakeStart(now: u64) void {
+    tween.tweenBegin(&g_shake_tx, 0 - SHAKE_X, SHAKE_X, now);
+    tween.tweenBegin(&g_shake_ty, SHAKE_Y, 0 - SHAKE_Y, now);
+    g_shake_on = true;
+    g_shake_dx = 0 - SHAKE_X;
+    g_shake_dy = SHAKE_Y;
+}
+
+// Trigger a shake when the log gains a MSG_SUBDUE_FAIL entry. The first sample
+// primes the baseline so entering a fight with history does not shake. Offsets
+// come from the §29 tween accumulator, so equal clock samples are harmless.
+pub fn shakeUpdate(s: *const def.GameState, now: u64, freq: u64) void {
+    const n = subdueFailCount(s);
+    if (!g_shake_primed) {
+        g_shake_primed = true;
+        g_shake_fails = n;
+    } else if (n > g_shake_fails) {
+        g_shake_fails = n;
+        shakeStart(now);
+    } else if (n < g_shake_fails) {
+        g_shake_fails = n;
+    }
+    if (!g_shake_on) return;
+    tween.tweenAdvance(&g_shake_tx, now, freq);
+    tween.tweenAdvance(&g_shake_ty, now, freq);
+    if (g_shake_tx.done != 0) {
+        g_shake_on = false;
+        g_shake_dx = 0;
+        g_shake_dy = 0;
+        return;
+    }
+    g_shake_dx = g_shake_tx.pos;
+    g_shake_dy = g_shake_ty.pos;
+}
+
+pub fn shakeOffsetX() i32 {
+    return g_shake_dx;
+}
+
+pub fn shakeOffsetY() i32 {
+    return g_shake_dy;
 }
 
 fn catText(out: []u8, start: usize, text: []const u8) usize {
@@ -159,12 +234,19 @@ fn catInt(out: []u8, start: usize, value: i32) usize {
     return p;
 }
 
+fn fillRect(sf: *px.Surface, x: i32, y: i32, w: i32, h: i32,
+    color: u16) void {
+    px.pxCoreFill(sf, x + g_shake_dx, y + g_shake_dy, w, h, color);
+}
+
 pub fn drawText(sf: *px.Surface, x: i32, y: i32, text: []const u8,
     fg: u16, bg: u16) void {
+    const dx = x + g_shake_dx;
+    const dy = y + g_shake_dy;
     var i: usize = 0;
     while (i < text.len) : (i += 1) {
         const bits = font.glyph(text[i]);
-        px.pxCoreBlit1bpp(sf, x + @intCast(i32, i) * GLYPH_W, y, bits,
+        px.pxCoreBlit1bpp(sf, dx + @intCast(i32, i) * GLYPH_W, dy, bits,
             GLYPH_W, GLYPH_H, fg, bg);
     }
 }
@@ -174,13 +256,13 @@ pub fn drawDottedRect(sf: *px.Surface, x: i32, y: i32, w: i32, h: i32,
     if (w <= 0 or h <= 0) return;
     var i: i32 = 0;
     while (i < w) : (i += 2) {
-        px.pxCoreFill(sf, x + i, y, 1, 1, color);
-        px.pxCoreFill(sf, x + i, y + h - 1, 1, 1, color);
+        fillRect(sf, x + i, y, 1, 1, color);
+        fillRect(sf, x + i, y + h - 1, 1, 1, color);
     }
     var j: i32 = 0;
     while (j < h) : (j += 2) {
-        px.pxCoreFill(sf, x, y + j, 1, 1, color);
-        px.pxCoreFill(sf, x + w - 1, y + j, 1, 1, color);
+        fillRect(sf, x, y + j, 1, 1, color);
+        fillRect(sf, x + w - 1, y + j, 1, 1, color);
     }
 }
 
@@ -446,7 +528,7 @@ fn drawScreenBlock(sf: *px.Surface, sc: *const render_text.Screen,
 }
 
 fn drawHud(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
-    px.pxCoreFill(sf, w.x, w.y, w.w, w.h, C_PANEL);
+    fillRect(sf, w.x, w.y, w.w, w.h, C_PANEL);
     var buf: [128]u8 = undefined;
     var p: usize = 0;
     p = catText(buf[0..], p, "UNDERSANDED  FIGHT  ");
@@ -467,11 +549,11 @@ fn drawHud(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
 }
 
 fn drawSprite(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
-    px.pxCoreFill(sf, w.x, w.y, w.w, w.h, C_PANEL);
+    fillRect(sf, w.x, w.y, w.w, w.h, C_PANEL);
     const box = Rect{
         .x = SPRITE_X, .y = SPRITE_Y, .w = SPRITE_W, .h = SPRITE_H,
     };
-    px.pxCoreFill(sf, box.x, box.y, box.w, box.h, C_PANEL2);
+    fillRect(sf, box.x, box.y, box.w, box.h, C_PANEL2);
     drawDottedRect(sf, box.x, box.y, box.w, box.h, C_DOT);
 
     if (!defValid(s)) return;
@@ -484,7 +566,7 @@ fn drawSprite(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
 }
 
 fn drawStats(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
-    px.pxCoreFill(sf, w.x, w.y, w.w, w.h, C_PANEL);
+    fillRect(sf, w.x, w.y, w.w, w.h, C_PANEL);
     if (!defValid(s)) return;
     var d = creatures.defAt(s.fight.def_index);
     var buf: [128]u8 = undefined;
@@ -503,17 +585,22 @@ fn drawStats(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
 
 fn drawBar(sf: *px.Surface, w: *const Widget, label: []const u8,
     color: u16) void {
-    px.pxCoreFill(sf, w.x, w.y, w.w, w.h, C_PANEL);
+    fillRect(sf, w.x, w.y, w.w, w.h, C_PANEL);
     const bw = w.w;
     const bh = BAR_H;
-    px.pxCoreFill(sf, w.x, w.y, bw, bh, C_TRACK);
+    fillRect(sf, w.x, w.y, bw, bh, C_TRACK);
     const g = barGeometry(bw - 2, w.a, w.b, w.c);
+    const rx = w.x + 1 + (bw - 2) - g.red;
     if (g.red > 0) {
-        px.pxCoreFill(sf, w.x + 1 + (bw - 2) - g.red, w.y + 1,
-            g.red, bh - 2, C_RED);
+        fillRect(sf, rx, w.y + 1, g.red, bh - 2, C_RED);
     }
     if (g.fill > 0) {
-        px.pxCoreFill(sf, w.x + 1, w.y + 1, g.fill, bh - 2, color);
+        fillRect(sf, w.x + 1, w.y + 1, g.fill, bh - 2, color);
+    }
+    // §27: the red zone keeps a 1px dotted border even when the fill or the
+    // bar's outer border shares an edge with it (colour-blind safety).
+    if (g.red > 0) {
+        drawDottedRect(sf, rx, w.y + 1, g.red, bh - 2, C_DOT);
     }
     drawDottedRect(sf, w.x, w.y, bw, bh, C_DOT);
 
@@ -535,7 +622,7 @@ fn drawBar(sf: *px.Surface, w: *const Widget, label: []const u8,
 }
 
 fn drawLogLine(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
-    px.pxCoreFill(sf, w.x, w.y, w.w, w.h, C_LOG);
+    fillRect(sf, w.x, w.y, w.w, w.h, C_LOG);
     if (!defValid(s)) return;
     const e = logEntry(s, w.a);
     if (e.msg_id == 0) return;
@@ -551,8 +638,8 @@ pub fn logLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
 
 fn drawButton(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
     _ = s;
-    px.pxCoreFill(sf, w.x, w.y, w.w, w.h, C_PANEL);
-    px.pxCoreFill(sf, w.x + 1, w.y + 1, w.w - 2, w.h - 2, C_PANEL2);
+    fillRect(sf, w.x, w.y, w.w, w.h, C_PANEL);
+    fillRect(sf, w.x + 1, w.y + 1, w.w - 2, w.h - 2, C_PANEL2);
     drawDottedRect(sf, w.x, w.y, w.w, w.h, C_BORDER);
     const idx: usize = @intCast(usize, w.a);
     var label: []const u8 = "";
@@ -573,7 +660,7 @@ fn drawWidget(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
         W_HULL => drawBar(sf, w, "HULL", C_HULL),
         W_LOG => drawLogLine(sf, w, s),
         W_BUTTON => drawButton(sf, w, s),
-        else => px.pxCoreFill(sf, w.x, w.y, w.w, w.h, C_BG),
+        else => fillRect(sf, w.x, w.y, w.w, w.h, C_BG),
     }
 }
 
@@ -584,7 +671,7 @@ fn widgetRect(w: *const Widget) Rect {
 fn drawModal(sf: *px.Surface, s: *const def.GameState) void {
     px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
     const panel = Rect{ .x = 80, .y = 96, .w = 480, .h = 280 };
-    px.pxCoreFill(sf, panel.x, panel.y, panel.w, panel.h, C_PANEL);
+    fillRect(sf, panel.x, panel.y, panel.w, panel.h, C_PANEL);
     drawDottedRect(sf, panel.x, panel.y, panel.w, panel.h, C_BORDER);
 
     var sc: render_text.Screen = undefined;
@@ -626,6 +713,8 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
         g_screen = s.screen;
         g_def = s.fight.def_index;
         g_help = true;
+        g_prev_shake_dx = g_shake_dx;
+        g_prev_shake_dy = g_shake_dy;
         return;
     }
 
@@ -636,11 +725,18 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
         g_screen = s.screen;
         g_def = s.fight.def_index;
         g_help = false;
+        g_prev_shake_dx = g_shake_dx;
+        g_prev_shake_dy = g_shake_dy;
         return;
     }
 
-    const mode_changed = !g_have or full or s.screen != g_screen
-        or s.fight.def_index != g_def or g_help;
+    // A changing shake offset needs a full repaint (the background stays at
+    // 0,0; every widget/text primitive is translated), including the frame
+    // that returns to rest.
+    const shake_changed = g_shake_dx != g_prev_shake_dx
+        or g_shake_dy != g_prev_shake_dy;
+    const mode_changed = !g_have or full or shake_changed
+        or s.screen != g_screen or s.fight.def_index != g_def or g_help;
 
     var next: [MAX_WIDGETS]Widget = undefined;
     const n = layoutFight(s, &next);
@@ -681,6 +777,8 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
     g_screen = s.screen;
     g_def = s.fight.def_index;
     g_help = false;
+    g_prev_shake_dx = g_shake_dx;
+    g_prev_shake_dy = g_shake_dy;
 }
 
 pub fn hitButton(x: i32, y: i32) i32 {

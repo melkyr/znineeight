@@ -1847,6 +1847,6 @@ Behaviour-preserving structural cut; all M1–M9 goldens stay byte-identical.
   (`persist.zig` is the hub and keeps the `fs_*` seams).
 - **Z98 note:** aliases to functions (`pub const f = sub.f`) emit invalid C
   globals in this compiler, so hubs use thin forwarding wrappers; constants and
-  array values still alias directly. Array sizes in `data_scan` use literal
-  `80` because a module-local `pub const` size failed constant evaluation in
-  some import chains.
+  array values still alias directly. Array sizes in `data_scan` use `ROW_MAX`
+  (D27); this compiler is import-order sensitive, so keep nav's `data` import
+  before `render_term`.

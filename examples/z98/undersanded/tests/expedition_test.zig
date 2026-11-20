@@ -16,6 +16,7 @@ const game = @import("../game.zig");
 const creatures = @import("../creatures_t1.zig");
 const fight = @import("../fight.zig");
 const expedition = @import("../expedition.zig");
+const items = @import("../items.zig");
 const render = @import("../render_term.zig");
 
 var fails: usize = 0;
@@ -121,10 +122,6 @@ fn expectedSeed(seed: u32, index: i32) u32 {
     return s;
 }
 
-fn isKeystone(part: i32) bool {
-    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
-}
-
 fn expectedDropHold(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: i32) void {
     var i: usize = 0;
     while (i < def.MAX_PARTS) : (i += 1) h[i] = 0;
@@ -133,7 +130,7 @@ fn expectedDropHold(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: 
     var p: usize = 0;
     while (p < def.MAX_DROP_LINES and p < lines.len) : (p += 1) {
         if (lines[p].part <= 0 or lines[p].count <= 0) continue;
-        if (isKeystone(lines[p].part)) continue;
+        if (items.isKeystone(lines[p].part)) continue;
         primary = @intCast(i32, p);
         break;
     }
@@ -635,7 +632,7 @@ fn tCargoBonusPrimaryOnly() bool {
     i = 0;
     while (i < def.MAX_DROP_LINES) : (i += 1) {
         if (cdef.sub[i].part <= 0 or cdef.sub[i].count <= 0) continue;
-        if (isKeystone(cdef.sub[i].part)) continue;
+        if (items.isKeystone(cdef.sub[i].part)) continue;
         primary = @intCast(i32, i);
         break;
     }

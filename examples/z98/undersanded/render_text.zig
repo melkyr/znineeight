@@ -6,7 +6,7 @@
 
 const def = @import("def.zig");
 const fight = @import("fight.zig");
-const tables = @import("tables_t1.zig");
+const items = @import("items.zig");
 
 pub const COLS: usize = 80;
 pub const ROWS: usize = 30;
@@ -279,15 +279,6 @@ pub fn toolKindName(kind: i32) []const u8 {
     return "unknown";
 }
 
-fn toolKindFor(id: i32) i32 {
-    const rows = tables.tools();
-    var i: usize = 0;
-    while (i < rows.len) : (i += 1) {
-        if (rows[i].id == id) return rows[i].kind;
-    }
-    return -1;
-}
-
 pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
     var x = put(sc, 0, y, "TOOL  ");
     x = put(sc, x, y, toolName(s.fight.tool));
@@ -295,7 +286,7 @@ pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
     if (s.fight.tool == 0) {
         x = put(sc, x, y, "none");
     } else {
-        x = put(sc, x, y, toolKindName(toolKindFor(s.fight.tool)));
+        x = put(sc, x, y, toolKindName(items.toolKind(s.fight.tool)));
     }
     x = put(sc, x, y, "  charge ");
     x = putInt(sc, x, y, s.fight.tool_charge);

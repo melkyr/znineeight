@@ -5,6 +5,7 @@
 
 const def = @import("def.zig");
 const tables = @import("tables_t1.zig");
+const creatures = @import("creatures_t1.zig");
 
 pub fn toolKind(tool: i32) i32 {
     const rows = tables.tools();
@@ -21,6 +22,11 @@ pub fn isRigged(tool: i32) bool {
 
 pub fn isActivated(tool: i32) bool {
     return toolKind(tool) == def.TOOL_KIND_ACTIVATED;
+}
+
+// Drop-only keystone parts (used as-is, never receive the §7 Cargo bonus).
+pub fn isKeystone(part: i32) bool {
+    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
 }
 
 // Owned-tool bits are keyed by tool id (R6: tool 1..7 -> bit 1..7).

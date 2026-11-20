@@ -219,6 +219,14 @@ pub fn gfxWaitEvent(g: *Gfx, timeout_ms: u32) bool {
     return true;
 }
 
+// Size the window so its client area is exactly w x h pixels (AdjustWindowRect
+// + SetWindowPos). Windowed Gfx only; the headless memory target has no window.
+pub fn gfxSetClientSize(g: *Gfx, w: u32, h: u32) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.setClientSize(&s.st, w, h);
+}
+
 // Test affordance: resize the real window (window mode) so Windows SENDs
 // WM_SIZE to the WndProc, or resize the headless grid directly. Used by
 // --smoke to exercise the actual WM_SIZE surface+grid resize path.

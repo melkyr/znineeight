@@ -604,10 +604,6 @@ pub fn renderMap(s: *const def.GameState, sc: *Screen) void {
 
 // ---- Secured line (§7) ----------------------------------------------------
 
-fn isKeystonePart(part: i32) bool {
-    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
-}
-
 pub fn partName(part: i32) []const u8 {
     switch (part) {
         1 => return "Shell Chip",
@@ -630,7 +626,7 @@ fn addSecuredLines(h: *[def.MAX_PARTS]i32, lines: []const def.DropLine, cargo: i
     var p: usize = 0;
     while (p < def.MAX_DROP_LINES and p < lines.len) : (p += 1) {
         if (lines[p].part <= 0 or lines[p].count <= 0) continue;
-        if (isKeystonePart(lines[p].part)) continue;
+        if (items.isKeystone(lines[p].part)) continue;
         primary = @intCast(i32, p);
         break;
     }

@@ -141,7 +141,14 @@ pub fn gfxPxUnlock(g: *Gfx) void {
     const s = g.opaque;
     if (!s.opened or !s.locked) return;
     if (!s.mem_only) {
-        if (!pal.pxUnlock(s.px_surface)) return;
+        if (!pal.pxUnlock(s.px_surface)) {
+            // A failed Unlock leaves the DD surface wedged. Mark it lost and
+            // drop our lock flag so the next present/lock can Restore instead
+            // of staying permanently locked.
+            core.pxCoreMarkSurfaceLost(s);
+            s.locked = false;
+            return;
+        }
     }
     s.locked = false;
 }
@@ -244,16 +251,21 @@ pub fn gfxPxRestore(g: *Gfx) bool {
     const s = g.opaque;
     if (!s.opened) return false;
     if (s.mem_only) return true;
-    const px_lost = core.pxCoreSurfaceLost(s) or pal.pxIsLost(s.px_surface);
+    const px_null = @ptrToInt(s.px_surface) == 0;
+    const px_lost = px_null or core.pxCoreSurfaceLost(s) or pal.pxIsLost(s.px_surface);
     const primary_lost = pal.pxIsLost(s.primary);
     if (!px_lost and !primary_lost) return true;
     core.pxCoreMarkSurfaceLost(s);
     if (s.locked) {
-        if (!pal.pxUnlock(s.px_surface)) return false;
+        if (!px_null and !pal.pxUnlock(s.px_surface)) return false;
         s.locked = false;
     }
     if (px_lost) {
-        if (!pal.pxRestore(s.px_surface) and pal.pxIsLost(s.px_surface)) {
+        if (px_null) {
+            const recreated = pal.pxCreate565(s.dd7, s.w, s.h);
+            if (@ptrToInt(recreated) == 0) return false;
+            s.px_surface = recreated;
+        } else if (!pal.pxRestore(s.px_surface) and pal.pxIsLost(s.px_surface)) {
             pal.pxRelease(s.px_surface);
             s.px_surface = pal.nullHandle();
             const recreated = pal.pxCreate565(s.dd7, s.w, s.h);

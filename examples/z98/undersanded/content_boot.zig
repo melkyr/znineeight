@@ -10,43 +10,12 @@ const io = @import("std_io.zig");
 const parse = @import("std_parse");
 const def = @import("def.zig");
 const data = @import("data.zig");
+const paths = @import("paths.zig");
 const validate = @import("validate.zig");
 
 pub const BootResult = enum { Loaded, Missing, Damaged };
 
 pub const Boot = struct { result: BootResult, line: i32 };
-
-fn joinPath(dir: []const u8, name: []const u8, out: []u8) ?[]u8 {
-    var sep: u8 = '/';
-    if (@isWindows()) sep = '\\';
-
-    var add_sep = false;
-    if (dir.len > 0) {
-        const last = dir[dir.len - 1];
-        if (last != '\\' and last != '/') add_sep = true;
-    }
-
-    var need: usize = dir.len + name.len;
-    if (add_sep) need += 1;
-    if (need > out.len) return null;
-
-    var o: usize = 0;
-    var i: usize = 0;
-    while (i < dir.len) : (i += 1) {
-        out[o] = dir[i];
-        o += 1;
-    }
-    if (add_sep) {
-        out[o] = sep;
-        o += 1;
-    }
-    i = 0;
-    while (i < name.len) : (i += 1) {
-        out[o] = name[i];
-        o += 1;
-    }
-    return out[0..need];
-}
 
 fn append(dst: []u8, at: *usize, s: []const u8) void {
     var i: usize = 0;
@@ -85,7 +54,7 @@ pub fn damagedText(line: i32, out: []u8) []const u8 {
 
 pub fn loadFromDir(arena: *arena_mod.Arena, tables: *def.Tables, dir: []const u8) Boot {
     var path_buf: [512]u8 = undefined;
-    const path = joinPath(dir, "data.z98", path_buf[0..]) orelse {
+    const path = paths.join(dir, "data.z98", path_buf[0..]) orelse {
         return Boot{ .result = BootResult.Missing, .line = 0 };
     };
     if (!file_mod.exists(path)) {

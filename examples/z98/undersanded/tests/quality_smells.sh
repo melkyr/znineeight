@@ -2,17 +2,22 @@
 # quality_smells.sh — mechanical owner/registry checks for M9 Task 8.
 #
 # Shell only (no Python). Checks:
-#   * toolOwned/toolKind defined only in items.zig
+#   * toolOwned/toolKind/toolKindFor defined only in items.zig
+#   * isKeystone/isKeystonePart defined only in items.zig
+#   * isRareRefine/isDeepMaterial defined only in economy.zig
 #   * stripCR/trimSpaces/findEq defined only in text_scan.zig
-#   * fn join( defined only in paths.zig
+#   * fn join( defined only in paths.zig; no joinPath/joinOutPath copies
 #   * NAV_/SCREEN_/MSG_/OUT_/TOOL_/UNLOCK_/NO_FIGHT ids only in def.zig
-#   * LOC: new files fail >600; any file fails >2000, warns >600
+#   * LOC: any file fails >2000; files not grandfathered/generated fail >600,
+#     grandfathered files warn >600. New files are derived by exclusion so a
+#     future module is caught without editing a hardcoded new-file list.
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 UNDDIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-NEW_FILES="items.zig text_scan.zig"
+GENERATED="fallback_rows.zig"
+GRANDFATHERED="art_test.zig expedition_test.zig fight.zig fight_test.zig nav.zig persist_test.zig render_art.zig render_term.zig save_scan.zig save_ux_test.zig undtool.zig"
 
 PASSES=0
 FAILS=0
@@ -36,20 +41,27 @@ check_owner() {
     fi
 }
 
-check_owner '(^|[^A-Za-z0-9_])fn[[:space:]]+(toolOwned|toolKind)[[:space:]]*\(' \
-    "items.zig" "toolOwned/toolKind owner (items.zig)"
+check_owner '(^|[^A-Za-z0-9_])fn[[:space:]]+(toolOwned|toolKind|toolKindFor)[[:space:]]*\(' \
+    "items.zig" "toolOwned/toolKind/toolKindFor owner (items.zig)"
+check_owner '(^|[^A-Za-z0-9_])fn[[:space:]]+(isKeystone|isKeystonePart)[[:space:]]*\(' \
+    "items.zig" "isKeystone/isKeystonePart owner (items.zig)"
+check_owner '(^|[^A-Za-z0-9_])fn[[:space:]]+(isRareRefine|isDeepMaterial)[[:space:]]*\(' \
+    "economy.zig" "isRareRefine/isDeepMaterial owner (economy.zig)"
 check_owner '(^|[^A-Za-z0-9_])fn[[:space:]]+(stripCR|trimSpaces|findEq)[[:space:]]*\(' \
     "text_scan.zig" "stripCR/trimSpaces/findEq owner (text_scan.zig)"
 check_owner '(^|[^A-Za-z0-9_])fn[[:space:]]+join[[:space:]]*\(' \
     "paths.zig" "join owner (paths.zig)"
+check_owner '(^|[^A-Za-z0-9_])fn[[:space:]]+(joinPath|joinOutPath)[[:space:]]*\(' \
+    "paths.zig" "joinPath/joinOutPath owner (paths.zig)"
 check_owner '(^|[[:space:]])(pub[[:space:]]+)?const[[:space:]]+(NAV_|SCREEN_|MSG_|OUT_|TOOL_|UNLOCK_|NO_FIGHT)' \
     "def.zig" "id registry owner (def.zig)"
 
 is_new() {
-    for n in $NEW_FILES; do
-        [ "$1" = "$n" ] && return 0
+    [ "$1" = "$GENERATED" ] && return 1
+    for n in $GRANDFATHERED; do
+        [ "$1" = "$n" ] && return 1
     done
-    return 1
+    return 0
 }
 
 for f in "$UNDDIR"/*.zig "$UNDDIR"/tests/*.zig; do

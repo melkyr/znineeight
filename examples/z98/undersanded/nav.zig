@@ -167,7 +167,7 @@ fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
             st.armed = 0;
             return setScreen(g, def.NAV_REFINE);
         }
-        if (dock.isRareRefine(material) and st.armed != material
+        if (economy.isDeepMaterial(material) and st.armed != material
             and dock.refineParts(g, material) > 0) {
             st.armed = material;
             st.last = def.NAV_RESULT_PREVIEW;

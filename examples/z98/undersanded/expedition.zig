@@ -108,11 +108,6 @@ fn poolEmpty(g: *def.GameState) bool {
 
 // ---- Loot hold ------------------------------------------------------------
 
-// Keystones are drop-only, used as-is, and never receive the Cargo bonus.
-fn isKeystone(part: i32) bool {
-    return part == creatures.PART_HOOKED_BARBEL or part == creatures.PART_STEEL_FINS;
-}
-
 fn addDropLines(g: *def.GameState, lines: []const def.DropLine, cargo: i32) void {
     // Z98 lowers `g.exp.hold[i]` through a struct copy; go via a pointer so
     // the write reaches the real hold array.
@@ -124,7 +119,7 @@ fn addDropLines(g: *def.GameState, lines: []const def.DropLine, cargo: i32) void
     var p: usize = 0;
     while (p < def.MAX_DROP_LINES and p < lines.len) : (p += 1) {
         if (lines[p].part <= 0 or lines[p].count <= 0) continue;
-        if (isKeystone(lines[p].part)) continue;
+        if (items.isKeystone(lines[p].part)) continue;
         primary = @intCast(i32, p);
         break;
     }

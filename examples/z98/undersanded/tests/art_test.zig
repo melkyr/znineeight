@@ -251,6 +251,65 @@ fn tBarBorderAndNumeric() bool {
     return numeric != 0;
 }
 
+fn tBarRedZoneBorder() bool {
+    var g: def.GameState = undefined;
+    baseFight(&g);
+    art.resetFrame();
+    const d = renderInto(&g, "", true);
+    const hp = findWidget(&g, art.W_HP, -1);
+    const bw = hp.w;
+    const bh = art.BAR_H;
+    const bar = art.barGeometry(bw - 2, hp.a, hp.b, hp.c);
+    if (bar.red <= 4) return false;
+    const rx = hp.x + 1 + (bw - 2) - bar.red;
+    if (dumpPix(d, rx, hp.y + 1) != art.C_DOT) return false;
+    if (dumpPix(d, rx + 2, hp.y + 1) != art.C_DOT) return false;
+    if (dumpPix(d, rx + 1, hp.y + 1) == art.C_DOT) return false;
+    if (dumpPix(d, rx, hp.y + 3) != art.C_DOT) return false;
+    if (dumpPix(d, rx + bar.red - 1, hp.y + 1) != art.C_DOT) return false;
+    if (dumpPix(d, rx + 1, hp.y + bh - 2) == art.C_DOT) return false;
+    return true;
+}
+
+fn tShakeOnSubdueFail() bool {
+    var g: def.GameState = undefined;
+    baseFight(&g);
+    art.resetFrame();
+    art.shakeUpdate(&g, 1000, 1000);
+    if (art.shakeOffsetX() != 0 or art.shakeOffsetY() != 0) return false;
+
+    var i: usize = @intCast(usize, g.log_n);
+    g.log[i] = def.LogEntry{
+        .class = def.LOG_WARN, .msg_id = def.MSG_SUBDUE_FAIL, .a = 0, .b = 0,
+    };
+    g.log_n = g.log_n + 1;
+    art.shakeUpdate(&g, 1000, 1000);
+    const x0 = art.shakeOffsetX();
+    const y0 = art.shakeOffsetY();
+    if (x0 == 0 and y0 == 0) return false;
+
+    art.shakeUpdate(&g, 1090, 1000);
+    if (art.shakeOffsetX() == x0) return false;
+    const x1 = art.shakeOffsetX();
+    art.shakeUpdate(&g, 1090, 1000);
+    if (art.shakeOffsetX() != x1) return false;
+
+    art.shakeUpdate(&g, 1180, 1000);
+    if (art.shakeOffsetX() != 0 or art.shakeOffsetY() != 0) return false;
+    art.shakeUpdate(&g, 2000, 1000);
+    if (art.shakeOffsetX() != 0) return false;
+
+    i = @intCast(usize, g.log_n);
+    g.log[i] = def.LogEntry{
+        .class = def.LOG_WARN, .msg_id = def.MSG_SUBDUE_FAIL, .a = 0, .b = 0,
+    };
+    g.log_n = g.log_n + 1;
+    art.shakeUpdate(&g, 2000, 1000);
+    const retriggered = art.shakeOffsetX() != 0 or art.shakeOffsetY() != 0;
+    art.resetFrame();
+    return retriggered;
+}
+
 fn tSpeedReveal() bool {
     var g: def.GameState = undefined;
     baseFight(&g);
@@ -537,6 +596,8 @@ pub fn main() void {
     report("font_glyph_blit_pitch_pad", tFontGlyphBlit());
     report("bar_geometry_zero_half_max", tBarGeometry());
     report("bar_dotted_border_numeric", tBarBorderAndNumeric());
+    report("bar_red_zone_dotted_border", tBarRedZoneBorder());
+    report("shake_on_subdue_fail", tShakeOnSubdueFail());
     report("speed_hidden_journal_sonar", tSpeedReveal());
     report("tool_status_69_cols_80_safe", tToolStatusWidth());
     report("layout_bands_buttons", tLayoutButtons());

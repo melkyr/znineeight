@@ -15,6 +15,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     };
 
+    // 80x30 cells at 8x16 need a 640x480 client. The window is created with
+    // outer dimensions, so correct the client before any frame is drawn; this
+    // also keeps cell row 29 visible when px attach fails.
+    _ = gfx.gfxSetClientSize(g, 640, 480);
+
     app.run(g, argc, argv, false);
     gfx.gfxClose(g);
 }

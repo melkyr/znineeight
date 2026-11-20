@@ -139,6 +139,7 @@ done
 
 ART_LOG="$OUT/art_test/run.log"
 for c in golden_art_fight_640x480 bar_geometry_zero_half_max \
+    bar_red_zone_dotted_border shake_on_subdue_fail \
     speed_hidden_journal_sonar msg_line_parity_all_ids \
     dirty_coalesce_order_overflow tool_status_69_cols_80_safe; do
     require_case "$ART_LOG" "$c"

@@ -291,5 +291,3 @@ pub fn verifyCrcFile(path: []const u8) SaveErr!void {
     if (crc_start > content.len) return error.Damaged;
     if (scan.crcOf(content[0..crc_start]) != hash) return error.BadHash;
 }
-
-

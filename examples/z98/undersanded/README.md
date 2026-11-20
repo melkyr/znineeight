@@ -38,7 +38,7 @@ program-level `-D` build option.
 
 | Screen | Keys |
 | :--- | :--- |
-| Dock | `R`efine / `U`pgrade / `C`raft / `B`uy print "not yet (M5)"; `T` Rest (safe, one phase); `D`epart → map; `Q`uit |
+| Dock | `R`efine / `U`pgrade / `C`raft / `B`uy / `E`quipment open their sub-menus; `T` Rest (safe, one phase); `D`epart → map; `Q`uit |
 | Map | `1`–`8` travel to Z1–Z8; `9` boss route (refused while locked); `Esc` back to dock |
 | Node | `H`unt; `R`est; `S`urface (return to dock) |
 | Pending Subdue | `R`elease or `S`ell, then back to the node |
@@ -60,8 +60,9 @@ and the same navigation keys:
 
 The pixel tier is attached once after content boot (`gfxPxAttach`). If attach
 fails (including a depth below 16bpp) the session stays in all-cell mode and the
-reason is logged once to `errors.log`; an art frame that loses its surface also
-falls back to cells for the rest of the session. Mouse clicks are translated
+reason is logged once to `errors.log`; an art frame that loses its surface is
+restored and fully repainted, and only a failed restore falls back to cells.
+Mouse clicks are translated
 only in the live fight: the four exported button rects synthesize the same
 `S`/`R`/`E`/`F` key. Rendering never initialises RNG or advances game phases.
 
