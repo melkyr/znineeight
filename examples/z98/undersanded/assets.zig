@@ -42,6 +42,8 @@ const A_NAMES: [A_COUNT][]const u8 = [A_COUNT][]const u8{
     "dec_barn", "dec_sqid", "dec_boss",
 };
 
+const A_CREATURE_COUNT: usize = 11;
+
 const A_EEL: i32 = 0;
 const A_ANEM: i32 = 5;
 const A_RAY: i32 = 6;
@@ -96,6 +98,14 @@ pub fn spriteForDef(a: *const Assets, def_id: i32) ?*const px.Sprite {
 
 fn isBackgroundA(a: i32) bool {
     return a >= A_BG_A and a <= 15;
+}
+
+// Only decoded creature rows may back a V recolor. Backgrounds are loaded
+// lazily and the boat/overlay rows are not recoloured, so accepting any A row
+// here could build a LUT from a row whose pixels were never decoded.
+fn isCreatureA(a: i32) bool {
+    if (a < 0) return false;
+    return @intCast(usize, a) < A_CREATURE_COUNT;
 }
 
 fn bgIndexForZone(zone: i32) i32 {
@@ -173,7 +183,7 @@ fn buildFileName(name: []const u8, out: []u8) ?[]const u8 {
     return out[0 .. name.len + 4];
 }
 
-fn decodeAsset(assets_dir: []const u8, name: []const u8, a: i32) bool {
+fn decodeAsset(assets_dir: []const u8, name: []const u8, a: i32, out_ramp: *u8) bool {
     var out_buf: [PATH_MAX]u8 = undefined;
     const out_dir = paths.join(assets_dir, "out", out_buf[0..]) orelse return false;
 
@@ -203,6 +213,7 @@ fn decodeAsset(assets_dir: []const u8, name: []const u8, a: i32) bool {
     var tmp_lut: [256]u16 = undefined;
     if (!zsp.zspDecode(data, &sprite, &tmp_lut, pix, &pix_len)) return false;
     if (pix_len != @intCast(i32, total32)) return false;
+    out_ramp.* = data[9];
 
     var sprites: *[A_COUNT]px.Sprite = &g_assets.sprites;
     var base_luts: *[A_COUNT * 256]u16 = &g_assets.base_luts;
@@ -279,7 +290,7 @@ fn parseFromTo(token: []const u8, out: *u8) bool {
     return true;
 }
 
-fn buildVariants(manifest: []const u8) bool {
+fn buildVariants(manifest: []const u8, base_ramps: []const u8) bool {
     var var_count: usize = 0;
     var start: usize = 0;
     while (start < manifest.len) {
@@ -302,11 +313,13 @@ fn buildVariants(manifest: []const u8) bool {
 
         const base = findA(base_name);
         if (base < 0) return false;
+        if (!isCreatureA(base)) return false;
         var from_ramp: u8 = 0;
         var to_ramp: u8 = 0;
         if (!parseFromTo(from_tok, &from_ramp)) return false;
         if (!parseFromTo(to_tok, &to_ramp)) return false;
         if (from_ramp == to_ramp) return false;
+        if (from_ramp != base_ramps[@intCast(usize, base)]) return false;
         if (var_count >= V_COUNT) return false;
 
         var def_id: i32 = -1;
@@ -362,8 +375,12 @@ pub fn load(assets_dir: []const u8) bool {
     g_file_arena = arena_mod.init(g_file_buf[0..]);
 
     var seen: [A_COUNT]bool = undefined;
+    var a_ramp: [A_COUNT]u8 = undefined;
     var i: usize = 0;
-    while (i < A_COUNT) : (i += 1) seen[i] = false;
+    while (i < A_COUNT) : (i += 1) {
+        seen[i] = false;
+        a_ramp[i] = 0;
+    }
 
     var a_count: usize = 0;
     var start: usize = 0;
@@ -386,7 +403,7 @@ pub fn load(assets_dir: []const u8) bool {
         const idx: usize = @intCast(usize, a);
         if (seen[idx]) return false;
         if (!isBackgroundA(a)) {
-            if (!decodeAsset(assets_dir, name, a)) return false;
+            if (!decodeAsset(assets_dir, name, a, &a_ramp[idx])) return false;
         }
         seen[idx] = true;
         a_count += 1;
@@ -397,7 +414,7 @@ pub fn load(assets_dir: []const u8) bool {
     while (i < A_COUNT) : (i += 1) {
         if (!seen[i]) return false;
     }
-    if (!buildVariants(manifest)) return false;
+    if (!buildVariants(manifest, a_ramp[0..])) return false;
     if (assets_dir.len > g_assets_dir_buf.len) return false;
     str.copy(g_assets_dir_buf[0..], assets_dir);
     g_assets_dir_len = assets_dir.len;

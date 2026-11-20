@@ -17,7 +17,9 @@
 #     key, header ramp, pixel/LUT FNV checksums and three sample pixels; a
 #     mutated `.zsp` copy must be rejected (non-vacuity)
 #   * require the art golden to be the Task 4 re-pin `0x06b4972d` (the nested
-#     M9 tier proves the rendered frame still matches it)
+#     M9 tier proves the rendered frame still matches it) and pin the M10
+#     art_test cases (26A/12V decode, one resident background, malformed-V
+#     fallback) from the nested M9 log
 #   * P19: no committed Python or SVG-converter file under the example and no
 #     Python invocation in this tier
 #   * nest tier_m9_px.sh as the regression gate (z9edit/terminal/M9 goldens and
@@ -513,6 +515,14 @@ if grep -q '^FAIL - ' "$M9LOG"; then
 else
     pass_case "tier_m9_px reports no failing-case lines"
 fi
+
+# Pin the M10 art_test cases the tier relies on, using the nested M9 log (the
+# M9 tier itself is unchanged).
+M10_ART_LOG="$OUT/m9/art_test/run.log"
+for c in assets_manifest_decode_26a_12v background_one_resident_slot \
+    assets_missing_fallback_deterministic assets_malformed_v_manifest_falls_back; do
+    require_case "$M10_ART_LOG" "$c"
+done
 
 echo
 echo "== tier_m10_assets summary: $PASSES passed, $FAILS failed =="

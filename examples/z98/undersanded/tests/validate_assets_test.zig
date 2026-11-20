@@ -13,6 +13,7 @@
 
 const io = @import("std_io");
 const os = @import("std_os");
+const arena_mod = @import("std_arena");
 const file_mod = @import("std_file");
 const text_scan = @import("../text_scan.zig");
 const validate_assets = @import("../validate_assets.zig");
@@ -27,6 +28,8 @@ extern "c" fn chdir(path: [*]const u8) i32;
 
 const DIR = "/tmp/z98_m10_validate_assets";
 const EMIT_DIR = "/tmp/z98_m10_validate_assets/should_not_emit";
+const BG_KEY_DIR = "/tmp/z98_m10_validate_assets/bg_key";
+const BG_A_ZSP = "examples/z98/undersanded/assets/out/bg_a.zsp";
 const A_COUNT: usize = validate_assets.A_COUNT;
 const V_COUNT: usize = validate_assets.V_COUNT;
 const BG_A_INDEX: usize = 11;
@@ -37,6 +40,7 @@ var g_enc: [640 * 300 * 2]u8 = undefined;
 var g_buf: [400 * 1024]u8 = undefined;
 var g_len: [A_COUNT]usize = undefined;
 var g_man: [8192]u8 = undefined;
+var g_src_arena_buf: [64 * 1024]u8 = undefined;
 
 fn report(name: []const u8, ok: bool) void {
     if (ok) {
@@ -402,6 +406,39 @@ fn restoreGoodBg() bool {
     return true;
 }
 
+// Non-vacuity: copy the committed bg_a into a temp dir, flip one decoded run
+// index to the 255 key (keeping the run canonical) and require rejection. The
+// committed asset is only read.
+fn tBackgroundRejectsKeyPixel() bool {
+    const spec = validate_assets.EXPECTED_A[BG_A_INDEX];
+    ensureDir(BG_KEY_DIR);
+
+    var arena = arena_mod.init(g_src_arena_buf[0..]);
+    const src = file_mod.readAll(&arena, BG_A_ZSP) catch return false;
+    if (src.len > g_buf.len) return false;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) g_buf[i] = src[i];
+    const len = src.len;
+
+    if (validate_assets.validateAsset(g_buf[0..len], spec) != .Ok) return false;
+
+    var p: usize = 528;
+    var flipped = false;
+    while (p + 1 < len) : (p += 2) {
+        const prev_key = p == 528 or g_buf[p - 1] == validate_assets.KEY_INDEX;
+        const next_key = p + 3 >= len or g_buf[p + 3] == validate_assets.KEY_INDEX;
+        if (g_buf[p + 1] != validate_assets.KEY_INDEX and !prev_key and !next_key) {
+            g_buf[p + 1] = validate_assets.KEY_INDEX;
+            flipped = true;
+            break;
+        }
+    }
+    if (!flipped) return false;
+    if (!writeFile(BG_KEY_DIR, "bg_a", ".zsp", g_buf[0..len])) return false;
+
+    return validate_assets.validateAsset(g_buf[0..len], spec) == .BadKey;
+}
+
 fn argz(buf: []u8, s: []const u8) [*]u8 {
     var i: usize = 0;
     while (i < s.len) : (i += 1) buf[i] = s[i];
@@ -469,6 +506,7 @@ pub fn main() void {
     report("asset_rejects_bad_palette", tBadPalette());
     report("asset_rejects_noncanonical_rle", tNonCanonical());
     report("asset_rejects_missing_creature_border", tBadBorder());
+    report("asset_rejects_background_key_pixel", tBackgroundRejectsKeyPixel());
 
     report("manifest_accepts_full_ledger", tManifestGood());
     report("manifest_rejects_bad_8_3_name", tManifestBadName());

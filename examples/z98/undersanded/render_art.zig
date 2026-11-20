@@ -2,8 +2,11 @@
 //
 // Pure software rendering: draws into a core px Surface and never imports
 // std_gfx/std_gfx_pal/std_gfx_px (the Windows wrapper owns lock/present in
-// Task 5). Widgets are the §27 flat retained shape; layoutFight rebuilds them
-// per screen and renderScreen repaints dirty rects or the whole frame.
+// Task 5). M10 passes decoded creature sprite and resident-background pointers
+// in ArtAssets; this module blits them and keeps the M9 panel/letter fallback
+// when either pointer is null. Widgets are the §27 flat retained shape;
+// layoutFight rebuilds them per screen and renderScreen repaints dirty rects or
+// the whole frame.
 //
 // Terminal copy is shared, not duplicated: msgLine, renderModal,
 // renderToolStatus and speedRevealed are exported from render_term and used

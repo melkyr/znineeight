@@ -59,6 +59,8 @@ pub const ValidateErr = enum {
     BadRuns,
     OffRamp,
     BadBorder,
+    BadKey,
+    BadColours,
     NonCanonical,
     BadName,
     DuplicateEntry,
@@ -374,6 +376,18 @@ pub fn validateAsset(buf: []const u8, expect: AssetSpec) ValidateErr {
         if (!allowed[@intCast(usize, ramp)]) return .OffRamp;
     }
 
+    if (expect.kind == .bg) { // opaque: no key pixels, at most 8 colours
+        var seen = [8]u32{ 0, 0, 0, 0, 0, 0, 0, 0 }; var colours: usize = 0; i = 0;
+        while (i < total) : (i += 1) {
+            const index = g_pix[i];
+            if (index == key) return .BadKey;
+            const word: usize = @intCast(usize, index >> 5);
+            const bit: u32 = @intCast(u32, 1) << @intCast(u32, index & 31);
+            if ((seen[word] & bit) == 0) { seen[word] |= bit; colours += 1; }
+        }
+        if (colours > 8) return .BadColours;
+    }
+
     if (expect.kind == .creature) {
         const wi: usize = @intCast(usize, w);
         const hi: usize = @intCast(usize, h);
@@ -568,6 +582,8 @@ pub fn errorText(e: ValidateErr) []const u8 {
         .BadRuns => return "bad runs",
         .OffRamp => return "off-ramp pixel",
         .BadBorder => return "creature border not key",
+        .BadKey => return "background key pixel",
+        .BadColours => return "too many background colours",
         .NonCanonical => return "non-canonical RLE",
         .BadName => return "bad 8.3 name",
         .DuplicateEntry => return "duplicate entry",

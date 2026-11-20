@@ -2,10 +2,12 @@
 //
 // One std_gfx cell window for the whole session. Dock/map/node/journal/help are
 // cell-rendered through nav.drawScreen; while a fight (or its subdue modal) is
-// live the same window presents the 640x480 px art frame. All game decisions
-// still flow through nav.navStep / nav.bootKey, so keys, the help overlay, the
-// dock save/quit prompt and the boot machine are byte-identical to the console
-// loops. Rendering never initialises RNG or advances a phase.
+// live the same window presents the 640x480 px art frame. M10 supplies decoded
+// creature sprites and one resident zone background from assets.zig; a missing
+// or malformed installed asset set falls back to the M9 placeholder deterministically.
+// All game decisions still flow through nav.navStep / nav.bootKey, so keys, the
+// help overlay, the dock save/quit prompt and the boot machine are byte-identical
+// to the console loops. Rendering never initialises RNG or advances a phase.
 
 const gfx = @import("std_gfx.zig");
 const px = @import("std_gfx_px.zig");
