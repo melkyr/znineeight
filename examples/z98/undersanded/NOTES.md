@@ -1686,7 +1686,7 @@ Facts verified in this tree:
 ### M10 amendment review (M9 Task 7)
 
 Read `2026-11-12-undersanded-m10-assets-pipeline-plan.md` against the landed
-M9 interfaces (`sf/src/std_gfx_px_core.zig:21-30` `Sprite`, `:134-208`
+M9 interfaces (`sf/src/std_gfx_px_core.zig:21-27` `Sprite`, `:134-201`
 `pxCoreBlit/BlitPart`, `:318-329` memory `gfxPxBlit/BlitPart`;
 `render_art.zig`; `tests/px_test.zig:35` art golden; `tests/tier_m9_px.sh`)
 and spec §23.1/§30/§35. Verdict: **amendment required**. The `.ZSP` header
@@ -1717,15 +1717,35 @@ per recolor.
 
 `assets.man` must carry both asset and variant records (exact line forms):
 `A <name8.3> <kind> <w> <h> <encoded_bytes> <allowed_ramps_csv>` and
-`V <variant_id> <base8.3> <from_ramp> <to_ramp>`. `variant_id` is the
-`CreatureDef.id` from `data.z98` for the 19 demo defs, and
-`boss00:<armor|sliver|hoard|drown|blur>` for the five boss ramps. The
-validator must require every `V.base8.3` to be an `A` row, `from_ramp` to equal
-that row's `.ZSP` header ramp, every demo def id to have exactly one `V` row,
-the five boss variants to exist, and no orphan/duplicate variants. Pin the 11
-base ramps from §30 in `A` rows: eel00=6, tuna00=7, crab00=8, jelly00=9,
-barn00=10, anem00=11, ray00=12, squid00=13, angler00=14, wrasse00=15;
-`boss00`'s header ramp must equal its Armor variant's ramp.
+`V <variant_id> <base8.3> <from_ramp> <to_ramp>`. `A.name8.3`, `V.base8.3`,
+and the `F` name are checked as lowercase 8.3 (≤8-char base, ≤3-char
+extension, no spaces); the full `A` list is exactly the 26 files `eel00
+tuna00 crab00 jelly00 barn00 anem00 ray00 squid00 angler00 wrasse00 boss00
+bg_a bg_b bg_c bg_d bg_dock boat00 fig_merm fig_angl fig_krak flag_pen
+flag_ref flag_trn dec_barn dec_sqid dec_boss`, plus `F font8x16 95 16`.
+`V.variant_id` is a symbolic id, not a filename. The validator must require
+every `V.base8.3` to be an `A` row, `from_ramp` to equal that row's `.ZSP`
+header ramp, every demo def to have exactly one mapping (base defs map to
+their `A` row, recolors to their `V` row), and no orphan/duplicate variants.
+
+Pin the actual mapping (def id -> base, from -> to); base defs are identity
+rows and get no `V`: id1->eel00, id4->tuna00, id7->crab00, id8->jelly00,
+id9->barn00, id10->anem00, id13->ray00, id14->squid00, id15->angler00,
+id16->wrasse00, id17->boss00 (Armor, see below). The six non-flex recolors:
+id2 eel00 6->1 (Mystic Electric Eel), id3 eel00 6->5 (Mileel), id5 tuna00
+7->14 (Rust Tuna), id6 tuna00 7->10 (Tunisteel), id11 crab00 8->11 (Coral
+Crab), id12 jelly00 9->5 (Abyssal Lantern-Jelly). Flex recolors: id18 anem00
+11->5 (Anemoniacus), id19 tuna00 7->1 (Freezing Perch, icy). Base ramps from
+§30: eel00=6, tuna00=7, crab00=8, jelly00=9, barn00=10, anem00=11, ray00=12,
+squid00=13, angler00=14, wrasse00=15.
+
+Boss identity contract (option A: Armor = base, no `V` row). `boss00`
+header.ramp = 10 (Armor); `id=17` maps directly to `A boss00` and has no `V`
+row. Four non-identity boss `V` rows use `base8.3=boss00`, `from_ramp=10`:
+`boss00:sliver 10->2`, `boss00:hoard 10->4`, `boss00:drown 10->13`,
+`boss00:blur 10->5`. Thus the boss has five identities (base/Armor + four
+`V` rows), all `from_ramp != to_ramp`; the validator must not create an
+identity `V` row for id=17 or Armor.
 
 Boat paint uses the same helper, not a new asset: re-blit `boat00.idx` with a
 paint LUT (`from_ramp` = hull ramp, `to_ramp` = cosmetic paint ramp) clipped
@@ -1736,15 +1756,17 @@ then needs no new pixel data.
 **2. Make canonical RLE an actual check.** M10 Task 1 currently checks only
 "counts 1–255 within bounds"; that accepts non-canonical runs and lets
 byte-exact goldens drift. Add `zspCanonicalEncode(pix, w, h, out) usize` (one
-run per maximal stretch, split stretches >255) and have `validateAsset`
-re-encode the decoded pixels and byte-compare the data section. The decoder
-golden and regeneration recipe then share one canonical rule.
+run per maximal stretch; for a stretch >255 emit greedy 255-byte runs, then
+the remainder 1..255) and have `validateAsset` re-encode the decoded pixels
+and byte-compare the data section. The decoder golden and regeneration recipe
+then share one canonical rule.
 
-**3. Fix decoder/validator sequencing and pin the output contract.** Task 1
-says the validator does a "decode golden compare" but Task 2 creates `zsp.zig`
-afterward. Move `zsp.zig` before `validate_assets.zig` (or move that check to
-Task 2); `validate_assets.zig` must import the one decoder, never duplicate
-it. Pin: success sets `sprite.w/h` from the header, `sprite.idx = pix.ptr`,
+**3. Fix decoder/validator sequencing and pin the output contract.** The
+decode golden belongs to Task 2's `zsp.zig` unit test; File Structure line 23
+also gives `validate_assets.zig` a "decode golden compare", but Task 1
+precedes Task 2. Move `zsp.zig` before `validate_assets.zig` or move that
+check to Task 2; `validate_assets.zig` must import the one decoder, never
+duplicate it. Pin: success sets `sprite.w/h` from the header, `sprite.idx = pix.ptr`,
 `sprite.lut = out_lut.ptr`, `sprite.key = header.key`,
 `pix_len.* = w*h`; requires `pix.len >= w*h`; fills all 256 `u16` from the
 512-byte embedded palette (`flags == 0`, `reserved == 0`); on any failure
@@ -1774,7 +1796,8 @@ small file/arena loader (new `assets.zig`, or equivalent) and pass decoded
 (`font8x16.zig`, 95×16 = 1,520 bytes), not a `.ZSP`; either drop it from
 `assets.man` or add an explicit non-`.ZSP` `F font8x16 95 16` record and
 never expect `font8x16.zsp`. Compute the gate from the manifest: indexed
-bytes = sum of `w*h` over distinct `A` `.ZSP` rows (recolors and 5 boss ramps
-must not multiply base pixels), LUT bytes = 512 × `A` rows + 512 × `V` rows;
-indexed ≤1.35 MB, each background encoded ≤120 KB, demo RLE disk ≤400 KB
-(spec §35's 300–400 KB range, not the plan's "≈300 KB").
+bytes = sum of `w*h` over distinct `A` `.ZSP` rows (recolors and boss ramps
+must not multiply base pixels), LUT bytes = 512 × `A` rows + 512 × `V` rows.
+Gates: indexed ≤1.35 MB; indexed + LUTs ≤2 MB sprite arena (§35); each
+background encoded ≤120 KB; demo RLE disk ≤400 KB (spec §35's 300–400 KB
+range, not the plan's "≈300 KB").
