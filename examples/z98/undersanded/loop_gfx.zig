@@ -15,6 +15,8 @@ const nav = @import("nav.zig");
 const input = @import("input.zig");
 const render = @import("render_term.zig");
 const art = @import("render_art.zig");
+const assets = @import("assets.zig");
+const creatures = @import("creatures_t1.zig");
 const journal = @import("journal.zig");
 const expedition = @import("expedition.zig");
 const fight = @import("fight.zig");
@@ -130,6 +132,19 @@ fn artMode(g: *def.GameState, p: ?*px.Gfx) bool {
     return false;
 }
 
+// Decoded art pointers for the current fight. A failed/missing asset load
+// leaves both null, so render_art uses its deterministic placeholder.
+fn artView(g: *def.GameState) art.ArtAssets {
+    var view = art.ArtAssets{ .bg = null, .sprite = null };
+    const a = assets.current() orelse return view;
+    view.bg = assets.backgroundForZone(a, g.exp.zone);
+    if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
+        const d = creatures.defAt(g.fight.def_index);
+        view.sprite = assets.spriteForDef(a, d.id);
+    }
+    return view;
+}
+
 fn drawArtFrame(g: *def.GameState, p: *px.Gfx, st: *const nav.NavState,
     notice: []const u8) bool {
     const sf = px.gfxPxLock(p) catch return false;
@@ -139,7 +154,7 @@ fn drawArtFrame(g: *def.GameState, p: *px.Gfx, st: *const nav.NavState,
         help_text = journal.helpPage(g.screen) orelse "(manual text unavailable)";
     }
     art.shakeUpdate(g, time.highRes(), time.highResFreq());
-    art.renderScreen(&sf, g, help_text, true);
+    art.renderScreen(&sf, g, help_text, true, artView(g));
 
     if (notice.len > 0) {
         const y = art.LOG_Y + (art.LOG_LINES - 1) * art.LINE_H;

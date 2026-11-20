@@ -22,11 +22,13 @@ const fight = @import("../fight.zig");
 const creatures = @import("../creatures_t1.zig");
 const render = @import("../render_term.zig");
 const art = @import("../render_art.zig");
+const assets = @import("../assets.zig");
 const tween = @import("../tween.zig");
 const font = @import("../font8x16.zig");
 const core = @import("std_gfx_px_core.zig");
 
 const GOLDEN_PATH = "examples/z98/undersanded/tests/fixtures/art_fight.golden";
+const ASSETS_DIR = "examples/z98/undersanded/assets";
 
 var fails: usize = 0;
 var arena_buf: [64 * 1024]u8 = undefined;
@@ -123,11 +125,27 @@ fn goldenFight(g: *def.GameState) void {
 
 var empty_px: [1]u8 = [1]u8{0};
 
-fn renderInto(g: *def.GameState, help_text: []const u8, full: bool) []const u8 {
+fn assetView(g: *const def.GameState) art.ArtAssets {
+    var view = art.ArtAssets{ .bg = null, .sprite = null };
+    const a = assets.current() orelse return view;
+    view.bg = assets.backgroundForZone(a, g.exp.zone);
+    if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
+        const d = creatures.defAt(g.fight.def_index);
+        view.sprite = assets.spriteForDef(a, d.id);
+    }
+    return view;
+}
+
+fn renderIntoView(g: *def.GameState, help_text: []const u8, full: bool,
+    view: art.ArtAssets) []const u8 {
     const handle = core.gfxPxOpenMemory(640, 480) catch return empty_px[0..0];
     var sf = core.pxCoreSurface(handle.opaque);
-    art.renderScreen(&sf, g, help_text, full);
+    art.renderScreen(&sf, g, help_text, full, view);
     return core.gfxPxDump(handle);
+}
+
+fn renderInto(g: *def.GameState, help_text: []const u8, full: bool) []const u8 {
+    return renderIntoView(g, help_text, full, assetView(g));
 }
 
 fn findWidget(g: *def.GameState, kind: i32, slot: i32) art.Widget {
@@ -579,6 +597,43 @@ fn parseHex(text: []const u8) u32 {
     return v;
 }
 
+fn tAssetsDecode() bool {
+    const a = assets.current() orelse return false;
+    if (assets.spriteForDef(a, 1) == null) return false;
+    if (assets.spriteForDef(a, 17) == null) return false;
+    if (assets.spriteForDef(a, 2) == null) return false;
+    if (assets.spriteForDef(a, 19) == null) return false;
+    if (assets.backgroundForZone(a, 0) == null) return false;
+    if (assets.backgroundForZone(a, 1) == null) return false;
+    if (assets.backgroundForZone(a, 2) == null) return false;
+    if (assets.backgroundForZone(a, 8) == null) return false;
+    if (assets.backgroundForZone(a, 99) == null) return false;
+    const base = assets.spriteForDef(a, 1) orelse return false;
+    const recolor = assets.spriteForDef(a, 2) orelse return false;
+    return base.lut != recolor.lut;
+}
+
+fn tAssetsMissingFallback() bool {
+    if (assets.load("examples/z98/undersanded/tests/fixtures/no_such_assets")) {
+        return false;
+    }
+    if (assets.available()) return false;
+
+    var g: def.GameState = undefined;
+    goldenFight(&g);
+    const none = art.ArtAssets{ .bg = null, .sprite = null };
+    art.resetFrame();
+    const h1 = fnv(renderIntoView(&g, "", true, none));
+    art.resetFrame();
+    const h2 = fnv(renderIntoView(&g, "", true, none));
+    if (h1 != h2) return false;
+
+    if (!assets.load(ASSETS_DIR)) return false;
+    art.resetFrame();
+    const real = fnv(renderInto(&g, "", true));
+    return real != h1;
+}
+
 fn tGolden() bool {
     var g: def.GameState = undefined;
     goldenFight(&g);
@@ -593,6 +648,7 @@ fn tGolden() bool {
 }
 
 pub fn main() void {
+    _ = assets.load(ASSETS_DIR);
     report("font_glyph_blit_pitch_pad", tFontGlyphBlit());
     report("bar_geometry_zero_half_max", tBarGeometry());
     report("bar_dotted_border_numeric", tBarBorderAndNumeric());
@@ -606,6 +662,8 @@ pub fn main() void {
     report("tween_equal_samples", tTweenEqualSamples());
     report("msg_line_parity_all_ids", tMsgLineParity());
     report("modal_help_deterministic", tModalHelpDeterministic());
+    report("assets_manifest_decode_26a_12v", tAssetsDecode());
+    report("assets_missing_fallback_deterministic", tAssetsMissingFallback());
     report("golden_art_fight_640x480", tGolden());
 
     if (fails != 0) os.exit(1);

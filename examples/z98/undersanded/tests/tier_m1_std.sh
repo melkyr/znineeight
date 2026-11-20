@@ -406,6 +406,7 @@ else
         timeout 180 wineboot -i >"$GUI/wineboot.log" 2>&1 || true
         cp "$BUILD_OUT/under.exe" "$BUILD_OUT/sample.txt" "$GUI/"
         cp "$ROOT/examples/z98/undersanded/data.z98" "$GUI/"
+        cp -R "$ROOT/examples/z98/undersanded/assets" "$GUI/assets"
         ( cd "$GUI" && timeout 120 wine ./under.exe ) >"$GUI/app.log" 2>&1 &
         WINE_PID=$!
 

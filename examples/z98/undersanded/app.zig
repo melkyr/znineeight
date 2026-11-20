@@ -31,6 +31,7 @@ const content_boot = @import("content_boot.zig");
 const game = @import("game.zig");
 const nav = @import("nav.zig");
 const loop_gfx = @import("loop_gfx.zig");
+const assets = @import("assets.zig");
 const persist = @import("persist.zig");
 
 const PATH_MAX: usize = 512;
@@ -199,6 +200,10 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
         // (or a <16bpp refusal inside attach) means every screen stays cell.
         const perf_on = hasArg("--perf");
         if (perf_on) loop_gfx.perfReset();
+
+        if (!assets.loadFromExeDir(exe_dir)) {
+            persist.logError(writable_dir, "assets: unavailable; art placeholder fallback");
+        }
 
         var s: def.GameState = undefined;
         var p: ?*gfx_px.Gfx = gfx_px.gfxPxAttach(g);

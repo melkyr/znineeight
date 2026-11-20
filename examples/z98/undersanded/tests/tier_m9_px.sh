@@ -8,8 +8,8 @@
 #   * px_test prints the deterministic art-fight 640x480 565 framebuffer
 #     checksum; byte-compare it with art_fight.golden (cmp)
 #   * non-vacuity: mutate a COPY of the art golden (one hex digit) and prove the
-#     same cmp and px_test (ART_GOLDEN override) reject it; the committed
-#     fixture is never regenerated
+#     same cmp and px_test (ART_GOLDEN override) reject it; the committed art
+#     fixture was re-pinned exactly once by M10 Task 4 (sprite/background wiring)
 #   * build undtool_native.zig; byte-match the M8 terminal goldens for
 #     --dump-grid --screen fight|dock|map|node|lore|menu|journal|help
 #   * run the z9edit tier_edit.sh and require its PASS plus the pinned lexer md5
@@ -284,8 +284,9 @@ NIX="$NATIVE/undtool.nix"
 # The committed M8 goldens were authored under two content states and carry
 # those bytes forward: lore/help include the data.z98 manual text, while the
 # fixed dock/map/node/menu/journal/fight frames are the compiled fallback (no
-# data override). Reproduce each screen's authored condition exactly; the
-# fixtures themselves are never regenerated.
+# data override). Reproduce each screen's authored condition exactly; these
+# terminal fixtures were not regenerated (M10 Task 4 re-pinned only the art
+# checksum fixture when it wired sprites/backgrounds).
 dump_one() {
     s="$1"
     GOLDEN="$FIXTURES/dump_grid_$s.golden"

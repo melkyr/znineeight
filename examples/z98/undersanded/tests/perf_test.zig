@@ -184,7 +184,8 @@ fn renderOk(g: *def.GameState, st: *const nav.NavState, expect: []const u8) bool
 fn renderArtOk(g: *def.GameState) bool {
     const handle = core.gfxPxOpenMemory(640, 480) catch return false;
     var sf = core.pxCoreSurface(handle.opaque);
-    art.renderScreen(&sf, g, "", true);
+    art.renderScreen(&sf, g, "", true,
+        art.ArtAssets{ .bg = null, .sprite = null });
     return true;
 }
 

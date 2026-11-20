@@ -76,6 +76,13 @@ pub const C_TAG: u16 = 0xF81F;
 
 pub const Rect = struct { x: i32, y: i32, w: i32, h: i32 };
 
+// Decoded art pointers supplied by assets.zig (no file I/O here). A null pair
+// is the deterministic placeholder/cell fallback (panel + first name letter).
+pub const ArtAssets = struct {
+    bg: ?*const px.Sprite,
+    sprite: ?*const px.Sprite,
+};
+
 pub const Widget = struct {
     x: i32, y: i32, w: i32, h: i32,
     kind: i32, dirty: i32,
@@ -548,7 +555,8 @@ fn drawHud(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
         false, C_TEXT, C_PANEL);
 }
 
-fn drawSprite(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
+fn drawSprite(sf: *px.Surface, w: *const Widget, s: *const def.GameState,
+    view: ArtAssets) void {
     fillRect(sf, w.x, w.y, w.w, w.h, C_PANEL);
     const box = Rect{
         .x = SPRITE_X, .y = SPRITE_Y, .w = SPRITE_W, .h = SPRITE_H,
@@ -556,6 +564,13 @@ fn drawSprite(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
     fillRect(sf, box.x, box.y, box.w, box.h, C_PANEL2);
     drawDottedRect(sf, box.x, box.y, box.w, box.h, C_DOT);
 
+    if (view.sprite) |sprite| {
+        px.pxCoreBlit(sf, box.x + g_shake_dx, box.y + g_shake_dy, sprite);
+        return;
+    }
+
+    // Deterministic fallback when assets are missing/unreadable: the M9
+    // panel + first creature-name letter (no file I/O, no randomness).
     if (!defValid(s)) return;
     var d = creatures.defAt(s.fight.def_index);
     const name = render.creatureName(&d);
@@ -650,10 +665,11 @@ fn drawButton(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
     drawText(sf, x, y, label, C_TEXT, C_PANEL2);
 }
 
-fn drawWidget(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
+fn drawWidget(sf: *px.Surface, w: *const Widget, s: *const def.GameState,
+    view: ArtAssets) void {
     switch (w.kind) {
         W_HUD => drawHud(sf, w, s),
-        W_SPRITE => drawSprite(sf, w, s),
+        W_SPRITE => drawSprite(sf, w, s, view),
         W_STATS => drawStats(sf, w, s),
         W_HP => drawBar(sf, w, "HP", C_HP),
         W_RES => drawBar(sf, w, "RES", C_RES),
@@ -700,8 +716,12 @@ fn markFull() void {
     g_dirty_n = 1;
 }
 
+fn drawBackground(sf: *px.Surface, view: ArtAssets) void {
+    if (view.bg) |bg| px.pxCoreBlit(sf, 0, 0, bg);
+}
+
 pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
-    help_text: []const u8, full: bool) void {
+    help_text: []const u8, full: bool, view: ArtAssets) void {
     const modal = s.screen == def.SCREEN_SUBDUE
         or s.screen == def.SCREEN_SUBDUE_POST;
     const help = help_text.len > 0;
@@ -745,9 +765,10 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
 
     if (mode_changed) {
         px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
+        drawBackground(sf, view);
         var i: i32 = 0;
         while (i < n) : (i += 1) {
-            drawWidget(sf, &next[@intCast(usize, i)], s);
+            drawWidget(sf, &next[@intCast(usize, i)], s, view);
         }
         markFull();
     } else {
@@ -758,7 +779,7 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
                 cur.dirty = 0;
             } else {
                 cur.dirty = 1;
-                drawWidget(sf, cur, s);
+                drawWidget(sf, cur, s, view);
                 rects[@intCast(usize, rn)] = widgetRect(cur);
                 rn += 1;
             }
