@@ -277,20 +277,27 @@ fn tSurfaceLostRepaint() bool {
     var sf = core.pxCoreSurface(handle.opaque);
     art.renderScreen(&sf, &g, "", true);
     const c1 = fnv(core.gfxPxDump(handle));
+    if (!goldenMatches(c1)) return false;
 
+    // The loss must set the restored/full-repaint transition, and the buffer
+    // is poisoned so a skipped re-render cannot pass vacuously.
     core.pxCoreMarkSurfaceLost(handle.opaque);
     if (!core.pxCoreSurfaceLost(handle.opaque)) return false;
+    sf = core.pxCoreSurface(handle.opaque);
+    core.pxCoreFill(&sf, 0, 0, art.SCREEN_W, art.SCREEN_H, 0xDEAD);
+    if (fnv(core.gfxPxDump(handle)) == c1) return false;
+
     core.pxCoreMarkRestored(handle.opaque);
     if (core.pxCoreSurfaceLost(handle.opaque)) return false;
     if (!core.pxCoreNeedsFullRepaint(handle.opaque)) return false;
-    core.pxCoreClearFullRepaint(handle.opaque);
-    if (core.pxCoreNeedsFullRepaint(handle.opaque)) return false;
 
     art.resetFrame();
     sf = core.pxCoreSurface(handle.opaque);
     art.renderScreen(&sf, &g, "", true);
     const c2 = fnv(core.gfxPxDump(handle));
-    return c1 == c2;
+    core.pxCoreClearFullRepaint(handle.opaque);
+    if (core.pxCoreNeedsFullRepaint(handle.opaque)) return false;
+    return goldenMatches(c2);
 }
 
 pub fn main() void {
