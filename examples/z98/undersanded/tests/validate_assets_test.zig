@@ -18,12 +18,15 @@ const text_scan = @import("../text_scan.zig");
 const validate_assets = @import("../validate_assets.zig");
 const zsp = @import("../zsp.zig");
 const palette = @import("../palette.zig");
+const undtool = @import("../undtool.zig");
 
 @cInclude("<sys/stat.h>");
 
 extern "c" fn mkdir(path: [*]const u8, mode: u32) i32;
+extern "c" fn chdir(path: [*]const u8) i32;
 
 const DIR = "/tmp/z98_m10_validate_assets";
+const EMIT_DIR = "/tmp/z98_m10_validate_assets/should_not_emit";
 const A_COUNT: usize = validate_assets.A_COUNT;
 const V_COUNT: usize = validate_assets.V_COUNT;
 const BG_A_INDEX: usize = 11;
@@ -399,12 +402,65 @@ fn restoreGoodBg() bool {
     return true;
 }
 
+fn argz(buf: []u8, s: []const u8) [*]u8 {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) buf[i] = s[i];
+    buf[s.len] = 0;
+    return @ptrCast([*]u8, &buf[0]);
+}
+
+fn changeDir(path: []const u8) bool {
+    var b: [512]u8 = undefined;
+    if (path.len + 1 > b.len) return false;
+    var i: usize = 0;
+    while (i < path.len) : (i += 1) b[i] = path[i];
+    b[path.len] = 0;
+    return chdir(@ptrCast([*]const u8, &b[0])) == 0;
+}
+
+// Regression: --validate-assets combined with --emit-fallback must exit 2
+// before the emit branch, with no fallback_rows.zig written. The child runs
+// from the content dir so a buggy emit would succeed and be visible.
+fn tValidateEmitCombinedRejected() bool {
+    ensureDir(EMIT_DIR);
+    var fb_buf: [600]u8 = undefined;
+    const fb = makePath(EMIT_DIR, "fallback_rows", ".zig", fb_buf[0..]) orelse return false;
+    if (file_mod.exists(fb)) file_mod.remove(fb) catch {};
+
+    const pid = os.fork();
+    if (pid == 0) {
+        if (!changeDir("examples/z98/undersanded")) os.exit(98);
+        var b0: [16]u8 = undefined;
+        var b1: [32]u8 = undefined;
+        var b2: [32]u8 = undefined;
+        var b3: [8]u8 = undefined;
+        var b4: [32]u8 = undefined;
+        var b5: [128]u8 = undefined;
+        var args: [6][*]u8 = undefined;
+        args[0] = argz(b0[0..], "undtool");
+        args[1] = argz(b1[0..], "--validate-assets");
+        args[2] = argz(b2[0..], "missing.man");
+        args[3] = argz(b3[0..], ".");
+        args[4] = argz(b4[0..], "--emit-fallback");
+        args[5] = argz(b5[0..], EMIT_DIR);
+        undtool.run(6, @ptrCast([*][*]u8, &args[0]));
+        os.exit(99);
+    }
+    if (pid < 0) return false;
+    var status: i32 = 0;
+    _ = os.waitpid(pid, &status, 0);
+    const code = (status >> 8) & 255;
+    if (code != 2) return false;
+    return !file_mod.exists(fb);
+}
+
 pub fn main() void {
     ensureDir(DIR);
 
     const files_ok = buildAllFiles(DIR);
     report("setup_synthetic_assets", files_ok);
 
+    report("cli_rejects_validate_assets_with_emit_fallback", tValidateEmitCombinedRejected());
     report("asset_accepts_known_good", tGoodAsset());
     report("asset_rejects_bad_magic", tBadMagic());
     report("asset_rejects_truncated_run", tTruncatedRun());

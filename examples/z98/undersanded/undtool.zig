@@ -503,6 +503,10 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             if (i + 1 < nargs and !startsFlag(os.argv(i + 1))) {
                 i += 1;
                 validate_assets_dir = os.argv(i);
+                if (i + 1 < nargs and !startsFlag(os.argv(i + 1))) {
+                    fail("undtool: --validate-assets takes at most a manifest and assets directory");
+                    return;
+                }
             }
         } else if (eq(a, "--screen")) {
             i += 1;
@@ -570,6 +574,19 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     // effect.
     if (!have_dump_defs and !have_save_roundtrip and !have_emit_fallback and !have_validate_assets) tryLoadContent();
 
+    // --validate-assets is exclusive with every other mode. Check this before
+    // the emit branch so a combined invocation cannot install content or write
+    // fallback_rows.zig.
+    if (have_validate_assets) {
+        if (have_test_rules or have_replay or have_dump_grid or have_dump_defs or
+            have_save_roundtrip or have_emit_fallback or have_screen or have_sim or
+            have_creature or have_seed or have_hull or have_play or have_fight)
+        {
+            fail("undtool: --validate-assets cannot be combined with other flags");
+            return;
+        }
+    }
+
     if (have_emit_fallback) {
         os.exit(emitFallback(fallback_dir));
         return;
@@ -601,13 +618,6 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     }
 
     if (have_validate_assets) {
-        if (have_test_rules or have_replay or have_dump_grid or have_dump_defs or
-            have_save_roundtrip or have_emit_fallback or have_screen or have_sim or
-            have_creature or have_seed or have_hull)
-        {
-            fail("undtool: --validate-assets cannot be combined with tool flags");
-            return;
-        }
         var arena = arena_mod.init(g_validate_arena_buf[0..]);
         const man = file_mod.readAll(&arena, validate_path) catch {
             fail("undtool: --validate-assets cannot read manifest");
