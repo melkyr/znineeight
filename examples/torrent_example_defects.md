@@ -3,9 +3,9 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D26**.
+deleted numbers are not reused. Next free slot: **D28**.
 
-Open: **D16, D17, D18, D19, D20, D21, D22, D23, D24, D25**.
+Open: **D16, D17, D18, D19, D20, D21, D22, D23, D24, D25, D26**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -679,3 +679,91 @@ Discovery record: `/tmp/undersanded-m5-ledger-final.md:51` (ruling R15).
 
 **Note.** Doc-only. Structural array-return emission (or a reject diagnostic)
 is separately authorized; a D17 fix, if taken, should cover both surfaces.
+
+---
+
+## D26 — Cross-module function alias (`pub const f = sub.f`) emits invalid C with an empty function typedef
+
+**Status:** Open — confirmed 2026-11-20 (seed v151).
+
+**Symptom.** A module-level const bound to a function imported from another
+module type-checks and dumps, but the generated C declares an empty function
+typedef and an invalid const initializer, so the C build fails. Value and
+array aliases are unaffected; only function values hit this.
+
+**Minimal repro.**
+```zig
+// sub/sub.zig
+pub fn ping() void {}
+
+// alias.zig
+const sub = @import("sub/sub.zig");
+pub const ping_alias = sub.ping;
+pub fn main() void { ping_alias(); }
+```
+```sh
+/tmp/seed151_build/zig1_5_clean -ffast --output-dir o_alias alias.zig   # rc 0
+sh o_alias/build_target.sh linux o_alias/alias                        # rc 1
+```
+
+Emitted C:
+```c
+/* zig_special_types.h:19-21 — guard emitted, typedef BODY missing */
+#ifndef ZIG_FNPTR_zT_9EF551F0_FN_void
+#define ZIG_FNPTR_zT_9EF551F0_FN_void
+#endif
+
+/* alias_<hash>.h:12 */
+extern zT_9EF551F0_FN_void const zG_D44F5D4E_ping_alias;
+
+/* alias_<hash>.c:2 */
+zT_9EF551F0_FN_void const zG_D44F5D4E_ping_alias = (zT_9EF551F0_FN_void)zF_165DF089_ping;
+```
+gcc (first errors): `expected ';' before 'const'`, `type defaults to 'int'`,
+then `expected ',' or ';' before 'zF_165DF089_ping'` at the cast.
+
+**Classification.** const-init function values (`c89_emit.zig` `CIE_FN`, around
+`:2903`) are typed as the by-value `fn_type`; the fn-pointer typedef body is
+not emitted (only its `ZIG_FNPTR_…` guard), and the emitted cast uses that
+non-existent function type instead of a function-pointer type. The declaration
+also puts `const` after an invalid type spelling. Pre-existing D17/D19/D25
+surfaces are different (optional arrays, module/type values, array returns).
+
+**Scope / impact.** Compile-time only, no runtime risk. Blocks clean module
+aliasing; workaround is trivial but forces boilerplate.
+
+**Workaround (shipped).** Forwarding wrapper functions
+(`pub fn f(a) R { return sub.f(a); }`). Undersanded M9 hubs use them
+(`fight.zig:21-98`, `data.zig:30-121`, `persist.zig:42-85`,
+`render_term.zig:37-65`); values/arrays still alias directly
+(`creatures_t1.zig:13-39`).
+
+**Evidence.** Probes `/tmp/m9def/{sub/sub.zig,alias.zig}` and generated C
+under `/tmp/m9def/o_alias/`; discovery in
+`.superpowers/sdd/2026-11-12-undersanded-m09-pixel-tier-plan/task-9-report.md:36-39`.
+
+---
+
+## D27 — `[ROW_MAX]T` array-length const workaround (closed: not reproduced)
+
+**Status:** Closed — not a compiler defect (2026-11-20, seed v151).
+
+**Reported symptom.** The kv scanner allegedly had to use literal `[80]`
+instead of `[ROW_MAX]` in `parseRowKV`'s parameter and local
+(`data_scan.zig:77/:81`) because `[ROW_MAX]RowField` "generated errors".
+
+**Re-check.** Replaced both sites with `[ROW_MAX]`; `data_test` compiled
+`-fsafe -W -osl` rc 0, and the generated C was correct:
+`zT_F02D80A2_Arr_zT_4C1EEE25_Row*` (pointer to the array typedef). Minimal
+probes also compile cleanly: same-module `[N]T` param/local, cross-module
+`[m.N]T`, and array value copy/assignment (`a: [N]T = src; dst = a;`), each
+dump rc 0 + build rc 0.
+
+**Conclusion.** No compiler defect found; the `[80]` literals are unnecessary
+(source of the "magic 80" smell) and can be replaced with `ROW_MAX` as
+cleanup. If the original failing form reappears, record the exact snippet and
+gcc diagnostic before opening a numbered defect.
+
+**Evidence.** `/tmp/m9def/{arr_same.zig,arr_cross.zig,arr_copy.zig}` and
+`/tmp/m9def/o_rowmax/` (compiled with the two `[ROW_MAX]` edits applied to a
+temporary checkout, then reverted).
