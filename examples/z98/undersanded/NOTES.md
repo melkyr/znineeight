@@ -1874,3 +1874,272 @@ Behaviour-preserving structural cut; all M1–M9 goldens stay byte-identical.
   ramps, and def→base/V coverage.
 - **Budget:** indexed (distinct A rows) ≤1.35 MB; indexed+LUTs ≤2 MB; each
   background encoded ≤120 KB; demo RLE disk ≤400 KB.
+
+### M10 Task 0 preflight — expected A table, ledger, budgets
+
+Baseline at `7c2d6901` (branch `undersanded/m10`): `TIER_M9 PASS 67/0`
+(1 Wine evidence skip), log `/tmp/m10_base.log`. Task 0 changes only this file
+and creates the empty `assets/` + `assets/out/` skeletons; no product code, no
+plan/spec edit, no side fix.
+
+**Palette contract (P29, unchanged).** Each ramp anchors at shade indices
+**0/5/10/15** (Dark/Mid/Light/Hi). Intermediate shades are 8-bit linear
+interpolation with integer round-to-nearest:
+`c(i) = (c0*(a1-i) + c1*(i-a0) + (a1-a0)/2) / (a1-a0)`. RGB565 uses
+round-to-nearest: `r5=(r*31+127)/255`, `g6=(g*63+127)/255`,
+`b5=(b*31+127)/255`. Index **255 is the transparent key**, not ramp-15
+shade-15; ramp 15 has 15 usable shades, recolor `to_ramp==15 && shade==15`
+uses `base[254]`, and `out[255] = base[255]` always.
+
+**Boss contract.** `boss00` is **96×96** with header ramp **10** (Armor);
+`id=17` maps directly to `A boss00` with **no** V row. Four boss V rows use
+`base8.3=boss00`, `from_ramp=10`: `boss00:sliver 10->2`,
+`boss00:hoard 10->4`, `boss00:drown 10->13`, `boss00:blur 10->5`. There is no
+identity boss V row. The available 160×160 ramp-14 boss SVG is **not** the M10
+source and must not be copied.
+
+**Expected A table (validator `AssetSpec`).** These values are hardcoded in
+`validate_assets.zig`; the manifest is never trusted for them. `kind` tokens
+pinned for Tasks 2/3 are `creature`, `bg`, `boat`, `overlay`.
+`allowed_ramps_csv` is decimal ramp indices, comma-separated, no spaces; it is
+the union of ramps used by the source fills plus the mandatory stage-5
+ramp-0/shade-0 outline for alpha sprites (backgrounds are opaque and get no
+outline). Source fills came from the read-only ignored document
+`/workspace/znineeight/examples/undersanded_assets.txt` (not added or committed).
+
+| A name | kind | w | h | allowed_ramps_csv |
+| :--- | :--- | --: | --: | :--- |
+| `eel00` | creature | 96 | 96 | `0,6` |
+| `tuna00` | creature | 96 | 96 | `0,7` |
+| `crab00` | creature | 96 | 96 | `0,5,8` |
+| `jelly00` | creature | 96 | 96 | `0,5,9` |
+| `barn00` | creature | 96 | 96 | `0,10` |
+| `anem00` | creature | 96 | 96 | `0,4,11` |
+| `ray00` | creature | 96 | 96 | `0,3,12` |
+| `squid00` | creature | 96 | 96 | `0,13` |
+| `angler00` | creature | 96 | 96 | `0,4,9,14` |
+| `wrasse00` | creature | 96 | 96 | `0,15` |
+| `boss00` | creature | 96 | 96 | `0,2,4,10` |
+| `bg_a` | bg | 640 | 300 | `0,1,14` |
+| `bg_b` | bg | 640 | 300 | `0,1,6,8,14` |
+| `bg_c` | bg | 640 | 300 | `0,1,3,5,6,10,15` |
+| `bg_d` | bg | 640 | 300 | `2,4,10,14` |
+| `bg_dock` | bg | 640 | 300 | `0,1,2,4,10,14` |
+| `boat00` | boat | 200 | 150 | `0,1,10` |
+| `fig_merm` | overlay | 64 | 64 | `0,14` |
+| `fig_angl` | overlay | 64 | 64 | `0,4,14` |
+| `fig_krak` | overlay | 64 | 64 | `0,4` |
+| `flag_pen` | overlay | 64 | 64 | `0,9,14` |
+| `flag_ref` | overlay | 64 | 64 | `0,5,8,14` |
+| `flag_trn` | overlay | 64 | 64 | `0,6,10` |
+| `dec_barn` | overlay | 64 | 64 | `0,10` |
+| `dec_sqid` | overlay | 64 | 64 | `0,13` |
+| `dec_boss` | overlay | 64 | 64 | `0,2,14` |
+
+Notes on the derivation (Task 3 must author/verify per §30; Task 0 does not
+change source art):
+
+- `boss00` is the required 96×96 ramp-10 re-authoring: the ramp-14 body fills
+  become ramp 10, the sensor eye stays ramp 2, the amber lamps stay ramp 4, and
+  outline stays ramp 0. Do not carry ramp 14 into the asset.
+- `dec_barn` (`#A8B2BA`, `#3A4248`) and `dec_sqid` (`#CCE4F4`, `#44607A`) have
+  no source stroke; ramp 0 is allowed for the uniform stage-5 outline.
+- `bg_d` uses only ramps 2/4/10/14; it has no ramp-0 fill, so ramp 0 is not in
+  its allowed set.
+- Source-vs-plan deviations to resolve in Task 3 (recorded, not fixed here):
+  `bg_dock.svg` is authored 640×480 with 17 unique colours while the plan/spec
+  require 640×300 / ≤8 colours; `bg_b.svg` has 10 colours and `bg_c.svg` has 9
+  (both must drop to ≤8); `boat00.svg` uses `#D8E2EA`, which is not a locked
+  palette hex (ramp-0 hi is `#9AAABA`), so it must snap to a locked ramp-0
+  shade; `boat00.svg` portholes are `<circle>` and must become 16/12/8-sided
+  polygons. The allowed sets above are safe supersets for those corrections.
+- **Source key-colour collision (must fix in Task 3).** `wrasse00` source
+  fills/eyes and the `bg_c` glow rectangles use `#6AE0C0`, which is ramp-15 Hi
+  = shade 15 = index 255 = the transparency key. The validator's "allowed
+  ramps ∪ key" rule cannot catch an opaque key-coloured source fill. Remap or
+  re-author those pixels to a non-key shade (shade <=14; recolor `15/15` uses
+  `base[254]`). The allowed ramp sets are unchanged.
+
+**A/V/F ledger (binding).**
+
+- A rows: exactly the 26 names in the table above (11 creature bases, 5 demo
+  backgrounds, `boat00`, 9 cosmetic overlays).
+- V rows: exactly 12. Non-flex: `id2 eel00 6->1`, `id3 eel00 6->5`,
+  `id5 tuna00 7->14`, `id6 tuna00 7->10`, `id11 crab00 8->11`,
+  `id12 jelly00 9->5`. Flex: `id18 anem00 11->5`, `id19 tuna00 7->1`.
+  Boss: `boss00:sliver 10->2`, `boss00:hoard 10->4`, `boss00:drown 10->13`,
+  `boss00:blur 10->5`.
+- F row: `F font8x16 95 16` (not a `.ZSP`; never expect `font8x16.zsp`).
+- Base identity rows (no V): `id1->eel00`, `id4->tuna00`, `id7->crab00`,
+  `id8->jelly00`, `id9->barn00`, `id10->anem00`, `id13->ray00`,
+  `id14->squid00`, `id15->angler00`, `id16->wrasse00`, `id17->boss00`.
+- Every demo def has exactly one mapping (identity A or one V); every V base is
+  an A row; `from_ramp` equals the base `.ZSP` header ramp; no orphan or
+  duplicate V. `A` is the only indexed-byte source; each `V` adds only a
+  512-byte LUT.
+
+**Budgets (binding).** Indexed bytes = `sum(w*h)` over distinct A rows
+(recolors/boss V rows never multiply base pixels). With the table dimensions:
+11×96×96 = 101,376; 5×640×300 = 960,000; 200×150 = 30,000; 9×64×64 = 36,864;
+total **1,128,240 B (~1.08 MiB) ≤ 1.35 MB**. LUT bytes = 512×(26 A + 12 V) =
+**19,456 B**; indexed + LUTs = **1,147,696 B (~1.09 MiB) ≤ 2 MB** sprite
+arena. Each background encoded ≤120 KB; demo RLE disk ≤400 KB; both measured
+after Task 3 conversion. (For reference, §35's roll-up adds font 12 KB and UI
+chrome 60 KB to reach ~1.2 MB indexed + ~6 KB of V LUTs.)
+
+**P19 — no committed tooling outside Z98 + shell.** The SVG→`.ZSP` converter is
+transitory and uncommitted; it never enters the repo and is never a build/test
+dependency. Artifacts of record are the SVG sources, the `.ZSP` files, and
+`assets.man`; CI's only asset gate is the committed Z98
+`undtool --validate-assets`.
+
+**Regeneration recipe (stub; one paragraph, incl. canonical RLE rule).**
+Rasterize each SVG at its declared target size 1:1 with `rsvg-convert` (no
+resampling), composite on ramp-0 shade-0 and map `alpha<128` to index 255,
+enforce the 1px ramp-0/shade-0 outline around the alpha mask, assert every
+pixel is inside the asset's allowed ramps ∪ key, then encode canonical RLE —
+one run per maximal stretch, count 1..255, greedy 255 split for longer
+stretches — into the `.ZSP` header (`ZSP1`, w/h u16 LE, key u8, ramp u8,
+flags=0, reserved=0) + 512-byte RGB565 palette + data runs. The converter is a
+throwaway host script; `undtool --validate-assets` re-decodes, re-encodes and
+byte-compares the data section, so the canonical rule is the single contract.
+
+**Font verification (do not re-import).** `font8x16.zig` is landed and
+verified: `GLYPH_COUNT = 95`, `GLYPHS = [95][16]u8` (95 glyph rows, each
+exactly 16 bytes), ASCII 32..126, 8×16, MSB-left. Provenance recorded in its
+header: IBM VGA/MCGA ROM 8×16 font, file `VGA8.F16` from VileR's public-domain
+VGA text-mode font collection (`FONTS/PC-IBM/VGA8.F16`), URL
+`https://raw.githubusercontent.com/viler-int10h/vga-text-mode-fonts/master/FONTS/PC-IBM/VGA8.F16`,
+sha256 `a8bad6fd78475a6bc2a05438c19207a9bb8c0f4f4099f60384e158cdc3eba580`.
+No font was generated or re-imported in M10.
+
+**Scope.** M10 wires creature sprites + one resident zone background into the
+art fight (backgrounds are wired in M10). Boat render, cosmetic overlays, and
+the score screen stay **M11**; `boat00` is authored/validated in M10 but not
+rendered. `render_art` stays pure (no file I/O). `art_fight.golden` is re-pinned
+exactly once in Task 4 and the M9 tier comment is updated to say M10 re-pinned
+it; terminal/M8/M9 `--dump-grid` goldens stay byte-identical.
+
+**Skeletons.** `assets/` (SVG sources) and `assets/out/` (`.ZSP` outputs) are
+created empty in this task; contents land in Task 3.
+
+### M10 Task 3 — demo art set, corrections, style sign-off
+
+**Artifacts.** `assets/` now holds all 26 authored SVG sources; `assets/out/`
+holds the 26 matching `.zsp` files; `assets/assets.man` is the exact 26 A +
+12 V + `F font8x16 95 16` ledger. No converter, script, or `.py` file is
+committed (P19).
+
+**Conversion provenance (transitory, uncommitted).** `rsvg-convert` was not
+available, so the host used ImageMagick 6 `convert -background none +antialias`
+with raw RGBA output at each SVG's declared 1:1 size (no resampling). The
+throwaway script lived only in `/tmp`; it mapped `alpha<128` to index 255,
+enforced the 1px ramp-0/shade-0 outline on every alpha sprite's mask, asserted
+every non-key pixel was inside that asset's allowed ramps, and wrote canonical
+RLE (one run per maximal stretch, 1..255, greedy 255 split) into `ZSP1` +
+16-byte header + 512-byte RGB565 palette + runs. `+antialias` produced only
+exact palette colours (binary alpha), so no blend/fringe pixels reached the
+encoder. `undtool --validate-assets` re-decoded, re-encoded and byte-compared
+the result: exit 0.
+
+**Source corrections applied.** `boss00` is a fresh 96×96 ramp-10 re-authoring
+(outline 0, body 10, sensor eye 2, lamps 4; the 160×160 ramp-14 source was not
+used). `bg_dock` is re-authored at 640×300 with 7 colours. `bg_b` drops to 8
+colours (the extra ramp-6 band merges into ramp 1; ramp-8 highlights replace
+the ramp-8 Hi speckles). `bg_c` drops to 8 colours and its `#6AE0C0` glow
+rectangles become `#5DD5B5` (ramp-15 shade 14, non-key). `wrasse00`
+fills/eyes likewise move from key `#6AE0C0` to `#5DD5B5`. `boat00` snaps the
+off-palette `#D8E2EA` highlight to ramp-0 Hi `#9AAABA` and replaces the three
+porthole circles with 16/12/8-sided polygons.
+
+**Side-by-side style sign-off.** The 11 bases were reviewed together as one
+set (decoded `.zsp` pixels, six per row): eel00, tuna00, crab00, jelly00,
+barn00, anem00, then ray00, squid00, angler00, wrasse00, boss00. They share the
+same 1px ramp-0 silhouette weight, flat banded shading, centred 96×96 mass,
+and a consistent eye/feature scale; the gray ramp-10 Armor boss reads as the
+same set while staying distinct from the ten coloured bases. No base was
+regenerated; style set **signed off**.
+
+**Budgets (measured after conversion).** Indexed = 1,128,240 B; LUTs =
+512×(26+12) = 19,456 B; indexed + LUTs = 1,147,696 B ≤ 2 MB. Each background
+encoded ≤ 6,044 B (bg_d) ≤ 120 KB. All 26 A files total 62,956 B encoded
+≤ 400 KB. Validator rc 0 on the real manifest + `assets/out`.
+
+### M11 amendment review (M10 Task 6)
+
+Reviewed `2026-11-12-undersanded-m11-boss-score-plan.md` at `4e2c6a4a`
+against the M10 artifacts and spec §15/§19/§30. Verdict: **amendment
+required** for M11's file-list/bookkeeping gaps; **no boss or score design
+change** is needed, and the plan's boss/boat/score ownership matches the
+landed M10 split. The required amendments and plan-text clarifications are
+recorded below.
+
+**Boss contract confirmed.** `assets/out/boss00.zsp` header is **96×96**,
+key 255, ramp **10**; `assets/assets.man` has
+`A boss00 creature 96 96 2250 0,2,4,10`, and exactly four boss V rows:
+`boss00:sliver 10->2`, `boss00:hoard 10->4`, `boss00:drown 10->13`,
+`boss00:blur 10->5`. There is no boss identity V row: `id17` maps to
+`A boss00` (Armor) directly. The five identities are therefore base/Armor
+plus the four V recolors, not five V rows. `validate_assets.zig` pins the
+same ledger, and `assets.zig` decodes the base plus all four boss LUTs into
+the asset arena.
+
+**A/V manifest availability.** `assets.man` is committed with the exact
+26 A + 12 V + `F font8x16 95 16` ledger. All M11-consumed names/ramps are
+present: `boss00` (ramp 10), its four V rows, `boat00` (200×150, header
+ramp 1, allowed `0,1,10`), and the nine 64×64 cosmetic overlays
+(`fig_merm`, `fig_angl`, `fig_krak`, `flag_pen`, `flag_ref`, `flag_trn`,
+`dec_barn`, `dec_sqid`, `dec_boss`). `assets.zig`'s `A_NAMES` pins the
+same order. M11 should note the loader currently exposes `spriteForDef`
+only; boss V rows have symbolic ids (`var_def_ids = -1`), so
+`spriteForDef(17)` always returns Armor, and the overlays have no
+name/index accessor. **Amendment required:** M11 Task 4 needs boss-variant
+and overlay sprites, so the M11 plan must add `assets.zig` to its File
+Structure (or pin an equivalent accessor contract). This is an M11 plan
+file-list gap, not an M10 data gap.
+
+**Boat/score ownership confirmed.** `assets/out/boat00.zsp` and the nine
+overlay `.zsp` files are committed and validated. M10 wires only creature
+sprites plus the resident zone background: `render_art.ArtAssets` carries
+only `bg`/`sprite`, `loop_gfx.artView` only calls `ensureBackgroundZone` +
+`spriteForDef`, and `boss.zig`/`score.zig` do not exist yet. Boat render,
+the blit order (base -> paint ramp -> decal -> figurehead -> flag), the
+overlays, the boss screen, and the three-panel score/Field Record remain
+M11-owned.
+
+**Boat paint amendment (M11).** The authored `boat00` outer hull body bbox is
+**x=30, y=42, w=153, h=67** (inclusive coordinates). Hull paint swaps the
+hull **ramp-0 shades 5/10/15** only (outline shade 0 and porthole ramp 1
+stay). The source mapping is **not** a plain `from_ramp`/`to_ramp` for all
+three paints: **Abyss Teal maps to ramp 1**; **Foam White** and
+**Leviathan Black** are **ramp-0 light/dark shade remaps**, so M11 must pin
+the exact shade LUT before Task 4. This is an M11 amendment, not a design
+change now.
+
+**M11 plan text: required amendments + stale/contradictory items (no design
+change).**
+
+- The plan's "`boss00` sprite × 5 ramp recolors" and "boss screen (5 ramp
+  recolors)" are realized by the base/Armor row plus four V rows (above).
+  Treat Armor as the identity base, not a fifth V row.
+- The architecture line says `boss_variants_seen`, `boss_kills`, and
+  `runReset` are "persisted via M7". `boss_variants_seen`/`boss_kills` (and
+  the Field Record/Last Run rows) are persisted by M7 (`save_io.zig`/
+  `save_scan.zig`); `runReset` is an M5 `world.zig` function, not a saved
+  field. M11 Task 0 already states the correct `runReset` check.
+- M11's File Structure lists `boss.zig`, `score.zig`, `render_art.zig`,
+  `render_term.zig`, tests/goldens but not `assets.zig`. **Amendment
+  required:** add `assets.zig` (or pin an equivalent accessor contract),
+  because current `spriteForDef(17)` returns only the base/Armor boss, boss
+  V rows parse with `def_id=-1`, and overlays have no name/index accessor;
+  M11 Task 4 needs boss-variant and overlay sprites.
+- Tiebreak reminder (not a contradiction): `World.boat` indices are H=0,
+  S=1, C=2, O=3, P=4 (`world.zig`), while the required variant tiebreak is
+  H>P>C>O>S. M11's pinned helper must encode the tiebreak order explicitly,
+  not scan `boat[0..4]` or max the array.
+
+Task 0's existing-state checks are already true in the committed tree:
+`data.z98` id17 has `subdue_chance=-1`, HP 300, Speed 7, Attack 10, and
+respawn kill/overkill 20/40; `def.World` already carries
+`boss_variants_seen`, `boss_kills`, `field_record_written`, `field_record`,
+and `last_run`.

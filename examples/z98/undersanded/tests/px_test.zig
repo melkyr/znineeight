@@ -17,8 +17,8 @@
 //   "$OUT/px_test"
 //
 // Env: ART_GOLDEN  golden checksum path override (used by the tier for its
-//                  non-vacuity mutation; the committed fixture is never
-//                  regenerated).
+//                  non-vacuity mutation; M10 Task 4 re-pinned the committed
+//                  fixture exactly once when sprites/backgrounds were wired).
 
 const io = @import("std_io");
 const os = @import("std_os");
@@ -29,10 +29,13 @@ const game = @import("../game.zig");
 const fight = @import("../fight.zig");
 const render = @import("../render_term.zig");
 const art = @import("../render_art.zig");
+const assets = @import("../assets.zig");
+const creatures = @import("../creatures_t1.zig");
 const perf = @import("../perf.zig");
 const core = @import("std_gfx_px_core.zig");
 
 const GOLDEN_PATH = "examples/z98/undersanded/tests/fixtures/art_fight.golden";
+const ASSETS_DIR = "examples/z98/undersanded/assets";
 const W: usize = 640;
 const H: usize = 480;
 
@@ -153,13 +156,24 @@ fn goldenFight(g: *def.GameState) void {
     };
 }
 
+fn assetView(g: *const def.GameState) art.ArtAssets {
+    var view = art.ArtAssets{ .bg = null, .sprite = null };
+    const a = assets.current() orelse return view;
+    view.bg = assets.ensureBackgroundZone(g.exp.zone);
+    if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
+        const d = creatures.defAt(g.fight.def_index);
+        view.sprite = assets.spriteForDef(a, d.id);
+    }
+    return view;
+}
+
 fn goldenDump() []const u8 {
     var g: def.GameState = undefined;
     goldenFight(&g);
     art.resetFrame();
     const handle = core.gfxPxOpenMemory(W, H) catch return empty_px[0..0];
     var sf = core.pxCoreSurface(handle.opaque);
-    art.renderScreen(&sf, &g, "", true);
+    art.renderScreen(&sf, &g, "", true, assetView(&g));
     return core.gfxPxDump(handle);
 }
 
@@ -275,7 +289,7 @@ fn tSurfaceLostRepaint() bool {
     const handle = core.gfxPxOpenMemory(W, H) catch return false;
     art.resetFrame();
     var sf = core.pxCoreSurface(handle.opaque);
-    art.renderScreen(&sf, &g, "", true);
+    art.renderScreen(&sf, &g, "", true, assetView(&g));
     const c1 = fnv(core.gfxPxDump(handle));
     if (!goldenMatches(c1)) return false;
 
@@ -293,7 +307,7 @@ fn tSurfaceLostRepaint() bool {
 
     art.resetFrame();
     sf = core.pxCoreSurface(handle.opaque);
-    art.renderScreen(&sf, &g, "", true);
+    art.renderScreen(&sf, &g, "", true, assetView(&g));
     const c2 = fnv(core.gfxPxDump(handle));
     core.pxCoreClearFullRepaint(handle.opaque);
     if (core.pxCoreNeedsFullRepaint(handle.opaque)) return false;
@@ -301,6 +315,7 @@ fn tSurfaceLostRepaint() bool {
 }
 
 pub fn main() void {
+    _ = assets.load(ASSETS_DIR);
     const dump = goldenDump();
     const got = fnv(dump);
     io.write("art_fight_checksum=");

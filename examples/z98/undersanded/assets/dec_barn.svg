@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges">
+<g fill="#A8B2BA">
+<polygon points="8,52 14,28 22,20 30,28 34,52"/>
+<polygon points="30,52 36,34 44,26 52,34 56,52"/>
+</g>
+<g fill="#3A4248">
+<polygon points="17,48 22,26 27,48"/>
+<polygon points="39,48 44,32 49,48"/>
+<polygon points="19,22 22,16 25,22 22,25"/>
+<polygon points="41,28 44,22 47,28 44,31"/>
+</g>
+<rect x="6" y="52" width="52" height="4" fill="#A8B2BA"/>
+</svg>

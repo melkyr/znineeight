@@ -22,15 +22,27 @@ const fight = @import("../fight.zig");
 const creatures = @import("../creatures_t1.zig");
 const render = @import("../render_term.zig");
 const art = @import("../render_art.zig");
+const assets = @import("../assets.zig");
 const tween = @import("../tween.zig");
 const font = @import("../font8x16.zig");
+const paths = @import("../paths.zig");
 const core = @import("std_gfx_px_core.zig");
 
+@cInclude("<sys/stat.h>");
+
+extern "c" fn mkdir(path: [*]const u8, mode: u32) i32;
+
 const GOLDEN_PATH = "examples/z98/undersanded/tests/fixtures/art_fight.golden";
+const ASSETS_DIR = "examples/z98/undersanded/assets";
+const MAL_DIR = "/tmp/z98_m10_art_manifest";
+const MAL_OUT = "/tmp/z98_m10_art_manifest/out";
 
 var fails: usize = 0;
 var arena_buf: [64 * 1024]u8 = undefined;
 var arena: arena_mod.Arena = undefined;
+var copy_dir_arena_buf: [16 * 1024]u8 = undefined;
+var copy_file_arena_buf: [64 * 1024]u8 = undefined;
+var copy_man_buf: [16 * 1024]u8 = undefined;
 
 fn report(name: []const u8, ok: bool) void {
     if (ok) {
@@ -123,11 +135,27 @@ fn goldenFight(g: *def.GameState) void {
 
 var empty_px: [1]u8 = [1]u8{0};
 
-fn renderInto(g: *def.GameState, help_text: []const u8, full: bool) []const u8 {
+fn assetView(g: *const def.GameState) art.ArtAssets {
+    var view = art.ArtAssets{ .bg = null, .sprite = null };
+    const a = assets.current() orelse return view;
+    view.bg = assets.ensureBackgroundZone(g.exp.zone);
+    if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
+        const d = creatures.defAt(g.fight.def_index);
+        view.sprite = assets.spriteForDef(a, d.id);
+    }
+    return view;
+}
+
+fn renderIntoView(g: *def.GameState, help_text: []const u8, full: bool,
+    view: art.ArtAssets) []const u8 {
     const handle = core.gfxPxOpenMemory(640, 480) catch return empty_px[0..0];
     var sf = core.pxCoreSurface(handle.opaque);
-    art.renderScreen(&sf, g, help_text, full);
+    art.renderScreen(&sf, g, help_text, full, view);
     return core.gfxPxDump(handle);
+}
+
+fn renderInto(g: *def.GameState, help_text: []const u8, full: bool) []const u8 {
+    return renderIntoView(g, help_text, full, assetView(g));
 }
 
 fn findWidget(g: *def.GameState, kind: i32, slot: i32) art.Widget {
@@ -579,6 +607,163 @@ fn parseHex(text: []const u8) u32 {
     return v;
 }
 
+fn spriteHash(sprite: *const core.Sprite) u32 {
+    const total: usize = @intCast(usize, sprite.w) * @intCast(usize, sprite.h);
+    return fnv(sprite.idx[0..total]);
+}
+
+fn tAssetsDecode() bool {
+    const a = assets.current() orelse return false;
+    if (assets.spriteForDef(a, 1) == null) return false;
+    if (assets.spriteForDef(a, 17) == null) return false;
+    if (assets.spriteForDef(a, 2) == null) return false;
+    if (assets.spriteForDef(a, 19) == null) return false;
+    const base = assets.spriteForDef(a, 1) orelse return false;
+    const recolor = assets.spriteForDef(a, 2) orelse return false;
+    return base.lut != recolor.lut;
+}
+
+fn tBackgroundResidency() bool {
+    if (!assets.load(ASSETS_DIR)) return false;
+    if (assets.backgroundLoaded()) return false;
+
+    const s0 = assets.ensureBackgroundZone(0) orelse return false;
+    if (!assets.backgroundLoaded()) return false;
+    const buf = s0.idx;
+    const h0 = spriteHash(s0);
+    if (spriteHash(assets.ensureBackgroundZone(99) orelse return false) != h0) {
+        return false;
+    }
+
+    const s1 = assets.ensureBackgroundZone(1) orelse return false;
+    if (s1.idx != buf) return false;
+    const h1 = spriteHash(s1);
+    if (h1 == h0) return false;
+
+    const s2 = assets.ensureBackgroundZone(2) orelse return false;
+    if (s2.idx != buf) return false;
+    const h2 = spriteHash(s2);
+    if (h2 == h0 or h2 == h1) return false;
+
+    const s8 = assets.ensureBackgroundZone(8) orelse return false;
+    if (s8.idx != buf) return false;
+    const h8 = spriteHash(s8);
+    if (h8 == h0 or h8 == h1 or h8 == h2) return false;
+
+    const s0b = assets.ensureBackgroundZone(0) orelse return false;
+    return s0b.idx == buf and spriteHash(s0b) == h0;
+}
+
+fn ensureMalDir(path: []const u8) void {
+    var b: [512]u8 = undefined;
+    if (path.len + 1 > b.len) return;
+    var i: usize = 0;
+    while (i < path.len) : (i += 1) b[i] = path[i];
+    b[path.len] = 0;
+    _ = mkdir(@ptrCast([*]const u8, &b[0]), 493);
+}
+
+fn copyZspTree(src_dir: []const u8, dst_dir: []const u8) bool {
+    var dir_arena = arena_mod.init(copy_dir_arena_buf[0..]);
+    var file_arena = arena_mod.init(copy_file_arena_buf[0..]);
+    var d = file_mod.openDir(&dir_arena, src_dir) catch return false;
+    defer file_mod.closeDir(&d);
+    while (true) {
+        const ent = (file_mod.readDir(&dir_arena, &d) catch return false) orelse break;
+        if (ent.is_dir) continue;
+        if (ent.name.len < 5 or !eq(ent.name[ent.name.len - 4 ..], ".zsp")) continue;
+
+        var src_path_buf: [512]u8 = undefined;
+        const src_path = paths.join(src_dir, ent.name, src_path_buf[0..]) orelse return false;
+        arena_mod.reset(&file_arena);
+        const data = file_mod.readAll(&file_arena, src_path) catch return false;
+
+        var dst_path_buf: [512]u8 = undefined;
+        const dst_path = paths.join(dst_dir, ent.name, dst_path_buf[0..]) orelse return false;
+        file_mod.writeAll(dst_path, data) catch return false;
+    }
+    return true;
+}
+
+// Write assets.man to `dst_dir`; when `needle` is non-empty, replace that
+// exact-length line/field sequence with `repl` (used to corrupt one V row).
+fn writeManifestVariant(dst_dir: []const u8, needle: []const u8, repl: []const u8) bool {
+    var man_arena = arena_mod.init(copy_file_arena_buf[0..]);
+    const src = file_mod.readAll(&man_arena, "examples/z98/undersanded/assets/assets.man") catch return false;
+    if (src.len > copy_man_buf.len) return false;
+
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) copy_man_buf[i] = src[i];
+    if (needle.len > 0) {
+        if (needle.len != repl.len) return false;
+        var found = false;
+        i = 0;
+        while (i + needle.len <= src.len) : (i += 1) {
+            var j: usize = 0;
+            while (j < needle.len and copy_man_buf[i + j] == needle[j]) : (j += 1) {}
+            if (j == needle.len) {
+                j = 0;
+                while (j < repl.len) : (j += 1) copy_man_buf[i + j] = repl[j];
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+
+    var path_buf: [512]u8 = undefined;
+    const path = paths.join(dst_dir, "assets.man", path_buf[0..]) orelse return false;
+    file_mod.writeAll(path, copy_man_buf[0..src.len]) catch return false;
+    return true;
+}
+
+fn tMalformedVManifestFallsBack() bool {
+    ensureMalDir(MAL_DIR);
+    ensureMalDir(MAL_OUT);
+
+    var out_buf: [512]u8 = undefined;
+    const src_out = paths.join(ASSETS_DIR, "out", out_buf[0..]) orelse return false;
+    if (!copyZspTree(src_out, MAL_OUT)) return false;
+
+    if (!writeManifestVariant(MAL_DIR, "", "")) return false;
+    if (!assets.load(MAL_DIR) or !assets.available()) return false;
+
+    // V base must be a decoded creature A row, not a lazily loaded background.
+    // from_ramp 0 matches the background base's un-decoded runtime ramp slot,
+    // so only the isCreatureA guard can reject this row.
+    if (!writeManifestVariant(MAL_DIR, "V id2 eel00 6 1", "V id2 bg_a  0 5")) return false;
+    if (assets.load(MAL_DIR)) return false;
+    if (assets.available()) return false;
+
+    // from_ramp must match the decoded creature base .ZSP header ramp.
+    if (!writeManifestVariant(MAL_DIR, "V id2 eel00 6 1", "V id2 eel00 5 1")) return false;
+    if (assets.load(MAL_DIR)) return false;
+    if (assets.available()) return false;
+
+    return assets.load(ASSETS_DIR);
+}
+
+fn tAssetsMissingFallback() bool {
+    if (assets.load("examples/z98/undersanded/tests/fixtures/no_such_assets")) {
+        return false;
+    }
+    if (assets.available()) return false;
+
+    var g: def.GameState = undefined;
+    goldenFight(&g);
+    const none = art.ArtAssets{ .bg = null, .sprite = null };
+    art.resetFrame();
+    const h1 = fnv(renderIntoView(&g, "", true, none));
+    art.resetFrame();
+    const h2 = fnv(renderIntoView(&g, "", true, none));
+    if (h1 != h2) return false;
+
+    if (!assets.load(ASSETS_DIR)) return false;
+    art.resetFrame();
+    const real = fnv(renderInto(&g, "", true));
+    return real != h1;
+}
+
 fn tGolden() bool {
     var g: def.GameState = undefined;
     goldenFight(&g);
@@ -593,6 +778,7 @@ fn tGolden() bool {
 }
 
 pub fn main() void {
+    _ = assets.load(ASSETS_DIR);
     report("font_glyph_blit_pitch_pad", tFontGlyphBlit());
     report("bar_geometry_zero_half_max", tBarGeometry());
     report("bar_dotted_border_numeric", tBarBorderAndNumeric());
@@ -606,6 +792,10 @@ pub fn main() void {
     report("tween_equal_samples", tTweenEqualSamples());
     report("msg_line_parity_all_ids", tMsgLineParity());
     report("modal_help_deterministic", tModalHelpDeterministic());
+    report("assets_manifest_decode_26a_12v", tAssetsDecode());
+    report("background_one_resident_slot", tBackgroundResidency());
+    report("assets_missing_fallback_deterministic", tAssetsMissingFallback());
+    report("assets_malformed_v_manifest_falls_back", tMalformedVManifestFallsBack());
     report("golden_art_fight_640x480", tGolden());
 
     if (fails != 0) os.exit(1);

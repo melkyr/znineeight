@@ -35,6 +35,7 @@ const content_boot = @import("content_boot.zig");
 const persist = @import("persist.zig");
 const text_scan = @import("text_scan.zig");
 const fallback_emit = @import("fallback_emit.zig");
+const validate_assets = @import("validate_assets.zig");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
@@ -54,6 +55,9 @@ var g_rt_arena_buf: [256 * 1024]u8 = undefined;
 // --emit-fallback writes through a separate arena so the loaded content arena
 // stays untouched for the deterministic source dump.
 var g_emit_arena_buf: [256 * 1024]u8 = undefined;
+
+// --validate-assets owns its manifest arena and must not install content.
+var g_validate_arena_buf: [64 * 1024]u8 = undefined;
 
 fn tryLoadContent() void {
     var dir_buf: [512]u8 = undefined;
@@ -324,6 +328,21 @@ fn baseName(path: []const u8) []const u8 {
     return path;
 }
 
+// Directory part of a path (no trailing separator); "" for a bare filename.
+fn dirOf(path: []const u8, out: []u8) ?[]const u8 {
+    var i: usize = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/' or path[i] == '\\') {
+            if (i > out.len) return null;
+            var j: usize = 0;
+            while (j < i) : (j += 1) out[j] = path[j];
+            return out[0..i];
+        }
+    }
+    return out[0..0];
+}
+
 fn reservedSaveName(path: []const u8) bool {
     const b = baseName(path);
     if (eqNoCase(b, "save.tmp")) return true;
@@ -405,6 +424,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_dump_defs = false;
     var have_save_roundtrip = false;
     var have_emit_fallback = false;
+    var have_validate_assets = false;
     var have_screen = false;
     var have_play = false;
     var have_fight = false;
@@ -418,6 +438,8 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var defs_path: []const u8 = "";
     var roundtrip_path: []const u8 = "";
     var fallback_dir: []const u8 = "";
+    var validate_path: []const u8 = "";
+    var validate_assets_dir: []const u8 = "";
     var screen_id: []const u8 = "";
 
     const nargs = os.argc();
@@ -470,6 +492,22 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             }
             roundtrip_path = os.argv(i);
             have_save_roundtrip = true;
+        } else if (eq(a, "--validate-assets")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --validate-assets needs a manifest path");
+                return;
+            }
+            validate_path = os.argv(i);
+            have_validate_assets = true;
+            if (i + 1 < nargs and !startsFlag(os.argv(i + 1))) {
+                i += 1;
+                validate_assets_dir = os.argv(i);
+                if (i + 1 < nargs and !startsFlag(os.argv(i + 1))) {
+                    fail("undtool: --validate-assets takes at most a manifest and assets directory");
+                    return;
+                }
+            }
         } else if (eq(a, "--screen")) {
             i += 1;
             if (i >= nargs) {
@@ -529,11 +567,25 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         }
     }
 
-    // Every mode except --dump-defs, --save-roundtrip and --emit-fallback runs
-    // with data.z98 beside the exe when it is there; a bad file never fails the
-    // tool (fallback stays installed). Those three modes handle content
-    // themselves and must not install an override as a side effect.
-    if (!have_dump_defs and !have_save_roundtrip and !have_emit_fallback) tryLoadContent();
+    // Every mode except --dump-defs, --save-roundtrip, --emit-fallback and
+    // --validate-assets runs with data.z98 beside the exe when it is there; a
+    // bad file never fails the tool (fallback stays installed). Those modes
+    // handle content themselves and must not install an override as a side
+    // effect.
+    if (!have_dump_defs and !have_save_roundtrip and !have_emit_fallback and !have_validate_assets) tryLoadContent();
+
+    // --validate-assets is exclusive with every other mode. Check this before
+    // the emit branch so a combined invocation cannot install content or write
+    // fallback_rows.zig.
+    if (have_validate_assets) {
+        if (have_test_rules or have_replay or have_dump_grid or have_dump_defs or
+            have_save_roundtrip or have_emit_fallback or have_screen or have_sim or
+            have_creature or have_seed or have_hull or have_play or have_fight)
+        {
+            fail("undtool: --validate-assets cannot be combined with other flags");
+            return;
+        }
+    }
 
     if (have_emit_fallback) {
         os.exit(emitFallback(fallback_dir));
@@ -548,8 +600,8 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             return;
         }
         if (have_test_rules or have_replay or have_dump_grid or have_dump_defs or
-            have_save_roundtrip or have_emit_fallback or have_screen or have_sim or
-            have_creature or have_seed or have_hull)
+            have_save_roundtrip or have_emit_fallback or have_validate_assets or
+            have_screen or have_sim or have_creature or have_seed or have_hull)
         {
             fail("undtool: --play/--fight cannot be combined with tool flags");
             return;
@@ -560,6 +612,33 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             nav.navRun(&s);
         } else {
             fight_console.run();
+        }
+        os.exit(0);
+        return;
+    }
+
+    if (have_validate_assets) {
+        var arena = arena_mod.init(g_validate_arena_buf[0..]);
+        const man = file_mod.readAll(&arena, validate_path) catch {
+            fail("undtool: --validate-assets cannot read manifest");
+            return;
+        };
+        var dir_buf: [512]u8 = undefined;
+        var dir = validate_assets_dir;
+        if (dir.len == 0) {
+            dir = dirOf(validate_path, dir_buf[0..]) orelse {
+                fail("undtool: --validate-assets manifest path too long");
+                return;
+            };
+        }
+        const err = validate_assets.validateManifest(man, dir);
+        if (err != .Ok) {
+            var msg: [200]u8 = undefined;
+            var p: usize = 0;
+            text_scan.appendText(msg[0..], &p, "undtool: --validate-assets invalid: ");
+            text_scan.appendText(msg[0..], &p, validate_assets.errorText(err));
+            fail(msg[0..p]);
+            return;
         }
         os.exit(0);
         return;
