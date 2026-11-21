@@ -2143,3 +2143,241 @@ Task 0's existing-state checks are already true in the committed tree:
 respawn kill/overkill 20/40; `def.World` already carries
 `boss_variants_seen`, `boss_kills`, `field_record_written`, `field_record`,
 and `last_run`.
+
+## M10.1 preflight
+
+Baseline at `5c8597f1` (branch `undersanded/m10.1`), compiler
+`/tmp/seed151_build/zig1_5_clean` (seed v151), md5
+`a2fc81055dc1cb7a67099fe3934d22ee`:
+
+```
+TIER_M10 PASS 71 passed / 0 failed
+TIER_EDIT PASS 38 passed / 0 failed
+```
+
+Task 0 changes only this file. No product code, plan, spec, test, or golden is
+edited. Console boot is recorded here as a test-only ruling, not fixed.
+
+**P30 M10.1 UX rulings (user-authorized).** (1) one M10.1 milestone covers all
+UX tasks; (2) `undtool.exe --play` may skip boot — it is test-only;
+`under.exe` is the real game; record, do not fix; (3) subdue success always
+shows `NAV_SUBDUE_INTRO` and `[C]ontinue`; settlement keys are **1/2**, never
+R/S; (4) one-action status line in terminal and window row 29, exact copy in
+§7.1; (5) help pages 1–9 with the §7.1 page map, `[?]` on every screen,
+`[J]ournal` on dock/field; (6) lore wraps, save-error `[F]resh` confirms erase;
+(7) silent mechanics get visible feedback (rough sleep, wariness, grudge, rare
+chance, lockout, Heavy, sale, respawn, phase); (8) art subdue intro is a modal
+over the last fight frame; (9) tool/upgrade/cosmetic effects get in-game copy;
+(10) art polish, Esc menu (M12), boss journal wiring (M11), `legend.1/2` and
+`zone.4..8` (M13/M16) stay deferred.
+
+**Status-line rule (§7.1).** Every field action leaves a one-line result; no
+screen change is unexplained. The status line is identical in terminal and
+window: terminal prints it after the frame; window renders it on cell row 29.
+It lives for one action and is cleared at the start of the next key, including
+no-ops. A subdue success is an explicit intro, not an immediate screen swap;
+art mode draws it as a modal over the last fight frame. The fight log remains
+the in-fight record; the status line never overwrites a live art log.
+
+**Subdue flow / settlement (§7.1, §9.3, §9.7).**
+
+1. `NAV_SUBDUE_INTRO` — art: modal over the last fight frame; cell: full screen:
+   `SUBDUED <name>` / `Secured: <parts>` / `[C]ontinue`.
+   Only `C`/`c` advances. `1`/`2`/`R`/`S` and other keys do nothing.
+2. `NAV_SETTLE` — header `UNDERSANDED  SETTLE`:
+   `Subdued <name>` / `Secured: <parts>`
+   `[1] Release - parts kept; rare chance +8 where rares exist (cap +40); returns +15 Resolve`
+   `[2] Sell - parts kept; +<sale> coins`
+   Keys are **1/2**, never `R`/`S`: node `R`=Rest and `S`=Surface must not
+   collide with an irreversible choice. No stale Rest hint.
+3. After the choice, one status line:
+   `Released <name> - parts kept; +15 Resolve next time.`
+   `Sold <name> for <sale> coins - parts kept.`
+
+The §9.3 rare/named subdue modal keeps HP/Resolve/Hull visible and states
+`+25% Resolve, +25% Attack, +2 Speed (cap +6)`; `[A] Attempt`, `[F] Fight on /
+decline`, `[Esc] Decline` (F and Esc are identical, consume no RNG, and record
+as `decline`). If Thrash is live when declining, log *"You hold off. Its will
+begins to recover."* §9.7: Release = +8 pp node rare chance per release, cap
++40 pp, resets on a rare encounter in that node; the creature returns warier at
+the next fight only (`res`/`max_res` +15, then the wary bit clears). Sell pays
+its sale price; normal renewal. Parts are kept either way; zones with no rares
+(the tutorial zone) get no rare effect.
+
+**Exact §7.1 field status copy.**
+
+| Event | Copy |
+| :--- | :--- |
+| Depart | `Departed to <zone> - travel <t> out, <t> back (+1 depart action).` |
+| Hunt kill | `Killed <name>.` (node `Secured:` line carries the parts) |
+| Hunt overkill | `Overkilled <name> - the rarest line is ruined.` |
+| Creature flee | `The creature fled - no loot; it renews.` |
+| Player flee | `You fled - no loot; returned to dock.` |
+| Hull 0 | `Emergency ascent - Hull 0; returned to dock.` |
+| Node Rest | `Rested at the node: +<n> Hull.` |
+| Rough sleep | `Rough sleep (<condition>): <effect>.` |
+| Dock Rest | `Rested at dock: +<n> Hull.` |
+| Surface | `Returned to dock - travel <t> phases.` |
+| No fights | `No fights left - surface or rest.` |
+| Empty pool | `Nothing answers the hook here.` |
+| Boss locked | `The Derelict is silent - <seen>/6 species seen.` |
+| EQUIP refused | `No tool selected.` / `Tool is broken.` / `No charge left.` / `Tool is rigged - always on.` |
+
+Fight-ending copy must survive the screen change: kill/overkill/flee/ascent/
+creature-flee use the status line above; subdue uses the settlement intro.
+**Silent state is forbidden.** Release/Sell effects, wariness, grudge, rare
+chance, lockout, Heavy travel, sale price, rough-sleep condition, respawn
+availability, and phase/cycle must have a visible surface (status line,
+node/map line, help copy, or fight log). Heavy is included in the map's
+displayed travel cost.
+
+**Help / manual (§7.1, §18).** Every screen footer shows `[?] Help`; dock/field
+screens show `[J]ournal` when a save is active. `?` opens the manual page for
+the screen and consumes no action/RNG. Pages are **1–9**; page 9 is Journal &
+Speed.
+
+Page map (exact): DOCK 1 · MAP 5 · NODE 5 · FIGHT/SUBDUE/SUBDUE_POST 2 ·
+SUBDUE_INTRO/SETTLE 3 · REFINE/UPGRADE 4 · CRAFT/TOOLS 6 · JOURNAL 9 · BUY 8 ·
+LORE/MENU/SAVE_ERR 1.
+
+`manual.3` covers Release/Sell; `manual.5` covers rough sleep and phases;
+`manual.6` describes each tool; `manual.7` covers the boss gate; `manual.9`
+covers the Journal and Speed reveal. `SPD ??` is explained on page 9 (journal)
+and page 2 (Sonar). The Esc menu remains M12; M10.1 leaves dock Esc=Save /
+`q`=Quit unchanged and adds no mid-fight menu.
+
+**Boot/save safety copy.** First-run lore wraps at 80 columns, preserving `\n\n`
+paragraph breaks; `dump_grid_lore.golden` is re-pinned. Save-error `[F]resh`
+asks `Erase this save? [Y] [N]`; only `Y` erases, `N` returns (new
+`boot_pending=2`). This is an explicit confirm, not a one-key erase.
+
+**Console boot skip is test-only.** `undtool.exe` and native `undtool.nix
+--play` start at the dock; they do not run the lore/menu/save-error boot. This
+is a test affordance, not the shipped experience: `under.exe` is the real game
+and always runs the shared boot machine. No console boot is implemented in
+M10.1; record only.
+
+**Goldens expected to change (intentional only).**
+
+- New: `tests/fixtures/dump_grid_subdue.golden`,
+  `tests/fixtures/dump_grid_settle.golden`.
+- `dump_grid_fight.golden`: red-zone `|` marker, `COND` line, `[E] Use tool`.
+- `dump_grid_dock.golden`, `dump_grid_map.golden`, `dump_grid_node.golden`:
+  new §7.1 copy/status, phase/cycle, rare/lockout/pool, Heavy travel, help and
+  Journal hints.
+- `dump_grid_help.golden`: pages 1–9 and the corrected page map.
+- `dump_grid_lore.golden`: 80-column wrap.
+- `dump_grid_journal.golden`, `dump_grid_menu.golden`: only where the
+  Journal/Speed or `[?]` hint copy appears.
+- `art_fight.golden`: at most **one** intentional re-pin, only if the new
+  copy/status requires it.
+
+**Normal-screen goldens that must not drift.** The normal art fight frame is
+not the subdue intro: the intro modal is a new state and must not alter the
+ordinary fight golden except for the single permitted copy-driven re-pin above.
+Behavior/data gates stay untouched: `defs_golden.txt`,
+`defs_boss_golden.txt`, replay (`replay_eel_98.rep` and replay golden), save
+fixtures/goldens (no save field/version change), decoded asset goldens,
+`px_core_test` 320×200 framebuffer, and `loop_golden.txt` unless the new §7.1
+copy actually appears in the loop output. No RNG draw, phase count, save
+field/version, or fight-resolution change; `canSave` semantics stay as M7.
+
+**Deferred (not M10.1).** Full art polish; Esc menu (M12); boss journal wiring
+(M11); `legend.1/2`, `zone.4..8`, and `error.*` (M13/M16).
+
+### M11 amendment review (M10.1 Task 10)
+
+Reviewed `2026-11-12-undersanded-m11-boss-score-plan.md` at `f805d8ba`
+against the landed M10.1 tree and spec §7.1/§15/§19/§30. Verdict:
+**amendment required** for integration and file-list text; **no boss or score
+design change** is needed. The M10 review's amendments still stand; this review
+adds the M10.1-specific items below.
+
+**1. New status/event and help plumbing (M11 amendment).** M10.1 added
+`def.NAV_SUBDUE_INTRO=24` (`def.zig:269`), so the next free nav id is **25**.
+M11's score/credits screens must allocate ids >=25 and join **both** M10.1 NAV
+allow-lists: `nav.navRun` (`nav.zig:929-935`) and `loop_gfx.navRunGfx`
+(`loop_gfx.zig:233-239`). (`nav.navRunGfx` does not exist.) Also update
+`loop_gfx.artMode` (`loop_gfx.zig:130-136`) and the screen routing.
+`NAV_SUBDUE_INTRO` is a non-boss path (`subdue_chance=-1`); boss kills still use
+the shared post-fight path. `GameState.last_event/last_event_def/last_event_value`
+are transient (`def.zig:193-196`); `EV_NONE=0` through `EV_BOSS_LOCKED=16`
+(`def.zig:285-303`); `navConsumeEvent` (`nav.zig:149`) fills `NavState.field_msg`
+and `navResultLine` (`nav.zig:868`) prints it in terminal plus window row 29
+(`setRow29`, `loop_gfx.zig:75-88`, used at `191`/`295`); art uses `drawNotice`
+(`render_art.zig:682`). `EV_SUBDUE` deliberately emits no status because the
+intro owns it. M11 must set `EV_KILL`/`EV_OVERKILL` or deliberately transition
+to the score screen, reuse `EV_BOSS_LOCKED` for the six-species gate (exact copy
+is already in the M10.1 NOTES), and make boss phase/variant/respawn changes
+visible under §7.1 rather than silently changing state. Existing page 8 is
+already `BUY`/`manual.8` ("Cosmetics & Score"): M11 must map score/boat to that
+existing page and extend `manual.8` (not add a new page), choose a credits page,
+and give every new screen `[?] Help`. Do not let the art status row erase a live
+fight log; decide whether the boss-kill status survives into the score
+transition or is intentionally replaced.
+
+**2. `assets.zig` accessors and M11 file-list additions.** The public surface
+is only `spriteForDef`, `ensureBackgroundZone`, `backgroundLoaded`, `current`,
+`available` (`assets.zig:84-97,269-290,433-440`). `spriteForDef(17)` always
+returns base/Armor; boss V rows are symbolic (`var_def_ids=-1`), and there is
+no accessor for the nine `fig_*`/`flag_*`/`dec_*` overlays or `boat00`. M11
+Task 4 needs boss-variant and overlay/boat sprites, so add `assets.zig`
+accessors (for example by A index/name plus boss variant id) and extend
+`render_art.ArtAssets` beyond `bg`/`sprite`; `ArtAssets` is built in
+`loop_gfx.artView` (`loop_gfx.zig:140-149`). The M11 File Structure must add at
+least `assets.zig`, `loop_gfx.zig`, `nav.zig`, `journal.zig`, `expedition.zig`
+(boss route/flow), `undtool.zig` (a `--screen score|boat` dump path; today
+`dumpFixedScreen` knows only dock/map/node/subdue/settle/lore/menu/help/journal,
+`undtool.zig:195-245`), and `def.zig` if new nav ids/events are added. For the
+new `[text]` vocabulary (item 6) it must also add `data_schema.zig`, `data.z98`,
+`tests/data_load_test.zig`, and `defs_golden.txt`. The already-listed
+`boss.zig`/`score.zig`/`render_*`/tests/goldens remain.
+
+**3. Boat hull bbox and paint LUT to pin.** Re-affirm the M10 review: the
+authored `boat00` outer hull body bbox is **x=30, y=42, w=153, h=67**
+(inclusive). Only hull ramp-0 shades **5/10/15** change; outline shade 0 and
+the porthole ramp 1 stay. The base SVG uses ramp-0 shade 5 `#2A3A4A`, shade 10
+`#5A6A7A`, and shade 15 `#9AAABA`. **`boat00.zsp` header ramp is 1**, so M11
+must pin the hull `from_ramp=0` (or a custom hull LUT) explicitly; do not use
+the asset header ramp for the hull swap. **Abyss Teal** is a ramp-0 to ramp-1
+swap at those same shades (ramp 1 `#0E5A72`/`#1E9AB8`/`#5FD4EC`). **Foam White**
+and **Leviathan Black** are ramp-0 light/dark shade remaps, not plain ramp
+swaps. The spec only says "Paint = ramp swap on the hull region", so M11 must
+pin and record the **exact three-shade LUT** (which base shade maps to which
+target shade) before Task 4, then re-blit clipped to this rect with
+`pxCoreBlitPart`/`gfxPxBlitPart`. Do not derive it at runtime. Ramp-0
+hull-shaded pixels also exist **outside** the bbox (bow/stern/cabin regions);
+M11 must record whether clipping to `x=30,y=42,w=153,h=67` is intentional or
+whether those bow/stern/cabin regions also repaint.
+
+**4. `journalOnBossKill` wiring (M11 amendment).** `journalOnBossKill` exists
+(`journal.zig:80-88`) but has **no production caller**; `journalOnFightEnd`
+explicitly returns for the boss (`journal.zig:72-78`), and only the test calls
+the boss hook (`tests/journal_test.zig:149-155`). The boss is load-order index
+18, so the hook unlocks `journal.19` (`journal.zig:137`). M11 must call it
+exactly on the boss **kill** path (not overkill, flee, ascent or subdue), before
+or with the score snapshot, and add a production-path test. The M10.1 deferred
+list still records boss journal wiring as M11.
+
+**5. Stale M11 Task 2 text.** The gate, telegraph, zone D, travel cost 5, and
+20/40 respawn **already landed**: `render.bossGateOpen`/`seenNonBossCount`
+(`render_term.zig:284-296`), the map gate branch (`nav.zig:518-527`), the
+`Hull 150+ recommended.` node/map text (`render_term.zig:670-672`), zone D as
+`The Derelict` (`render_term.zig:252`; `data.z98` id=8 cost=5 boss=1), and the
+boss row `respawn_kill=20`/`respawn_over=40` consumed by `world.markTaken`
+(`world.zig:171-193`). M11 Task 2 should verify these and add only variant
+selection, the 1-fight boss cap, and integration tests, not reimplement the
+gate/telegraph/zone/cost/respawn.
+
+**6. Other stale M11 text found.** M11 Task 0 says to add the five boss Phase-2
+flavor lines and twelve cosmetic descriptions as `[text]` copy, but
+`data_schema.textKeyKnown` (`data_schema.zig:331-353`) only accepts
+`manual.1..9`, `journal.1..19`, `legend.1..2`, `zone.1..9`, and `error.1..6`.
+M11 must add a key vocabulary for those 17 lines and update `data.z98`, the
+`data_load_test` text count of 34 (`tests/data_load_test.zig:235`), and
+`defs_golden.txt` (all four files must join the M11 File Structure per item 2).
+The plan's "`boss00` sprite × 5 ramp recolors" wording is still the base/Armor
+row plus four V rows (prior review). Also `World.runReset` exists
+(`world.zig:199-204`) but is **not called from the Derelict kill yet**; that
+wiring belongs to M11's boss-kill integration, not Task 0 preflight, as the
+prior review already recorded.

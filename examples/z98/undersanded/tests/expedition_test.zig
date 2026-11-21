@@ -932,12 +932,37 @@ fn tSecuredExactlyOnce() bool {
     var snap: [def.MAX_PARTS]i32 = undefined;
     copyHold(&snap, &g.exp.hold);
 
-    // Second settle attempt is a no-op: marker clear, no extra log or loot.
+    // A second field action is non-settlement: it never logs or loots again,
+    // and the previous haul's stale Secured line clears.
     expedition.expeditionStep(&g, expedition.EXP_REST);
-    if (countSecured(&g) != 1) return false;
+    if (countSecured(&g) != 0) return false;
     if (!holdEqual(&snap, &g.exp.hold)) return false;
     if (g.fight.def_index != def.NO_FIGHT) return false;
     return true;
+}
+
+fn tSettlementChoiceKeepsSecured() bool {
+    var g = realSubdue(REAL_SEED);
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    if (countSecured(&g) != 1) return false;
+    var buf: [256]u8 = undefined;
+    if (render.securedLine(&g, buf[0..]).len == 0) return false;
+
+    expedition.resolveSubdueChoice(&g, expedition.SUB_RELEASE);
+    if (countSecured(&g) != 1) return false;
+    return render.securedLine(&g, buf[0..]).len != 0;
+}
+
+fn tFieldActionClearsStaleSecured() bool {
+    var g = realSubdue(REAL_SEED);
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    expedition.resolveSubdueChoice(&g, expedition.SUB_SELL);
+    if (countSecured(&g) != 1) return false;
+
+    expedition.expeditionStep(&g, expedition.EXP_REST);
+    if (countSecured(&g) != 0) return false;
+    var buf: [256]u8 = undefined;
+    return render.securedLine(&g, buf[0..]).len == 0;
 }
 
 fn tDockRest() bool {
@@ -1018,6 +1043,8 @@ pub fn main() void {
     report("depart_parks_no_fight_state", tDepartParksNoFight());
     report("secured_line_no_entry_empty", tSecuredNoEntryEmpty());
     report("secured_awards_exactly_once", tSecuredExactlyOnce());
+    report("settlement_choice_keeps_secured", tSettlementChoiceKeepsSecured());
+    report("field_action_clears_stale_secured", tFieldActionClearsStaleSecured());
     report("dock_rest_heal_phase_no_condition_rng", tDockRest());
 
     if (fails != 0) os.exit(1);

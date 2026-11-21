@@ -238,7 +238,7 @@ Every field action leaves a one-line result; no screen change is unexplained. Th
 | Event | Copy |
 | :--- | :--- |
 | Depart | `Departed to <zone> - travel <t> out, <t> back (+1 depart action).` |
-| Hunt kill | `Killed <name> - Secured: <parts>.` |
+| Hunt kill | `Killed <name>.` (the node's `Secured:` line carries the parts) |
 | Hunt overkill | `Overkilled <name> - the rarest line is ruined.` |
 | Creature flee | `The creature fled - no loot; it renews.` |
 | Player flee | `You fled - no loot; returned to dock.` |
@@ -252,7 +252,7 @@ Every field action leaves a one-line result; no screen change is unexplained. Th
 | Boss locked | `The Derelict is silent - <seen>/6 species seen.` |
 | EQUIP refused | `No tool selected.` / `Tool is broken.` / `No charge left.` / `Tool is rigged - always on.` |
 
-**Fight-ending copy** must survive the screen change: kill/overkill/flee/ascent/creature-flee use the status line above; subdue uses the settlement intro. The fight log remains the in-fight record.
+**Fight-ending copy** must survive the screen change: kill/overkill/flee/ascent/creature-flee use the status line above; subdue uses the settlement intro. The fight log remains the in-fight record. Kill/overkill status never duplicates the parts list: the node's `Secured:` line is the parts surface, so the boss kill fits the one-line status.
 
 **Silent state is forbidden.** Release/Sell effects, wariness, grudge, rare chance, lockout, Heavy travel, sale price, rough-sleep condition, respawn availability, and phase/cycle must have a visible surface (status line, node/map line, help copy, or fight log). Heavy is included in the map's displayed travel cost.
 

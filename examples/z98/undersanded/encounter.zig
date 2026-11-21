@@ -165,6 +165,18 @@ pub fn apportion(w: *def.World, zone: i32, out_def: *[def.MAX_ENCOUNTER]i32, out
     return n;
 }
 
+// Count the species currently available in the node/phase pool. Pure read:
+// no weights are apportioned and no RNG is drawn.
+pub fn availableCount(w: *const def.World, zone: i32) i32 {
+    const pool = tables.rows(zone, w.phase);
+    var n: i32 = 0;
+    var i: usize = 0;
+    while (i < pool.len) : (i += 1) {
+        if (world.available(w, zone, pool[i].def_index)) n += 1;
+    }
+    return n;
+}
+
 // Roll one encounter. False means the pool was empty (safe Rest).
 pub fn rollEncounter(w: *def.World, zone: i32, out: *i32) bool {
     var defs: [def.MAX_ENCOUNTER]i32 = undefined;

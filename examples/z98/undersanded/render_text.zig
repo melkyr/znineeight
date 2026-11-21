@@ -7,6 +7,8 @@
 const def = @import("def.zig");
 const fight = @import("fight.zig");
 const items = @import("items.zig");
+const tools = @import("tools.zig");
+const creatures = @import("creatures_t1.zig");
 
 pub const COLS: usize = 80;
 pub const ROWS: usize = 30;
@@ -110,6 +112,24 @@ pub fn creatureName(d: *const def.CreatureDef) []const u8 {
     return d.name[0..@intCast(usize, d.name_len)];
 }
 
+pub fn conditionName(cond: i32) []const u8 {
+    switch (cond) {
+        def.COND_DROWSY => return "Drowsy",
+        def.COND_SHAKY => return "Shaky",
+        def.COND_EXPOSED => return "Exposed",
+        else => return "none",
+    }
+}
+
+pub fn conditionEffect(cond: i32) []const u8 {
+    switch (cond) {
+        def.COND_DROWSY => return "Strike -20%",
+        def.COND_SHAKY => return "overkill margin halved",
+        def.COND_EXPOSED => return "incoming damage +25%",
+        else => return "none",
+    }
+}
+
 pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
     var p: usize = 0;
     switch (e.msg_id) {
@@ -189,11 +209,53 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " Hull.");
         },
+        def.MSG_TOOL_BROKEN => {
+            p = copyInto(out, p, "Your ");
+            p = copyInto(out, p, toolName(e.a));
+            p = copyInto(out, p, " breaks - disabled for this expedition.");
+        },
+        def.MSG_EQUIP_REFUSED => {
+            if (e.a == tools.REFUSE_NO_TOOL) {
+                p = copyInto(out, p, "No tool selected.");
+            } else if (e.a == tools.REFUSE_BROKEN) {
+                p = copyInto(out, p, "Tool is broken.");
+            } else if (e.a == tools.REFUSE_NO_CHARGE) {
+                p = copyInto(out, p, "No charge left.");
+            } else if (e.a == tools.REFUSE_RIGGED) {
+                p = copyInto(out, p, "Tool is rigged - always on.");
+            } else {
+                p = copyInto(out, p, "Tool cannot be used.");
+            }
+        },
+        def.MSG_BLIND_ARMED => {
+            p = copyInto(out, p, "The creature aims to blind - your next Strike may miss.");
+        },
         def.MSG_BLIND => {
-            p = copyInto(out, p, "Blinded - the next Strike misses.");
+            p = copyInto(out, p, "Blinded - your Strike misses.");
+        },
+        def.MSG_INK_ARMED => {
+            p = copyInto(out, p, "Ink clouds the water - your next action may be forced.");
         },
         def.MSG_INK => {
-            p = copyInto(out, p, "Ink clouds the water - your action is chosen for you.");
+            if (e.a == def.ACT_RESTRAIN) {
+                p = copyInto(out, p, "Ink forces you to Restrain.");
+            } else if (e.a == def.ACT_EQUIP) {
+                p = copyInto(out, p, "Ink forces you to use your tool.");
+            } else {
+                p = copyInto(out, p, "Ink forces you to Strike.");
+            }
+        },
+        def.MSG_SUPPRESS_LURE => {
+            p = copyInto(out, p, "Lure: blind or decoy prevented.");
+        },
+        def.MSG_SUPPRESS_SONAR => {
+            p = copyInto(out, p, "Sonar: ink prevented.");
+        },
+        def.MSG_SUPPRESS_HOOK => {
+            p = copyInto(out, p, "Pressure Hook: flee prevented.");
+        },
+        def.MSG_SUPPRESS_SHIELD => {
+            p = copyInto(out, p, "Coral Shield: discharge prevented.");
         },
         def.MSG_DECOY => {
             p = copyInto(out, p, "Your Strike tears through a decoy.");
@@ -232,6 +294,16 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
                 p = copyInto(out, p, ".");
             }
         },
+        def.MSG_WARY => {
+            p = copyInto(out, p, "This one remembers: +15 Resolve.");
+        },
+        def.MSG_GRUDGE => {
+            if (e.a == creatures.GRUDGE_ARMOR) {
+                p = copyInto(out, p, "It remembers the last run: armor drops to 30%.");
+            } else {
+                p = copyInto(out, p, "It remembers the last run: +30 Resolve.");
+            }
+        },
         else => {
             if (def.messageText(e.msg_id)) |text| {
                 p = copyInto(out, p, text);
@@ -252,12 +324,26 @@ pub fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureD
     x = putInt(sc, x, 3, d.subdue_chance);
     _ = put(sc, x, 3, "% chance");
 
-    _ = put(sc, 2, 5, "Failure triggers a Last Surge: its will");
-    _ = put(sc, 2, 6, "partly returns, it hits harder and moves");
-    _ = put(sc, 2, 7, "faster. The fight goes on.");
+    x = put(sc, 2, 4, "HP ");
+    x = putInt(sc, x, 4, s.fight.hp);
+    x = put(sc, x, 4, "/");
+    x = putInt(sc, x, 4, s.fight.max_hp);
+    x = put(sc, x, 4, "  RES ");
+    x = putInt(sc, x, 4, s.fight.res);
+    x = put(sc, x, 4, "/");
+    x = putInt(sc, x, 4, s.fight.max_res);
+    x = put(sc, x, 4, "  HULL ");
+    x = putInt(sc, x, 4, s.fight.hull);
+    x = put(sc, x, 4, "/");
+    _ = putInt(sc, x, 4, s.fight.max_hull);
 
-    _ = put(sc, 2, 9, "[A]ttempt   [F] Fight on   [Esc] Cancel");
-    _ = s;
+    _ = put(sc, 2, 6, "Failure triggers a Last Surge:");
+    _ = put(sc, 2, 7, "+25% Resolve, +25% Attack, +2 Speed (cap +6).");
+    _ = put(sc, 2, 8, "It hits harder and moves faster. The fight goes on.");
+
+    _ = put(sc, 2, 10, "[A] Attempt   [F] Fight on / decline");
+    _ = put(sc, 2, 11, "[Esc] Decline");
+    _ = put(sc, 2, 13, "[?] Help");
 }
 
 pub fn toolName(id: i32) []const u8 {
@@ -277,6 +363,20 @@ pub fn toolKindName(kind: i32) []const u8 {
     if (kind == def.TOOL_KIND_ACTIVATED) return "activated";
     if (kind == def.TOOL_KIND_RIGGED) return "rigged";
     return "unknown";
+}
+
+// One-line in-game effect copy (spec §10/§18); used by Craft and Tools.
+pub fn toolEffect(id: i32) []const u8 {
+    switch (id) {
+        1 => return "Negates armor; halves the Derelict's cannon volley.",
+        2 => return "Restrain ignores Shell and phasing reduction.",
+        3 => return "Stuns the creature for one turn.",
+        4 => return "Reveals phase or the real target; prevents blind and decoy.",
+        5 => return "Prevents creature flee.",
+        6 => return "Reveals Speed and next action; prevents ink; shows the flip.",
+        7 => return "Negates discharge-type Hull damage.",
+        else => return "No effect.",
+    }
 }
 
 pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
@@ -305,7 +405,15 @@ pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
 }
 
 pub fn putTextBlock(sc: *Screen, y0: i32, text: []const u8, y_limit: i32) void {
-    const width: usize = 78;
+    putTextBlockWidth(sc, y0, text, y_limit, 78);
+}
+
+// Shared paragraph-aware wrapper: authored '\n' breaks, '\n\n' keeps a
+// paragraph gap, and long lines wrap at a space (or hard-split a token) within
+// max_width columns. Callers that need the full 80-column frame pass COLS.
+pub fn putTextBlockWidth(sc: *Screen, y0: i32, text: []const u8, y_limit: i32, max_width: usize) void {
+    var width = max_width;
+    if (width == 0 or width > COLS) width = COLS;
     var i: usize = 0;
     var y = y0;
     while (i < text.len and y < y_limit) {

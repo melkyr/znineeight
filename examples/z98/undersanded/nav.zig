@@ -28,6 +28,7 @@ const fight = @import("fight.zig");
 const text_scan = @import("text_scan.zig");
 const render_text = @import("render_text.zig");
 const economy = @import("economy.zig");
+const tables = @import("tables_t1.zig");
 
 pub const HELP_PAGE_NONE: i32 = 0;
 pub const TIP_NONE: i32 = 0;
@@ -51,10 +52,199 @@ pub const NavState = struct {
     help_page: i32,
     tip: i32,
     journal_sel: i32,
-    // Boot-only: 0 none, 1 awaiting the New Game Y/N answer. navStep never
-    // reads it, so console nav behaviour is unchanged.
+    // Boot-only: 0 none, 1 awaiting the New Game Y/N answer, 2 awaiting the
+    // save-error [F]resh erase Y/N answer. navStep never reads it, so console
+    // nav behaviour is unchanged.
     boot_pending: i32,
+    // M10.1 one-action field status line (UI-only, spec §7.1).
+    field_msg: [96]u8,
+    field_msg_len: usize,
+    // Dock success/refusal detail line (UI-only, one action). The generic
+    // DOCK_OK result is replaced by an amount/effect line when available.
+    dock_msg: [128]u8,
+    dock_msg_len: usize,
 };
+
+// R8 explicit initialisation for every NavState constructor (R8).
+pub fn initState() NavState {
+    var st: NavState = undefined;
+    st.armed = 0;
+    st.last = def.NAV_RESULT_NONE;
+    st.save_err_kind = 0;
+    st.help_page = HELP_PAGE_NONE;
+    st.tip = TIP_NONE;
+    st.journal_sel = 0;
+    st.boot_pending = 0;
+    st.field_msg_len = 0;
+    var i: usize = 0;
+    while (i < st.field_msg.len) : (i += 1) {
+        st.field_msg[i] = 0;
+    }
+    st.dock_msg_len = 0;
+    i = 0;
+    while (i < st.dock_msg.len) : (i += 1) {
+        st.dock_msg[i] = 0;
+    }
+    return st;
+}
+
+pub fn navClearFieldMsg(st: *NavState) void {
+    st.field_msg_len = 0;
+    var i: usize = 0;
+    while (i < st.field_msg.len) : (i += 1) {
+        st.field_msg[i] = 0;
+    }
+}
+
+pub fn navClearDockMsg(st: *NavState) void {
+    st.dock_msg_len = 0;
+    var i: usize = 0;
+    while (i < st.dock_msg.len) : (i += 1) {
+        st.dock_msg[i] = 0;
+    }
+}
+
+fn navSetDockMsg(st: *NavState, text: []const u8) void {
+    var i: usize = 0;
+    while (i < text.len and i < st.dock_msg.len) : (i += 1) {
+        st.dock_msg[i] = text[i];
+    }
+    st.dock_msg_len = i;
+}
+
+pub fn navSetFieldMsg(st: *NavState, text: []const u8) void {
+    var i: usize = 0;
+    while (i < text.len and i < st.field_msg.len) : (i += 1) {
+        st.field_msg[i] = text[i];
+    }
+    st.field_msg_len = i;
+}
+
+pub fn navSetFieldMsgInt(st: *NavState, prefix: []const u8, value: i32,
+    suffix: []const u8) void {
+    var at: usize = 0;
+    text_scan.appendText(st.field_msg[0..], &at, prefix);
+    text_scan.appendInt(st.field_msg[0..], &at, @intCast(i64, value));
+    text_scan.appendText(st.field_msg[0..], &at, suffix);
+    st.field_msg_len = at;
+}
+
+fn eventCondName(cond: i32) []const u8 {
+    if (cond == def.COND_DROWSY or cond == def.COND_SHAKY or cond == def.COND_EXPOSED) {
+        return render_text.conditionName(cond);
+    }
+    return "rough";
+}
+
+fn eventCondEffect(cond: i32) []const u8 {
+    if (cond == def.COND_DROWSY or cond == def.COND_SHAKY or cond == def.COND_EXPOSED) {
+        return render_text.conditionEffect(cond);
+    }
+    return "the sleep takes its toll";
+}
+
+// Consume one transient §7.1 field event into the one-action status line.
+// Called after the action so early returns cannot skip it. EV_SUBDUE has its
+// own intro screen and deliberately produces no status line.
+pub fn navConsumeEvent(g: *def.GameState, st: *NavState) void {
+    const ev = g.last_event;
+    const ev_def = g.last_event_def;
+    const ev_value = g.last_event_value;
+    g.last_event = def.EV_NONE;
+    g.last_event_def = 0;
+    g.last_event_value = 0;
+
+    var buf: [256]u8 = undefined;
+    var p: usize = 0;
+    switch (ev) {
+        def.EV_DEPART => {
+            text_scan.appendText(buf[0..], &p, "Departed to ");
+            text_scan.appendText(buf[0..], &p, render.zoneName(ev_def));
+            text_scan.appendText(buf[0..], &p, " - travel ");
+            text_scan.appendInt(buf[0..], &p, @intCast(i64, ev_value));
+            text_scan.appendText(buf[0..], &p, " out, ");
+            text_scan.appendInt(buf[0..], &p, @intCast(i64, ev_value));
+            text_scan.appendText(buf[0..], &p, " back (+1 depart action).");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_REST_NODE => {
+            navSetFieldMsgInt(st, "Rested at the node: +", ev_value, " Hull.");
+        },
+        def.EV_ROUGH => {
+            text_scan.appendText(buf[0..], &p, "Rough sleep (");
+            text_scan.appendText(buf[0..], &p, eventCondName(ev_value));
+            text_scan.appendText(buf[0..], &p, "): ");
+            text_scan.appendText(buf[0..], &p, eventCondEffect(ev_value));
+            text_scan.appendText(buf[0..], &p, ".");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_REST_DOCK => {
+            navSetFieldMsgInt(st, "Rested at dock: +", ev_value, " Hull.");
+        },
+        def.EV_SURFACE => {
+            navSetFieldMsgInt(st, "Returned to dock - travel ", ev_value, " phases.");
+        },
+        def.EV_SUBDUE => {},
+        def.EV_KILL => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            text_scan.appendText(buf[0..], &p, "Killed ");
+            text_scan.appendText(buf[0..], &p, name);
+            text_scan.appendText(buf[0..], &p, ".");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_OVERKILL => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            text_scan.appendText(buf[0..], &p, "Overkilled ");
+            text_scan.appendText(buf[0..], &p, name);
+            text_scan.appendText(buf[0..], &p, " - the rarest line is ruined.");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_CREATURE_FLED => {
+            navSetFieldMsg(st, "The creature fled - no loot; it renews.");
+        },
+        def.EV_PLAYER_FLED => {
+            navSetFieldMsg(st, "You fled - no loot; returned to dock.");
+        },
+        def.EV_ASCENT => {
+            navSetFieldMsg(st, "Emergency ascent - Hull 0; returned to dock.");
+        },
+        def.EV_HUNT_MAX => {
+            navSetFieldMsg(st, "No fights left - surface or rest.");
+        },
+        def.EV_HUNT_EMPTY => {
+            navSetFieldMsg(st, "Nothing answers the hook here.");
+        },
+        def.EV_BOSS_LOCKED => {
+            navSetFieldMsgInt(st, "The Derelict is silent - ", ev_value,
+                "/6 species seen.");
+        },
+        def.EV_RELEASED => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            text_scan.appendText(buf[0..], &p, "Released ");
+            text_scan.appendText(buf[0..], &p, name);
+            text_scan.appendText(buf[0..], &p, " - parts kept; +15 Resolve next time.");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_SOLD => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            text_scan.appendText(buf[0..], &p, "Sold ");
+            text_scan.appendText(buf[0..], &p, name);
+            text_scan.appendText(buf[0..], &p, " for ");
+            text_scan.appendInt(buf[0..], &p, @intCast(i64, ev_value));
+            text_scan.appendText(buf[0..], &p, " coins - parts kept.");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        else => {},
+    }
+}
 
 pub const BootOut = struct {
     screen: i32,
@@ -120,9 +310,13 @@ fn isPending(g: *const def.GameState) bool {
     return g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != def.NO_FIGHT;
 }
 
-// Pending choice -> settle, otherwise an active expedition -> node, else dock.
+// Pending choice -> preserve the intro until C, otherwise settle; an active
+// expedition -> node, else dock.
 fn deriveScreen(g: *const def.GameState) i32 {
-    if (isPending(g)) return def.NAV_SETTLE;
+    if (isPending(g)) {
+        if (g.screen == def.NAV_SUBDUE_INTRO) return def.NAV_SUBDUE_INTRO;
+        return def.NAV_SETTLE;
+    }
     if (g.exp.active != 0) return def.NAV_NODE;
     return def.NAV_DOCK;
 }
@@ -133,9 +327,11 @@ fn setScreen(g: *def.GameState, screen: i32) i32 {
 }
 
 // A field action may start a fight; keep def.SCREEN_* in that case so
-// the next key still maps through input.mapKey.
+// the next key still maps through input.mapKey. A subdue intro is a field
+// screen too: postFight owns it and this must not overwrite it.
 fn screenAfterField(g: *def.GameState) i32 {
     if (expedition.isInFight(g)) return g.screen;
+    if (isPending(g) and g.screen == def.NAV_SUBDUE_INTRO) return g.screen;
     return deriveScreen(g);
 }
 
@@ -154,9 +350,11 @@ fn dockStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
 
 // Refine sub-menu: common parts execute on one press; Glow Polyp (6) and Glass
 // Pane (7) arm a rare-batch preview and execute on the same key again. Any
-// other key cancels the arm; Esc backs out to the dock (R11/P22.9).
+// other key cancels the arm; Esc reports the same cancel copy and backs out to
+// the dock (R11/P22.9).
 fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) {
+        if (st.armed != 0) navSetDockMsg(st, "Rare batch cancelled.");
         st.armed = 0;
         return setScreen(g, def.NAV_DOCK);
     }
@@ -165,6 +363,7 @@ fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         const material: i32 = @intCast(i32, key.ch - '0');
         if (st.armed != 0 and st.armed != material) {
             st.armed = 0;
+            navSetDockMsg(st, "Rare batch cancelled.");
             return setScreen(g, def.NAV_REFINE);
         }
         if (economy.isDeepMaterial(material) and st.armed != material
@@ -173,12 +372,43 @@ fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
             st.last = def.NAV_RESULT_PREVIEW;
             return setScreen(g, def.NAV_REFINE);
         }
+        // Capture the pre-refine values so the one-action result can name the
+        // materials gained and the expertise change (spec §16/P22.1).
+        const parts = dock.refineParts(g, material);
+        const per = dock.refinePerPart(g, material);
+        const exp_before = g.world.expertise[@intCast(usize, material)];
+        const gained = parts * per;
         st.armed = 0;
         st.last = dock.dockRefine(g, material);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [160]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Refined ");
+            text_scan.appendInt(buf[0..], &at, @intCast(i64, parts));
+            text_scan.appendText(buf[0..], &at, " ");
+            text_scan.appendText(buf[0..], &at, render.partName(material));
+            text_scan.appendText(buf[0..], &at, " -> ");
+            text_scan.appendInt(buf[0..], &at, @intCast(i64, gained));
+            text_scan.appendText(buf[0..], &at, " ");
+            text_scan.appendText(buf[0..], &at, render.materialName(material));
+            if (exp_before >= 5) {
+                text_scan.appendText(buf[0..], &at, "; E5 (max).");
+            } else {
+                text_scan.appendText(buf[0..], &at, "; E+1");
+                if (gained == 0 and economy.isDeepMaterial(material)) {
+                    text_scan.appendText(buf[0..], &at,
+                        " (deep parts lose 1/part below E5).");
+                } else {
+                    text_scan.appendText(buf[0..], &at, ".");
+                }
+            }
+            navSetDockMsg(st, buf[0..at]);
+        }
         return setScreen(g, def.NAV_REFINE);
     }
 
     // Any other key cancels a pending rare-batch confirm.
+    if (st.armed != 0) navSetDockMsg(st, "Rare batch cancelled.");
     st.armed = 0;
     return setScreen(g, def.NAV_REFINE);
 }
@@ -187,7 +417,18 @@ fn upgradeStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     if (key.ch >= '1' and key.ch <= '5') {
         const axis: i32 = @intCast(i32, key.ch - '1');
+        const tier_before = g.world.boat[@intCast(usize, axis)];
         st.last = dock.dockUpgrade(g, axis);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [80]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Upgraded ");
+            text_scan.appendText(buf[0..], &at, render.axisName(axis));
+            text_scan.appendText(buf[0..], &at, " to T");
+            text_scan.appendInt(buf[0..], &at, @intCast(i64, tier_before + 1));
+            text_scan.appendText(buf[0..], &at, ".");
+            navSetDockMsg(st, buf[0..at]);
+        }
     }
     return setScreen(g, def.NAV_UPGRADE);
 }
@@ -197,6 +438,14 @@ fn craftStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (key.ch >= '1' and key.ch <= '7') {
         const tool: i32 = @intCast(i32, key.ch - '0');
         st.last = dock.dockCraft(g, tool);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [80]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Crafted ");
+            text_scan.appendText(buf[0..], &at, render_text.toolName(tool));
+            text_scan.appendText(buf[0..], &at, ".");
+            navSetDockMsg(st, buf[0..at]);
+        }
     }
     return setScreen(g, def.NAV_CRAFT);
 }
@@ -204,12 +453,36 @@ fn craftStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
 fn buyStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     const c = lower(key.ch);
+    var cosmetic: i32 = -1;
     if (c >= '1' and c <= '9') {
-        const cosmetic: i32 = @intCast(i32, c - '1');
-        st.last = dock.dockBuy(g, cosmetic);
+        cosmetic = @intCast(i32, c - '1');
     } else if (c >= 'a' and c <= 'c') {
-        const cosmetic: i32 = @intCast(i32, 9 + (c - 'a'));
+        cosmetic = @intCast(i32, 9 + (c - 'a'));
+    }
+    if (cosmetic >= 0) {
         st.last = dock.dockBuy(g, cosmetic);
+        const rows = tables.cosmetics();
+        if (cosmetic < @intCast(i32, rows.len)) {
+            const row = rows[@intCast(usize, cosmetic)];
+            if (st.last == dock.DOCK_OK) {
+                var buf: [96]u8 = undefined;
+                var at: usize = 0;
+                text_scan.appendText(buf[0..], &at, "Bought ");
+                text_scan.appendText(buf[0..], &at, row.name);
+                text_scan.appendText(buf[0..], &at, " for ");
+                text_scan.appendInt(buf[0..], &at, @intCast(i64, row.price));
+                text_scan.appendText(buf[0..], &at, " coins.");
+                navSetDockMsg(st, buf[0..at]);
+            } else if (st.last == dock.DOCK_ERR_LOCKED) {
+                var buf: [96]u8 = undefined;
+                var at: usize = 0;
+                text_scan.appendText(buf[0..], &at, "Locked - ");
+                text_scan.appendText(buf[0..], &at,
+                    render.cosmeticUnlockName(row.unlock));
+                text_scan.appendText(buf[0..], &at, ".");
+                navSetDockMsg(st, buf[0..at]);
+            }
+        }
     }
     return setScreen(g, def.NAV_BUY);
 }
@@ -218,9 +491,18 @@ fn toolsStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     if (isChar(key, '0')) {
         st.last = dock.dockSelectTool(g, 0);
+        if (st.last == dock.DOCK_OK) navSetDockMsg(st, "Selected no tool.");
     } else if (key.ch >= '1' and key.ch <= '7') {
         const tool: i32 = @intCast(i32, key.ch - '0');
         st.last = dock.dockSelectTool(g, tool);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [80]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Selected ");
+            text_scan.appendText(buf[0..], &at, render_text.toolName(tool));
+            text_scan.appendText(buf[0..], &at, ".");
+            navSetDockMsg(st, buf[0..at]);
+        }
     }
     return setScreen(g, def.NAV_TOOLS);
 }
@@ -234,9 +516,14 @@ fn mapStep(g: *def.GameState, key: input.Key) i32 {
         return setScreen(g, def.NAV_NODE);
     }
 
-    if (key.ch == '9' and render.bossGateOpen(g)) {
-        _ = expedition.depart(g, 8);
-        return setScreen(g, def.NAV_NODE);
+    if (key.ch == '9') {
+        if (render.bossGateOpen(g)) {
+            _ = expedition.depart(g, 8);
+            return setScreen(g, def.NAV_NODE);
+        }
+        g.last_event = def.EV_BOSS_LOCKED;
+        g.last_event_def = 0;
+        g.last_event_value = render.seenNonBossCount(g);
     }
 
     // Locked boss or any other key stays on the map.
@@ -282,8 +569,11 @@ fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     return setScreen(g, def.NAV_JOURNAL);
 }
 
-// Next screen id for one key. Mutates game state only via dock/expedition.
-pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+// Inner step: every action path returns through here so the wrapper below can
+// always consume the transient field event exactly once.
+fn navStepInner(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    navClearFieldMsg(st);
+    navClearDockMsg(st);
     st.last = def.NAV_RESULT_NONE;
     st.tip = TIP_NONE;
 
@@ -321,21 +611,28 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         return setScreen(g, screenAfterField(g));
     }
 
-    // `J` opens the Journal everywhere but mid-fight (including settle/submenus).
-    if (isChar(key, 'j') and g.screen != def.NAV_JOURNAL) {
-        st.journal_sel = 0;
-        return setScreen(g, def.NAV_JOURNAL);
-    }
-
-    // (2) A pending Subdue choice must be settled before anything else.
+    // (2) A pending Subdue choice must be settled before anything else. The
+    // intro screen accepts only C/c; settle accepts only 1/2. R/S and every
+    // other key are no-ops so an irreversible choice is never one key away.
     if (isPending(g)) {
+        if (g.screen == def.NAV_SUBDUE_INTRO) {
+            if (isChar(key, 'c')) return setScreen(g, def.NAV_SETTLE);
+            return setScreen(g, def.NAV_SUBDUE_INTRO);
+        }
         if (g.screen != def.NAV_SETTLE) return setScreen(g, def.NAV_SETTLE);
-        if (isChar(key, 'r')) {
+        if (key.ch == '1') {
             expedition.resolveSubdueChoice(g, expedition.SUB_RELEASE);
-        } else if (isChar(key, 's')) {
+        } else if (key.ch == '2') {
             expedition.resolveSubdueChoice(g, expedition.SUB_SELL);
         }
         return setScreen(g, deriveScreen(g));
+    }
+
+    // `J` opens the Journal everywhere but mid-fight. A pending settlement is
+    // handled above and consumes J with every other non-1/2 key.
+    if (isChar(key, 'j') and g.screen != def.NAV_JOURNAL) {
+        st.journal_sel = 0;
+        return setScreen(g, def.NAV_JOURNAL);
     }
 
     // (3) Field and dock sub-menu screens. An uninitialised screen id is
@@ -357,6 +654,13 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     }
 }
 
+// Next screen id for one key. Mutates game state only via dock/expedition.
+pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    const next = navStepInner(g, st, key);
+    navConsumeEvent(g, st);
+    return next;
+}
+
 // ---- prepared views for the decoupled terminal renderers ------------------
 
 fn initView(g: *const def.GameState, screen: i32, out: *render.View) void {
@@ -370,7 +674,13 @@ fn initView(g: *const def.GameState, screen: i32, out: *render.View) void {
     out.journal_text_found = false;
     out.zone_flavour = "";
     out.zone_flavour_found = false;
+    out.heavy_active = false;
+    out.node_pool = 0;
     var i: usize = 0;
+    while (i < def.MAX_ZONES) : (i += 1) {
+        out.zone_cost[i] = 0;
+    }
+    i = 0;
     while (i < def.MAX_PARTS) : (i += 1) {
         out.refine_parts[i] = 0;
         out.refine_per_part[i] = 0;
@@ -467,8 +777,18 @@ pub fn prepareJournal(g: *const def.GameState, sel: i32, out: *render.View) void
     }
 }
 
+pub fn prepareMap(g: *const def.GameState, out: *render.View) void {
+    initView(g, def.NAV_MAP, out);
+    out.heavy_active = expedition.heavyActive(g);
+    var i: usize = 0;
+    while (i < def.MAX_ZONES) : (i += 1) {
+        out.zone_cost[i] = expedition.travelCostForZone(g, @intCast(i32, i));
+    }
+}
+
 pub fn prepareNode(g: *const def.GameState, out: *render.View) void {
     initView(g, g.screen, out);
+    out.node_pool = expedition.poolCount(g);
     var zkey: [24]u8 = undefined;
     const ztext = render_text.keyIntInto("zone.", g.exp.zone + 1, zkey[0..]);
     if (data.textFind(ztext)) |flavour| {
@@ -487,8 +807,12 @@ pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) vo
         var d = creatures.defAt(g.fight.def_index);
         render.renderFrame(g, &d, sc);
     } else switch (g.screen) {
-        def.NAV_MAP => render.renderMap(g, sc),
-        def.NAV_NODE, def.NAV_SETTLE => {
+        def.NAV_MAP => {
+            var v: render.View = undefined;
+            prepareMap(g, &v);
+            render.renderMap(&v, sc);
+        },
+        def.NAV_NODE, def.NAV_SETTLE, def.NAV_SUBDUE_INTRO => {
             var v: render.View = undefined;
             prepareNode(g, &v);
             render.renderNode(&v, sc);
@@ -544,6 +868,8 @@ pub fn navTipLine(st: *const NavState) []const u8 {
 }
 
 pub fn navResultLine(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
+    if (st.field_msg_len > 0) return st.field_msg[0..st.field_msg_len];
+    if (st.dock_msg_len > 0) return st.dock_msg[0..st.dock_msg_len];
     if (st.last >= 0) return dock.resultText(st.last);
     if (st.last == def.NAV_RESULT_PREVIEW) {
         const parts = dock.refineParts(g, st.armed);
@@ -570,6 +896,8 @@ pub fn navQuitKey(g: *const def.GameState, st: *const NavState, key: input.Key) 
 // answer carries the second key only when navQuitKey returned true.
 pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
     key: input.Key, answer: ?input.Key) NavIntercept {
+    navClearFieldMsg(st);
+    navClearDockMsg(st);
     if (st.help_page != HELP_PAGE_NONE) {
         st.help_page = HELP_PAGE_NONE;
         return NavIntercept{ .handled = true, .quit = false, .msg = "" };
@@ -601,6 +929,7 @@ pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
 // Interactive console loop: render, prompt, read one key, step. EOF exits.
 pub fn navRun(g: *def.GameState) void {
     if (g.screen != def.NAV_MAP and g.screen != def.NAV_NODE and g.screen != def.NAV_SETTLE
+        and g.screen != def.NAV_SUBDUE_INTRO
         and g.screen != def.NAV_REFINE and g.screen != def.NAV_UPGRADE
         and g.screen != def.NAV_CRAFT and g.screen != def.NAV_BUY and g.screen != def.NAV_TOOLS
         and g.screen != def.NAV_LORE and g.screen != def.NAV_MENU and g.screen != def.NAV_SAVE_ERR
@@ -610,15 +939,7 @@ pub fn navRun(g: *def.GameState) void {
 
     var dir_buf: [4096]u8 = undefined;
     const dir = paths.dataDirOrFallback(dir_buf[0..]);
-    var st = NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = save_ux.ERR_KIND_NONE,
-        .help_page = HELP_PAGE_NONE,
-        .tip = TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    var st = initState();
     var buf: [8192]u8 = undefined;
     var line_buf: [256]u8 = undefined;
 
@@ -676,9 +997,9 @@ pub fn bootDraw(g: *def.GameState, st: *const NavState, screen: i32,
     }
 }
 
-// Pure one-key boot step. `msg` receives the New Game confirmation to show
-// BEFORE the next key is read; st.boot_pending remembers that the next key is
-// the Y/N answer (no draw/prompt in between, matching the original stdout).
+// Pure one-key boot step. `msg` receives a New Game or Fresh erase confirmation
+// to show BEFORE the next key is read; st.boot_pending remembers which Y/N
+// answer is pending (no draw/prompt in between, matching the original stdout).
 pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
     screen: i32, key: input.Key, msg: []u8) BootOut {
     var out = BootOut{
@@ -689,7 +1010,20 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
     };
 
     if (st.boot_pending != 0) {
+        const pending = st.boot_pending;
         st.boot_pending = 0;
+        // 1: New Game confirm. 2: save-error [F]resh erase confirm. Only Y
+        // performs an erase, so neither path can lose a save with one key.
+        if (pending == 2) {
+            if (confirmAction(key) == BOOT_ACT_YES) {
+                save_ux.eraseSlot(dir, save_ux.readSaveSlot(dir));
+                out.screen = def.NAV_LORE;
+                return out;
+            }
+            out.screen = def.NAV_SAVE_ERR;
+            return out;
+        }
+        if (pending != 1) return out;
         if (confirmAction(key) != BOOT_ACT_YES) return out;
         game.newGame(g);
         const slot = save_ux.readSaveSlot(dir);
@@ -767,8 +1101,10 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         }
         const act = errorAction(key);
         if (act == BOOT_ACT_FRESH) {
-            save_ux.eraseSlot(dir, save_ux.readSaveSlot(dir));
-            out.screen = def.NAV_LORE;
+            st.boot_pending = 2;
+            var at: usize = 0;
+            text_scan.appendText(msg, &at, save_ux.FRESH_CONFIRM);
+            out.msg_len = at;
             return out;
         }
         if (act == BOOT_ACT_BACKUP) {
@@ -811,15 +1147,7 @@ pub fn bootReset(g: *def.GameState, dir: []const u8) i32 {
 pub fn boot(g: *def.GameState, dir: []const u8) bool {
     // app.zig passes an uninitialised GameState; boot owns the first draw.
     var screen = bootReset(g, dir);
-    var st = NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = save_ux.ERR_KIND_NONE,
-        .help_page = HELP_PAGE_NONE,
-        .tip = TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    var st = initState();
     var sc: render.Screen = undefined;
     var buf: [8192]u8 = undefined;
     var msg: [256]u8 = undefined;

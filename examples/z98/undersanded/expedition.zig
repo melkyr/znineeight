@@ -56,6 +56,14 @@ const HEAVY_TIER: i32 = 3;
 const COND_ROLL_LO: i32 = 0;
 const COND_ROLL_HI: i32 = 2;
 
+// M10.1 transient §7.1 field event. nav consumes last_event after the action
+// and turns it into the one-action status line; it is never persisted.
+fn setEvent(g: *def.GameState, ev: i32, d: i32, value: i32) void {
+    g.last_event = ev;
+    g.last_event_def = d;
+    g.last_event_value = value;
+}
+
 // ---- Travel ---------------------------------------------------------------
 
 fn zoneCost(zone: i32) i32 {
@@ -64,16 +72,30 @@ fn zoneCost(zone: i32) i32 {
     return tables.zoneCost(zone);
 }
 
-// Travel phases each way. Heavy (Hull T3 or Cargo T3) adds +1 on zones whose
-// cost is already >= 3 (§6/§11).
-pub fn travelPhases(g: *def.GameState, zone: i32) i32 {
+// Heavy is active at Hull T3 or Cargo T3 (§6/§11). The renderer uses this for
+// its `Heavy +1` map note; the cost itself always comes from one helper.
+pub fn heavyActive(g: *const def.GameState) bool {
+    return g.world.boat[world.BOAT_HULL] == HEAVY_TIER
+        or g.world.boat[world.BOAT_CARGO] == HEAVY_TIER;
+}
+
+// Travel phases each way. Heavy adds +1 on zones whose cost is already >= 3
+// (§6/§11). This is the single public cost formula for travel and the map.
+pub fn travelCostForZone(g: *const def.GameState, zone: i32) i32 {
     var cost = zoneCost(zone);
-    if (cost >= HEAVY_MIN_COST) {
-        if (g.world.boat[world.BOAT_HULL] == HEAVY_TIER or g.world.boat[world.BOAT_CARGO] == HEAVY_TIER) {
-            cost += HEAVY_BONUS;
-        }
+    if (cost >= HEAVY_MIN_COST and heavyActive(g)) {
+        cost += HEAVY_BONUS;
     }
     return cost;
+}
+
+pub fn travelPhases(g: *def.GameState, zone: i32) i32 {
+    return travelCostForZone(g, zone);
+}
+
+// Available species in the current node's phase pool, without drawing RNG.
+pub fn poolCount(g: *const def.GameState) i32 {
+    return encounter.availableCount(&g.world, g.exp.zone);
 }
 
 // ---- Rest -----------------------------------------------------------------
@@ -89,12 +111,16 @@ fn healNode(g: *def.GameState) void {
 // §5: Dock Rest always costs exactly one phase, even at full Hull. It is safe
 // (no condition roll) and draws no RNG.
 pub fn restAtDock(g: *def.GameState) void {
+    const before = g.world.hull;
     var h = g.world.hull + DOCK_REST_HEAL;
     const mx = world.hullMax(&g.world);
     if (h > mx) h = mx;
     if (h < 0) h = 0;
     g.world.hull = h;
     world.advancePhase(&g.world);
+    var gain = g.world.hull - before;
+    if (gain < 0) gain = 0;
+    setEvent(g, def.EV_REST_DOCK, 0, gain);
 }
 
 // Empty pool check for the safe-Rest distinction (§5/§12). apportion does not
@@ -187,6 +213,24 @@ fn logSecured(g: *def.GameState, idx: i32, outcome: i32) void {
     fight.log(g, def.CLS_SECURED, def.MSG_SECURED, idx, outcome);
 }
 
+// A non-settlement field action consumes the previous haul: drop stale secured
+// records so the node Secured line does not outlive the fight that produced it.
+// Release/Sell deliberately keep it (the pending choice returns before this).
+fn clearSecuredLog(g: *def.GameState) void {
+    var write: i32 = 0;
+    var read: i32 = 0;
+    while (read < g.log_n) : (read += 1) {
+        if (g.log[@intCast(usize, read)].class == def.CLS_SECURED) continue;
+        if (write != read) g.log[@intCast(usize, write)] = g.log[@intCast(usize, read)];
+        write += 1;
+    }
+    while (write < g.log_n) : (write += 1) {
+        g.log[@intCast(usize, write)] =
+            def.LogEntry{ .class = 0, .msg_id = 0, .a = 0, .b = 0 };
+    }
+    g.log_n = write;
+}
+
 // Settle a fight once its outcome is resolved, or immediately when Hull hits 0
 // while the fight is still technically ongoing (creatureAct leaves it that
 // way). Returns true when the expedition ended (player flee or Hull-0 ascent).
@@ -204,6 +248,7 @@ fn postFight(g: *def.GameState) bool {
         endAscent(g);
         g.world.hull = 0;
         world.advancePhase(&g.world);
+        setEvent(g, def.EV_ASCENT, idx, 0);
         returnToDock(g);
         return true;
     }
@@ -216,6 +261,7 @@ fn postFight(g: *def.GameState) bool {
         g.world.hull = g.fight.hull;
         g.fight.def_index = def.NO_FIGHT;
         world.advancePhase(&g.world);
+        setEvent(g, def.EV_PLAYER_FLED, idx, 0);
         returnToDock(g);
         return true;
     }
@@ -228,6 +274,7 @@ fn postFight(g: *def.GameState) bool {
         logSecured(g, idx, outcome);
         world.markTaken(&g.world, zone, idx, def.OUT_CREATURE_FLED);
         g.fight.def_index = def.NO_FIGHT;
+        setEvent(g, def.EV_CREATURE_FLED, idx, 0);
         return false;
     }
 
@@ -240,6 +287,8 @@ fn postFight(g: *def.GameState) bool {
         addLoot(g, &subdef, outcome);
         logSecured(g, idx, outcome);
         g.world.hull = g.fight.hull;
+        setEvent(g, def.EV_SUBDUE, idx, 0);
+        g.screen = def.NAV_SUBDUE_INTRO;
         return false;
     }
 
@@ -250,6 +299,11 @@ fn postFight(g: *def.GameState) bool {
     logSecured(g, idx, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
     g.world.hull = g.fight.hull;
+    if (outcome == def.OUT_OVERKILL) {
+        setEvent(g, def.EV_OVERKILL, idx, outcome);
+    } else {
+        setEvent(g, def.EV_KILL, idx, outcome);
+    }
     g.fight.def_index = def.NO_FIGHT;
     return false;
 }
@@ -280,10 +334,13 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
         SUB_RELEASE => {
             world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
             world.applyRelease(&g.world, zone, idx);
+            setEvent(g, def.EV_RELEASED, idx, 0);
         },
         SUB_SELL => {
             world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
-            g.world.money += creatures.defAt(idx).sale;
+            const sale = creatures.defAt(idx).sale;
+            g.world.money += sale;
+            setEvent(g, def.EV_SOLD, idx, sale);
         },
         else => return,
     }
@@ -340,21 +397,32 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     ep.pending_cond = def.COND_NONE;
 
     // Depart = 1 dock action + travel cost, advanced instantly (§6).
-    const phases = 1 + travelPhases(g, zone);
+    const travel = travelPhases(g, zone);
+    const phases = 1 + travel;
     var p: i32 = 0;
     while (p < phases) : (p += 1) {
         world.advancePhase(&g.world);
     }
+    setEvent(g, def.EV_DEPART, zone, travel);
     return &g.exp;
 }
 
 fn hunt(g: *def.GameState) void {
     if (isInFight(g)) return;
-    if (g.exp.fight_index >= world.maxFights(&g.world)) return;
+    if (g.exp.fight_index >= world.maxFights(&g.world)) {
+        setEvent(g, def.EV_HUNT_MAX, 0, world.maxFights(&g.world));
+        return;
+    }
 
     var idx: i32 = def.NO_FIGHT;
-    if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) return;
-    if (idx < 0) return;
+    if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) {
+        setEvent(g, def.EV_HUNT_EMPTY, g.exp.zone, 0);
+        return;
+    }
+    if (idx < 0) {
+        setEvent(g, def.EV_HUNT_EMPTY, g.exp.zone, 0);
+        return;
+    }
 
     world.markSeen(&g.world, idx);
 
@@ -390,6 +458,9 @@ fn hunt(g: *def.GameState) void {
     const wary = world.consumeWariness(&g.world, idx);
     g.fight.max_res += wary;
     g.fight.res += wary;
+    if (wary > 0) {
+        fight.log(g, def.LOG_NORMAL, def.MSG_WARY, wary, 0);
+    }
 
     // §10 grudge: run-scoped family overkill raises this fight's stats.
     fight.applyGrudge(g, &cdef, g.world.family_overkill_mask);
@@ -401,13 +472,19 @@ fn restAtNode(g: *def.GameState) void {
     // Availability depends on cycle/phase, so decide before advancing: the
     // Rest's own phase step must not turn a non-empty pool into a safe Rest.
     const empty = poolEmpty(g);
+    const before = g.world.hull;
     healNode(g);
     world.advancePhase(&g.world);
+    var gain = g.world.hull - before;
+    if (gain < 0) gain = 0;
 
     // Node Rest is penalised; empty-pool Rest is safe (§5).
     if (!empty) {
         const roll = rng.rngRange(&g.world.rng_state, COND_ROLL_LO, COND_ROLL_HI);
         g.exp.pending_cond = def.COND_DROWSY + roll;
+        setEvent(g, def.EV_ROUGH, 0, g.exp.pending_cond);
+    } else {
+        setEvent(g, def.EV_REST_NODE, 0, gain);
     }
 }
 
@@ -436,6 +513,11 @@ pub fn expeditionStep(g: *def.GameState, action: i32) void {
         return;
     }
 
+    // A non-settlement field action clears the previous haul's Secured line.
+    // Clear before settling a waiting outcome so a just-earned record survives.
+    const is_field = action == EXP_HUNT or action == EXP_REST or action == EXP_SURFACE;
+    if (is_field) clearSecuredLog(g);
+
     // A resolved fight may be waiting (e.g. an external gameStep or a test);
     // settle it before applying a field action.
     if (g.fight.def_index >= 0) {
@@ -445,7 +527,12 @@ pub fn expeditionStep(g: *def.GameState, action: i32) void {
     switch (action) {
         EXP_HUNT => hunt(g),
         EXP_REST => restAtNode(g),
-        EXP_SURFACE => returnToDock(g),
+        EXP_SURFACE => {
+            const zone = g.exp.zone;
+            const cost = travelPhases(g, zone);
+            returnToDock(g);
+            setEvent(g, def.EV_SURFACE, zone, cost);
+        },
         else => {},
     }
 }

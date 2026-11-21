@@ -384,13 +384,13 @@ if [ "$BW_OK" -eq 1 ]; then
         fail_case "successful B mutated the failed active slot"
     fi
 
-    # B fails on both -> F must erase/re-create the original active slot, not
-    # the other slot that B merely tried.
+    # B fails on both -> F must confirm, then Y erases/re-creates the original
+    # active slot, not the other slot that B merely tried.
     BF="$OUT/boot/backup_fail_fresh"
     mkdir -p "$BF"
     cp "$V1_FIXTURE" "$BF/save0.dat"
     cp "$V1_FIXTURE" "$BF/save1.dat"
-    printf 'cbf\n' | timeout 120 "$BW/boot_walk" "$BF" "$UNDDIR" \
+    printf 'cbfy\n' | timeout 120 "$BW/boot_walk" "$BF" "$UNDDIR" \
         >"$OUT/boot_backup_fail.log" 2>&1
     BF_RC=$?
     if [ "$BF_RC" -eq 0 ] \

@@ -129,6 +129,7 @@ key=manual.5
 key=manual.6
 key=manual.7
 key=manual.8
+key=manual.9
 key=legend.1
 key=legend.2
 key=zone.1

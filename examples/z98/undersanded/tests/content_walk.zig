@@ -19,6 +19,7 @@ const game = @import("../game.zig");
 const expedition = @import("../expedition.zig");
 const fight = @import("../fight.zig");
 const render = @import("../render_term.zig");
+const nav = @import("../nav.zig");
 const journal = @import("../journal.zig");
 const persist = @import("../persist.zig");
 const creatures = @import("../creatures_t1.zig");
@@ -74,7 +75,9 @@ fn contains(hay: []const u8, needle: []const u8) bool {
 
 fn mapText(g: *const def.GameState, buf: []u8) []const u8 {
     var sc: render.Screen = undefined;
-    render.renderMap(g, &sc);
+    var v: render.View = undefined;
+    nav.prepareMap(g, &v);
+    render.renderMap(&v, &sc);
     return render.dump(&sc, buf);
 }
 

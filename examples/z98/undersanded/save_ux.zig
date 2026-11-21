@@ -14,8 +14,11 @@ const text_scan = @import("text_scan.zig");
 
 pub const QUIT_PROMPT: []const u8 = "Save before quitting? [Y] [N] [Cancel]";
 pub const NEW_GAME_CONFIRM: []const u8 = "Erase this save? [Y] [N]";
+pub const FRESH_CONFIRM: []const u8 = "Erase this save? [Y] [N]";
 pub const SAVE_ERROR_KEYS: []const u8 = "[F]resh  [B]ackup slot  [Q]uit";
-pub const SAVE_OK: []const u8 = "Saved.";
+pub const SAVED_SLOT0: []const u8 = "Saved to slot 0.";
+pub const SAVED_SLOT1: []const u8 = "Saved to slot 1.";
+pub const STAYED: []const u8 = "Stayed.";
 pub const SAVE_FAILED: []const u8 = "Save failed.";
 pub const MANUAL_KEY: []const u8 = "manual.1";
 pub const MANUAL_UNAVAILABLE: []const u8 = "(manual text unavailable)";
@@ -137,6 +140,12 @@ pub fn saveSlotName(slot: i32) []const u8 {
     return SAVE0_FILE;
 }
 
+// Result copy names the active slot so the player can see where the save went.
+pub fn savedSlotText(slot: i32) []const u8 {
+    if (slot == 1) return SAVED_SLOT1;
+    return SAVED_SLOT0;
+}
+
 pub fn saveSlotPath(dir: []const u8, slot: i32, out: []u8) ?[]u8 {
     return paths.join(dir, saveSlotName(slot), out);
 }
@@ -168,8 +177,9 @@ pub fn loadSlot(g: *def.GameState, dir: []const u8, slot: i32) persist.SaveErr!v
     g.screen = FIRST_RUN_DONE_SCREEN;
 }
 
-// Bad-save [F]resh: erase only the active slot file, then the §20 flow decides
-// whether a save exists (it never autosaves over the other slot).
+// Bad-save [F]resh: after the [Y] confirm, erase only the active slot file;
+// the §20 flow then decides whether a save exists (it never autosaves over the
+// other slot).
 pub fn eraseSlot(dir: []const u8, slot: i32) void {
     var path_buf: [4096]u8 = undefined;
     const path = saveSlotPath(dir, slot, path_buf[0..]) orelse return;
@@ -228,7 +238,7 @@ pub fn saveToSlot(g: *const def.GameState, dir: []const u8, slot: i32) SaveOutco
         persist.saveBackupSlot(backup_dir, &g.world, &g.exp) catch |e| {
             return SaveOutcome{ .ok = false, .text = saveErrText(e) };
         };
-        return SaveOutcome{ .ok = true, .text = SAVE_OK };
+        return SaveOutcome{ .ok = true, .text = savedSlotText(slot) };
     }
 
     var path_buf: [4096]u8 = undefined;
@@ -238,7 +248,7 @@ pub fn saveToSlot(g: *const def.GameState, dir: []const u8, slot: i32) SaveOutco
     persist.saveWrite(path, &g.world, &g.exp) catch |e| {
         return SaveOutcome{ .ok = false, .text = saveErrText(e) };
     };
-    return SaveOutcome{ .ok = true, .text = SAVE_OK };
+    return SaveOutcome{ .ok = true, .text = savedSlotText(slot) };
 }
 
 // Esc at the dock: save to the active slot from options.cfg.
@@ -261,7 +271,7 @@ pub fn quitDecision(g: *const def.GameState, dir: []const u8, key_ch: u8) QuitOu
     if (c == 'n') {
         return QuitOutcome{ .quit = true, .saved = false, .text = "" };
     }
-    return QuitOutcome{ .quit = false, .saved = false, .text = "" };
+    return QuitOutcome{ .quit = false, .saved = false, .text = STAYED };
 }
 
 // Fresh install: page 1 -> [Enter] Begin -> world init -> initial save -> dock.

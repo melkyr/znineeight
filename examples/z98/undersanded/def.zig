@@ -190,7 +190,27 @@ pub const GameState = struct {
     log_n: i32,
     exp: Expedition,
     screen: i32,
+    // M10.1 transient field-action event (spec §7.1); never persisted.
+    last_event: i32,
+    last_event_def: i32,
+    last_event_value: i32,
 };
+
+// One bounded fight-log append (spec §25.3). Shared so the tool lifecycle can
+// record a break at the exact hull-hit moment without importing fight.zig.
+pub fn appendLog(s: *GameState, class: i32, msg_id: i32, a: i32, b: i32) void {
+    const e = LogEntry{ .class = class, .msg_id = msg_id, .a = a, .b = b };
+    if (s.log_n < @intCast(i32, MAX_LOG)) {
+        s.log[@intCast(usize, s.log_n)] = e;
+        s.log_n += 1;
+    } else {
+        var i: usize = 1;
+        while (i < MAX_LOG) : (i += 1) {
+            s.log[i - 1] = s.log[i];
+        }
+        s.log[MAX_LOG - 1] = e;
+    }
+}
 
 // ---- Action / outcome / bar / flag vocabulary ----------------------------
 
@@ -246,6 +266,7 @@ pub const NAV_MENU: i32 = 20;
 pub const NAV_SAVE_ERR: i32 = 21;
 pub const NAV_JOURNAL: i32 = 22;
 pub const NAV_HELP: i32 = 23;
+pub const NAV_SUBDUE_INTRO: i32 = 24;
 pub const NAV_QUIT: i32 = -1;
 
 pub const NAV_RESULT_NONE: i32 = -100;
@@ -260,6 +281,26 @@ pub const OUT_KILL: i32 = 2;
 pub const OUT_OVERKILL: i32 = 3;
 pub const OUT_CREATURE_FLED: i32 = 4;
 pub const OUT_PLAYER_FLED: i32 = 5;
+
+// ---- Field event ids (M10.1 §7.1) -----------------------------------------
+
+pub const EV_NONE: i32 = 0;
+pub const EV_DEPART: i32 = 1;
+pub const EV_REST_NODE: i32 = 2;
+pub const EV_ROUGH: i32 = 3;
+pub const EV_REST_DOCK: i32 = 4;
+pub const EV_SURFACE: i32 = 5;
+pub const EV_SUBDUE: i32 = 6;
+pub const EV_KILL: i32 = 7;
+pub const EV_OVERKILL: i32 = 8;
+pub const EV_CREATURE_FLED: i32 = 9;
+pub const EV_PLAYER_FLED: i32 = 10;
+pub const EV_ASCENT: i32 = 11;
+pub const EV_HUNT_MAX: i32 = 12;
+pub const EV_HUNT_EMPTY: i32 = 13;
+pub const EV_RELEASED: i32 = 14;
+pub const EV_SOLD: i32 = 15;
+pub const EV_BOSS_LOCKED: i32 = 16;
 
 pub const BAR_NONE: i32 = 0;
 pub const BAR_STRIKE: i32 = 1;
@@ -317,6 +358,16 @@ pub const MSG_DECOY: i32 = 20;
 pub const MSG_PHASE: i32 = 21;
 pub const MSG_LURE: i32 = 22;
 pub const MSG_SONAR: i32 = 23;
+pub const MSG_WARY: i32 = 24;
+pub const MSG_GRUDGE: i32 = 25;
+pub const MSG_TOOL_BROKEN: i32 = 26;
+pub const MSG_EQUIP_REFUSED: i32 = 27;
+pub const MSG_BLIND_ARMED: i32 = 28;
+pub const MSG_INK_ARMED: i32 = 29;
+pub const MSG_SUPPRESS_LURE: i32 = 30;
+pub const MSG_SUPPRESS_SONAR: i32 = 31;
+pub const MSG_SUPPRESS_HOOK: i32 = 32;
+pub const MSG_SUPPRESS_SHIELD: i32 = 33;
 
 // Content boot error copy (spec §25.10, §33).
 pub const MSG_MISSING: []const u8 = "Content file missing. Reinstall from CD.";
@@ -340,11 +391,11 @@ pub const MESSAGES = [_]MsgRow{
     },
     MsgRow{
         .id = 18,
-        .text = "Blinded - the next Strike misses.",
+        .text = "Blinded - your Strike misses.",
     },
     MsgRow{
         .id = 19,
-        .text = "Ink clouds the water - your action is chosen for you.",
+        .text = "Ink clouds the water - your action is forced.",
     },
     MsgRow{
         .id = 20,
@@ -361,6 +412,14 @@ pub const MESSAGES = [_]MsgRow{
     MsgRow{
         .id = 23,
         .text = "Sonar: speed and next action revealed.",
+    },
+    MsgRow{
+        .id = MSG_WARY,
+        .text = "This one remembers: +15 Resolve.",
+    },
+    MsgRow{
+        .id = MSG_GRUDGE,
+        .text = "It remembers the last run: +30 Resolve.",
     },
 };
 

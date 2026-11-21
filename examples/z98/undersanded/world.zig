@@ -245,6 +245,13 @@ pub fn lockedNodeCount(w: *const def.World) i32 {
     return n;
 }
 
+pub fn lockoutRemaining(w: *const def.World, zone: i32) i32 {
+    if (!validZone(zone)) return 0;
+    const left = w.lockout_until[zone] - w.cycle;
+    if (left < 0) return 0;
+    return left;
+}
+
 pub fn rareChance(w: *const def.World, zone: i32) i32 {
     if (!validZone(zone)) return 0;
     if (w.lockout_until[zone] > w.cycle) return 0;

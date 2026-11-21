@@ -130,6 +130,7 @@ fn readWindowKey(g: *gfx.Gfx, fight_art: bool) ?input.Key {
 fn artMode(g: *def.GameState, p: ?*px.Gfx) bool {
     if (p == null) return false;
     if (expedition.isInFight(g)) return true;
+    if (g.screen == def.NAV_SUBDUE_INTRO) return true;
     if (g.screen == def.SCREEN_SUBDUE or g.screen == def.SCREEN_SUBDUE_POST) return true;
     return false;
 }
@@ -158,11 +159,7 @@ fn drawArtFrame(g: *def.GameState, p: *px.Gfx, st: *const nav.NavState,
     art.shakeUpdate(g, time.highRes(), time.highResFreq());
     art.renderScreen(&sf, g, help_text, true, artView(g));
 
-    if (notice.len > 0) {
-        const y = art.LOG_Y + (art.LOG_LINES - 1) * art.LINE_H;
-        px.gfxPxFill(p, 4, y, 632, art.LINE_H, art.C_LOG);
-        art.drawText(&sf, 4, y, notice, art.C_TEXT, art.C_LOG);
-    }
+    art.drawNotice(&sf, g, notice);
 
     px.gfxPxUnlock(p);
     px.gfxPxPresent(p, 0, 0, 640, 480);
@@ -203,15 +200,7 @@ pub fn bootGfx(win: *gfx.Gfx, gs: *def.GameState, dir: []const u8,
     perf_on: bool) bool {
     g_win = win;
     var screen = nav.bootReset(gs, dir);
-    var st = nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    var st = nav.initState();
     var sc: render.Screen = undefined;
     var msg: [256]u8 = undefined;
     var msg_len: usize = 0;
@@ -242,6 +231,7 @@ pub fn bootGfx(win: *gfx.Gfx, gs: *def.GameState, dir: []const u8,
 pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
     const win = g_win orelse return;
     if (g.screen != def.NAV_MAP and g.screen != def.NAV_NODE and g.screen != def.NAV_SETTLE
+        and g.screen != def.NAV_SUBDUE_INTRO
         and g.screen != def.NAV_REFINE and g.screen != def.NAV_UPGRADE
         and g.screen != def.NAV_CRAFT and g.screen != def.NAV_BUY and g.screen != def.NAV_TOOLS
         and g.screen != def.NAV_LORE and g.screen != def.NAV_MENU and g.screen != def.NAV_SAVE_ERR
@@ -252,15 +242,7 @@ pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
     var p_opt = px0;
     var dir_buf: [4096]u8 = undefined;
     const dir = paths.dataDirOrFallback(dir_buf[0..]);
-    var st = nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    var st = nav.initState();
     var notice_buf: [256]u8 = undefined;
     var line_buf: [256]u8 = undefined;
     var notice_len: usize = 0;

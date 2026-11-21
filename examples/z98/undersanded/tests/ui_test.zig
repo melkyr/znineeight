@@ -138,7 +138,7 @@ fn tRenderFightFrame() bool {
     if (!contains(text, "Steel Tuna")) return false;
     if (!contains(text, "common")) return false;
     if (!contains(text, "SPD ??")) return false;
-    if (!contains(text, "[S]trike [R]estrain [E]quipment [F]lee")) return false;
+    if (!contains(text, "[S]trike [R]estrain [E] Use tool [F]lee")) return false;
 
     revealJournal(&s, 2);
     render.renderFrame(&s, &d, &sc);
@@ -308,10 +308,10 @@ fn tRenderModal() bool {
     if (!contains(text, "SUBDUE ATTEMPT")) return false;
     if (!contains(text, "Anemoniacus")) return false;
     if (!contains(text, "65% chance")) return false;
-    if (!contains(text, "[A]ttempt")) return false;
-    if (!contains(text, "[F] Fight on")) return false;
+    if (!contains(text, "[A] Attempt")) return false;
+    if (!contains(text, "[F] Fight on / decline")) return false;
     if (contains(text, "[F]lee")) return false;
-    if (!contains(text, "[Esc]")) return false;
+    if (!contains(text, "[Esc] Decline")) return false;
     return true;
 }
 

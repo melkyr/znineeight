@@ -71,7 +71,7 @@
 - `expedition.postFight` on `OUT_SUBDUE` sets `g.screen = NAV_SUBDUE_INTRO` after loot/log/hull. `nav.deriveScreen` preserves it while pending; otherwise `NAV_SETTLE`.
 - `nav` pending block: intro accepts only `C`/`c` and moves to `NAV_SETTLE`; `1`→Release, `2`→Sell on settle; every other key is a no-op. `R`/`S` are never settlement keys.
 - `render_term.renderNode`: intro header/copy from spec §7.1; settle header `UNDERSANDED  SETTLE`, creature name, secured parts, release/sell lines with `creatures.defAt(...).sale`; no Rest hint.
-- `render_art`: `NAV_SUBDUE_INTRO` is an art mode; draw the existing fight frame and a centered modal `SUBDUED <name>` / `[C]Continue`; no RNG/phase.
+- `render_art`: `NAV_SUBDUE_INTRO` is an art mode; draw the existing fight frame and a centered modal `SUBDUED <name>` / `[C]ontinue`; no RNG/phase.
 - `undtool --dump-grid --screen subdue|settle` renders the two new states with a synthetic pending subdue.
 
 - [ ] Tests: `subdue_intro_before_settle`, `settle_ignores_r_and_s`, `settle_1_releases_2_sells`, `settle_copy_names_creature_and_effects`, `subdue_intro_no_rng_no_phase`; update old settle R/S tests. Goldens byte-compare. Commit `example(undersanded): subdue intro + settlement UX`.
@@ -80,8 +80,8 @@
 
 **Files:** `expedition.zig`, `nav.zig`, `render_term.zig`, `tests/ux_test.zig`
 
-- [ ] `expedition` sets `last_event`/`last_event_def`/`last_event_value` for depart, node/dock rest, rough sleep, surface, subdue/kill/overkill, creature flee, player flee, Hull-0 ascent, hunt max/empty, released/sold.
-- [ ] `nav` consumes the event after `navStep` into `st.field_msg` using the §7.1 copy; clears the event; clears the message at the next key. No-op refusals set their specific copy.
+- [ ] `expedition` sets `last_event`/`last_event_def`/`last_event_value` for depart, node/dock rest, rough sleep, surface, subdue/kill/overkill, creature flee, player flee, Hull-0 ascent, hunt max/empty, released/sold. Kill/overkill status omits the parts list; the node `Secured:` line carries it.
+- [ ] `nav` consumes the event after `navStep` into `st.field_msg` using the §7.1 copy; clears the event; clears the message at the next key. No-op refusals set their specific copy (including boss-locked `9`). Rest copy uses the actual healed amount, not the nominal 30/40.
 - [ ] Tests: one case per event, exact copy; `no_event_no_status`; `status_clears_next_key`; `event_does_not_change_phase_or_rng`; kill/overkill/flee/ascent copy survives the screen change. Commit `example(undersanded): field event status lines`.
 
 ### Task 4: Silent mechanics visibility

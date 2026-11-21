@@ -37,15 +37,7 @@ fn key(c: u8) input.Key {
 }
 
 fn newNav() nav.NavState {
-    return nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    return nav.initState();
 }
 
 fn eq(a: []const u8, b: []const u8) bool {
@@ -218,10 +210,13 @@ fn tWalk() bool {
         }
     }
     if (expedition.isInFight(&g)) return false;
-    if (g.screen != def.NAV_SETTLE) return false;
-    if (!renderOk(&g, &st, "UNDERSANDED  NODE")) return false;
+    if (g.screen != def.NAV_SUBDUE_INTRO) return false;
+    if (!renderOk(&g, &st, "SUBDUED")) return false;
 
-    if (nav.navStep(&g, &st, key('r')) != def.NAV_NODE) return false;
+    if (nav.navStep(&g, &st, key('c')) != def.NAV_SETTLE) return false;
+    if (!renderOk(&g, &st, "UNDERSANDED  SETTLE")) return false;
+
+    if (nav.navStep(&g, &st, key('1')) != def.NAV_NODE) return false;
     if (!renderOk(&g, &st, "UNDERSANDED  NODE")) return false;
 
     if (nav.navStep(&g, &st, key('s')) != def.NAV_DOCK) return false;
