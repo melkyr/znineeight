@@ -28,6 +28,7 @@ const fight = @import("fight.zig");
 const text_scan = @import("text_scan.zig");
 const render_text = @import("render_text.zig");
 const economy = @import("economy.zig");
+const tables = @import("tables_t1.zig");
 
 pub const HELP_PAGE_NONE: i32 = 0;
 pub const TIP_NONE: i32 = 0;
@@ -58,6 +59,10 @@ pub const NavState = struct {
     // M10.1 one-action field status line (UI-only, spec §7.1).
     field_msg: [96]u8,
     field_msg_len: usize,
+    // Dock success/refusal detail line (UI-only, one action). The generic
+    // DOCK_OK result is replaced by an amount/effect line when available.
+    dock_msg: [128]u8,
+    dock_msg_len: usize,
 };
 
 // R8 explicit initialisation for every NavState constructor (R8).
@@ -75,6 +80,11 @@ pub fn initState() NavState {
     while (i < st.field_msg.len) : (i += 1) {
         st.field_msg[i] = 0;
     }
+    st.dock_msg_len = 0;
+    i = 0;
+    while (i < st.dock_msg.len) : (i += 1) {
+        st.dock_msg[i] = 0;
+    }
     return st;
 }
 
@@ -84,6 +94,22 @@ pub fn navClearFieldMsg(st: *NavState) void {
     while (i < st.field_msg.len) : (i += 1) {
         st.field_msg[i] = 0;
     }
+}
+
+pub fn navClearDockMsg(st: *NavState) void {
+    st.dock_msg_len = 0;
+    var i: usize = 0;
+    while (i < st.dock_msg.len) : (i += 1) {
+        st.dock_msg[i] = 0;
+    }
+}
+
+fn navSetDockMsg(st: *NavState, text: []const u8) void {
+    var i: usize = 0;
+    while (i < text.len and i < st.dock_msg.len) : (i += 1) {
+        st.dock_msg[i] = text[i];
+    }
+    st.dock_msg_len = i;
 }
 
 pub fn navSetFieldMsg(st: *NavState, text: []const u8) void {
@@ -335,6 +361,7 @@ fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         const material: i32 = @intCast(i32, key.ch - '0');
         if (st.armed != 0 and st.armed != material) {
             st.armed = 0;
+            navSetDockMsg(st, "Rare batch cancelled.");
             return setScreen(g, def.NAV_REFINE);
         }
         if (economy.isDeepMaterial(material) and st.armed != material
@@ -343,12 +370,43 @@ fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
             st.last = def.NAV_RESULT_PREVIEW;
             return setScreen(g, def.NAV_REFINE);
         }
+        // Capture the pre-refine values so the one-action result can name the
+        // materials gained and the expertise change (spec §16/P22.1).
+        const parts = dock.refineParts(g, material);
+        const per = dock.refinePerPart(g, material);
+        const exp_before = g.world.expertise[@intCast(usize, material)];
+        const gained = parts * per;
         st.armed = 0;
         st.last = dock.dockRefine(g, material);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [160]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Refined ");
+            text_scan.appendInt(buf[0..], &at, @intCast(i64, parts));
+            text_scan.appendText(buf[0..], &at, " ");
+            text_scan.appendText(buf[0..], &at, render.partName(material));
+            text_scan.appendText(buf[0..], &at, " -> ");
+            text_scan.appendInt(buf[0..], &at, @intCast(i64, gained));
+            text_scan.appendText(buf[0..], &at, " ");
+            text_scan.appendText(buf[0..], &at, render.materialName(material));
+            if (exp_before >= 5) {
+                text_scan.appendText(buf[0..], &at, "; E5 (max).");
+            } else {
+                text_scan.appendText(buf[0..], &at, "; E+1");
+                if (gained == 0 and economy.isDeepMaterial(material)) {
+                    text_scan.appendText(buf[0..], &at,
+                        " (deep parts lose 1/part below E5).");
+                } else {
+                    text_scan.appendText(buf[0..], &at, ".");
+                }
+            }
+            navSetDockMsg(st, buf[0..at]);
+        }
         return setScreen(g, def.NAV_REFINE);
     }
 
     // Any other key cancels a pending rare-batch confirm.
+    if (st.armed != 0) navSetDockMsg(st, "Rare batch cancelled.");
     st.armed = 0;
     return setScreen(g, def.NAV_REFINE);
 }
@@ -357,7 +415,18 @@ fn upgradeStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     if (key.ch >= '1' and key.ch <= '5') {
         const axis: i32 = @intCast(i32, key.ch - '1');
+        const tier_before = g.world.boat[@intCast(usize, axis)];
         st.last = dock.dockUpgrade(g, axis);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [80]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Upgraded ");
+            text_scan.appendText(buf[0..], &at, render.axisName(axis));
+            text_scan.appendText(buf[0..], &at, " to T");
+            text_scan.appendInt(buf[0..], &at, @intCast(i64, tier_before + 1));
+            text_scan.appendText(buf[0..], &at, ".");
+            navSetDockMsg(st, buf[0..at]);
+        }
     }
     return setScreen(g, def.NAV_UPGRADE);
 }
@@ -367,6 +436,14 @@ fn craftStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (key.ch >= '1' and key.ch <= '7') {
         const tool: i32 = @intCast(i32, key.ch - '0');
         st.last = dock.dockCraft(g, tool);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [80]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Crafted ");
+            text_scan.appendText(buf[0..], &at, render_text.toolName(tool));
+            text_scan.appendText(buf[0..], &at, ".");
+            navSetDockMsg(st, buf[0..at]);
+        }
     }
     return setScreen(g, def.NAV_CRAFT);
 }
@@ -374,12 +451,36 @@ fn craftStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
 fn buyStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     const c = lower(key.ch);
+    var cosmetic: i32 = -1;
     if (c >= '1' and c <= '9') {
-        const cosmetic: i32 = @intCast(i32, c - '1');
-        st.last = dock.dockBuy(g, cosmetic);
+        cosmetic = @intCast(i32, c - '1');
     } else if (c >= 'a' and c <= 'c') {
-        const cosmetic: i32 = @intCast(i32, 9 + (c - 'a'));
+        cosmetic = @intCast(i32, 9 + (c - 'a'));
+    }
+    if (cosmetic >= 0) {
         st.last = dock.dockBuy(g, cosmetic);
+        const rows = tables.cosmetics();
+        if (cosmetic < @intCast(i32, rows.len)) {
+            const row = rows[@intCast(usize, cosmetic)];
+            if (st.last == dock.DOCK_OK) {
+                var buf: [96]u8 = undefined;
+                var at: usize = 0;
+                text_scan.appendText(buf[0..], &at, "Bought ");
+                text_scan.appendText(buf[0..], &at, row.name);
+                text_scan.appendText(buf[0..], &at, " for ");
+                text_scan.appendInt(buf[0..], &at, @intCast(i64, row.price));
+                text_scan.appendText(buf[0..], &at, " coins.");
+                navSetDockMsg(st, buf[0..at]);
+            } else if (st.last == dock.DOCK_ERR_LOCKED) {
+                var buf: [96]u8 = undefined;
+                var at: usize = 0;
+                text_scan.appendText(buf[0..], &at, "Locked - ");
+                text_scan.appendText(buf[0..], &at,
+                    render.cosmeticUnlockName(row.unlock));
+                text_scan.appendText(buf[0..], &at, ".");
+                navSetDockMsg(st, buf[0..at]);
+            }
+        }
     }
     return setScreen(g, def.NAV_BUY);
 }
@@ -388,9 +489,18 @@ fn toolsStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) return setScreen(g, def.NAV_DOCK);
     if (isChar(key, '0')) {
         st.last = dock.dockSelectTool(g, 0);
+        if (st.last == dock.DOCK_OK) navSetDockMsg(st, "Selected no tool.");
     } else if (key.ch >= '1' and key.ch <= '7') {
         const tool: i32 = @intCast(i32, key.ch - '0');
         st.last = dock.dockSelectTool(g, tool);
+        if (st.last == dock.DOCK_OK) {
+            var buf: [80]u8 = undefined;
+            var at: usize = 0;
+            text_scan.appendText(buf[0..], &at, "Selected ");
+            text_scan.appendText(buf[0..], &at, render_text.toolName(tool));
+            text_scan.appendText(buf[0..], &at, ".");
+            navSetDockMsg(st, buf[0..at]);
+        }
     }
     return setScreen(g, def.NAV_TOOLS);
 }
@@ -461,6 +571,7 @@ fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
 // always consume the transient field event exactly once.
 fn navStepInner(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     navClearFieldMsg(st);
+    navClearDockMsg(st);
     st.last = def.NAV_RESULT_NONE;
     st.tip = TIP_NONE;
 
@@ -756,6 +867,7 @@ pub fn navTipLine(st: *const NavState) []const u8 {
 
 pub fn navResultLine(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
     if (st.field_msg_len > 0) return st.field_msg[0..st.field_msg_len];
+    if (st.dock_msg_len > 0) return st.dock_msg[0..st.dock_msg_len];
     if (st.last >= 0) return dock.resultText(st.last);
     if (st.last == def.NAV_RESULT_PREVIEW) {
         const parts = dock.refineParts(g, st.armed);
@@ -783,6 +895,7 @@ pub fn navQuitKey(g: *const def.GameState, st: *const NavState, key: input.Key) 
 pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
     key: input.Key, answer: ?input.Key) NavIntercept {
     navClearFieldMsg(st);
+    navClearDockMsg(st);
     if (st.help_page != HELP_PAGE_NONE) {
         st.help_page = HELP_PAGE_NONE;
         return NavIntercept{ .handled = true, .quit = false, .msg = "" };

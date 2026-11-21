@@ -310,7 +310,7 @@ fn padTo(sc: *Screen, x: i32, y: i32, target: i32) i32 {
     return p;
 }
 
-fn materialName(m: i32) []const u8 {
+pub fn materialName(m: i32) []const u8 {
     switch (m) {
         1 => return "Chitin",
         2 => return "Steel Plate",
@@ -332,7 +332,7 @@ fn toolKindName(kind: i32) []const u8 {
 }
 
 
-fn axisName(axis: i32) []const u8 {
+pub fn axisName(axis: i32) []const u8 {
     switch (axis) {
         0 => return "Hull",
         1 => return "Speed",
@@ -375,7 +375,7 @@ fn axisEffect(axis: i32, tier: i32) []const u8 {
     }
 }
 
-fn cosmeticUnlockName(unlock: i32) []const u8 {
+pub fn cosmeticUnlockName(unlock: i32) []const u8 {
     switch (unlock) {
         1 => return "Reach Z1",
         2 => return "Reach Z2",

@@ -37,10 +37,10 @@ fn key(c: u8) input.Key {
     return input.Key{ .ch = c, .code = 0 };
 }
 
-fn fieldMsgZeroed(st: *const nav.NavState) bool {
+fn msgZeroed(buf: []const u8) bool {
     var i: usize = 0;
-    while (i < st.field_msg.len) : (i += 1) {
-        if (st.field_msg[i] != 0) return false;
+    while (i < buf.len) : (i += 1) {
+        if (buf[i] != 0) return false;
     }
     return true;
 }
@@ -95,13 +95,13 @@ fn tInitStateZeroesEveryField() bool {
     if (st.tip != nav.TIP_NONE) return false;
     if (st.journal_sel != 0) return false;
     if (st.boot_pending != 0) return false;
-    if (st.field_msg_len != 0) return false;
-    if (!fieldMsgZeroed(&st)) return false;
+    if (st.field_msg_len != 0 or st.dock_msg_len != 0) return false;
+    if (!msgZeroed(st.field_msg[0..]) or !msgZeroed(st.dock_msg[0..])) return false;
 
     nav.navSetFieldMsg(&st, "dirty");
     var fresh = nav.initState();
-    if (fresh.field_msg_len != 0) return false;
-    if (!fieldMsgZeroed(&fresh)) return false;
+    if (fresh.field_msg_len != 0 or fresh.dock_msg_len != 0) return false;
+    if (!msgZeroed(fresh.field_msg[0..]) or !msgZeroed(fresh.dock_msg[0..])) return false;
     return true;
 }
 
@@ -114,7 +114,7 @@ fn tFieldMsgClearedOnNextKey() bool {
     if (st.field_msg_len == 0) return false;
     _ = nav.navStep(&g, &st, key('x'));
     if (st.field_msg_len != 0) return false;
-    if (!fieldMsgZeroed(&st)) return false;
+    if (!msgZeroed(st.field_msg[0..])) return false;
     var out: [8]u8 = undefined;
     const line = nav.navResultLine(&g, &st, out[0..]);
     if (line.len != 0) return false;
@@ -427,7 +427,7 @@ fn tStatusClearsNextKey() bool {
     if (nav.navStep(&g, &st, key('x')) != def.NAV_NODE) return false;
     if (g.last_event != def.EV_NONE) return false;
     if (st.field_msg_len != 0) return false;
-    return fieldMsgZeroed(&st);
+    return msgZeroed(st.field_msg[0..]);
 }
 fn tEventDoesNotChangePhaseOrRng() bool {
     var g = newDock();

@@ -213,6 +213,24 @@ fn logSecured(g: *def.GameState, idx: i32, outcome: i32) void {
     fight.log(g, def.CLS_SECURED, def.MSG_SECURED, idx, outcome);
 }
 
+// A non-settlement field action consumes the previous haul: drop stale secured
+// records so the node Secured line does not outlive the fight that produced it.
+// Release/Sell deliberately keep it (the pending choice returns before this).
+fn clearSecuredLog(g: *def.GameState) void {
+    var write: i32 = 0;
+    var read: i32 = 0;
+    while (read < g.log_n) : (read += 1) {
+        if (g.log[@intCast(usize, read)].class == def.CLS_SECURED) continue;
+        if (write != read) g.log[@intCast(usize, write)] = g.log[@intCast(usize, read)];
+        write += 1;
+    }
+    while (write < g.log_n) : (write += 1) {
+        g.log[@intCast(usize, write)] =
+            def.LogEntry{ .class = 0, .msg_id = 0, .a = 0, .b = 0 };
+    }
+    g.log_n = write;
+}
+
 // Settle a fight once its outcome is resolved, or immediately when Hull hits 0
 // while the fight is still technically ongoing (creatureAct leaves it that
 // way). Returns true when the expedition ended (player flee or Hull-0 ascent).
@@ -494,6 +512,11 @@ pub fn expeditionStep(g: *def.GameState, action: i32) void {
         _ = postFight(g);
         return;
     }
+
+    // A non-settlement field action clears the previous haul's Secured line.
+    // Clear before settling a waiting outcome so a just-earned record survives.
+    const is_field = action == EXP_HUNT or action == EXP_REST or action == EXP_SURFACE;
+    if (is_field) clearSecuredLog(g);
 
     // A resolved fight may be waiting (e.g. an external gameStep or a test);
     // settle it before applying a field action.

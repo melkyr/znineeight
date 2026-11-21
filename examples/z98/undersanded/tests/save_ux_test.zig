@@ -446,7 +446,7 @@ fn tDockSaveEsc() bool {
     seedState(&g);
     const out = save_ux.dockSave(&g, prefix);
     if (!out.ok) return false;
-    if (!eq(out.text, "Saved.")) return false;
+    if (!eq(out.text, "Saved to slot 0.")) return false;
 
     const path = filePath("save0.dat", buf[0..]);
     if (!file_mod.exists(path)) return false;
@@ -486,7 +486,7 @@ fn tQuitDecisions() bool {
 
     const yes = save_ux.quitDecision(&g, prefix, 'Y');
     if (!yes.quit or !yes.saved) return false;
-    if (!eq(yes.text, "Saved.")) return false;
+    if (!eq(yes.text, "Saved to slot 0.")) return false;
     if (!file_mod.exists(filePath("save0.dat", buf[0..]))) return false;
 
     removeIfExists(filePath("save0.dat", buf[0..]));
@@ -498,9 +498,49 @@ fn tQuitDecisions() bool {
 
     const cancel = save_ux.quitDecision(&g, prefix, 'X');
     if (cancel.quit or cancel.saved) return false;
-    if (cancel.text.len != 0) return false;
+    if (!eq(cancel.text, "Stayed.")) return false;
     if (file_mod.exists(filePath("save0.dat", buf[0..]))) return false;
     return true;
+}
+
+fn tNavInterceptSaveAndQuitCopy() bool {
+    var b0: [256]u8 = undefined;
+    var b1: [256]u8 = undefined;
+    var bo: [256]u8 = undefined;
+    var bb: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    const save1 = filePath("save1.dat", b1[0..]);
+    const options = filePath("options.cfg", bo[0..]);
+    removeIfExists(save0);
+    removeIfExists(save1);
+    removeIfExists(options);
+    removeIfExists(filePath("save.bak", bb[0..]));
+
+    var g: def.GameState = undefined;
+    seedState(&g);
+    g.screen = def.NAV_DOCK;
+    var st = nav.initState();
+
+    // Console navRun and window navRunGfx both render this exact msg: stdout
+    // after the frame, or navRunGfx's row-29 notice.
+    const saved = nav.navIntercept(&g, &st, prefix, escKey(), null);
+    if (!saved.handled or saved.quit) return false;
+    if (!eq(saved.msg, "Saved to slot 0.")) return false;
+    if (!file_mod.exists(save0)) return false;
+
+    const ask = nav.navIntercept(&g, &st, prefix, key('q'), null);
+    if (!ask.handled or ask.quit) return false;
+    if (!eq(ask.msg, save_ux.QUIT_PROMPT)) return false;
+
+    const stayed = nav.navIntercept(&g, &st, prefix, key('q'), key('x'));
+    if (!stayed.handled or stayed.quit) return false;
+    if (!eq(stayed.msg, "Stayed.")) return false;
+
+    if (!writeFile(options, "save_slot=1\n")) return false;
+    const slot1 = nav.navIntercept(&g, &st, prefix, escKey(), null);
+    if (!slot1.handled or slot1.quit) return false;
+    if (!eq(slot1.msg, "Saved to slot 1.")) return false;
+    return file_mod.exists(save1);
 }
 
 fn tSlotOneBackup() bool {
@@ -531,7 +571,7 @@ fn tSlotOneBackup() bool {
     h.world.cycle = 44;
     const out = save_ux.dockSave(&h, prefix);
     if (!out.ok) return false;
-    if (!eq(out.text, "Saved.")) return false;
+    if (!eq(out.text, "Saved to slot 1.")) return false;
 
     if (!file_mod.exists(save1)) return false;
     if (!file_mod.exists(save0)) return false;
@@ -552,6 +592,10 @@ fn tSlotOneBackup() bool {
 
 fn key(c: u8) input.Key {
     return input.Key{ .ch = c, .code = 0 };
+}
+
+fn escKey() input.Key {
+    return input.Key{ .ch = input.KEY_ESC, .code = 0 };
 }
 
 fn tBootRouting() bool {
@@ -816,6 +860,7 @@ pub fn main() void {
     report("dock_save_esc_success", tDockSaveEsc());
     report("dock_save_blocked_reason", tDockSaveBlocked());
     report("quit_decisions", tQuitDecisions());
+    report("nav_intercept_save_and_quit_copy", tNavInterceptSaveAndQuitCopy());
     report("slot_one_manual_backup", tSlotOneBackup());
     report("boot_routing_and_keys", tBootRouting());
     report("boot_fresh_first_run_no_menu", tBootFreshFirstRun());
