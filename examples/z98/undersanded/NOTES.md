@@ -2143,3 +2143,138 @@ Task 0's existing-state checks are already true in the committed tree:
 respawn kill/overkill 20/40; `def.World` already carries
 `boss_variants_seen`, `boss_kills`, `field_record_written`, `field_record`,
 and `last_run`.
+
+## M10.1 preflight
+
+Baseline at `5c8597f1` (branch `undersanded/m10.1`), compiler
+`/tmp/seed151_build/zig1_5_clean` (seed v151), md5
+`a2fc81055dc1cb7a67099fe3934d22ee`:
+
+```
+TIER_M10 PASS 71 passed / 0 failed
+TIER_EDIT PASS 38 passed / 0 failed
+```
+
+Task 0 changes only this file. No product code, plan, spec, test, or golden is
+edited. Console boot is recorded here as a test-only ruling, not fixed.
+
+**P30 M10.1 UX rulings (user-authorized).** (1) one M10.1 milestone covers all
+UX tasks; (2) `undtool.exe --play` may skip boot — it is test-only;
+`under.exe` is the real game; record, do not fix; (3) subdue success always
+shows `NAV_SUBDUE_INTRO` and `[C]ontinue`; settlement keys are **1/2**, never
+R/S; (4) one-action status line in terminal and window row 29, exact copy in
+§7.1; (5) help pages 1–9 with the §7.1 page map, `[?]` on every screen,
+`[J]ournal` on dock/field; (6) lore wraps, save-error `[F]resh` confirms erase;
+(7) silent mechanics get visible feedback (rough sleep, wariness, grudge, rare
+chance, lockout, Heavy, sale, respawn, phase); (8) art subdue intro is a modal
+over the last fight frame; (9) tool/upgrade/cosmetic effects get in-game copy;
+(10) art polish, Esc menu (M12), boss journal wiring (M11), `legend.1/2` and
+`zone.4..8` (M13/M16) stay deferred.
+
+**Status-line rule (§7.1).** Every field action leaves a one-line result; no
+screen change is unexplained. The status line is identical in terminal and
+window: terminal prints it after the frame; window renders it on cell row 29.
+It lives for one action and is cleared at the start of the next key, including
+no-ops. A subdue success is an explicit intro, not an immediate screen swap;
+art mode draws it as a modal over the last fight frame. The fight log remains
+the in-fight record; the status line never overwrites a live art log.
+
+**Subdue flow / settlement (§7.1, §9.3, §9.7).**
+
+1. `NAV_SUBDUE_INTRO` — art: modal over the last fight frame; cell: full screen:
+   `SUBDUED <name>` / `Secured: <parts>` / `[C]ontinue`.
+   Only `C`/`c` advances. `1`/`2`/`R`/`S` and other keys do nothing.
+2. `NAV_SETTLE` — header `UNDERSANDED  SETTLE`:
+   `Subdued <name>` / `Secured: <parts>`
+   `[1] Release - parts kept; rare chance +8 where rares exist (cap +40); returns +15 Resolve`
+   `[2] Sell - parts kept; +<sale> coins`
+   Keys are **1/2**, never `R`/`S`: node `R`=Rest and `S`=Surface must not
+   collide with an irreversible choice. No stale Rest hint.
+3. After the choice, one status line:
+   `Released <name> - parts kept; +15 Resolve next time.`
+   `Sold <name> for <sale> coins - parts kept.`
+
+The §9.3 rare/named subdue modal keeps HP/Resolve/Hull visible and states
+`+25% Resolve, +25% Attack, +2 Speed (cap +6)`; `[A] Attempt`, `[F] Fight on /
+decline`, `[Esc] Decline` (F and Esc are identical, consume no RNG, and record
+as `decline`). If Thrash is live when declining, log *"You hold off. Its will
+begins to recover."* §9.7: Release = +8 pp node rare chance per release, cap
++40 pp, resets on a rare encounter in that node; the creature returns warier at
+the next fight only (`res`/`max_res` +15, then the wary bit clears). Sell pays
+its sale price; normal renewal. Parts are kept either way; zones with no rares
+(the tutorial zone) get no rare effect.
+
+**Exact §7.1 field status copy.**
+
+| Event | Copy |
+| :--- | :--- |
+| Depart | `Departed to <zone> - travel <t> out, <t> back (+1 depart action).` |
+| Hunt kill | `Killed <name> - Secured: <parts>.` |
+| Hunt overkill | `Overkilled <name> - the rarest line is ruined.` |
+| Creature flee | `The creature fled - no loot; it renews.` |
+| Player flee | `You fled - no loot; returned to dock.` |
+| Hull 0 | `Emergency ascent - Hull 0; returned to dock.` |
+| Node Rest | `Rested at the node: +<n> Hull.` |
+| Rough sleep | `Rough sleep (<condition>): <effect>.` |
+| Dock Rest | `Rested at dock: +<n> Hull.` |
+| Surface | `Returned to dock - travel <t> phases.` |
+| No fights | `No fights left - surface or rest.` |
+| Empty pool | `Nothing answers the hook here.` |
+| Boss locked | `The Derelict is silent - <seen>/6 species seen.` |
+| EQUIP refused | `No tool selected.` / `Tool is broken.` / `No charge left.` / `Tool is rigged - always on.` |
+
+Fight-ending copy must survive the screen change: kill/overkill/flee/ascent/
+creature-flee use the status line above; subdue uses the settlement intro.
+**Silent state is forbidden.** Release/Sell effects, wariness, grudge, rare
+chance, lockout, Heavy travel, sale price, rough-sleep condition, respawn
+availability, and phase/cycle must have a visible surface (status line,
+node/map line, help copy, or fight log). Heavy is included in the map's
+displayed travel cost.
+
+**Help / manual (§7.1, §18).** Every screen footer shows `[?] Help`; dock/field
+screens show `[J]ournal` when a save is active. `?` opens the manual page for
+the screen and consumes no action/RNG. Pages are **1–9**; page 9 is Journal &
+Speed.
+
+Page map (exact): DOCK 1 · MAP 5 · NODE 5 · FIGHT/SUBDUE/SUBDUE_POST 2 ·
+SUBDUE_INTRO/SETTLE 3 · REFINE/UPGRADE 4 · CRAFT/TOOLS 6 · JOURNAL 9 · BUY 8 ·
+LORE/MENU/SAVE_ERR 1.
+
+`manual.3` covers Release/Sell; `manual.5` covers rough sleep and phases;
+`manual.6` describes each tool; `manual.7` covers the boss gate; `manual.9`
+covers the Journal and Speed reveal. `SPD ??` is explained on page 9 (journal)
+and page 2 (Sonar). The Esc menu remains M12; M10.1 leaves dock Esc=Save /
+`q`=Quit unchanged and adds no mid-fight menu.
+
+**Boot/save safety copy.** First-run lore wraps at 80 columns, preserving `\n\n`
+paragraph breaks; `dump_grid_lore.golden` is re-pinned. Save-error `[F]resh`
+asks `Erase this save? [Y] [N]`; only `Y` erases, `N` returns (new
+`boot_pending=2`). This is an explicit confirm, not a one-key erase.
+
+**Goldens expected to change (intentional only).**
+
+- New: `tests/fixtures/dump_grid_subdue.golden`,
+  `tests/fixtures/dump_grid_settle.golden`.
+- `dump_grid_fight.golden`: red-zone `|` marker, `COND` line, `[E] Use tool`.
+- `dump_grid_dock.golden`, `dump_grid_map.golden`, `dump_grid_node.golden`:
+  new §7.1 copy/status, phase/cycle, rare/lockout/pool, Heavy travel, help and
+  Journal hints.
+- `dump_grid_help.golden`: pages 1–9 and the corrected page map.
+- `dump_grid_lore.golden`: 80-column wrap.
+- `dump_grid_journal.golden`, `dump_grid_menu.golden`: only where the
+  Journal/Speed or `[?]` hint copy appears.
+- `art_fight.golden`: at most **one** intentional re-pin, only if the new
+  copy/status requires it.
+
+**Normal-screen goldens that must not drift.** The normal art fight frame is
+not the subdue intro: the intro modal is a new state and must not alter the
+ordinary fight golden except for the single permitted copy-driven re-pin above.
+Behavior/data gates stay untouched: `defs_golden.txt`,
+`defs_boss_golden.txt`, replay (`replay_eel_98.rep` and replay golden), save
+fixtures/goldens (no save field/version change), decoded asset goldens,
+`px_core_test` 320×200 framebuffer, and `loop_golden.txt` unless the new §7.1
+copy actually appears in the loop output. No RNG draw, phase count, save
+field/version, or fight-resolution change; `canSave` semantics stay as M7.
+
+**Deferred (not M10.1).** Full art polish; Esc menu (M12); boss journal wiring
+(M11); `legend.1/2`, `zone.4..8`, and `error.*` (M13/M16).
