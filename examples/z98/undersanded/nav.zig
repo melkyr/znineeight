@@ -54,7 +54,53 @@ pub const NavState = struct {
     // Boot-only: 0 none, 1 awaiting the New Game Y/N answer. navStep never
     // reads it, so console nav behaviour is unchanged.
     boot_pending: i32,
+    // M10.1 one-action field status line (UI-only, spec §7.1).
+    field_msg: [96]u8,
+    field_msg_len: usize,
 };
+
+// R8 explicit initialisation for every NavState constructor (R8).
+pub fn initState() NavState {
+    var st: NavState = undefined;
+    st.armed = 0;
+    st.last = def.NAV_RESULT_NONE;
+    st.save_err_kind = 0;
+    st.help_page = HELP_PAGE_NONE;
+    st.tip = TIP_NONE;
+    st.journal_sel = 0;
+    st.boot_pending = 0;
+    st.field_msg_len = 0;
+    var i: usize = 0;
+    while (i < st.field_msg.len) : (i += 1) {
+        st.field_msg[i] = 0;
+    }
+    return st;
+}
+
+pub fn navClearFieldMsg(st: *NavState) void {
+    st.field_msg_len = 0;
+    var i: usize = 0;
+    while (i < st.field_msg.len) : (i += 1) {
+        st.field_msg[i] = 0;
+    }
+}
+
+pub fn navSetFieldMsg(st: *NavState, text: []const u8) void {
+    var i: usize = 0;
+    while (i < text.len and i < st.field_msg.len) : (i += 1) {
+        st.field_msg[i] = text[i];
+    }
+    st.field_msg_len = i;
+}
+
+pub fn navSetFieldMsgInt(st: *NavState, prefix: []const u8, value: i32,
+    suffix: []const u8) void {
+    var at: usize = 0;
+    text_scan.appendText(st.field_msg[0..], &at, prefix);
+    text_scan.appendInt(st.field_msg[0..], &at, @intCast(i64, value));
+    text_scan.appendText(st.field_msg[0..], &at, suffix);
+    st.field_msg_len = at;
+}
 
 pub const BootOut = struct {
     screen: i32,
@@ -284,6 +330,7 @@ fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
 
 // Next screen id for one key. Mutates game state only via dock/expedition.
 pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    navClearFieldMsg(st);
     st.last = def.NAV_RESULT_NONE;
     st.tip = TIP_NONE;
 
@@ -544,6 +591,7 @@ pub fn navTipLine(st: *const NavState) []const u8 {
 }
 
 pub fn navResultLine(g: *def.GameState, st: *const NavState, out: []u8) []const u8 {
+    if (st.field_msg_len > 0) return st.field_msg[0..st.field_msg_len];
     if (st.last >= 0) return dock.resultText(st.last);
     if (st.last == def.NAV_RESULT_PREVIEW) {
         const parts = dock.refineParts(g, st.armed);
@@ -570,6 +618,7 @@ pub fn navQuitKey(g: *const def.GameState, st: *const NavState, key: input.Key) 
 // answer carries the second key only when navQuitKey returned true.
 pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
     key: input.Key, answer: ?input.Key) NavIntercept {
+    navClearFieldMsg(st);
     if (st.help_page != HELP_PAGE_NONE) {
         st.help_page = HELP_PAGE_NONE;
         return NavIntercept{ .handled = true, .quit = false, .msg = "" };
@@ -610,15 +659,7 @@ pub fn navRun(g: *def.GameState) void {
 
     var dir_buf: [4096]u8 = undefined;
     const dir = paths.dataDirOrFallback(dir_buf[0..]);
-    var st = NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = save_ux.ERR_KIND_NONE,
-        .help_page = HELP_PAGE_NONE,
-        .tip = TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    var st = initState();
     var buf: [8192]u8 = undefined;
     var line_buf: [256]u8 = undefined;
 
@@ -811,15 +852,7 @@ pub fn bootReset(g: *def.GameState, dir: []const u8) i32 {
 pub fn boot(g: *def.GameState, dir: []const u8) bool {
     // app.zig passes an uninitialised GameState; boot owns the first draw.
     var screen = bootReset(g, dir);
-    var st = NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = save_ux.ERR_KIND_NONE,
-        .help_page = HELP_PAGE_NONE,
-        .tip = TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    var st = initState();
     var sc: render.Screen = undefined;
     var buf: [8192]u8 = undefined;
     var msg: [256]u8 = undefined;

@@ -130,14 +130,7 @@ fn tOverlayNoAction() bool {
     game.startFight(&g, 0);
     g.exp.active = 1;
     g.exp.zone = 0;
-    var st = nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-    };
+    var st = nav.initState();
     const hp = g.fight.hp;
     const res = g.fight.res;
     const hull = g.fight.hull;

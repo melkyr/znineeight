@@ -238,14 +238,8 @@ fn tSaveErrorVersionOne() bool {
     if (contains(text, "Continue")) return false;
 
     g.screen = def.NAV_SAVE_ERR;
-    var st = nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = save_ux.saveErrKind(err),
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-    };
+    var st = nav.initState();
+    st.save_err_kind = save_ux.saveErrKind(err);
     var nav_buf: [8192]u8 = undefined;
     const nav_text = nav.drawCurrent(&g, &st, nav_buf[0..]);
     if (!contains(nav_text, "Save is from a different version.")) return false;

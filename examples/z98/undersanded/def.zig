@@ -190,6 +190,10 @@ pub const GameState = struct {
     log_n: i32,
     exp: Expedition,
     screen: i32,
+    // M10.1 transient field-action event (spec §7.1); never persisted.
+    last_event: i32,
+    last_event_def: i32,
+    last_event_value: i32,
 };
 
 // ---- Action / outcome / bar / flag vocabulary ----------------------------
@@ -260,6 +264,25 @@ pub const OUT_KILL: i32 = 2;
 pub const OUT_OVERKILL: i32 = 3;
 pub const OUT_CREATURE_FLED: i32 = 4;
 pub const OUT_PLAYER_FLED: i32 = 5;
+
+// ---- Field event ids (M10.1 §7.1) -----------------------------------------
+
+pub const EV_NONE: i32 = 0;
+pub const EV_DEPART: i32 = 1;
+pub const EV_REST_NODE: i32 = 2;
+pub const EV_ROUGH: i32 = 3;
+pub const EV_REST_DOCK: i32 = 4;
+pub const EV_SURFACE: i32 = 5;
+pub const EV_SUBDUE: i32 = 6;
+pub const EV_KILL: i32 = 7;
+pub const EV_OVERKILL: i32 = 8;
+pub const EV_CREATURE_FLED: i32 = 9;
+pub const EV_PLAYER_FLED: i32 = 10;
+pub const EV_ASCENT: i32 = 11;
+pub const EV_HUNT_MAX: i32 = 12;
+pub const EV_HUNT_EMPTY: i32 = 13;
+pub const EV_RELEASED: i32 = 14;
+pub const EV_SOLD: i32 = 15;
 
 pub const BAR_NONE: i32 = 0;
 pub const BAR_STRIKE: i32 = 1;

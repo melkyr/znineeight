@@ -37,15 +37,7 @@ fn key(c: u8) input.Key {
 }
 
 fn newNav() nav.NavState {
-    return nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-        .boot_pending = 0,
-    };
+    return nav.initState();
 }
 
 fn eq(a: []const u8, b: []const u8) bool {

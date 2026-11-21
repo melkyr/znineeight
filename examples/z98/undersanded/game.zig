@@ -102,6 +102,9 @@ pub fn newGame(s: *def.GameState) void {
         .pending_cond = def.COND_NONE,
     };
     s.fight.def_index = def.NO_FIGHT;
+    s.last_event = def.EV_NONE;
+    s.last_event_def = 0;
+    s.last_event_value = 0;
 }
 
 pub fn startFight(s: *def.GameState, def_index: i32) void {
@@ -123,6 +126,9 @@ pub fn startFight(s: *def.GameState, def_index: i32) void {
     const grudge_mask = s.world.family_overkill_mask;
     zeroWorld(&s.world);
     s.fight.pending_stun = 0;
+    s.last_event = def.EV_NONE;
+    s.last_event_def = 0;
+    s.last_event_value = 0;
 
     var d = creatures.defAt(def_index);
     fight.startFightDef(s, def_index, &d, creatures.rules());

@@ -225,14 +225,7 @@ fn tTooltipOnce() bool {
     game.startFight(&g, 0);
     g.exp.active = 1;
     g.exp.zone = 0;
-    var st = nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-    };
+    var st = nav.initState();
     _ = nav.navStep(&g, &st, input.Key{ .ch = 'r', .code = 0 });
     if (st.tip != journal.TOOLTIP_RESTRAIN + 1) return false;
     if (!journal.tooltipShown(&g.world, journal.TOOLTIP_RESTRAIN)) return false;
@@ -254,14 +247,7 @@ fn tHelpOverlayNoAction() bool {
     game.startFight(&g, 0);
     g.exp.active = 1;
     g.exp.zone = 0;
-    var st = nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-    };
+    var st = nav.initState();
     const hp = g.fight.hp;
     const res = g.fight.res;
     const hull = g.fight.hull;
@@ -290,14 +276,7 @@ fn tJournalScreenAndOpen() bool {
     if (!contains(text, "*NEW*")) return false;
 
     g.screen = def.NAV_JOURNAL;
-    var st = nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-    };
+    var st = nav.initState();
     _ = nav.navStep(&g, &st, input.Key{ .ch = '1', .code = 0 });
     if (st.journal_sel != 1) return false;
     if (!journal.journalViewed(&g.world, 0)) return false;

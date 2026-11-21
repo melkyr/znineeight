@@ -38,14 +38,7 @@ fn escKey() input.Key {
 }
 
 fn newNav() nav.NavState {
-    return nav.NavState{
-        .armed = 0,
-        .last = def.NAV_RESULT_NONE,
-        .save_err_kind = 0,
-        .help_page = nav.HELP_PAGE_NONE,
-        .tip = nav.TIP_NONE,
-        .journal_sel = 0,
-    };
+    return nav.initState();
 }
 
 fn setHold(g: *def.GameState, part: i32, n: i32) void {
