@@ -115,9 +115,11 @@ fn barFill(value: i32, max: i32, width: i32) i32 {
     return f;
 }
 
-fn putBar(sc: *Screen, y: i32, label: []const u8, value: i32, max: i32) void {
+fn putBar(sc: *Screen, y: i32, label: []const u8, value: i32, max: i32,
+    red_at: i32) void {
     var x = put(sc, 0, y, label);
     x = put(sc, x, y, " [");
+    const bar_x = x;
     const fill = barFill(value, max, BAR_WIDTH);
     var i: i32 = 0;
     while (i < BAR_WIDTH) : (i += 1) {
@@ -126,6 +128,10 @@ fn putBar(sc: *Screen, y: i32, label: []const u8, value: i32, max: i32) void {
         } else {
             putChar(sc, x + i, y, EMPTY);
         }
+    }
+    if (red_at >= 0) {
+        const mark = barFill(red_at, max, BAR_WIDTH);
+        if (mark < BAR_WIDTH) putChar(sc, bar_x + mark, y, '|');
     }
     x += BAR_WIDTH;
     x = put(sc, x, y, "] ");
@@ -200,23 +206,31 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
     x = put(sc, x, 1, roleName(d.role));
     x = put(sc, x, 1, "  SPD ");
     if (speedRevealed(s)) {
-        _ = putInt(sc, x, 1, effectiveSpeed(s, d));
+        x = putInt(sc, x, 1, effectiveSpeed(s, d));
     } else {
-        _ = put(sc, x, 1, "??");
+        x = put(sc, x, 1, "??");
+    }
+    if ((d.flags & def.F_PHASING) != 0) {
+        x = put(sc, x, 1, "  ");
+        if (fight.phaseState(s) == fight.PHASE_PHASED) {
+            _ = put(sc, x, 1, "PHASE");
+        } else {
+            _ = put(sc, x, 1, "SOLID");
+        }
     }
 
     x = put(sc, 0, 2, "COND ");
     _ = put(sc, x, 2, conditionName(s.fight.cond));
 
-    putBar(sc, 3, "HP     ", s.fight.hp, s.fight.max_hp);
-    putBar(sc, 4, "RESOLVE", s.fight.res, s.fight.max_res);
-    putBar(sc, 5, "HULL   ", s.fight.hull, s.fight.max_hull);
+    putBar(sc, 3, "HP     ", s.fight.hp, s.fight.max_hp, fight.dangerHp(s));
+    putBar(sc, 4, "RESOLVE", s.fight.res, s.fight.max_res, -1);
+    putBar(sc, 5, "HULL   ", s.fight.hull, s.fight.max_hull, -1);
 
     renderToolStatus(sc, s, 6);
 
     renderLog(sc, s, d, 7);
 
-    _ = put(sc, 0, 15, "[S]trike [R]estrain [E]quipment [F]lee");
+    _ = put(sc, 0, 15, "[S]trike [R]estrain [E] Use tool [F]lee");
 }
 
 // ---- Dock / map / node screens (§12, §16, §26) ---------------------------

@@ -16,6 +16,8 @@ const rng = @import("../rng.zig");
 const behavior = @import("../behavior.zig");
 const fight = @import("../fight.zig");
 const game = @import("../game.zig");
+const tools = @import("../tools.zig");
+const world = @import("../world.zig");
 const creatures = @import("../creatures_t1.zig");
 const render = @import("../render_term.zig");
 
@@ -114,6 +116,38 @@ fn msgB(s: *const def.GameState, msg_id: i32) i32 {
         if (s.log[@intCast(usize, i)].msg_id == msg_id) return s.log[@intCast(usize, i)].b;
     }
     return -99999;
+}
+
+fn msgTextIs(s: *const def.GameState, msg_id: i32, want: []const u8) bool {
+    var i: i32 = 0;
+    while (i < s.log_n) : (i += 1) {
+        if (s.log[@intCast(usize, i)].msg_id != msg_id) continue;
+        var d = creatures.defAt(s.fight.def_index);
+        var buf: [128]u8 = undefined;
+        return eqStr(render.msgLine(s.log[@intCast(usize, i)], &d, buf[0..]), want);
+    }
+    return false;
+}
+
+fn msgTextWithA(s: *const def.GameState, msg_id: i32, a: i32, want: []const u8) bool {
+    var i: i32 = 0;
+    while (i < s.log_n) : (i += 1) {
+        if (s.log[@intCast(usize, i)].msg_id != msg_id) continue;
+        if (s.log[@intCast(usize, i)].a != a) continue;
+        var d = creatures.defAt(s.fight.def_index);
+        var buf: [128]u8 = undefined;
+        return eqStr(render.msgLine(s.log[@intCast(usize, i)], &d, buf[0..]), want);
+    }
+    return false;
+}
+
+fn countMsgText(s: *const def.GameState, msg_id: i32) i32 {
+    var n: i32 = 0;
+    var i: i32 = 0;
+    while (i < s.log_n) : (i += 1) {
+        if (s.log[@intCast(usize, i)].msg_id == msg_id) n += 1;
+    }
+    return n;
 }
 
 fn textHas(text: []const u8, needle: []const u8) bool {
@@ -1333,6 +1367,221 @@ fn tBossBehaviourRulesPinned() bool {
     return true;
 }
 
+const TEST_FLEE_RULE = [_]behavior.Rule{
+    behavior.Rule{
+        .cond_op = behavior.ALWAYS,
+        .cond_a = 0,
+        .cond_b = 0,
+        .effect_op = behavior.SET_FLEE,
+        .effect_a = 1,
+        .effect_b = 0,
+        .timing = behavior.TIMING_ONESHOT,
+    },
+};
+
+fn refusalText(tool_id: i32, charge: i32, broken: i32, active: i32,
+    owned: bool, want: []const u8) bool {
+    var d = neutralDef();
+    var s: def.GameState = undefined;
+    begin(&s, &d, noRules());
+    if (owned) s.world.tools_owned = @intCast(u32, 1) << @intCast(u32, tool_id);
+    s.fight.tool = tool_id;
+    s.fight.tool_charge = charge;
+    s.fight.tool_broken = broken;
+    s.fight.tool_active = active;
+    s.exp.tool = tool_id;
+    s.exp.tool_charge = charge;
+    s.exp.tool_broken = broken;
+    doStepWith(&s, def.ACT_EQUIP, &d, noRules());
+    return msgTextIs(&s, def.MSG_EQUIP_REFUSED, want);
+}
+
+fn tEquipRefusalCopy() bool {
+    return refusalText(0, 0, 0, 0, false, "No tool selected.")
+        and refusalText(def.TOOL_ELECTRIC_GLAND, 1, 1, 0, true, "Tool is broken.")
+        and refusalText(def.TOOL_ELECTRIC_GLAND, 0, 0, 0, true, "No charge left.")
+        and refusalText(def.TOOL_ELECTRIC_GLAND, 0, 0, 1, true, "No charge left.")
+        and refusalText(def.TOOL_PLATE, 0, 0, 1, true,
+            "Tool is rigged - always on.");
+}
+
+fn tToolBreakLogsAtHullHit() bool {
+    var d = neutralDef();
+    d.speed = 20;
+    d.attack = 15;
+    var s: def.GameState = undefined;
+    begin(&s, &d, noRules());
+    s.world.boat[world.BOAT_PRECISION] = 2;
+    s.world.tools_owned = @intCast(u32, 1) << @intCast(u32, def.TOOL_ELECTRIC_GLAND);
+    s.fight.tool = def.TOOL_ELECTRIC_GLAND;
+    s.fight.tool_charge = 1;
+    s.exp.tool = def.TOOL_ELECTRIC_GLAND;
+    s.exp.tool_charge = 1;
+    s.exp.tool_broken = 0;
+
+    doStepWith(&s, def.ACT_EQUIP, &d, noRules());
+    if (!msgTextIs(&s, def.MSG_TOOL_BROKEN,
+        "Your Electric Gland breaks - disabled for this expedition.")) return false;
+    return msgTextIs(&s, def.MSG_EQUIP_REFUSED, "Tool is broken.");
+}
+
+fn tBlindArmedAndMissCopy() bool {
+    var d = creatures.defAt(13);
+    d.attack = 0;
+    var s: def.GameState = undefined;
+    begin(&s, &d, creatures.RULES[0..]);
+    s.fight.res = 64;
+    s.fight.prev_res = 64;
+    doStepWith(&s, def.ACT_STRIKE, &d, creatures.RULES[0..]);
+    if (!msgTextIs(&s, def.MSG_BLIND_ARMED,
+        "The creature aims to blind - your next Strike may miss.")) return false;
+
+    var miss: def.GameState = undefined;
+    begin(&miss, &d, creatures.RULES[0..]);
+    miss.fight.pending_blind = 100;
+    doStepWith(&miss, def.ACT_STRIKE, &d, creatures.RULES[0..]);
+    return msgTextIs(&miss, def.MSG_BLIND, "Blinded - your Strike misses.");
+}
+
+fn tInkArmedAndForcedNames() bool {
+    var d = creatures.defAt(15);
+    d.hp = 1000;
+    d.resolve = 1000;
+    d.attack = 0;
+    var s: def.GameState = undefined;
+    begin(&s, &d, creatures.RULES[0..]);
+    s.fight.round = 3;
+    doStepWith(&s, def.ACT_RESTRAIN, &d, creatures.RULES[0..]);
+    if (!msgTextIs(&s, def.MSG_INK_ARMED,
+        "Ink clouds the water - your next action may be forced.")) return false;
+
+    var named: def.GameState = undefined;
+    begin(&named, &d, noRules());
+    fight.log(&named, def.LOG_NORMAL, def.MSG_INK, def.ACT_STRIKE, 0);
+    fight.log(&named, def.LOG_NORMAL, def.MSG_INK, def.ACT_RESTRAIN, 0);
+    fight.log(&named, def.LOG_NORMAL, def.MSG_INK, def.ACT_EQUIP, 0);
+    if (!msgTextWithA(&named, def.MSG_INK, def.ACT_STRIKE,
+        "Ink forces you to Strike.")) return false;
+    if (!msgTextWithA(&named, def.MSG_INK, def.ACT_RESTRAIN,
+        "Ink forces you to Restrain.")) return false;
+    if (!msgTextWithA(&named, def.MSG_INK, def.ACT_EQUIP,
+        "Ink forces you to use your tool.")) return false;
+
+    var after: u32 = 0;
+    const seed = findInkSeed(2, &after);
+    if (seed == 0) return false;
+    var forced: def.GameState = undefined;
+    begin(&forced, &d, noRules());
+    forced.fight.pending_ink = 1;
+    forced.fight.rng_state = seed;
+    doStepWith(&forced, def.ACT_FLEE, &d, noRules());
+    return msgTextIs(&forced, def.MSG_INK, "Ink forces you to use your tool.");
+}
+
+fn tPhaseHudLabels() bool {
+    var d = creatures.defAt(14);
+    var s: def.GameState = undefined;
+    begin(&s, &d, noRules());
+    var sc: render.Screen = undefined;
+    var buf: [8192]u8 = undefined;
+
+    s.fight.round = 1;
+    render.renderFrame(&s, &d, &sc);
+    if (!textHas(render.dump(&sc, buf[0..]), "SOLID")) return false;
+    s.fight.round = 3;
+    render.renderFrame(&s, &d, &sc);
+    return textHas(render.dump(&sc, buf[0..]), "PHASE");
+}
+
+fn tCounterSuppressionsOnce() bool {
+    var bd = creatures.defAt(13);
+    bd.attack = 0;
+    var lure: def.GameState = undefined;
+    begin(&lure, &bd, creatures.RULES[0..]);
+    lure.fight.res = 64;
+    lure.fight.prev_res = 64;
+    lure.fight.tool = def.TOOL_LURE;
+    lure.fight.tool_active = 1;
+    doStepWith(&lure, def.ACT_STRIKE, &bd, creatures.RULES[0..]);
+    doStepWith(&lure, def.ACT_STRIKE, &bd, creatures.RULES[0..]);
+    if (!msgTextIs(&lure, def.MSG_SUPPRESS_LURE,
+        "Lure: blind or decoy prevented.")) return false;
+    if (countMsgText(&lure, def.MSG_SUPPRESS_LURE) != 1) return false;
+    if (hasMsg(&lure, def.MSG_BLIND_ARMED)) return false;
+
+    var sd = creatures.defAt(15);
+    sd.hp = 1000;
+    sd.resolve = 1000;
+    sd.attack = 0;
+    var sonar: def.GameState = undefined;
+    begin(&sonar, &sd, creatures.RULES[0..]);
+    sonar.fight.tool = def.TOOL_SONAR;
+    sonar.fight.tool_active = 1;
+    sonar.fight.round = 3;
+    doStepWith(&sonar, def.ACT_RESTRAIN, &sd, creatures.RULES[0..]);
+    sonar.fight.round = 3;
+    doStepWith(&sonar, def.ACT_RESTRAIN, &sd, creatures.RULES[0..]);
+    if (!msgTextIs(&sonar, def.MSG_SUPPRESS_SONAR, "Sonar: ink prevented.")) return false;
+    if (countMsgText(&sonar, def.MSG_SUPPRESS_SONAR) != 1) return false;
+    if (hasMsg(&sonar, def.MSG_INK_ARMED)) return false;
+
+    var hook_def = neutralDef();
+    hook_def.rule_start = 0;
+    hook_def.rule_count = 1;
+    var hook: def.GameState = undefined;
+    begin(&hook, &hook_def, TEST_FLEE_RULE[0..]);
+    hook.fight.tool = def.TOOL_PRESSURE_HOOK;
+    hook.fight.tool_active = 1;
+    doStepWith(&hook, def.ACT_STRIKE, &hook_def, TEST_FLEE_RULE[0..]);
+    if (!msgTextIs(&hook, def.MSG_SUPPRESS_HOOK,
+        "Pressure Hook: flee prevented.")) return false;
+
+    var ed = creatures.defAt(1);
+    ed.attack = 0;
+    var shield: def.GameState = undefined;
+    begin(&shield, &ed, creatures.RULES[0..]);
+    shield.fight.res = 55;
+    shield.fight.tool = def.TOOL_CORAL_SHIELD;
+    shield.fight.tool_active = 1;
+    doStepWith(&shield, def.ACT_RESTRAIN, &ed, creatures.RULES[0..]);
+    if (!msgTextIs(&shield, def.MSG_SUPPRESS_SHIELD,
+        "Coral Shield: discharge prevented.")) return false;
+    return !hasMsg(&shield, def.MSG_DISCHARGE);
+}
+
+fn tTerminalAndModalCopy() bool {
+    var d = neutralDef();
+    d.hp = 100;
+    d.resolve = 100;
+    var s: def.GameState = undefined;
+    begin(&s, &d, noRules());
+    s.fight.hp = 51;
+    s.fight.res = 60;
+    s.fight.hull = 80;
+    var sc: render.Screen = undefined;
+    var buf: [8192]u8 = undefined;
+
+    render.renderFrame(&s, &d, &sc);
+    var text = render.dump(&sc, buf[0..]);
+    if (!textHas(text, "|")) return false;
+    if (!textHas(text, "[E] Use tool")) return false;
+
+    var bars: i32 = 0;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        if (text[i] == '|') bars += 1;
+    }
+    if (bars != 1) return false;
+
+    s.screen = def.SCREEN_SUBDUE;
+    render.renderFrame(&s, &d, &sc);
+    text = render.dump(&sc, buf[0..]);
+    if (!textHas(text, "HP 51/100  RES 60/100  HULL 80/100")) return false;
+    if (!textHas(text, "+25% Resolve, +25% Attack, +2 Speed (cap +6).")) return false;
+    if (!textHas(text, "[A] Attempt   [F] Fight on / decline")) return false;
+    return textHas(text, "[Esc] Decline");
+}
+
 fn tDerelictBossRowLoads() bool {
     const d = creatures.defAt(18);
     if (d.id != 17 or d.family != 13 or d.role != 4) return false;
@@ -1715,6 +1964,13 @@ pub fn main() void {
     report("lure_decoy_true_target_copy", tLureDecoyTrueTargetCopy());
     report("peek_stable_with_latches", tPeekStableWithLatches());
     report("boss_behaviour_rules_pinned", tBossBehaviourRulesPinned());
+    report("equip_refusal_copy_exact", tEquipRefusalCopy());
+    report("tool_break_logs_at_hull_hit", tToolBreakLogsAtHullHit());
+    report("blind_armed_and_miss_copy", tBlindArmedAndMissCopy());
+    report("ink_armed_and_forced_names", tInkArmedAndForcedNames());
+    report("phase_hud_solid_phase", tPhaseHudLabels());
+    report("counter_suppressions_log_once", tCounterSuppressionsOnce());
+    report("terminal_red_zone_use_tool_and_modal_copy", tTerminalAndModalCopy());
     report("derelict_boss_row_loads", tDerelictBossRowLoads());
 
     report("scripted_golden_subdue_bytes", tGoldenSubdue());

@@ -158,6 +158,14 @@ fn renderInto(g: *def.GameState, help_text: []const u8, full: bool) []const u8 {
     return renderIntoView(g, help_text, full, assetView(g));
 }
 
+fn renderWithNotice(g: *def.GameState, notice: []const u8) []const u8 {
+    const handle = core.gfxPxOpenMemory(640, 480) catch return empty_px[0..0];
+    var sf = core.pxCoreSurface(handle.opaque);
+    art.renderScreen(&sf, g, "", true, assetView(g));
+    art.drawNotice(&sf, g, notice);
+    return core.gfxPxDump(handle);
+}
+
 fn findWidget(g: *def.GameState, kind: i32, slot: i32) art.Widget {
     var ws: [art.MAX_WIDGETS]art.Widget = undefined;
     const n = art.layoutFight(g, &ws);
@@ -382,6 +390,51 @@ fn tStatsCondition() bool {
     art.resetFrame();
     const plain = fnv(renderInto(&g, "", true));
     return shown != plain;
+}
+
+fn tStatsPhase() bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    game.startFight(&g, 14);
+    g.fight.round = 1;
+    var w = findWidget(&g, art.W_STATS, -1);
+    if (w.text_off != fight.PHASE_SOLID) return false;
+    g.fight.round = 3;
+    w = findWidget(&g, art.W_STATS, -1);
+    if (w.text_off != fight.PHASE_PHASED) return false;
+    g.fight.def_index = 0;
+    w = findWidget(&g, art.W_STATS, -1);
+    return w.text_off == -1;
+}
+
+fn tNoticeKeepsNewestLog() bool {
+    const newest = art.LOG_Y + (art.LOG_LINES - 1) * art.LINE_H;
+    if (art.noticeY(2) != art.LOG_Y + 2 * art.LINE_H) return false;
+    if (art.noticeY(art.LOG_LINES) == newest) return false;
+    if (art.noticeY(art.LOG_LINES + 4) == newest) return false;
+
+    var g: def.GameState = undefined;
+    goldenFight(&g);
+    g.log_n = art.LOG_LINES;
+    var i: i32 = 0;
+    while (i < art.LOG_LINES) : (i += 1) {
+        g.log[@intCast(usize, i)] = def.LogEntry{
+            .class = def.LOG_NORMAL, .msg_id = def.MSG_STRIKE,
+            .a = 10 + i, .b = 0,
+        };
+    }
+
+    art.resetFrame();
+    const plain = renderInto(&g, "", true);
+    art.resetFrame();
+    const noted = renderWithNotice(&g, "Status line");
+    if (plain.len != noted.len) return false;
+
+    var x: i32 = 0;
+    while (x < 640) : (x += 1) {
+        if (dumpPix(plain, x, newest) != dumpPix(noted, x, newest)) return false;
+    }
+    return true;
 }
 
 fn tToolStatusWidth() bool {
@@ -802,6 +855,8 @@ pub fn main() void {
     report("shake_on_subdue_fail", tShakeOnSubdueFail());
     report("speed_hidden_journal_sonar", tSpeedReveal());
     report("stats_condition_visible", tStatsCondition());
+    report("stats_phase_visible", tStatsPhase());
+    report("notice_keeps_newest_log_line", tNoticeKeepsNewestLog());
     report("tool_status_69_cols_80_safe", tToolStatusWidth());
     report("layout_bands_buttons", tLayoutButtons());
     report("dirty_coalesce_order_overflow", tDirtyCoalesce());

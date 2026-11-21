@@ -332,8 +332,8 @@ fn tEquipChargeOneUse() bool {
     if (s.fight.round != round) return false;
     if (s.fight.actions != actions) return false;
     if (s.fight.rng_state != rng_state) return false;
-    if (s.log_n != log_n) return false;
-    return true;
+    if (s.log_n != log_n + 1) return false;
+    return hasMsg(&s, def.MSG_EQUIP_REFUSED);
 }
 
 fn tEquipRefusalNoRoundNoRng() bool {
@@ -349,7 +349,8 @@ fn tEquipRefusalNoRoundNoRng() bool {
     if (s.fight.round != round) return false;
     if (s.fight.actions != actions) return false;
     if (s.fight.rng_state != rng_state) return false;
-    if (s.log_n != log_n) return false;
+    if (s.log_n != log_n + 1) return false;
+    if (!hasMsg(&s, def.MSG_EQUIP_REFUSED)) return false;
 
     // Broken activated tool is refused too.
     s.world.tools_owned = toolMask(3);
@@ -359,11 +360,13 @@ fn tEquipRefusalNoRoundNoRng() bool {
     const r2 = s.fight.round;
     const a2 = s.fight.actions;
     const g2 = s.fight.rng_state;
+    const n2 = s.log_n;
     fight.step(&s, def.Action{ .kind = def.ACT_EQUIP, .arg = 0 }, &d, noRules());
     if (s.fight.round != r2) return false;
     if (s.fight.actions != a2) return false;
     if (s.fight.rng_state != g2) return false;
-    return true;
+    if (s.log_n != n2 + 1) return false;
+    return hasMsg(&s, def.MSG_EQUIP_REFUSED);
 }
 
 fn tEquipExpToolFallbackEquipsCharge() bool {
@@ -418,7 +421,8 @@ fn tCreatureFirstFragileBlocksEquip() bool {
     if (s.fight.pending_stun != 0) return false;
     if (hasMsg(&s, def.MSG_STUN)) return false;
     if (hasMsg(&s, def.MSG_EQUIP)) return false;
-    return true;
+    if (!hasMsg(&s, def.MSG_TOOL_BROKEN)) return false;
+    return hasMsg(&s, def.MSG_EQUIP_REFUSED);
 }
 
 fn tFragileBoundary() bool {

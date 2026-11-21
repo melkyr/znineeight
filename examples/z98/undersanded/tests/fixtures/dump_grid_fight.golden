@@ -1,7 +1,7 @@
 UNDERSANDED  FIGHT
 Mystic Eel  common  SPD ??
 COND none
-HP      [##############......] 51/70
+HP      [#####|########......] 51/70
 RESOLVE [####################] 80/80
 HULL    [##################..] 94/100
 TOOL  none  none  charge 0  broken no  active no
@@ -13,7 +13,7 @@ Creature hits you for 6 Hull.
 
 
 
-[S]trike [R]estrain [E]quipment [F]lee
+[S]trike [R]estrain [E] Use tool [F]lee
 
 
 

@@ -196,6 +196,22 @@ pub const GameState = struct {
     last_event_value: i32,
 };
 
+// One bounded fight-log append (spec §25.3). Shared so the tool lifecycle can
+// record a break at the exact hull-hit moment without importing fight.zig.
+pub fn appendLog(s: *GameState, class: i32, msg_id: i32, a: i32, b: i32) void {
+    const e = LogEntry{ .class = class, .msg_id = msg_id, .a = a, .b = b };
+    if (s.log_n < @intCast(i32, MAX_LOG)) {
+        s.log[@intCast(usize, s.log_n)] = e;
+        s.log_n += 1;
+    } else {
+        var i: usize = 1;
+        while (i < MAX_LOG) : (i += 1) {
+            s.log[i - 1] = s.log[i];
+        }
+        s.log[MAX_LOG - 1] = e;
+    }
+}
+
 // ---- Action / outcome / bar / flag vocabulary ----------------------------
 
 pub const ACT_STRIKE: i32 = 1;
@@ -344,6 +360,14 @@ pub const MSG_LURE: i32 = 22;
 pub const MSG_SONAR: i32 = 23;
 pub const MSG_WARY: i32 = 24;
 pub const MSG_GRUDGE: i32 = 25;
+pub const MSG_TOOL_BROKEN: i32 = 26;
+pub const MSG_EQUIP_REFUSED: i32 = 27;
+pub const MSG_BLIND_ARMED: i32 = 28;
+pub const MSG_INK_ARMED: i32 = 29;
+pub const MSG_SUPPRESS_LURE: i32 = 30;
+pub const MSG_SUPPRESS_SONAR: i32 = 31;
+pub const MSG_SUPPRESS_HOOK: i32 = 32;
+pub const MSG_SUPPRESS_SHIELD: i32 = 33;
 
 // Content boot error copy (spec §25.10, §33).
 pub const MSG_MISSING: []const u8 = "Content file missing. Reinstall from CD.";
@@ -367,11 +391,11 @@ pub const MESSAGES = [_]MsgRow{
     },
     MsgRow{
         .id = 18,
-        .text = "Blinded - the next Strike misses.",
+        .text = "Blinded - your Strike misses.",
     },
     MsgRow{
         .id = 19,
-        .text = "Ink clouds the water - your action is chosen for you.",
+        .text = "Ink clouds the water - your action is forced.",
     },
     MsgRow{
         .id = 20,

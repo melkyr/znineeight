@@ -159,11 +159,7 @@ fn drawArtFrame(g: *def.GameState, p: *px.Gfx, st: *const nav.NavState,
     art.shakeUpdate(g, time.highRes(), time.highResFreq());
     art.renderScreen(&sf, g, help_text, true, artView(g));
 
-    if (notice.len > 0) {
-        const y = art.LOG_Y + (art.LOG_LINES - 1) * art.LINE_H;
-        px.gfxPxFill(p, 4, y, 632, art.LINE_H, art.C_LOG);
-        art.drawText(&sf, 4, y, notice, art.C_TEXT, art.C_LOG);
-    }
+    art.drawNotice(&sf, g, notice);
 
     px.gfxPxUnlock(p);
     px.gfxPxPresent(p, 0, 0, 640, 480);

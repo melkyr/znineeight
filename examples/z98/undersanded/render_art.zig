@@ -347,14 +347,16 @@ pub fn layoutFight(s: *const def.GameState, out: *[MAX_WIDGETS]Widget) i32 {
     var spd: i32 = -1;
     var role: i32 = 0;
     var cond: i32 = 0;
+    var phase_ui: i32 = -1;
     if (defValid(s)) {
         var d = creatures.defAt(s.fight.def_index);
         role = d.role;
         cond = s.fight.cond;
+        if ((d.flags & def.F_PHASING) != 0) phase_ui = fight.phaseState(s);
         if (render_text.speedRevealed(s)) spd = render.effectiveSpeed(s, &d);
     }
     out[@intCast(usize, n)] = makeWidget(STATS_X, 40, 520, 24, W_STATS,
-        spd, role, s.fight.def_index, 0, cond);
+        spd, role, s.fight.def_index, phase_ui, cond);
     n += 1;
 
     const gate = couplingGate(s);
@@ -602,6 +604,14 @@ fn drawStats(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
         p = catText(buf[0..], p, "  COND ");
         p = catText(buf[0..], p, render.conditionName(w.sprite));
     }
+    if (w.text_off >= 0) {
+        p = catText(buf[0..], p, "  ");
+        if (w.text_off == fight.PHASE_PHASED) {
+            p = catText(buf[0..], p, "PHASE");
+        } else {
+            p = catText(buf[0..], p, "SOLID");
+        }
+    }
     drawText(sf, w.x + 4, w.y + 4, buf[0..p], C_TEXT, C_PANEL);
 }
 
@@ -656,6 +666,23 @@ fn drawLogLine(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void 
 
 pub fn logLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
     return render_text.msgLine(e, d, out);
+}
+
+// A status/notice owns a blank log row when one exists; once the visible log is
+// full it replaces the oldest row, never the newest combat line.
+pub fn noticeY(log_n: i32) i32 {
+    var visible = log_n;
+    if (visible > LOG_LINES) visible = LOG_LINES;
+    if (visible < 0) visible = 0;
+    if (visible < LOG_LINES) return LOG_Y + visible * LINE_H;
+    return LOG_Y;
+}
+
+pub fn drawNotice(sf: *px.Surface, s: *const def.GameState, notice: []const u8) void {
+    if (notice.len == 0) return;
+    const y = noticeY(s.log_n);
+    fillRect(sf, 4, y, 632, LINE_H, C_LOG);
+    drawText(sf, 4, y, notice, C_TEXT, C_LOG);
 }
 
 fn drawButton(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {

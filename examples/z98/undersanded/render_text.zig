@@ -7,6 +7,7 @@
 const def = @import("def.zig");
 const fight = @import("fight.zig");
 const items = @import("items.zig");
+const tools = @import("tools.zig");
 const creatures = @import("creatures_t1.zig");
 
 pub const COLS: usize = 80;
@@ -208,11 +209,53 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
             p = intInto(out, p, e.a);
             p = copyInto(out, p, " Hull.");
         },
+        def.MSG_TOOL_BROKEN => {
+            p = copyInto(out, p, "Your ");
+            p = copyInto(out, p, toolName(e.a));
+            p = copyInto(out, p, " breaks - disabled for this expedition.");
+        },
+        def.MSG_EQUIP_REFUSED => {
+            if (e.a == tools.REFUSE_NO_TOOL) {
+                p = copyInto(out, p, "No tool selected.");
+            } else if (e.a == tools.REFUSE_BROKEN) {
+                p = copyInto(out, p, "Tool is broken.");
+            } else if (e.a == tools.REFUSE_NO_CHARGE) {
+                p = copyInto(out, p, "No charge left.");
+            } else if (e.a == tools.REFUSE_RIGGED) {
+                p = copyInto(out, p, "Tool is rigged - always on.");
+            } else {
+                p = copyInto(out, p, "Tool cannot be used.");
+            }
+        },
+        def.MSG_BLIND_ARMED => {
+            p = copyInto(out, p, "The creature aims to blind - your next Strike may miss.");
+        },
         def.MSG_BLIND => {
-            p = copyInto(out, p, "Blinded - the next Strike misses.");
+            p = copyInto(out, p, "Blinded - your Strike misses.");
+        },
+        def.MSG_INK_ARMED => {
+            p = copyInto(out, p, "Ink clouds the water - your next action may be forced.");
         },
         def.MSG_INK => {
-            p = copyInto(out, p, "Ink clouds the water - your action is chosen for you.");
+            if (e.a == def.ACT_RESTRAIN) {
+                p = copyInto(out, p, "Ink forces you to Restrain.");
+            } else if (e.a == def.ACT_EQUIP) {
+                p = copyInto(out, p, "Ink forces you to use your tool.");
+            } else {
+                p = copyInto(out, p, "Ink forces you to Strike.");
+            }
+        },
+        def.MSG_SUPPRESS_LURE => {
+            p = copyInto(out, p, "Lure: blind or decoy prevented.");
+        },
+        def.MSG_SUPPRESS_SONAR => {
+            p = copyInto(out, p, "Sonar: ink prevented.");
+        },
+        def.MSG_SUPPRESS_HOOK => {
+            p = copyInto(out, p, "Pressure Hook: flee prevented.");
+        },
+        def.MSG_SUPPRESS_SHIELD => {
+            p = copyInto(out, p, "Coral Shield: discharge prevented.");
         },
         def.MSG_DECOY => {
             p = copyInto(out, p, "Your Strike tears through a decoy.");
@@ -281,12 +324,25 @@ pub fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureD
     x = putInt(sc, x, 3, d.subdue_chance);
     _ = put(sc, x, 3, "% chance");
 
-    _ = put(sc, 2, 5, "Failure triggers a Last Surge: its will");
-    _ = put(sc, 2, 6, "partly returns, it hits harder and moves");
-    _ = put(sc, 2, 7, "faster. The fight goes on.");
+    x = put(sc, 2, 4, "HP ");
+    x = putInt(sc, x, 4, s.fight.hp);
+    x = put(sc, x, 4, "/");
+    x = putInt(sc, x, 4, s.fight.max_hp);
+    x = put(sc, x, 4, "  RES ");
+    x = putInt(sc, x, 4, s.fight.res);
+    x = put(sc, x, 4, "/");
+    x = putInt(sc, x, 4, s.fight.max_res);
+    x = put(sc, x, 4, "  HULL ");
+    x = putInt(sc, x, 4, s.fight.hull);
+    x = put(sc, x, 4, "/");
+    _ = putInt(sc, x, 4, s.fight.max_hull);
 
-    _ = put(sc, 2, 9, "[A]ttempt   [F] Fight on   [Esc] Cancel");
-    _ = s;
+    _ = put(sc, 2, 6, "Failure triggers a Last Surge:");
+    _ = put(sc, 2, 7, "+25% Resolve, +25% Attack, +2 Speed (cap +6).");
+    _ = put(sc, 2, 8, "It hits harder and moves faster. The fight goes on.");
+
+    _ = put(sc, 2, 10, "[A] Attempt   [F] Fight on / decline");
+    _ = put(sc, 2, 11, "[Esc] Decline");
 }
 
 pub fn toolName(id: i32) []const u8 {

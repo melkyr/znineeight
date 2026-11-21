@@ -158,17 +158,15 @@ pub const CREATURE_ACT_FLEE: i32 = fight_rules.CREATURE_ACT_FLEE;
 // ---- Log ------------------------------------------------------------------
 
 pub fn log(s: *def.GameState, class: i32, msg_id: i32, a: i32, b: i32) void {
-    const e = def.LogEntry{ .class = class, .msg_id = msg_id, .a = a, .b = b };
-    if (s.log_n < @intCast(i32, def.MAX_LOG)) {
-        s.log[@intCast(usize, s.log_n)] = e;
-        s.log_n += 1;
-    } else {
-        var i: usize = 1;
-        while (i < def.MAX_LOG) : (i += 1) {
-            s.log[i - 1] = s.log[i];
-        }
-        s.log[def.MAX_LOG - 1] = e;
+    def.appendLog(s, class, msg_id, a, b);
+}
+
+fn logOnce(s: *def.GameState, msg_id: i32, a: i32) void {
+    var i: i32 = 0;
+    while (i < s.log_n) : (i += 1) {
+        if (s.log[@intCast(usize, i)].msg_id == msg_id) return;
     }
+    log(s, def.LOG_NORMAL, msg_id, a, 0);
 }
 
 // ---- Start / reset --------------------------------------------------------
@@ -274,7 +272,10 @@ fn applyEffect(s: *def.GameState, e: def.Effect, timing: i32) void {
         },
         behavior.HULL_DMG => {
             // Coral Shield negates discharge-type Hull damage entirely (§10).
-            if (shieldActive(s)) return;
+            if (shieldActive(s)) {
+                logOnce(s, def.MSG_SUPPRESS_SHIELD, def.TOOL_CORAL_SHIELD);
+                return;
+            }
             var d = e.a;
             if (d < 0) d = 0;
             s.fight.hull -= d;
@@ -287,7 +288,10 @@ fn applyEffect(s: *def.GameState, e: def.Effect, timing: i32) void {
         },
         behavior.SET_FLEE => {
             // Pressure Hook prevents the creature from escaping (§10).
-            if (hookActive(s)) return;
+            if (hookActive(s)) {
+                logOnce(s, def.MSG_SUPPRESS_HOOK, def.TOOL_PRESSURE_HOOK);
+                return;
+            }
             if (e.a != 0) {
                 s.fight.pending_flee = e.a;
             } else {
@@ -296,14 +300,26 @@ fn applyEffect(s: *def.GameState, e: def.Effect, timing: i32) void {
         },
         behavior.SET_BLIND => {
             // Lure reveals the true shape and suppresses blind (§10/§14.5).
-            if (lureActive(s)) return;
+            if (lureActive(s)) {
+                logOnce(s, def.MSG_SUPPRESS_LURE, def.TOOL_LURE);
+                return;
+            }
             const chance = if (e.b != 0) e.b else e.a;
+            if (s.fight.pending_blind == 0) {
+                log(s, def.LOG_NORMAL, def.MSG_BLIND_ARMED, chance, 0);
+            }
             s.fight.pending_blind = chance;
         },
         behavior.SET_INK => {
             // Sonar prevents ink (§10/§14.5).
-            if (sonarActive(s)) return;
+            if (sonarActive(s)) {
+                logOnce(s, def.MSG_SUPPRESS_SONAR, def.TOOL_SONAR);
+                return;
+            }
             const v = if (e.b != 0) e.b else e.a;
+            if (s.fight.pending_ink == 0) {
+                log(s, def.LOG_NORMAL, def.MSG_INK_ARMED, v, 0);
+            }
             s.fight.pending_ink = if (v != 0) v else PENDING_ON;
         },
         behavior.ADD_SPEED => {
@@ -318,7 +334,10 @@ fn applyEffect(s: *def.GameState, e: def.Effect, timing: i32) void {
         },
         behavior.MISS_STRIKE => {
             // Decoy: the next Strike misses deterministically unless Lure.
-            if (lureActive(s)) return;
+            if (lureActive(s)) {
+                logOnce(s, def.MSG_SUPPRESS_LURE, def.TOOL_LURE);
+                return;
+            }
             s.fight.pending_miss = PENDING_ON;
         },
         else => {},
@@ -470,7 +489,11 @@ fn strike(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavi
 
     if (cdef.flee_kind == FLEE_HIT_PCT and cdef.flee_th > 0) {
         if (hitExceedsPct(dmg, s.fight.max_hp, cdef.flee_th)) {
-            if (!hookActive(s)) s.fight.pending_flee = PENDING_ON;
+            if (!hookActive(s)) {
+                s.fight.pending_flee = PENDING_ON;
+            } else {
+                logOnce(s, def.MSG_SUPPRESS_HOOK, def.TOOL_PRESSURE_HOOK);
+            }
         }
     }
 }
@@ -500,7 +523,11 @@ fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
             // The equipped tool comes from Depart (hunt copies it); the action
             // argument is ignored. Re-check at activation time: a faster
             // creature may have broken the tool after step()'s pre-turn check.
-            if (!tools.canEquip(s, s.fight.tool)) return;
+            const reason = tools.equipRefusal(s, s.fight.tool);
+            if (reason != tools.REFUSE_NONE) {
+                log(s, def.LOG_NORMAL, def.MSG_EQUIP_REFUSED, reason, s.fight.tool);
+                return;
+            }
             s.fight.actions += 1;
             s.fight.tool_active = 1;
             s.fight.tool_charge -= 1;
@@ -660,7 +687,11 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
     // The equipped tool comes from Depart; the action arg is never consulted.
     if (act.kind == def.ACT_EQUIP) {
         const equipped = if (s.fight.tool != 0) s.fight.tool else s.exp.tool;
-        if (!tools.canEquip(s, equipped)) return;
+        const reason = tools.equipRefusal(s, equipped);
+        if (reason != tools.REFUSE_NONE) {
+            log(s, def.LOG_NORMAL, def.MSG_EQUIP_REFUSED, reason, equipped);
+            return;
+        }
         if (s.fight.tool == 0) {
             s.fight.tool = equipped;
             s.fight.tool_charge = s.exp.tool_charge;

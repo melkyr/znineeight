@@ -16,7 +16,7 @@
 #   * decode eel00, boss00 and bg_a with the runtime decoder and pin dimensions,
 #     key, header ramp, pixel/LUT FNV checksums and three sample pixels; a
 #     mutated `.zsp` copy must be rejected (non-vacuity)
-#   * require the art golden to be the Task 4 re-pin `0x06b4972d` (the nested
+#   * require the art golden to be the Task 5 re-pin `0x4395f2f9` (the nested
 #     M9 tier proves the rendered frame still matches it) and pin the M10
 #     art_test cases (26A/12V decode, one resident background, malformed-V
 #     fallback) from the nested M9 log
@@ -428,10 +428,10 @@ require_line "$GOLD_LOG" \
     "bg_a pinned pixel/LUT/checksum evidence"
 
 ART_PIN="$(head -n 1 "$ART_GOLDEN")"
-if [ "$ART_PIN" = "0x06b4972d" ]; then
-    pass_case "art golden is the Task 4 re-pin 0x06b4972d"
+if [ "$ART_PIN" = "0x4395f2f9" ]; then
+    pass_case "art golden is the Task 5 re-pin 0x4395f2f9"
 else
-    fail_case "art golden is not 0x06b4972d (got $ART_PIN)"
+    fail_case "art golden is not 0x4395f2f9 (got $ART_PIN)"
 fi
 
 MUT_OUT="$OUT/mutated_out"

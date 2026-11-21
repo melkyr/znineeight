@@ -12,6 +12,13 @@ const items = @import("items.zig");
 pub const FRAGILE_MIN_PRECISION_TIER: i32 = 2;
 pub const FRAGILE_MIN_HIT: i32 = 15;
 
+// EQUIP refusal reasons (spec §7.1); 0 means the tool can be activated.
+pub const REFUSE_NONE: i32 = 0;
+pub const REFUSE_NO_TOOL: i32 = 1;
+pub const REFUSE_BROKEN: i32 = 2;
+pub const REFUSE_NO_CHARGE: i32 = 3;
+pub const REFUSE_RIGGED: i32 = 4;
+
 pub fn isRigged(tool: i32) bool {
     return items.isRigged(tool);
 }
@@ -27,17 +34,22 @@ pub fn isOwned(w: *const def.World, tool: i32) bool {
 
 // Activated tools only: one charge per expedition, spent via EQUIP. Rigged
 // tools are always on at fight start and are never valid EQUIP targets.
-pub fn canEquip(g: *const def.GameState, tool: i32) bool {
-    if (!isActivated(tool)) return false;
-    if (!isOwned(&g.world, tool)) return false;
-    if (g.fight.tool != tool and g.exp.tool != tool) return false;
-    if (g.fight.tool_broken != 0 or g.exp.tool_broken != 0) return false;
-    if (g.fight.tool_active != 0) return false;
+pub fn equipRefusal(g: *const def.GameState, tool: i32) i32 {
+    if (tool == 0) return REFUSE_NO_TOOL;
+    if (g.fight.tool != tool and g.exp.tool != tool) return REFUSE_NO_TOOL;
+    if (!isOwned(&g.world, tool)) return REFUSE_NO_TOOL;
+    if (g.fight.tool_broken != 0 or g.exp.tool_broken != 0) return REFUSE_BROKEN;
+    if (!isActivated(tool)) return REFUSE_RIGGED;
+    if (g.fight.tool_active != 0) return REFUSE_NO_CHARGE;
 
     var charge = g.exp.tool_charge;
     if (g.fight.tool == tool) charge = g.fight.tool_charge;
-    if (charge <= 0) return false;
-    return true;
+    if (charge <= 0) return REFUSE_NO_CHARGE;
+    return REFUSE_NONE;
+}
+
+pub fn canEquip(g: *const def.GameState, tool: i32) bool {
+    return equipRefusal(g, tool) == REFUSE_NONE;
 }
 
 // One incoming creature hit: at Precision T2+ a hit of 15+ Hull disables the
@@ -49,7 +61,9 @@ pub fn onHullHit(g: *def.GameState, dmg: i32) void {
     if (g.fight.tool == 0 and g.exp.tool == 0) return;
     if (g.fight.tool_broken != 0 or g.exp.tool_broken != 0) return;
 
+    const broken_tool = if (g.fight.tool != 0) g.fight.tool else g.exp.tool;
     g.fight.tool_broken = 1;
     g.fight.tool_active = 0;
     g.exp.tool_broken = 1;
+    def.appendLog(g, def.LOG_NORMAL, def.MSG_TOOL_BROKEN, broken_tool, 0);
 }
