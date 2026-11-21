@@ -24,6 +24,7 @@ const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const nav = @import("nav.zig");
 const journal = @import("journal.zig");
+const score = @import("score.zig");
 const save_ux = @import("save_ux.zig");
 const fight_console = @import("fight_console.zig");
 const paths = @import("paths.zig");
@@ -242,6 +243,11 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
         var v: render.View = undefined;
         nav.prepareJournal(&s, 0, &v);
         render.renderJournal(&v, &sc);
+    } else if (eq(screen_id, "score")) {
+        var p = score.scoreSnapshot(&s.world);
+        render.renderScore(&p, &sc);
+    } else if (eq(screen_id, "credits")) {
+        render.renderCredits(&sc);
     } else {
         return null;
     }

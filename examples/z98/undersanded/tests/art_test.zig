@@ -833,6 +833,34 @@ fn tAssetsMissingFallback() bool {
     return real != h1;
 }
 
+fn tScoreCreditsArtDeterministic() bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    g.screen = def.NAV_SCORE;
+    g.world.boss_variants_seen = 0x15;
+    g.world.boss_kills = 1;
+    g.world.score_subdued = 2;
+    g.world.score_killed = 3;
+    g.world.score_overkilled = 1;
+    g.world.score_money_earned = 55;
+    g.world.field_record_written = 1;
+    g.world.last_run.outcome = def.OUT_KILL;
+
+    art.resetFrame();
+    const score1 = fnv(renderInto(&g, "", true));
+    art.resetFrame();
+    const score2 = fnv(renderInto(&g, "", true));
+    if (score1 != score2) return false;
+
+    g.screen = def.NAV_CREDITS;
+    art.resetFrame();
+    const credits1 = fnv(renderInto(&g, "", true));
+    art.resetFrame();
+    const credits2 = fnv(renderInto(&g, "", true));
+    if (credits1 != credits2) return false;
+    return score1 != credits1;
+}
+
 fn tGolden() bool {
     var g: def.GameState = undefined;
     goldenFight(&g);
@@ -868,6 +896,7 @@ pub fn main() void {
     report("background_one_resident_slot", tBackgroundResidency());
     report("assets_missing_fallback_deterministic", tAssetsMissingFallback());
     report("assets_malformed_v_manifest_falls_back", tMalformedVManifestFallsBack());
+    report("score_credits_art_deterministic", tScoreCreditsArtDeterministic());
     report("golden_art_fight_640x480", tGolden());
 
     if (fails != 0) os.exit(1);

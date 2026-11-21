@@ -26,6 +26,7 @@ const tools = @import("tools.zig");
 const game = @import("game.zig");
 const journal = @import("journal.zig");
 const boss = @import("boss.zig");
+const score = @import("score.zig");
 
 // ---- Field actions --------------------------------------------------------
 //
@@ -245,6 +246,7 @@ fn postFight(g: *def.GameState) bool {
     // Hull 0 is checked before outcome: M2's creatureAct zeroes Hull but leaves
     // the fight OUT_ONGOING, and ascent must end it immediately.
     if (g.fight.hull <= 0) {
+        score.recordBossRun(g, score.OUTCOME_ASCENT);
         journal.journalOnFightEnd(&g.world, idx);
         endAscent(g);
         g.world.hull = 0;
@@ -258,6 +260,7 @@ fn postFight(g: *def.GameState) bool {
 
     if (outcome == def.OUT_PLAYER_FLED) {
         // Nothing from this fight; secured hold kept, +1 phase, return travel.
+        score.recordBossRun(g, def.OUT_PLAYER_FLED);
         journal.journalOnFightEnd(&g.world, idx);
         g.world.hull = g.fight.hull;
         g.fight.def_index = def.NO_FIGHT;
@@ -270,6 +273,7 @@ fn postFight(g: *def.GameState) bool {
     if (outcome == def.OUT_CREATURE_FLED) {
         // No loot; subdue-length renewal; stay at the node. The log entry drives
         // the explicit `Secured: nothing` line.
+        score.recordBossRun(g, def.OUT_CREATURE_FLED);
         journal.journalOnFightEnd(&g.world, idx);
         g.world.hull = g.fight.hull;
         logSecured(g, idx, outcome);
@@ -287,6 +291,7 @@ fn postFight(g: *def.GameState) bool {
         journal.journalOnFightEnd(&g.world, idx);
         addLoot(g, &subdef, outcome);
         logSecured(g, idx, outcome);
+        if (!boss.isBoss(g)) g.world.score_subdued += 1;
         g.world.hull = g.fight.hull;
         setEvent(g, def.EV_SUBDUE, idx, 0);
         g.screen = def.NAV_SUBDUE_INTRO;
@@ -300,8 +305,23 @@ fn postFight(g: *def.GameState) bool {
     logSecured(g, idx, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
     g.world.hull = g.fight.hull;
-    if (boss.isBoss(g) and boss.onDefeat(g)) {
-        journal.journalOnBossKill(&g.world);
+    if (!boss.isBoss(g)) {
+        if (outcome == def.OUT_OVERKILL) {
+            g.world.score_overkilled += 1;
+        } else {
+            g.world.score_killed += 1;
+        }
+    }
+    if (boss.isBoss(g) and boss.isEngaged(g)) {
+        const first_defeat = boss.onDefeat(g);
+        if (first_defeat) {
+            score.freezeFieldRecord(&g.world, g.fight.boss_variant);
+            journal.journalOnBossKill(&g.world);
+        }
+        score.recordLastRun(&g.world, &g.fight, outcome);
+        g.fight.def_index = def.NO_FIGHT;
+        g.screen = def.NAV_CREDITS;
+        return false;
     }
     if (outcome == def.OUT_OVERKILL) {
         setEvent(g, def.EV_OVERKILL, idx, outcome);
@@ -344,6 +364,7 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
             world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
             const sale = creatures.defAt(idx).sale;
             g.world.money += sale;
+            g.world.score_money_earned += sale;
             setEvent(g, def.EV_SOLD, idx, sale);
         },
         else => return,

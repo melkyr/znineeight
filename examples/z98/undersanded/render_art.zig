@@ -17,6 +17,7 @@ const fight = @import("fight.zig");
 const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const render_text = @import("render_text.zig");
+const score = @import("score.zig");
 const font = @import("font8x16.zig");
 const tween = @import("tween.zig");
 const px = @import("std_gfx_px_core.zig");
@@ -776,6 +777,26 @@ fn drawHelp(sf: *px.Surface, help_text: []const u8) void {
         false, C_TEXT, C_BG);
 }
 
+fn drawTextScreen(sf: *px.Surface, sc: *const render_text.Screen) void {
+    px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
+    drawScreenBlock(sf, sc,
+        Rect{ .x = 0, .y = 0, .w = def.SCREEN_W, .h = def.SCREEN_H },
+        false, C_TEXT, C_BG);
+}
+
+fn drawScore(sf: *px.Surface, s: *const def.GameState) void {
+    var sc: render_text.Screen = undefined;
+    var p = score.scoreSnapshot(&s.world);
+    render.renderScore(&p, &sc);
+    drawTextScreen(sf, &sc);
+}
+
+fn drawCredits(sf: *px.Surface) void {
+    var sc: render_text.Screen = undefined;
+    render.renderCredits(&sc);
+    drawTextScreen(sf, &sc);
+}
+
 fn markFull() void {
     g_dirty[0] = fullRect();
     g_dirty_n = 1;
@@ -806,6 +827,22 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
 
     if (intro) {
         drawSubdueIntro(sf, s, view);
+        markFull();
+        g_have = true;
+        g_screen = s.screen;
+        g_def = s.fight.def_index;
+        g_help = false;
+        g_prev_shake_dx = g_shake_dx;
+        g_prev_shake_dy = g_shake_dy;
+        return;
+    }
+
+    if (s.screen == def.NAV_SCORE or s.screen == def.NAV_CREDITS) {
+        if (s.screen == def.NAV_SCORE) {
+            drawScore(sf, s);
+        } else {
+            drawCredits(sf);
+        }
         markFull();
         g_have = true;
         g_screen = s.screen;
