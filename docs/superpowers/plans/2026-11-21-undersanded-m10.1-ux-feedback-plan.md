@@ -80,8 +80,8 @@
 
 **Files:** `expedition.zig`, `nav.zig`, `render_term.zig`, `tests/ux_test.zig`
 
-- [ ] `expedition` sets `last_event`/`last_event_def`/`last_event_value` for depart, node/dock rest, rough sleep, surface, subdue/kill/overkill, creature flee, player flee, Hull-0 ascent, hunt max/empty, released/sold.
-- [ ] `nav` consumes the event after `navStep` into `st.field_msg` using the §7.1 copy; clears the event; clears the message at the next key. No-op refusals set their specific copy.
+- [ ] `expedition` sets `last_event`/`last_event_def`/`last_event_value` for depart, node/dock rest, rough sleep, surface, subdue/kill/overkill, creature flee, player flee, Hull-0 ascent, hunt max/empty, released/sold. Kill/overkill status omits the parts list; the node `Secured:` line carries it.
+- [ ] `nav` consumes the event after `navStep` into `st.field_msg` using the §7.1 copy; clears the event; clears the message at the next key. No-op refusals set their specific copy (including boss-locked `9`). Rest copy uses the actual healed amount, not the nominal 30/40.
 - [ ] Tests: one case per event, exact copy; `no_event_no_status`; `status_clears_next_key`; `event_does_not_change_phase_or_rng`; kill/overkill/flee/ascent copy survives the screen change. Commit `example(undersanded): field event status lines`.
 
 ### Task 4: Silent mechanics visibility
