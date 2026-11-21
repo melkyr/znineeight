@@ -25,6 +25,7 @@ const fight = @import("fight.zig");
 const tools = @import("tools.zig");
 const game = @import("game.zig");
 const journal = @import("journal.zig");
+const boss = @import("boss.zig");
 
 // ---- Field actions --------------------------------------------------------
 //
@@ -299,6 +300,9 @@ fn postFight(g: *def.GameState) bool {
     logSecured(g, idx, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
     g.world.hull = g.fight.hull;
+    if (boss.isBoss(g) and boss.onDefeat(g)) {
+        journal.journalOnBossKill(&g.world);
+    }
     if (outcome == def.OUT_OVERKILL) {
         setEvent(g, def.EV_OVERKILL, idx, outcome);
     } else {
