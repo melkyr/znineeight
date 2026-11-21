@@ -1,4 +1,4 @@
-# UNDERSANDED — M1 platform · M2 console fight · M3 sim/replay/tooling · M4 dock loop
+# UNDERSANDED — M1 platform · M2 console fight · M3 sim/replay/tooling · M4 dock loop · M10.1 UX feedback
 
 Two no-CRT Win9x executables built from one source tree (spec §26/§32/§33),
 plus a **native Linux gate runner**. All are Z98 → C89 images; the Win9x pair
@@ -14,12 +14,15 @@ GDI32/KERNEL32/USER32, passing `check_win9x_imports.sh <exe> 9x`.
 `undtool.exe` with no arguments starts at the **dock** and runs the M4
 expedition loop (`D`epart → map → zone → node → hunt/rest/surface). Fights use
 the M2 keys (`S`/`R`/`E`/`F`, with the rare/named subdue modal on
-`A`/`F`/`Esc`); a pending Subdue replaces the node hint with `[R]elease
-[S]ell`. `under.exe` runs the same boot/nav state machines in one window:
-first-run lore, the start menu and the save-error screen all render, and the
-dock/map/node/journal/help stay cell-rendered while a live fight (or its
-subdue modal) presents the art frame. `app.zig` owns the shared init/probe path
-and routes the console entry to `nav.zig`.
+`A`/`F`/`Esc`). A successful subdue shows the explicit `[C]ontinue` intro,
+then settlement uses `[1] Release` or `[2] Sell` (never `R`/`S`). Every field
+action leaves a one-line status: the terminal prints it after the frame and the
+window renders it on cell row 29; it is cleared at the next key. `under.exe`
+runs the same boot/nav state machines in one window: first-run lore, the start
+menu and the save-error screen all render, and the dock/map/node/journal/help
+stay cell-rendered while a live fight (or its subdue modal) presents the art
+frame. `app.zig` owns the shared init/probe path and routes the console entry
+to `nav.zig`.
 
 Two optional console flags select a play mode directly (they never touch the
 M1 sample/probe path):
@@ -43,13 +46,15 @@ do not add console boot.
 
 | Screen | Keys |
 | :--- | :--- |
-| Dock | `R`efine / `U`pgrade / `C`raft / `B`uy / `E`quipment open their sub-menus; `T` Rest (safe, one phase); `D`epart → map; `Q`uit |
-| Map | `1`–`8` travel to Z1–Z8; `9` boss route (refused while locked); `Esc` back to dock |
-| Node | `H`unt; `R`est; `S`urface (return to dock) |
-| Pending Subdue | `R`elease or `S`ell, then back to the node |
+| Dock | `R`efine / `U`pgrade / `C`raft / `B`uy / `E`quipment open their sub-menus; `T` Rest (safe, one phase); `D`epart → map; `Q`uit; `[?] Help`; `[J]ournal` |
+| Map | `1`–`8` travel to Z1–Z8; `9` boss route (refused while locked); `Esc` back to dock; `[?] Help`; `[J]ournal` |
+| Node | `H`unt; `R`est; `S`urface (return to dock); `[?] Help`; `[J]ournal` |
+| Pending Subdue | `[C]ontinue` → settlement; `[1] Release` or `[2] Sell`, then back to the node |
 
-`Q` quits only at the dock. EOF on stdin quits anywhere (including from a
-fight), so a no-input run exits cleanly with status 0.
+`[?] Help` opens the page-appropriate manual (pages 1–9) on every screen;
+`[J]ournal` opens the journal on dock/field screens when a save is active. `Q`
+quits only at the dock. EOF on stdin quits anywhere (including from a fight),
+so a no-input run exits cleanly with status 0.
 
 ## Window play (`under.exe`)
 
@@ -59,10 +64,11 @@ and the same navigation keys:
 
 | Screen | Presentation | Keys |
 | :--- | :--- | :--- |
-| Boot (lore/menu/save error) | 80×30 cells | `Enter`/`[C]ontinue`/`[N]ew`/`[F]resh`/`[B]ackup`/`[Q]uit` |
+| Boot (lore/menu/save error) | 80×30 cells | `Enter`/`[C]ontinue`/`[N]ew`/`[F]resh`/`[B]ackup`/`[Q]uit`, `?` help |
 | Dock/map/node/journal/help | 80×30 cells | same as console play |
 | Fight | 640×480 art frame | `S`/`R`/`E`/`F` (or click the four buttons), `?` help |
 
+The one-action status line renders on cell row 29 in both cell and art modes.
 The pixel tier is attached once after content boot (`gfxPxAttach`). If attach
 fails (including a depth below 16bpp) the session stays in all-cell mode and the
 reason is logged once to `errors.log`; an art frame that loses its surface is
