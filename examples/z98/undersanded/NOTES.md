@@ -2443,3 +2443,55 @@ Design, code, art, and data by the Undersanded team.
 **Content/existing-state confirmation.** `data.z98` id17 (`The Derelict`) already has `subdue_chance=-1`, HP 300, Speed 7, Attack 10, `respawn_kill=20`/`respawn_over=40`. `World` already carries `field_record_written`, `field_record`, `last_run`, `score_subdued`/`score_killed`/`score_overkilled`, `score_money_earned`, `boss_variants_seen`, `boss_kills`. `World.runReset` exists (`world.zig`) but has **no production caller**; wiring it (with `journalOnBossKill` and the score counters) belongs to Tasks 1/3, not this preflight.
 
 **Baseline (before Task 0 edits, from this worktree).** `TIER_M10.1 PASS 133 passed / 0 failed`, nested `TIER_M10 PASS 71 passed / 0 failed`. Post-edit data/content drivers and `TIER_M10.1` are rerun and recorded in the Task 0 report.
+
+### M12 amendment review (M11 Task 6)
+
+Reviewed `2026-11-12-undersanded-m12-audio-options-plan.md` against the landed
+M11 tree (`boss.zig`, `fight.zig`, `expedition.zig`, `nav.zig`, `loop_gfx.zig`)
+and spec §31/§34. Verdict: **amendment required** to M12 Task 2's cue-hook
+wording. No game-design change is needed, and this task changes no M12
+plan/spec/code.
+
+**HIT has no event hook.** No `EV_*` covers a landed Strike. `fight.strike`
+logs `MSG_STRIKE` only after the Phase/Decoy/Blind early returns, so M12 should
+hook that success point (including a 0-damage Strike absorbed by armor).
+Misses (`MSG_PHASE`, `MSG_DECOY`, `MSG_BLIND`) stay silent. A Strike that also
+kills or subdues fires HIT and the outcome cue; §31 allows overlap.
+
+**SUBDUE funnels through `postFight`.** `fight.finishSubdue` sets `OUT_SUBDUE`
+and `expedition.postFight` emits `EV_SUBDUE` once before
+`NAV_SUBDUE_INTRO`. The rare modal path reaches the same outcome via
+`resolveModal`, so hooking the `OUT_SUBDUE` settlement covers both. Keep
+`finishSurgeFailure`, declined modals, flee, creature-flee, and ascent silent
+(§31: subdue failure has no cue).
+
+**KILL must not rely on `EV_KILL`.** Normal kills emit `EV_KILL`/
+`EV_OVERKILL`, but the Derelict branch in `postFight` returns before those
+events and goes straight to credits. Hook the death outcomes
+(`OUT_KILL`/`OUT_OVERKILL`) at `postFight` before the boss branch (or at
+`fight.checkDeath`) so a boss defeat also plays KILL. Both Kill and Overkill
+are death outcomes; pin KILL for both rather than leaving Overkill silent.
+
+**BOSSKILL's "first kill" is lifetime, not per-fight.** `boss.onDefeat` returns
+`first_defeat`, but `boss_defeat_done` resets in `startBoss`, so that flag is
+true on every boss defeat; its callers are idempotent (`freezeFieldRecord` is
+write-once, `journalOnBossKill` is mask-idempotent). For the §31 "Derelict
+first kill", test lifetime `world.boss_kills == 0` (equivalently
+`field_record_written == 0`) before `boss.onDefeat` and fire BOSSKILL only on
+that first defeat. Boss defeat is Kill or Overkill (§38 P31), so BOSSKILL
+covers either first defeat; later defeats play KILL only. BOSSKILL and KILL may
+overlap on the first defeat.
+
+**Exact amendment text (M12 Task 2, replace the hooks clause):**
+
+> hooks: landed Strike at `fight.strike` (`MSG_STRIKE` path) → HIT; `OUT_SUBDUE`
+> settlement in `expedition.postFight` → SUBDUE; `OUT_KILL`/`OUT_OVERKILL`
+> settlement in `expedition.postFight` before the boss branch → KILL; first
+> lifetime Derelict defeat (`world.boss_kills == 0` before `boss.onDefeat`) →
+> BOSSKILL. `EV_KILL`/`EV_OVERKILL`/`EV_SUBDUE` alone are not sufficient: the
+> boss branch skips the kill events and HIT/BOSSKILL have no events. Subdue
+> failure/decline, flee/ascent, and misses stay silent.
+
+No other cue-trigger contradiction was found. `loop_gfx.readWindowKey` still
+ignores focus/resize (the M12 ownership comment), so M12 Task 3 remains the
+sole owner of `focus_lost` handling and ambient `Stop()`.
