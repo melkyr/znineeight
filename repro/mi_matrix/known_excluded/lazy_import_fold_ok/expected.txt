@@ -1,0 +1,2 @@
+exists ping
+lazy import fold ok

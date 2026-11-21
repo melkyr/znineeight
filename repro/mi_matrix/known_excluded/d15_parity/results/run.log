@@ -1,0 +1,1731 @@
+==================================================================
+PROBE corpus_adapted/eu_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/eu_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/eu_err_switch.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_adapted/eunum_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/eunum_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/eunum_err_switch.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_adapted/euopt_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/euopt_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/euopt_err_switch.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_adapted/euopt_val_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/euopt_val_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/euopt_val_switch.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: comptime_int
+==================================================================
+PROBE corpus_adapted/euoptptr_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/euoptptr_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/euoptptr_err_switch.zig:6:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: error-set
+==================================================================
+PROBE corpus_adapted/opt_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/opt_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/opt_null_switch.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_adapted/opteu_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/opteu_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/opteu_err_switch.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_adapted/opteu_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/opteu_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/opteu_null_switch.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_adapted/optnum_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optnum_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optnum_null_switch.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_adapted/optopt_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optopt_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optopt_null_switch.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_adapted/optopt_val_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optopt_val_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optopt_val_switch.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: comptime_int
+==================================================================
+PROBE corpus_adapted/optptr_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optptr_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_adapted/optptr_null_switch.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE corpus_raw/eu_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=3 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:64: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:64: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:48: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:48: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:129: error: error union is discarded
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                                                                                                ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:129: note: consider using 'try', 'catch', or 'if'
+referenced by:
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=5' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:107: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                                                                           ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_raw/eunum_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=3 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:64: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!u64 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:64: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:48: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!u64 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:48: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:129: error: error union is discarded
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!u64 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                                                                                                ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:129: note: consider using 'try', 'catch', or 'if'
+referenced by:
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=5' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:107: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!u64 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                                                                           ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_raw/euopt_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=3 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:64: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:64: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:48: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:48: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:130: error: error union is discarded
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                                                                                                 ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:130: note: consider using 'try', 'catch', or 'if'
+referenced by:
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=5' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:108: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                                                                            ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_raw/euopt_val_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=3 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:64: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
+                                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:64: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:48: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
+                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:48: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:129: error: error union is discarded
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
+                                                                                                                                ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:129: note: consider using 'try', 'catch', or 'if'
+referenced by:
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=5' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:101: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
+                                                                                                     ^^^^
+note: source: null
+note: target: comptime_int
+==================================================================
+PROBE corpus_raw/euoptptr_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euoptptr_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euoptptr_err_switch.zig:1:110: error: invalid builtin function: '@intToPtr'
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?*i32 = switch(v) { 0 => error.Bad, 1 => @intToPtr(*i32, 0), else => @intToPtr(*i32, 0), }; _ = r; }
+                                                                                                             ^~~~~~~~~~~~~~~~~~
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euoptptr_err_switch.zig:1:109: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: E!?*i32 = switch(v) { 0 => error.Bad, 1 => @intToPtr(*i32, 0), else => @intToPtr(*i32, 0), }; _ = r; }
+                                                                                                             ^^^^^^^^^^^^^^^^^^
+note: source: pointer
+note: target: error-set
+==================================================================
+PROBE corpus_raw/opt_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opt_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=2 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opt_null_switch.zig:1:42: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ?i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opt_null_switch.zig:1:42: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opt_null_switch.zig:1:26: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ?i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opt_null_switch.zig:1:26: note: consider using 'const'
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opt_null_switch.zig:1:79: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+pub fn main() void { var v: u32 = 0; var r: ?i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                                                               ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_raw/opteu_err_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_err_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=2 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_err_switch.zig:1:64: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: ?E!i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_err_switch.zig:1:64: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_err_switch.zig:1:48: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: ?E!i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_err_switch.zig:1:48: note: consider using 'const'
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_err_switch.zig:1:108: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: ?E!i32 = switch(v) { 0 => error.Bad, 1 => 0, else => 0, }; _ = r; }
+                                                                                                            ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE corpus_raw/opteu_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=2 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_null_switch.zig:1:64: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: ?E!i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_null_switch.zig:1:64: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_null_switch.zig:1:48: error: local variable is never mutated
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: ?E!i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                               ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_null_switch.zig:1:48: note: consider using 'const'
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_null_switch.zig:1:103: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+const E = error{Bad}; pub fn main() void { var v: u32 = 0; var r: ?E!i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                                                                                       ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_raw/optnum_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optnum_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=2 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optnum_null_switch.zig:1:42: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ?u64 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optnum_null_switch.zig:1:42: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optnum_null_switch.zig:1:26: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ?u64 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optnum_null_switch.zig:1:26: note: consider using 'const'
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optnum_null_switch.zig:1:79: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+pub fn main() void { var v: u32 = 0; var r: ?u64 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                                                               ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_raw/optopt_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=2 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_null_switch.zig:1:42: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ??i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_null_switch.zig:1:42: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_null_switch.zig:1:26: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ??i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_null_switch.zig:1:26: note: consider using 'const'
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_null_switch.zig:1:80: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+pub fn main() void { var v: u32 = 0; var r: ??i32 = switch(v) { 0 => null, 1 => 0, else => 0, }; _ = r; }
+                                                                                ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE corpus_raw/optopt_val_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_val_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=2 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_val_switch.zig:1:42: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ??i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
+                                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_val_switch.zig:1:42: note: consider using 'const'
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_val_switch.zig:1:26: error: local variable is never mutated
+pub fn main() void { var v: u32 = 0; var r: ??i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
+                         ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_val_switch.zig:1:26: note: consider using 'const'
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_val_switch.zig:1:78: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+pub fn main() void { var v: u32 = 0; var r: ??i32 = switch(v) { 0 => 42, 1 => null, else => null, }; _ = r; }
+                                                                              ^^^^
+note: source: null
+note: target: comptime_int
+==================================================================
+PROBE corpus_raw/optptr_null_switch.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optptr_null_switch.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optptr_null_switch.zig:1:81: error: invalid builtin function: '@intToPtr'
+pub fn main() void { var v: u32 = 0; var r: ?*i32 = switch(v) { 0 => null, 1 => @intToPtr(*i32, 0), else => @intToPtr(*i32, 0), }; _ = r; }
+                                                                                ^~~~~~~~~~~~~~~~~~
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optptr_null_switch.zig:1:80: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+pub fn main() void { var v: u32 = 0; var r: ?*i32 = switch(v) { 0 => null, 1 => @intToPtr(*i32, 0), else => @intToPtr(*i32, 0), }; _ = r; }
+                                                                                ^^^^^^^^^^^^^^^^^^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/array_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_eu_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE matrix/array_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_euopt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: error-set
+==================================================================
+PROBE matrix/array_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/array_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/array_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_opt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/array_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_optopt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/array_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_optptr_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/array_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/array_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/callarg_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_eu_i32.zig:6:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE matrix/callarg_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_euopt_i32.zig:6:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: error-set
+==================================================================
+PROBE matrix/callarg_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/callarg_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/callarg_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_opt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/callarg_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_optopt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/callarg_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_optptr_i32.zig:6:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/callarg_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/callarg_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/field_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_eu_i32.zig:6:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE matrix/field_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_euopt_i32.zig:6:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: error-set
+==================================================================
+PROBE matrix/field_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/field_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/field_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_opt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/field_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_optopt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/field_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_optptr_i32.zig:6:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/field_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/field_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/nested_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_eu_i32.zig:6:17: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+            1 => 0,
+                 ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE matrix/nested_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_euopt_i32.zig:6:17: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+            1 => null,
+                 ^^^^
+note: source: null
+note: target: error-set
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_euopt_i32.zig:10:16: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        else => 1,
+                ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/nested_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/nested_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/nested_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_opt_i32.zig:5:17: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+            1 => 0,
+                 ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/nested_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_optopt_i32.zig:5:17: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+            1 => 0,
+                 ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/nested_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_optptr_i32.zig:6:17: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+            1 => &g,
+                 ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/nested_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/nested_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/ret_anyerror_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_anyerror_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=2 codes=error[20]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_anyerror_i32.zig:1:16: error[20]: identifier 'anyerror' is not declared or imported in this module
+fn pick(v: u32) anyerror!i32 {
+                ^^^^^^^^
+CUR  check rc=2 codes=error[20]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_anyerror_i32.zig:1:16: error[20]: identifier 'anyerror' is not declared or imported in this module
+fn pick(v: u32) anyerror!i32 {
+                ^^^^^^^^
+==================================================================
+PROBE matrix/ret_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_eu_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE matrix/ret_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_euopt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: error-set
+==================================================================
+PROBE matrix/ret_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/ret_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/ret_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_opt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/ret_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_optopt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/ret_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_optptr_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/ret_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/ret_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/typed_const_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_eu_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE matrix/typed_const_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_euopt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: error-set
+==================================================================
+PROBE matrix/typed_const_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/typed_const_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/typed_const_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_opt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/typed_const_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_optopt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/typed_const_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_optptr_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/typed_const_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_const_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/typed_var_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_eu_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: error-set
+==================================================================
+PROBE matrix/typed_var_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_euopt_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => null,
+             ^^^^
+note: source: null
+note: target: error-set
+==================================================================
+PROBE matrix/typed_var_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/typed_var_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/typed_var_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_opt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/typed_var_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_optopt_i32.zig:4:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => 0,
+             ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE matrix/typed_var_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_optptr_i32.zig:5:13: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+        1 => &g,
+             ^
+note: source: pointer
+note: target: null
+==================================================================
+PROBE matrix/typed_var_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/typed_var_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_const_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_const_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_eu_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_eu_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_euopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_euopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_f32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_f32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_optopt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_optopt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_optptr_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_optptr_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE matrix/untyped_var_slice_u8.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/matrix/untyped_var_slice_u8.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE neg/neg_mixed_bool_ret.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_bool_ret.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_bool_ret.zig:2:30: error: expected type 'bool', found 'comptime_int'
+    return switch (v) { 0 => 1, else => true };
+                             ^
+referenced by:
+    main: /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_bool_ret.zig:4:54
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=6' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_bool_ret.zig:2:40: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    return switch (v) { 0 => 1, else => true };
+                                        ^^^^
+note: source: bool
+note: target: comptime_int
+==================================================================
+PROBE neg/neg_mixed_direct.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_direct.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_direct.zig:2:41: error: expected type 'i32', found 'bool'
+    return switch (v) { 0 => 1, else => true };
+                                        ^~~~
+referenced by:
+    main: /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_direct.zig:4:54
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=6' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_direct.zig:2:40: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    return switch (v) { 0 => 1, else => true };
+                                        ^^^^
+note: source: bool
+note: target: comptime_int
+==================================================================
+PROBE neg/neg_mixed_infer.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_infer.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_infer.zig:2:13: error: incompatible types: 'comptime_int' and 'bool'
+    var x = switch (v) { 0 => 1, else => true };
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_infer.zig:2:31: note: type 'comptime_int' here
+    var x = switch (v) { 0 => 1, else => true };
+                              ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_infer.zig:2:42: note: type 'bool' here
+    var x = switch (v) { 0 => 1, else => true };
+                                         ^~~~
+referenced by:
+    main: /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_infer.zig:5:50
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=6' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_infer.zig:2:41: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    var x = switch (v) { 0 => 1, else => true };
+                                         ^^^^
+note: source: bool
+note: target: comptime_int
+==================================================================
+PROBE neg/neg_mixed_reverse.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_reverse.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_reverse.zig:2:30: error: expected type 'i32', found 'bool'
+    return switch (v) { 0 => true, else => 1 };
+                             ^~~~
+referenced by:
+    main: /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_reverse.zig:4:54
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=6' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_reverse.zig:2:43: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    return switch (v) { 0 => true, else => 1 };
+                                           ^
+note: source: comptime_int
+note: target: bool
+==================================================================
+PROBE neg/neg_mixed_use.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_use.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_use.zig:2:15: error: incompatible types: 'comptime_int' and 'bool'
+    const x = switch (v) { 0 => 1, else => true };
+              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_use.zig:2:33: note: type 'comptime_int' here
+    const x = switch (v) { 0 => 1, else => true };
+                                ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_use.zig:2:44: note: type 'bool' here
+    const x = switch (v) { 0 => 1, else => true };
+                                           ^~~~
+referenced by:
+    main: /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_use.zig:5:54
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=6' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_use.zig:2:43: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    const x = switch (v) { 0 => 1, else => true };
+                                           ^^^^
+note: source: bool
+note: target: comptime_int
+==================================================================
+PROBE selectors/if_expected_positions/array_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/if_expected_positions/array_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/if_expected_positions/callarg_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/if_expected_positions/callarg_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/if_expected_positions/field_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/if_expected_positions/field_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/if_expected_positions/nested_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/if_expected_positions/nested_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/if_expected_positions/typed_const_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/if_expected_positions/typed_const_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/if_expected_positions/typed_var_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/if_expected_positions/typed_var_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/sel_capture_tu.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_capture_tu.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/sel_comptime_mixed_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_comptime_mixed_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_comptime_mixed_i32.zig:2:40: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    return switch (0) { 0 => 1, else => true };
+                                        ^^^^
+note: source: bool
+note: target: comptime_int
+==================================================================
+PROBE selectors/sel_comptime_mixed_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_comptime_mixed_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_comptime_mixed_opt_i32.zig:2:43: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    return switch (0) { 0 => null, else => true };
+                                           ^^^^
+note: source: bool
+note: target: null
+==================================================================
+PROBE selectors/sel_comptime_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_comptime_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_comptime_opt_i32.zig:2:40: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    return switch (0) { 0 => null, 1 => 0, else => 1 };
+                                        ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE selectors/sel_noreturn_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_noreturn_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/sel_runtime_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_runtime_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=2 codes=error[3000]   dump rc=2 c=0
+Z98 Compiler 2026 (map: off)
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_runtime_opt_i32.zig:2:40: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+    return switch (v) { 0 => null, 1 => 0, else => 0 };
+                                        ^
+note: source: comptime_int
+note: target: null
+==================================================================
+PROBE selectors/sel_undefined_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_undefined_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/sel_undefined_opt_i32.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/sel_undefined_opt_i32.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/stmt_mixed_int_bool.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_bool.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_bool.zig:2:5: error: incompatible types: 'comptime_int' and 'bool'
+    switch (v) { 0 => 1, else => true }
+    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_bool.zig:2:23: note: type 'comptime_int' here
+    switch (v) { 0 => 1, else => true }
+                      ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_bool.zig:2:34: note: type 'bool' here
+    switch (v) { 0 => 1, else => true }
+                                 ^~~~
+referenced by:
+    main: /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_bool.zig:4:47
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=6' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/stmt_mixed_int_void.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_void.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=1 errors=1 codes=-
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_void.zig:3:5: error: incompatible types: 'comptime_int' and 'void'
+    switch (v) { 0 => 1, else => a() }
+    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_void.zig:3:23: note: type 'comptime_int' here
+    switch (v) { 0 => 1, else => a() }
+                      ^
+/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_void.zig:3:35: note: type 'void' here
+    switch (v) { 0 => 1, else => a() }
+                                 ~^~
+referenced by:
+    main: /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_void.zig:5:47
+    callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64
+    callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20
+    posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38
+    2 reference(s) hidden; use '-freference-trace=6' to see all references
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+==================================================================
+PROBE selectors/stmt_void.zig
+------------------------------------------------------------------
+command: cd /tmp/phase35-d15-i/run/cwd && /tmp/phase35-d15-i/zig-0.17.1/zig build-exe /workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_void.zig --cache-dir /tmp/phase35-d15-i/run/zig-cache --global-cache-dir /tmp/phase35-d15-i/run/zig-global -femit-bin=/tmp/phase35-d15-i/run/bin/out
+zig rc=0 errors=0 codes=-
+
+PRE  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)
+CUR  check rc=0 codes=-   dump rc=0 c=5
+Z98 Compiler 2026 (map: off)

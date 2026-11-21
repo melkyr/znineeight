@@ -1,0 +1,19 @@
+Z98 debugger has started...
+Stopped at @LIVE@:22
+at main
+  20:
+  21: pub fn main(argc: i32, argv: [*][*]u8) void {
+> 22:     var x = middle(5);
+  23:     x = addTwo(x);
+  24:     counter = x;
+(z9dbg) break: set at line 17
+(z9dbg) Stopped at @LIVE@:17
+at middle
+  15:
+  16: fn middle(n: u32) u32 {
+> 17:     const r = addTwo(n);
+  18:     return r;
+  19: }
+(z9dbg) dump: wrote @SNAP@
+z9dbg: debuggee exited
+(z9dbg) z9dbg: exiting

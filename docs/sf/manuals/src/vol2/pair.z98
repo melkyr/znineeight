@@ -1,0 +1,31 @@
+const std = @import("std");
+
+// A tuple type: a struct whose members are just types, in order.
+const Pair = struct { i32, i32 };
+
+// A grouped return: the function's two results travel as one value.
+fn divmod(a: i32, b: i32) Pair {
+    return .{ a / b, a % b };
+}
+
+// A tuple parameter: the caller hands the two fields over as one value.
+fn sum(p: Pair) i32 {
+    return p.0 + p.1;
+}
+
+pub fn main() void {
+    // One tuple from a grouped return, unpacked by position.
+    const q = divmod(17, 5);
+    std.io.print("17/5 = {} remainder {}\n", .{ q.0, q.1 });
+
+    // A tuple variable printed whole with {}.
+    const p: Pair = .{ 7, 3 };
+    std.io.print("pair {}\n", .{p});
+
+    // All three spellings address the same positional field.
+    std.io.print("spellings {} {} {} {}\n", .{ p.0, p._0, p[1], p.1 });
+
+    // The copy is field-wise, and a tuple crosses a call as one value.
+    var copy: Pair = p;
+    std.io.print("copy {} sum {}\n", .{ copy.1, sum(copy) });
+}

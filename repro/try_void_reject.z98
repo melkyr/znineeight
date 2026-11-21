@@ -1,0 +1,24 @@
+// repro/try_void_reject.z98 — FX12 (Volume II ch12) discovery evidence.
+//
+// Converted from the Task 1 Finding-A probe `/tmp/t1/probes/n_try_void.z98`
+// (task-1-report.md §3, A1 sibling): a `void` function whose `try` operand is
+// a non-erroring (empty-inferred-set) `!void` call. Zig 0.15.2 rejects this
+// shape too (`expected type 'void', found '<error set>'` + `note: function
+// cannot return an error`); Z98's unconditional non-error-union-enclosing
+// reject is the ruled bounded divergence for opaque/empty anonymous sets.
+//
+// Contract now: dump rc 2, 0 `.c`, exactly 1 level-0 `error[3075]`
+// (`expected type 'void', found error set` + `function cannot return an
+// error`), no signals.
+const std = @import("std");
+
+fn g() !void {
+}
+
+fn f() void {
+    try g();
+}
+
+pub fn main() void {
+    f();
+}

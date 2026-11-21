@@ -1,0 +1,4 @@
+9
+11
+22
+slice_index_field_store ok

@@ -1,0 +1,12 @@
+// repro/array_inferred_len_decl_reject.z98 — standalone A3-F reject control.
+//
+// The headline function-local shape. Baseline (fp 7fc6083): rc 0, 4 `.c`,
+// gcc `'x' undeclared` at the emitted `zT_1 = x;` (the `[_]i32` annotation
+// silently inferred the initializer's tuple type). Fixed: rc 2, 0 `.c`,
+// level-0 `error[3000]: unable to infer array size` at 2:12 (the `_`).
+//
+// census: 3000 1
+pub fn main() void {
+    var x: [_]i32 = .{ 1, 2, 3 };
+    x[0] = 4;
+}

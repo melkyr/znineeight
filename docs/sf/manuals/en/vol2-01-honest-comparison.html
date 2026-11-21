@@ -1,0 +1,1101 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Honest Comparison</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual honest comparison C89 C++98 era machine toolchain cost checked C89 contracts error unions defer errdefer coroutines slices bounds arena cost of bugs lisp evaluator entity loop tilemap">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-00-title.html">
+<link rel="next" href="vol2-02-types.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<b>The honest comparison</b><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<a href="vol2-08-tuples.html">Aggregates V: tuples</a><br>
+<a href="vol2-09-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol2-10-control-flow.html">Control flow, in full</a><br>
+<a href="vol2-11-defer.html">defer and errdefer</a><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+<a href="vol2-13-optionals.html">Optionals</a><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+<a href="vol2-16-no-methods.html">No methods, no generics, no comptime</a><br>
+<a href="vol2-17-stdlib.html">The standard library tour</a><br>
+<a href="vol2-18-print.html">print and the format string</a><br>
+<a href="vol2-19-idioms.html">Idioms and best practices</a><br>
+<a href="vol2-20-whats-next.html">What you have learned, what is next</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The Honest Comparison</h1>
+<p>
+Z98 is <b>checked C89</b>: C89 with contracts in the type system. It is a
+language, a compiler, a target, and an output format, and the output format is
+C89. It exists for the 1998 machine, and it keeps that machine's cost model
+while moving the disciplines C89 leaves to the programmer into checks the
+compiler performs.
+</p>
+<p>
+The comparison that matters is against the era's peers: C89, the baseline, and
+C++98, the era's heavyweight. This chapter is the map: what Z98 stops you from
+shipping, where it leads the era's languages, where they lead it, where they
+tie, and what the limits are &mdash; with the way over each.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> Statements in this chapter about era machines, era
+toolchains, C89, and C++98 are era context. Statements about Z98 are checked
+against <tt>docs/reference/Language_Spec_Z98.md</tt> and the compiler built
+from the committed seed, and the Z98 fragments on this page compile and run
+on it.</td>
+</tr>
+</table>
+
+<h2>What Z98 is</h2>
+<p>
+C89 and C99 are ISO standards: documents that describe a language. Z98 is not
+a standard and is not competing to be one. Z98 is a language with its own
+specification, plus a compiler, plus a target (the era's 32-bit PCs), plus an
+output format (C89). Saying "Z98 is better than C89" would be a category
+error; the honest sentence is that Z98 is a <i>compiler over C89</i>. What it
+adds is not a new dialect of the standard. What it adds is checking.
+</p>
+<p>
+C89 leaves a specific set of disciplines to the programmer: matching every
+allocation with a free, checking every return code, keeping every index inside
+its array, pairing every acquire with a release, casting with care. Those rules
+lived in comments and code review. Z98 moves them into the type system and the
+analyzer, and still emits C89. Error handling becomes an error union in the
+signature. Cleanup becomes <tt>defer</tt> and <tt>errdefer</tt> in the
+language. Buffer length travels with the buffer as a slice. Suspension becomes
+a coroutine. The compiler holds you to all of it, and the machine still runs
+plain C89.
+</p>
+<p>
+<b>Why not C99, then?</b> Because the target's toolchain is C89. The 1998
+machine has C89 compilers, and Z98's output is written for exactly those
+compilers. C99 is a standard, not something the era's machine becomes; and a
+program that requires C99 has left the era target behind. A project aiming at
+a modern machine is a different project with different tools; this manual is
+about the era target. For a program that must run on the era's hardware and
+compile with the era's compilers, the choice is between C89 as written and C89
+with checks the C89 compiler cannot provide. That second thing is Z98.
+</p>
+
+<h2>The toolchain cost</h2>
+<p>
+The target here is a home-user machine of the era: a 32-bit PC running Windows
+95 or 98, with tens of megabytes of RAM. A modern compiler &mdash; gcc, mingw,
+or Zig &mdash; is built for a modern machine: it expects a modern operating
+system and far more memory than that machine has, and its binaries do not run
+there. Adopting one means adopting a new machine and a new OS. That is a fine
+decision, but it is a different target; the software is no longer for the
+machine the project set out to serve.
+</p>
+<p>
+Z98's toolchain cost is the opposite one. It emits C89, and C89 is what the
+compilers already on that machine accept &mdash; the era's C compilers,
+including the OpenWatcom path this manual uses for Win9x. There is no new
+runtime to install, no garbage collector, no unwinder, and no operating-system
+upgrade. The RAM the machine has is the RAM the program gets.
+</p>
+<p>
+That is the whole reason the comparison in this chapter is C89 and C++98. They
+are the peers that ran on the target. A feature scoreboard against a language
+that cannot run on the target would measure the wrong thing; what matters is
+what the target's toolchain can build, and what the target's machine can
+carry.
+</p>
+
+<h2>The comparison set</h2>
+<p>
+Three languages, one machine. The columns are the questions that decide an era
+project: what builds it, where memory comes from, how failure is reported, and
+what the compiler checks for you.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Language</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Toolchain</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Memory</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Failure</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What the compiler checks</b></th>
+</tr>
+<tr>
+<td valign="top"><b>C89</b></td>
+<td valign="top">the era's C compilers</td>
+<td valign="top"><tt>malloc</tt>/<tt>free</tt> by hand</td>
+<td valign="top">return codes, <tt>errno</tt>, conventions</td>
+<td valign="top">syntax and types only</td>
+</tr>
+<tr>
+<td valign="top"><b>C++98</b></td>
+<td valign="top">the era's C++ compilers</td>
+<td valign="top"><tt>new</tt>/<tt>delete</tt>, constructors, destructors</td>
+<td valign="top">exceptions: <tt>try</tt>/<tt>throw</tt>/<tt>catch</tt></td>
+<td valign="top">classes, templates, type rules</td>
+</tr>
+<tr>
+<td valign="top"><b>Z98</b></td>
+<td valign="top">emits C89; the same era C compilers</td>
+<td valign="top">arena over a buffer you supply</td>
+<td valign="top">error unions: <tt>try</tt>/<tt>catch</tt>/<tt>errdefer</tt></td>
+<td valign="top">errors, lifetimes, suspension, bounds, casts</td>
+</tr>
+</table>
+<p>
+Read the last column: that is the chapter. Z98 compiles to the same C89 the
+first row compiles to, for the same compilers, with the disciplines of the
+first row turned into things the compiler enforces.
+</p>
+
+<h2>What Z98 stops you from shipping</h2>
+<p>
+In 1998 a bug ships on a disk. There is no telemetry, no crash reporter, and
+no fix in an hour; the defects below are the ones a C89 codebase shipped most
+often. Each is a convention in C89 that becomes a check in Z98.
+</p>
+
+<h3>The error that went unchecked</h3>
+<p>
+In C89 a fallible function returns <tt>-1</tt>, or sets <tt>errno</tt>, or
+writes through an out-parameter, and the caller is trusted to notice. Forget
+the check and the program continues with bad data. Z98 puts the failure in the
+function's type &mdash; <tt>error{...}!T</tt> &mdash; so it cannot be ignored
+by accident:
+</p>
+<pre>
+error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+<p>
+<tt>try</tt> may only appear in a function whose return type carries the error;
+using it in a <tt>void</tt> function is rejected before the program is built:
+</p>
+<pre>
+error[3075]: expected type 'void', found error set
+note: function cannot return an error
+</pre>
+<p>
+The C89 program ran a forgotten check until it crashed on a user's machine.
+The Z98 program does not build.
+</p>
+
+<h3>The index that walked off the array</h3>
+<p>
+In C89, <tt>map[r * w + c]</tt> is arithmetic on a pointer, and the compiler
+has no idea where the array ends. A bound computed from the wrong variable
+reads or writes whatever follows. Z98 slices carry their length, and indexing
+is checked. A bound the compiler can see is rejected at compile time:
+</p>
+<pre>
+error[3062]: index 5 outside array of length 3
+</pre>
+<p>
+A bound that only exists at runtime traps under the default safety mode
+(<tt>-fsafe</tt>) instead of corrupting memory. The same tilemap loader that
+walks off the end of a C89 array stops at the edge in Z98.
+</p>
+
+<h3>The memory that leaked, dangled, or was freed twice</h3>
+<p>
+C89's <tt>malloc</tt>/<tt>free</tt> discipline has one failure mode per line:
+an early return leaks, a stale pointer dangles, a duplicate cleanup path
+frees twice. Z98's memory story is the arena: one buffer, bump allocation, one
+reset. There is no per-object <tt>free</tt> to double, and no wrong pointer to
+pass to it. Allocation failure is an error union, so an exhausted arena is a
+caught error rather than a null dereference:
+</p>
+<pre>
+error.OutOfMemory
+</pre>
+<p>
+The arena's own limit is honest and small: memory lives until the reset, so
+the discipline is choosing the reset level well. That is one decision,
+reviewed in one place, instead of a <tt>free</tt> on every path through every
+function.
+</p>
+
+<h3>The pointer that was null</h3>
+<p>
+In C89 every pointer can be <tt>NULL</tt>, and every dereference is a bet. Z98
+splits the case in the type system: <tt>*T</tt> is not nullable, and absence is
+<tt>?T</tt>, which must be unwrapped explicitly with <tt>if (opt) |v|</tt> or
+<tt>orelse</tt>. There is no silent dereference of a maybe-null pointer,
+because the type does not allow one. When the analyzer cannot prove a
+dereference safe, it says so:
+</p>
+<pre>
+warning[3037]: potential null pointer dereference
+</pre>
+
+<h3>The cast that silently truncated</h3>
+<p>
+C89 converts integers and pointers implicitly, and truncation, sign change, or
+qualifier loss is silent. Z98 makes the dangerous conversions explicit and
+checks them. An implicit width mismatch at a declaration warns; a
+const or volatile discard is an error; a checked cast traps in the safety mode
+if the value does not fit:
+</p>
+<pre>
+warning[3000]: type mismatch in variable declaration -- initialization type may not be compatible with declared type
+error[3000]: cannot implicitly discard 'volatile' qualifier; use @volatileCast to remove it
+panic: integer cast overflow in @intCast
+</pre>
+<p>
+Those are the failure modes that made 1998 software expensive to get right.
+Z98 does not make them a checklist of features: it makes them things the
+compiler refuses to let through.
+</p>
+
+<h2>Side by side: the same evaluator in C89 and Z98</h2>
+<p>
+Abstract lists are cheap, so here is the same small task written twice: a
+Lisp-style evaluator over a tree of expressions, with one real failure mode
+(division by zero). It forces every hard part of a system language &mdash;
+tagged data, allocation, recursion, dispatch, and error plumbing &mdash; and
+it shows exactly which C89 conventions become Z98 types.
+</p>
+
+<h3>C89: tag it, allocate it, plumb it, dispatch it</h3>
+<p>
+The C89 shape is an enum tag, a union payload, a <tt>malloc</tt>/<tt>free</tt>
+per node, and a status <tt>int</tt> threaded through every call. This is era
+framing, the pattern every C programmer of the period wrote:
+</p>
+<pre>
+typedef enum { E_NUM, E_NEG, E_ADD, E_SUB, E_MUL, E_DIV } EKind;
+
+typedef struct Expr {
+    EKind kind;
+    union {
+        int num;
+        struct Expr *neg;
+        struct { struct Expr *l, *r; } bin;
+    } u;
+} Expr;
+
+/* 0 = success, -1 = divide by zero; the result comes back through *out */
+static int eval(const Expr *e, int *out)
+{
+    int l, r;
+    switch (e-&gt;kind) {
+    case E_NUM: *out = e-&gt;u.num; return 0;
+    case E_NEG:
+        if (eval(e-&gt;u.neg, &amp;l) != 0) return -1;
+        *out = -l; return 0;
+    case E_ADD:
+        if (eval(e-&gt;u.bin.l, &amp;l) != 0) return -1;
+        if (eval(e-&gt;u.bin.r, &amp;r) != 0) return -1;
+        *out = l + r; return 0;
+    case E_DIV:
+        if (eval(e-&gt;u.bin.l, &amp;l) != 0) return -1;
+        if (eval(e-&gt;u.bin.r, &amp;r) != 0) return -1;
+        if (r == 0) return -1;
+        *out = l / r; return 0;
+    default: return -1;
+    }
+}
+</pre>
+<p>
+The compiler cannot see the conventions. Nothing ties the tag to the union
+member. Nothing makes a caller check the status. Nothing pairs the
+<tt>malloc</tt> with a <tt>free</tt> on the error paths, and the
+<tt>default</tt> prong exists because the switch cannot be proven exhaustive.
+</p>
+
+<h3>Z98: one type, one switch, an error in the signature</h3>
+<p>
+The Z98 shape makes the tag and the payload one type, makes the switch
+exhaustive and payload-binding, and puts the failure in the return type:
+</p>
+<pre>
+const Bin = struct { l: u32, r: u32 };
+
+const Expr = union(enum) {
+    num: i32,
+    neg: u32,
+    add: Bin,
+    sub: Bin,
+    mul: Bin,
+    div: Bin,
+};
+
+fn eval(nodes: []Expr, i: u32) error{DivideByZero}!i32 {
+    switch (nodes[@intCast(usize, i)]) {
+        .num => |v| return v,
+        .neg => |j| return -(try eval(nodes, j)),
+        .add => |b| return (try eval(nodes, b.l)) + (try eval(nodes, b.r)),
+        .sub => |b| return (try eval(nodes, b.l)) - (try eval(nodes, b.r)),
+        .mul => |b| return (try eval(nodes, b.l)) * (try eval(nodes, b.r)),
+        .div => |b| {
+            const rhs = try eval(nodes, b.r);
+            if (rhs == 0) return error.DivideByZero;
+            return (try eval(nodes, b.l)) / rhs;
+        },
+        else => unreachable,
+    }
+}
+</pre>
+<p>
+The tag and the payload cannot drift apart; the switch binds the payload to a
+name, so <tt>b.l</tt> is a <tt>u32</tt>. The failure is written into the
+signature as <tt>error{DivideByZero}!i32</tt>, so <tt>try</tt> propagates it
+and the compiler refuses to let it be dropped. Nodes come from one arena slice
+instead of a <tt>malloc</tt> per node, and the index goes through a
+length-carrying slice. This is the convention-to-type move in one function:
+C89's tag discipline, status discipline, and allocation discipline are now
+parts of the language.
+</p>
+
+<h3>The example: <tt>lisp_eval.z98</tt></h3>
+<p>
+The first runnable program is that evaluator, complete:
+<tt>docs/sf/manuals/src/vol2/lisp_eval.z98</tt>. It builds a node pool over an
+arena, constructs <tt>(2+3)*(10-4)/2</tt>, evaluates it, then evaluates
+<tt>10/(10-10)</tt> and catches the error.
+</p>
+<pre>
+const std = @import("std");
+
+const Bin = struct { l: u32, r: u32 };
+
+const Expr = union(enum) {
+    num: i32,
+    neg: u32,
+    add: Bin,
+    sub: Bin,
+    mul: Bin,
+    div: Bin,
+};
+
+const Pool = struct { nodes: []Expr, used: u32 };
+
+fn make(pool: *Pool, e: Expr) u32 {
+    const i = pool.used;
+    pool.nodes[@intCast(usize, i)] = e;
+    pool.used = i + 1;
+    return i;
+}
+
+fn eval(nodes: []Expr, i: u32) error{DivideByZero}!i32 {
+    switch (nodes[@intCast(usize, i)]) {
+        .num => |v| return v,
+        .neg => |j| return -(try eval(nodes, j)),
+        .add => |b| return (try eval(nodes, b.l)) + (try eval(nodes, b.r)),
+        .sub => |b| return (try eval(nodes, b.l)) - (try eval(nodes, b.r)),
+        .mul => |b| return (try eval(nodes, b.l)) * (try eval(nodes, b.r)),
+        .div => |b| {
+            const rhs = try eval(nodes, b.r);
+            if (rhs == 0) return error.DivideByZero;
+            return (try eval(nodes, b.l)) / rhs;
+        },
+        else => unreachable,
+    }
+}
+
+pub fn main() !void {
+    var buf: [8192]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    const raw = try std.arena.alloc(&amp;arena, @sizeOf(Expr) * 64);
+    var pool = Pool{ .nodes = @ptrCast([*]Expr, raw)[0..64], .used = 0 };
+
+    const two = make(&amp;pool, .{ .num = 2 });
+    const three = make(&amp;pool, .{ .num = 3 });
+    const ten = make(&amp;pool, .{ .num = 10 });
+    const four = make(&amp;pool, .{ .num = 4 });
+
+    const sum = make(&amp;pool, .{ .add = .{ .l = two, .r = three } });
+    const diff = make(&amp;pool, .{ .sub = .{ .l = ten, .r = four } });
+    const product = make(&amp;pool, .{ .mul = .{ .l = sum, .r = diff } });
+    const answer = make(&amp;pool, .{ .div = .{ .l = product, .r = two } });
+
+    std.io.print("eval((2+3)*(10-4)/2) = {}\n", .{ try eval(pool.nodes, answer) });
+
+    const zero = make(&amp;pool, .{ .sub = .{ .l = ten, .r = ten } });
+    const bad = make(&amp;pool, .{ .div = .{ .l = ten, .r = zero } });
+    _ = eval(pool.nodes, bad) catch {
+        std.io.print("eval(10/(10-10)) caught DivideByZero\n", .{});
+        return;
+    };
+    std.io.print("unreachable\n", .{});
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter 2:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/lisp_eval.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux lisp_eval
+Building for linux...
+Built: lisp_eval
+$ ./lisp_eval
+eval((2+3)*(10-4)/2) = 15
+eval(10/(10-10)) caught DivideByZero
+</pre>
+<p>
+The first line is the successful evaluation: <tt>(2+3)</tt> is 5,
+<tt>(10-4)</tt> is 6, the product is 30, and 30/2 is 15. The second line is
+the error path: the evaluator reaches a zero divisor, returns
+<tt>error.DivideByZero</tt>, and the <tt>catch</tt> at the call site handles it.
+The program exits 0. The compile is clean: no warnings, no casts to paper over,
+and no <tt>free</tt> to match.
+</p>
+
+<h2>Side by side: the era's game code</h2>
+<p>
+An evaluator is a compiler-shaped example. The same convention-to-type moves
+show up in the two pieces of every era game &mdash; moving entities and
+loading a tilemap &mdash; and in the cleanup code that surrounded both.
+</p>
+
+<h3>The entity update loop</h3>
+<p>
+C89 passes a bare pointer and a separate count, and trusts the loop bound.
+This is era framing:
+</p>
+<pre>
+typedef struct { int x, y, vx, vy; } Entity;
+
+void update(Entity *e, int dt) {
+    e-&gt;x += e-&gt;vx * dt;
+    e-&gt;y += e-&gt;vy * dt;
+    if (e-&gt;x &lt; 0)   { e-&gt;x = 0;   e-&gt;vx = -e-&gt;vx; }
+    if (e-&gt;x &gt; 100) { e-&gt;x = 100; e-&gt;vx = -e-&gt;vx; }
+    if (e-&gt;y &lt; 0)   { e-&gt;y = 0;   e-&gt;vy = -e-&gt;vy; }
+    if (e-&gt;y &gt; 60)  { e-&gt;y = 60;  e-&gt;vy = -e-&gt;vy; }
+}
+
+void step(Entity *world, int n, int dt) {
+    int i;
+    for (i = 0; i &lt; n; i++) update(&amp;world[i], dt);
+}
+</pre>
+<p>
+Z98 keeps the arithmetic and attaches the length to the data:
+</p>
+<pre>
+const Entity = struct { x: i32, y: i32, vx: i32, vy: i32 };
+
+fn update(e: *Entity, dt: i32) void {
+    e.x += e.vx * dt;
+    e.y += e.vy * dt;
+    if (e.x &lt; 0) { e.x = 0; e.vx = -e.vx; }
+    if (e.x &gt; 100) { e.x = 100; e.vx = -e.vx; }
+    if (e.y &lt; 0) { e.y = 0; e.vy = -e.vy; }
+    if (e.y &gt; 60) { e.y = 60; e.vy = -e.vy; }
+}
+
+fn step(world: []Entity, dt: i32) void {
+    for (world) |_, i| {
+        update(&amp;world[i], dt);
+    }
+}
+</pre>
+<p>
+The win is not shorter code. The win is that <tt>world</tt> carries its own
+length, so there is no separate <tt>n</tt> to pass or to get wrong, and the
+index is checked in the default safety mode. A bounds bug that would corrupt
+memory in C89 stops and reports instead.
+</p>
+
+<h3>The tilemap loader</h3>
+<p>
+Loading a <tt>w</tt>&times;<tt>h</tt> grid in C89 means allocating, checking
+the allocation, filling with a manually computed index, checking the fill
+status, and freeing every path out. Length is a variable the caller keeps
+beside the pointer:
+</p>
+<pre>
+static int load_map(unsigned char *map, int w, int h)
+{
+    int r, c;
+    if (map == NULL) return -1;
+    for (r = 0; r &lt; h; r++)
+        for (c = 0; c &lt; w; c++)
+            map[r * w + c] = (unsigned char)((r + c) % 4);
+    return 0;
+}
+
+unsigned char *map = malloc((size_t)w * (size_t)h);
+if (map == NULL) { cleanup(); return -1; }
+if (load_map(map, w, h) != 0) { free(map); return -1; }
+/* ... use map ... */
+free(map);
+</pre>
+<p>
+In Z98 the loader returns either a slice or an error, and the slice carries
+its length. The allocation failure is in the type, and there is no
+<tt>free</tt>:
+</p>
+<pre>
+fn loadMap(arena: *std.arena.Arena, w: usize, h: usize) ![]u8 {
+    const raw = try std.arena.alloc(arena, w * h);
+    const map = @ptrCast([*]u8, raw)[0..w * h];
+    var r: usize = 0;
+    while (r &lt; h) : (r += 1) {
+        var c: usize = 0;
+        while (c &lt; w) : (c += 1) {
+            map[r * w + c] = @intCast(u8, (r + c) % 4);
+        }
+    }
+    return map;
+}
+</pre>
+<p>
+Three things are gone from the call site: the <tt>malloc</tt> result check
+(<tt>try</tt> replaces it), the separate width and height bookkeeping
+(<tt>map.len</tt> is the slice's own), and the <tt>free</tt> and its error
+paths (the arena reset reclaims the map). The fill still writes through a
+manually computed index, and <tt>@intCast</tt> makes the narrowing to
+<tt>u8</tt> explicit and checked &mdash; but the failure and length plumbing
+that made the C89 version long is in the type system now.
+</p>
+
+<h3>The cleanup that lived on every path</h3>
+<p>
+C89 cleanup is a convention around a label: each resource is released in
+reverse order at one exit, and every early return must jump there. This is era
+framing:
+</p>
+<pre>
+static int load_save(World *w)
+{
+    FILE *f = NULL;
+    unsigned char *map = NULL;
+    int rc = -1;
+
+    f = fopen("world.dat", "rb");
+    if (f == NULL) goto cleanup;
+    map = malloc(w-&gt;w * w-&gt;h);
+    if (map == NULL) goto cleanup;
+    if (fread(map, 1, (size_t)(w-&gt;w * w-&gt;h), f) != (size_t)(w-&gt;w * w-&gt;h))
+        goto cleanup;
+    w-&gt;map = map;
+    map = NULL;
+    rc = 0;
+
+cleanup:
+    free(map);
+    if (f != NULL) fclose(f);
+    return rc;
+}
+</pre>
+<p>
+Z98 writes the cleanup next to the thing it cleans up, and the compiler lays
+the exits out:
+</p>
+<pre>
+fn loadSave(ok: bool) !void {
+    defer std.io.print("save slot closed\n", .{});
+    errdefer std.io.print("save slot rolled back\n", .{});
+    if (!ok) return error.Corrupt;
+    std.io.print("save slot loaded\n", .{});
+}
+</pre>
+<p>
+<tt>defer</tt> runs at every scope exit; <tt>errdefer</tt> runs only when the
+scope leaves with an error. The C89 version's correctness depends on every
+future edit remembering the label; the Z98 version's cleanup is attached to
+the declaration and cannot be skipped by an early return.
+</p>
+
+<h3>The example: <tt>game_loop.z98</tt></h3>
+<p>
+The second runnable program puts the pieces together:
+<tt>docs/sf/manuals/src/vol2/game_loop.z98</tt>. It updates two entities,
+loads and measures a tilemap, runs a four-step patrol coroutine, then loads a
+save slot on the success and error paths.
+</p>
+<pre>
+const std = @import("std");
+
+const Entity = struct { x: i32, y: i32, vx: i32, vy: i32 };
+
+fn update(e: *Entity, dt: i32) void {
+    e.x += e.vx * dt;
+    e.y += e.vy * dt;
+    if (e.x &lt; 0) { e.x = 0; e.vx = -e.vx; }
+    if (e.x &gt; 100) { e.x = 100; e.vx = -e.vx; }
+    if (e.y &lt; 0) { e.y = 0; e.vy = -e.vy; }
+    if (e.y &gt; 60) { e.y = 60; e.vy = -e.vy; }
+}
+
+fn step(world: []Entity, dt: i32) void {
+    for (world) |_, i| {
+        update(&amp;world[i], dt);
+    }
+}
+
+fn loadMap(arena: *std.arena.Arena, w: usize, h: usize) ![]u8 {
+    const raw = try std.arena.alloc(arena, w * h);
+    const map = @ptrCast([*]u8, raw)[0..w * h];
+    var r: usize = 0;
+    while (r &lt; h) : (r += 1) {
+        var c: usize = 0;
+        while (c &lt; w) : (c += 1) {
+            map[r * w + c] = @intCast(u8, (r + c) % 4);
+        }
+    }
+    return map;
+}
+
+fn loadSave(ok: bool) !void {
+    defer std.io.print("save slot closed\n", .{});
+    errdefer std.io.print("save slot rolled back\n", .{});
+    if (!ok) return error.Corrupt;
+    std.io.print("save slot loaded\n", .{});
+}
+
+const MoveArgs = struct { e: *Entity };
+
+var g_pool: [1024]u64 = undefined;
+var g_frame: [256]u8 = undefined;
+
+fn patrol(e: *Entity) void {
+    var i: i32 = 0;
+    while (i &lt; 4) : (i += 1) {
+        e.x += e.vx;
+        _ = @asyncSuspend(null);
+    }
+}
+
+pub fn main() void {
+    var world = [2]Entity{
+        .{ .x = 10, .y = 10, .vx = 7, .vy = -3 },
+        .{ .x = 90, .y = 50, .vx = -9, .vy = 4 },
+    };
+    step(world[0..], 1);
+    std.io.print("entity 0 after update: {},{} v={},{}\n", .{ world[0].x, world[0].y, world[0].vx, world[0].vy });
+    std.io.print("entity 1 after update: {},{} v={},{}\n", .{ world[1].x, world[1].y, world[1].vx, world[1].vy });
+
+    var buf: [8192]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    const map = loadMap(&amp;arena, 8, 4) catch {
+        std.io.print("map load failed\n", .{});
+        return;
+    };
+    var tsum: usize = 0;
+    for (map) |t| {
+        tsum = tsum + @intCast(usize, t);
+    }
+    std.io.print("tilemap len={} checksum={}\n", .{ map.len, tsum });
+
+    var args = MoveArgs{ .e = &amp;world[0] };
+    const ctx = std.async.contextInit(@ptrCast([*]u8, &amp;g_pool)[0..8192]);
+    const frame = @asyncInit(ctx, @ptrCast([*]u8, &amp;g_frame), patrol, @ptrCast(*const void, &amp;args));
+    var r = @asyncResume(frame, null);
+    while (r != null) {
+        r = @asyncResume(frame, null);
+    }
+    std.io.print("entity 0 after patrol: {},{}\n", .{ world[0].x, world[0].y });
+
+    loadSave(true) catch {};
+    loadSave(false) catch {
+        std.io.print("corrupt save rejected\n", .{});
+    };
+}
+</pre>
+<p>
+Run it the same way. The compiler is already built:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/game_loop.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux game_loop
+Building for linux...
+Built: game_loop
+$ ./game_loop
+entity 0 after update: 17,7 v=7,-3
+entity 1 after update: 81,54 v=-9,4
+tilemap len=32 checksum=48
+entity 0 after patrol: 45,7
+save slot loaded
+save slot closed
+save slot rolled back
+save slot closed
+corrupt save rejected
+</pre>
+<p>
+The first two lines are the stepped entities: the first moved to (17,7) and
+kept its velocity; the second moved to (81,54) without hitting a wall. The
+third line is the tilemap: a length-carrying slice whose 32 tiles sum to 48.
+The fourth is the coroutine: four suspensions, each advancing <tt>x</tt> by 7,
+so the entity ends at 45. The last five are the lifetime pair: the successful
+load closes its slot, and the corrupt save rolls back and still closes its
+slot before the call site reports it.
+</p>
+
+<h2>Coroutines: what they replace</h2>
+<p>
+Suspension is the third convention C89 leaves to you. A routine that pauses
+and resumes was one of three things on the era's machines: a hand-rolled
+state machine, a callback chain, or a thread you juggled. All three put the
+bookkeeping in your source.
+</p>
+<h3>The state machine you stop writing</h3>
+<p>
+The state machine is the honest baseline. A patrol that walks four steps and
+pauses between them needs a state word, an index, and a <tt>switch</tt> that
+knows where to re-enter. This is era framing:
+</p>
+<pre>
+typedef struct { int state; int i; Entity *e; } Patrol;
+
+/* returns 1 while suspended, 0 when finished */
+int patrol_step(Patrol *p)
+{
+    switch (p-&gt;state) {
+    case 0: p-&gt;i = 0; p-&gt;state = 1;   /* fall through */
+    case 1:
+        if (p-&gt;i &gt;= 4) { p-&gt;state = 3; return 0; }
+        p-&gt;e-&gt;x += p-&gt;e-&gt;vx;
+        p-&gt;i++;
+        return 1;
+    default: return 0;
+    }
+}
+</pre>
+<p>
+In Z98 the routine is written in the order it happens, and the pause is a
+statement:
+</p>
+<pre>
+fn patrol(e: *Entity) void {
+    var i: i32 = 0;
+    while (i &lt; 4) : (i += 1) {
+        e.x += e.vx;
+        _ = @asyncSuspend(null);
+    }
+}
+</pre>
+<p>
+What was deleted: the state word, the index field, the re-entry
+<tt>switch</tt>, and the calling convention that told the caller whether to
+call again. The compiler synthesises the step machine, the frame layout, and
+the state word; <tt>std.async</tt> owns the scheduler and the frame pool.
+Because nothing preempts, the coroutine keeps the machine until it reaches a
+suspension point, shared state cannot change under it, and there are no locks
+to buy. A coroutine costs a frame buffer, not a stack and a kernel object
+&mdash; which is the only version of concurrency a 16 MB machine should be
+asked to run.
+</p>
+
+<h2>Where C89 and C++98 take the lead</h2>
+<p>
+Honesty is two-sided. Z98 checks more than C89 and less than C++98, and there
+are places the era's languages genuinely win.
+</p>
+<p>
+<b>C89 leads on ubiquity and on nothing-new.</b> Every era compiler accepts
+it, every era programmer reads it, and it asks for no toolchain change at all.
+There are decades of existing C89 code and libraries to link; Z98's output is
+C89, so it links with them directly. C89 also leads on total freedom: there is
+no checker to disagree with you, and when you know exactly what you are doing,
+that is a feature. And C89 is an ISO standard, with a stable document behind
+it.
+</p>
+<p>
+<b>C++98 leads wherever abstraction is worth a runtime.</b> Templates give
+generic containers; classes give constructors and destructors, so cleanup runs
+automatically on every exit; exceptions unwind the stack to the handler; and
+operator overloading lets the standard library read naturally. When the memory
+budget carries the vtables and the exception machinery, C++98 gives leverage
+Z98 deliberately does not. A short era-framing sketch:
+</p>
+<pre>
+template &lt;typename T&gt;
+class Stack {
+public:
+    Stack() : data(new T[64]), count(0) {}
+    ~Stack() { delete[] data; }   /* cleanup on every exit path */
+
+    void push(const T&amp; v) { if (count &lt; 64) data[count++] = v; }
+    bool pop(T&amp; out) {
+        if (count == 0) return false;
+        out = data[--count];
+        return true;
+    }
+
+private:
+    T *data;
+    int count;
+};
+</pre>
+<p>
+The destructor is automatic, the container works for any <tt>T</tt>, and
+<tt>pop</tt> reports failure the C89 way, through a status and an
+out-parameter. The cost is a template expansion per type, a vtable-shaped
+object, and the exception tables the toolchain emits. Z98 makes the opposite
+trade: less abstraction, less runtime, more checking.
+</p>
+
+<h2>Where the three tie</h2>
+<p>
+The three languages are not worlds apart; they share the era's ground rules.
+All three produce native 32-bit code for the same machine with no interpreter
+and no garbage collector. All three compile with the era's toolchain, and Z98
+output can be linked with hand-written C89 in the same program. And all three
+look the same on the page: structs and free functions, init functions, arrays
+with a length kept nearby, a status or an error to check. A C89 programmer can
+read a Z98 program on the first pass; the differences are in what the compiler
+verifies, not in what the machine executes.
+</p>
+
+<h2>The limits, and the way over each</h2>
+<p>
+The limits are real and worth stating plainly. None of them is a dead end;
+each has a shape era programmers already used, and the shape still works on
+this compiler.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Limit</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The way over it</b></th>
+</tr>
+<tr>
+<td valign="top">No generics or templates</td>
+<td valign="top">Concrete functions per type and explicit tables; a
+<tt>*void</tt> plus a function pointer where the type genuinely varies; the
+standard library's containers are written out concretely.</td>
+</tr>
+<tr>
+<td valign="top">No classes, no RAII</td>
+<td valign="top">A struct of function pointers is the manual vtable; init
+functions are the constructor; <tt>defer</tt>/<tt>errdefer</tt> and the arena
+are the destructor discipline.</td>
+</tr>
+<tr>
+<td valign="top">No exceptions</td>
+<td valign="top">Error unions carry the failure in the signature;
+<tt>try</tt> propagates, <tt>catch</tt> handles, <tt>errdefer</tt> rolls
+back. The checked path replaces the unwinding one.</td>
+</tr>
+<tr>
+<td valign="top">No threads, no preemption</td>
+<td valign="top">Coroutines and the <tt>std.async</tt> round-robin scheduler;
+suspension points are explicit, so no locks are needed. Real parallelism stays
+an OS concern.</td>
+</tr>
+<tr>
+<td valign="top">No general <tt>comptime</tt></td>
+<td valign="top">The introspection builtins answer the representation
+questions; everything else is ordinary concrete code and constant folding.</td>
+</tr>
+</table>
+<p>
+Two more limits deserve a line each, because they shape how a project is laid
+out. There is no package manager: third-party code is vendored into the tree,
+which is what the era did anyway. And the compiler enforces its rules rather
+strictly &mdash; an ignored error, an unhandled <tt>switch</tt>, an
+uninitialized variable, or control flow out of a <tt>defer</tt> body are build
+errors. That strictness is the product, not a defect, but it is a real
+adjustment for a programmer used to C89's silence.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> Every limit above is a deliberate trade against the
+era's machine, and every one has a way over it that stays inside the language
+and the toolchain. There is a way <i>around</i> Z98 too: when a project's core
+need is templates, RAII, or exceptions and the RAM can carry them, C++98 is
+the right tool. That is a project decision, not a verdict on this one.</td>
+</tr>
+</table>
+
+<h2>Checked C89</h2>
+<p>
+The frame of the chapter, said once more in plain words: Z98 is not a better
+C standard. It is a compiler that checks what C89 leaves to discipline and
+emits C89 for the era's machines. Error handling, cleanup, suspension, buffer
+length, bounds, nullability, and conversions &mdash; the things a C89 team
+keeps in comments and code review &mdash; are types, statements, and analyzers
+in Z98. The C89 compiler downstream still sees plain C89, and the 1998 machine
+still runs it.
+</p>
+<p>
+"We are a smaller language" would be the wrong summary, because the list of
+things Z98 gives is longer than the list it withholds. What it withholds is
+the abstraction machinery that needs a runtime the target cannot afford; what
+it gives is the checking that keeps an era-sized codebase correct without
+that runtime. It is C89 with contracts in the type system, and it is
+deliberately that.
+</p>
+
+<h2>What that means for you</h2>
+<p>
+If the target is the era &mdash; a 1998 machine, the era's compilers, an
+era-sized memory budget &mdash; Z98 is the toolchain that keeps the machine's
+cost model and raises the floor on what the compiler catches. If the project
+carries templates, RAII, and exceptions as core needs and the RAM allows,
+C++98 is the era-appropriate choice. If the goal is hand-written C89 with no
+checker in the way, C89 is right there.
+</p>
+<p>
+The chapters between the mental shifts (3 through 11) teach the rest of the
+syntax: pointers, aggregates, arrays and slices, control flow, and
+<tt>defer</tt>. The two shifts themselves get their own chapters &mdash;
+<a href="vol2-12-error-unions.html">error unions (chapter 12)</a> and
+<a href="vol2-14-arena.html">the arena (chapter 14)</a> &mdash; and coroutines
+arrive in <a href="vol3-09-coroutines.html">Volume III, chapter&nbsp;9</a>.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a C or C++ programmer makes first in Z98. Each
+has a diagnostic or a corrected shape, and each diagnostic points at the rule
+that was crossed.
+</p>
+<p>
+<b>Reaching for <tt>malloc</tt> and <tt>free</tt>.</b> The base language's
+memory story is the arena: you hand <tt>std.arena.init</tt> a buffer and let
+<tt>try std.arena.alloc</tt> bump within it. There is no <tt>free</tt> to
+match; <tt>std.arena.reset</tt> reclaims the whole arena at once. If a C
+library you call hands you memory, that library still owns releasing it, but
+the Z98 objects you build come from the arena.
+</p>
+<p>
+<b>Treating a slice as a pointer plus a length variable.</b> A slice
+(<tt>[]T</tt>) carries its own length; pass the slice and use <tt>.len</tt>.
+Keeping a separate length beside a raw pointer is exactly the convention Z98
+removed, and it re-introduces the bug the slice was there to prevent.
+</p>
+<p>
+<b>Expecting method syntax.</b> <tt>e.update(dt)</tt> is not a method call
+with a different spelling; it is a member lookup, and it fails:
+</p>
+<pre>
+error[3060]: no field or member function named 'update' in struct type
+</pre>
+<p>
+Write the free function and pass the receiver: <tt>update(&amp;e, dt)</tt>.
+</p>
+<p>
+<b>Expecting generics or <tt>comptime</tt>.</b> A <tt>comptime</tt> type
+parameter does not parse:
+</p>
+<pre>
+error[2000]: expected ':' but found identifier
+</pre>
+<p>
+Write one function for the concrete type, or a small concrete container. The
+limits table above is the map; C++98 is the tool when a type must genuinely
+stay open.
+</p>
+<p>
+<b>Treating <tt>try</tt>/<tt>catch</tt> as exceptions.</b> They operate on
+error unions, which are values. Nothing unwinds, and a <tt>catch</tt> block
+must produce a value of the payload type or diverge (<tt>return</tt>,
+<tt>break</tt>, and so on). There is no <tt>throw</tt>, no <tt>anyerror</tt>,
+and no <tt>@errorName</tt>; the error is a declared tag in the function's
+signature.
+</p>
+<p>
+<b>Spawning a thread for a pause.</b> Z98 has no thread API; it has
+coroutines. A routine that needs to wait writes <tt>@asyncSuspend</tt> where
+the pause belongs and is driven by <tt>std.async</tt>, cooperative and
+round-robin. On a single-core era machine, that is the cheap and correct way
+to interleave work.
+</p>
+<p>
+<b>Leaving out <tt>else</tt> in a <tt>switch</tt>.</b> Every Z98
+<tt>switch</tt> needs an <tt>else</tt> prong, even when the union is fully
+covered:
+</p>
+<pre>
+error[3068]: switch must have an 'else' prong
+</pre>
+<p>
+For an exhaustive switch on a tagged union, <tt>else =&gt; unreachable</tt> is
+the spelled-out promise that the prong can never run.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The next chapter is
+<a href="vol2-02-types.html">chapter 2, The Type System</a>, where the width
+rule gets its full treatment. After it come
+<a href="vol2-03-pointers.html">chapter 3, Pointers</a>,
+<a href="vol2-04-structs.html">chapter 4, Structs</a>, and
+<a href="vol2-05-packed-structs.html">chapter 5, Packed Structs</a>, and the
+rest of the volume in numeric order. The first big shift arrives at
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>, which takes error handling apart in detail. The other mental
+shifts are <a href="vol2-14-arena.html">the arena (chapter 14)</a> and, in
+<a href="vol3-09-coroutines.html">Volume III, coroutines</a>.
+</p>
+<p>
+For lookup, the shipped Reference page is
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>, which
+documents every builtin named here, including the four <tt>@async*</tt>
+builtins and the introspection family. Volume IV's <a href="vol4-09-errors.html">Errors</a>
+and <a href="vol4-16-async.html">Async</a> pages have shipped;
+Volume III's honesty chapters have shipped.
+</p>
+<p>
+The runnable examples in <tt>docs/sf/manuals/src/vol2/lisp_eval.z98</tt> and
+<tt>docs/sf/manuals/src/vol2/game_loop.z98</tt> are the working reference for
+this chapter. The rest of Volume II follows in numeric order: the aggregates,
+arrays, and control-flow chapters in between after
+<a href="vol2-03-pointers.html">pointers (chapter 3)</a>; chapter 16, No
+Methods, No Generics, No Comptime, where the manual patterns behind the limits
+table are worked out; and the standard library tour (chapter 17).
+<a href="toc.html">The Contents page</a> shows the whole volume.
+</p>
+
+<p class="navbtns">
+<a href="vol2-00-title.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-02-types.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-02-types.html">The Type System</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

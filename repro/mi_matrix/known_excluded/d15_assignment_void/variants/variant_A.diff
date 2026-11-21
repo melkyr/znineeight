@@ -1,0 +1,16 @@
+--- /tmp/phase35-9l-clean/sf/src/semantic_analyzer.zig	2026-11-09 15:43:44.860938898 +0000
++++ expA/sf/src/semantic_analyzer.zig	2026-11-09 15:47:36.409710084 +0000
+@@ -4722,11 +4722,11 @@
+     if (as_assign) {
+         tryRecordCoercion(self, node.child_1, eff_src, lhs);
+         var as1: []const u8 = "AS1"; pal_mod.markerWrite(as1);
+-        return lhs;
++        return type_mod.TYPE_VOID;
+     }
+     if (as_fst == FLOAT_NARROW_ACCEPT) {
+         semanticAnalyzerFloatNarrowRecord(self, node.child_1, lhs);
+-        return lhs;
++        return type_mod.TYPE_VOID;
+     }
+     if (as_fst == FLOAT_NARROW_NONE and lhs == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, eff_src)) {
+         var asn_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";

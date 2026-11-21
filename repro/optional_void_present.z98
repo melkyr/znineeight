@@ -1,0 +1,13 @@
+// repro/optional_void_present.z98 — standalone A4-F value control.
+//
+// `return;` in a `?void` function must yield the PRESENT optional; the defect
+// materialised it as absent. Baseline (fp 2794fe0): rc 0, stdout `absent`.
+// Fixed: rc 0, stdout `present` (Zig 0.15.2 oracle).
+const std = @import("std");
+fn done(flag: bool) ?void {
+    if (flag) { return; }
+    return null;
+}
+pub fn main() void {
+    if (done(true)) |_| { std.io.print("present\n"); } else { std.io.print("absent\n"); }
+}

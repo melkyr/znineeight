@@ -1,0 +1,18 @@
+// intcast_loop_capture.z98 — Task 7 standalone repro: `@intCast(<for-range
+// capture>)` inside the capture's own loop. Official Zig 0.15.2 infers the
+// target type from context (here the `+=` target, u32), so the cast is an
+// identity. Pre-fix the one-argument `@intCast` fell through the lowering
+// cast block (`sf/src/lower.zig`, `ec_n >= 2`) to a void temp that the
+// emitter never declares: emit rc=0, no diagnostic, gcc `'zT_6' undeclared`.
+// Post-fix it lowers the operand and the emitted C uses the capture directly.
+//
+// Expected stdout (Zig 0.15.2 and the fixed compiler): `sum=3`, rc 0.
+const std = @import("std");
+
+pub fn main() void {
+    var sum: u32 = 0;
+    for (0..3) |q| {
+        sum += @intCast(q);
+    }
+    std.io.print("sum={}\n", .{sum});
+}

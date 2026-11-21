@@ -1,0 +1,9 @@
+widen-2.5-ok
+narrow-neg1.25-ok
+literal-3.5-ok
+computed-7-ok
+narrow-round-ok
+as-float-ok
+inttofloat-ok
+implicit-widen-ok
+done

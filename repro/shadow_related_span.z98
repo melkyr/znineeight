@@ -1,0 +1,26 @@
+// repro/shadow_related_span.z98 — standalone Task 18 reproduction (related
+// spans on the shadow/redeclaration diagnostic).
+//
+// Every `error[3057]` now also renders a related span at the earlier
+// declaration, matching official Zig 0.15.2's location note:
+//
+//   <seed-built zig1 with its sibling lib/> --dump-c89 repro/shadow_related_span.z98
+//
+// EXPECTED: dump rc=2, 0 emitted `.c`, and for each error excerpt a following
+// `<file>:<line>: note: previous declaration here` (for a local/param/capture)
+// or `<file>:<line>: note: declared here` (container-level). Zig 0.15.2 prints
+// the same note locations for the equivalent program.
+const std = @import("std");
+
+const g: i32 = 1;
+
+pub fn main() void {
+    var x: i32 = 1;
+    {
+        var x: i32 = 2;
+        std.io.printInt(x);
+    }
+    const g = 2;
+    _ = g;
+    _ = x;
+}

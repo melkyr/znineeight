@@ -1,0 +1,36 @@
+// intcast_widen_sign_runtime.z98 — standalone reproduction for Task B3 item 1
+// (restore the A18 runtime widening-sign-change `@intCast` trap coverage).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   # -fsafe (default): runtime check traps
+//   <zig1> -o /tmp/wsafe repro/intcast_widen_sign_runtime.z98
+//   cd /tmp/wsafe && sh build_target.sh linux prog && timeout 120 ./prog
+//   # expect: empty stdout, rc 133, "panic: integer cast overflow in @intCast"
+//
+//   # -ffast: unchecked C cast, wrapped value
+//   <zig1> -ffast -o /tmp/wfast repro/intcast_widen_sign_runtime.z98
+//   cd /tmp/wfast && sh build_target.sh linux prog && timeout 120 ./prog
+//   # expect: "65535", rc 0
+//
+// BACKGROUND. `safe_intcast_widen_sign_xmod/main.zig` used
+// `@intCast(u16, @as(i8, -1))`; Task 11U made `@as` fold, so that became a
+// comptime out-of-range cast (a clean `error[3000]` reject) and the runtime
+// trap lost its pin. This program keeps the operand runtime-valued (a helper
+// parameter) so `i8 -> u16` is a runtime widening sign change that the A18
+// predicate routes through `int_cast_checked` (`zig_cast_checked_u`).
+//
+// FIX (Task B3 item 1): the runtime pin is restored by the pinned runtime
+// fixture `repro/mi_matrix/stdlib_intcast_widen_sign_runtime_xmod`; this file
+// is the human-readable standalone reproduction of both modes.
+const std = @import("std");
+
+fn widenSign(x: i8) u16 {
+    return @intCast(u16, x);
+}
+
+pub fn main() void {
+    var x: i8 = -1;
+    var w: u16 = widenSign(x);
+    std.io.printInt(@intCast(i32, w));
+    std.io.writeByte(10);
+}

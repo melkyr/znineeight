@@ -910,7 +910,7 @@ TEST_FUNC(AlignOf_Struct);
 // Task 188: @offsetOf
 TEST_FUNC(BuiltinOffsetOf_StructBasic);
 TEST_FUNC(BuiltinOffsetOf_StructPadding);
-TEST_FUNC(BuiltinOffsetOf_Union);
+TEST_FUNC(BuiltinOffsetOf_Union_Reject);
 TEST_FUNC(BuiltinOffsetOf_NonAggregate_Error);
 TEST_FUNC(BuiltinOffsetOf_FieldNotFound_Error);
 TEST_FUNC(BuiltinOffsetOf_IncompleteType_Error);

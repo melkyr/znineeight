@@ -1,0 +1,18 @@
+// print_ptr_depth.z98 — Task 8 (z98-print-formatting Amendment 1) standalone
+// repro for B3: a struct field whose pointee is a 14-wrapper
+// `?*?*?*?*?*?*?*i32` chain. Pre-fix: emit rc=0, then gcc
+// `unknown type name 'zT_..._Opt_*'` in zig_special_types.h (the
+// `emitPointeeDep` dependency walk truncated at depth 8 while the validator
+// accepted 14). Post-fix: rc 0, gcc clean, prints
+// `s=.{ .p = ?*?*?*?*?*?*?*i32@1400, .n = 7 }`.
+//
+// Run:  zig1 -ffast -o <outdir> repro/print_ptr_depth.z98  (then gcc+link)
+const std = @import("std");
+
+const A = ?*?*?*?*?*?*?*i32;
+const S = struct { p: *A, n: i32 };
+
+pub fn main() void {
+    var s = S{ .p = @intToPtr(*A, 0x1400), .n = 7 };
+    std.io.print("s={}\n", .{s});
+}

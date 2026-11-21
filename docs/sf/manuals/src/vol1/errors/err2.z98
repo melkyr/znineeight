@@ -1,0 +1,7 @@
+const std = @import("std");
+
+pub fn main() void {
+    var count: i32;
+    count = 3;
+    std.io.print("count is {}\n", .{count});
+}

@@ -1,0 +1,60 @@
+// FE (D8 + D11) standalone repro: a `catch |e|` capture prints `error.Name`
+// (not the numeric code), and container-qualified switch prongs
+// (`Shape.circle => |r|`, `Color.red => |v|`) bind exactly like the shorthand.
+// Enum-operand captures bind the operand value and an unused capture is
+// crash-free.
+const std = @import("std");
+
+const E = error{ Foo, Bar };
+
+fn mightFail(flag: bool) E!i32 {
+    if (flag) return error.Bar;
+    return 7;
+}
+
+const Shape = union(enum) {
+    circle: i32,
+    rect: struct { w: i32, h: i32 },
+    empty,
+};
+
+fn shapeVal(s: Shape) i32 {
+    return switch (s) {
+        Shape.circle => |r| r,
+        .rect => |rc| rc.w * rc.h,
+        else => 0,
+    };
+}
+
+const Color = enum { red, green, blue };
+
+fn showColor(c: Color) i32 {
+    std.io.print("cap={}\n", .{c});
+    return 1;
+}
+
+fn colorCode(c: Color) i32 {
+    return switch (c) {
+        Color.red => |v| showColor(v),
+        .blue => |v| 3,
+        else => 0,
+    };
+}
+
+fn captureShape() void {
+    const ok = mightFail(true) catch |e| {
+        std.io.print("err={}\n", .{e});
+        return;
+    };
+    std.io.print("unreached {}\n", .{ok});
+}
+
+pub fn main() void {
+    captureShape();
+
+    var a: Shape = Shape{ .circle = 12 };
+    var b: Shape = Shape{ .rect = .{ .w = 2, .h = 3 } };
+    std.io.print("tu={} {}\n", .{ shapeVal(a), shapeVal(b) });
+    std.io.print("en={}\n", .{colorCode(Color.red)});
+    std.io.print("en2={}\n", .{colorCode(Color.blue)});
+}

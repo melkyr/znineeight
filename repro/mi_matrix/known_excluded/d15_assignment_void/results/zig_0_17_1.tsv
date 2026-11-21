@@ -1,0 +1,29 @@
+probe	rc	diagnostic
+z01_assign_stmt		
+z02_assign_value_i32		z02_assign_value_i32.zig:4:22: error: expected ';' after statement |     const y: i32 = g = 1; |                      ^
+z03_assign_value_paren		z03_assign_value_paren.zig:4:23: error: expected ')', found '=' |     const y: i32 = (g = 1); |                       ^
+z04_assign_block_i32		z04_assign_block_i32.zig:4:27: error: invalid left-hand side to assignment |     const y: i32 = blk: { break :blk g = 1; }; |                           ^~~~~~~~~~~~
+z05_assign_block_void		
+z06_assign_block_stmt		
+z07_chained_assign		z07_chained_assign.zig:4:11: error: expected ';' after statement |     g = h = 1; |           ^
+z08_if_cond_assign		z08_if_cond_assign.zig:3:11: error: expected ')', found '=' |     if (g = 1) {} |           ^
+z09_while_cond_assign		z09_while_cond_assign.zig:3:14: error: expected ')', found '=' |     while (g = 1) {} |              ^
+z10_switch_stmt_assign		
+z11_switch_stmt_mixed_assign_value		z11_switch_stmt_mixed_assign_value.zig:3:5: error: incompatible types: 'void' and 'comptime_int' |     switch (v) { 0 => g = 1, else => 2 } |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ | z11_switch_stmt_mixed_assign_value.zig:3:25: note: type 'void' here |     switch (v) { 0 => g = 1, else => 2 } |                       ~~^~~ | z11_switch_stmt_mixed_assign_value.zig:3:38: note: type 'comptime_int' here |     switch (v) { 0 => g = 1, else => 2 } |                                      ^ | referenced by: |     main: z11_switch_stmt_mixed_assign_value.zig:5:47 |     callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64 |     callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20 |     posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38 |     2 reference(s) hidden; use '-freference-trace=6' to see all references
+z12_switch_stmt_mixed_int_bool		z12_switch_stmt_mixed_int_bool.zig:2:5: error: incompatible types: 'comptime_int' and 'bool' |     switch (v) { 0 => 1, else => true } |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ | z12_switch_stmt_mixed_int_bool.zig:2:23: note: type 'comptime_int' here |     switch (v) { 0 => 1, else => true } |                       ^ | z12_switch_stmt_mixed_int_bool.zig:2:34: note: type 'bool' here |     switch (v) { 0 => 1, else => true } |                                  ^~~~ | referenced by: |     main: z12_switch_stmt_mixed_int_bool.zig:4:47 |     callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64 |     callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20 |     posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38 |     2 reference(s) hidden; use '-freference-trace=6' to see all references
+z13_discard_paren_assign		z13_discard_paren_assign.zig:3:12: error: expected ')', found '=' |     _ = (g = 1); |            ^
+z14_defer_assign		
+z15_optional_block		z15_optional_block.zig:4:21: error: expected type '?i32', found 'void' |     const y: ?i32 = { |                     ^ | referenced by: |     callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64 |     callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20 |     posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38 |     2 reference(s) hidden; use '-freference-trace=5' to see all references
+z16_errorunion_block		z16_errorunion_block.zig:5:22: error: expected type 'error{Bad}!i32', found 'void' |     const y: E!i32 = { |                      ^ | referenced by: |     callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64 |     callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20 |     posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38 |     2 reference(s) hidden; use '-freference-trace=5' to see all references
+z17_call_arg_assign		z17_call_arg_assign.zig:4:12: error: expected ',' after argument |     take(g = 1); |            ^
+z18_if_value_assign		z18_if_value_assign.zig:5:35: error: expected ')', found '=' |     const y: i32 = if (v == 0) (g = 1) else (g = 2); |                                   ^
+z19_return_assign		z19_return_assign.zig:3:15: error: expected ')', found '=' |     return (g = 1); |               ^
+z20_paren_stmt		z20_paren_stmt.zig:3:8: error: expected ')', found '=' |     (g = 1); |        ^
+z21_typeof		z21_typeof.zig:3:25: error: expected ',' after argument |     const T = @TypeOf(g = 1); |                         ^
+z22_switch_value_void		
+z23_index_value		z23_index_value.zig:4:27: error: expected ';' after statement |     const y: i32 = arr[0] = 2; |                           ^
+z24_nested_block		
+z25_block_if_value		z25_block_if_value.zig:5:20: error: expected type 'i32', found 'void' |     const y: i32 = { |                    ^ | referenced by: |     callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64 |     callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20 |     posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38 |     2 reference(s) hidden; use '-freference-trace=5' to see all references
+z26_switch_stmt_block_assign		
+z27_switch_value_assign_expected_i32		z27_switch_value_assign_expected_i32.zig:4:38: error: expected type 'i32', found 'void' |     const y: i32 = switch (v) { 0 => { g = 1; }, else => 2 }; |                                      ^~~~~~~~~~ | referenced by: |     main: z27_switch_value_assign_expected_i32.zig:7:47 |     callMain [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:788:64 |     callMainWithArgs [inlined]: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:729:20 |     posixCallMainAndExit: /tmp/phase35-d15-i/zig-0.17.1/lib/std/start.zig:681:38 |     2 reference(s) hidden; use '-freference-trace=6' to see all references
+z28_if_stmt_assign_branches		

@@ -1,0 +1,32 @@
+format=2
+[creatures]
+id=1,name=Eel,family=1,role=1,zone_mask=3,phase_mask=3,hp=10,resolve=10,speed=1,attack=1,thrash_regen=0,despair_regen=0,armor_pct=100,flags=0,resist_restrain_pct=100,blind_chance=0,subdue_chance=95,discharge_stat=0,discharge_th=0,discharge_dmg=0,armor_below_th=0,armor_below_pct=0,speed_below_stat=0,speed_below_th=0,speed_below_add=0,atk_below_th=0,atk_below_pct=0,flee_kind=0,flee_th=0,grudge_family=0,grudge_kind=0,grudge_value=0,sale=1,respawn_sub=1,respawn_kill=2,respawn_over=3,counter_tool=0
+[cosmetics]
+name=Foam White,price=150,unlock=1
+name=Abyss Teal,price=175,unlock=2
+name=Leviathan Black,price=200,unlock=3
+name=Gull Skull,price=150,unlock=1
+name=Lantern Jaw,price=175,unlock=2
+name=Derelict Cog,price=200,unlock=4
+name=Patched Pennant,price=150,unlock=1
+name=Reef Signal,price=175,unlock=3
+name=Trench Mark,price=200,unlock=4
+name=Barnacle Stamp,price=150,unlock=2
+name=Glass Squid,price=175,unlock=3
+name=Boss Sigil,price=200,unlock=4
+[upgrades]
+axis=0,tier=1,cost0_kind=1,cost0_amt=3,cost1_kind=0,cost1_amt=0,cost2_kind=0,cost2_amt=0
+axis=0,tier=2,cost0_kind=1,cost0_amt=6,cost1_kind=2,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=0,tier=3,cost0_kind=1,cost0_amt=10,cost1_kind=2,cost1_amt=4,cost2_kind=0,cost2_amt=0
+axis=4,tier=1,cost0_kind=3,cost0_amt=2,cost1_kind=6,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=4,tier=2,cost0_kind=3,cost0_amt=4,cost1_kind=6,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=4,tier=3,cost0_kind=3,cost0_amt=8,cost1_kind=6,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=2,tier=1,cost0_kind=4,cost0_amt=3,cost1_kind=5,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=2,tier=2,cost0_kind=4,cost0_amt=6,cost1_kind=5,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=2,tier=3,cost0_kind=4,cost0_amt=10,cost1_kind=5,cost1_amt=4,cost2_kind=0,cost2_amt=0
+axis=3,tier=1,cost0_kind=5,cost0_amt=3,cost1_kind=4,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=3,tier=2,cost0_kind=5,cost0_amt=6,cost1_kind=4,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=3,tier=3,cost0_kind=5,cost0_amt=10,cost1_kind=4,cost1_amt=4,cost2_kind=0,cost2_amt=0
+axis=1,tier=1,cost0_kind=7,cost0_amt=2,cost1_kind=3,cost1_amt=1,cost2_kind=0,cost2_amt=0
+axis=1,tier=2,cost0_kind=7,cost0_amt=2,cost1_kind=3,cost1_amt=2,cost2_kind=0,cost2_amt=0
+axis=1,tier=3,cost0_kind=7,cost0_amt=4,cost1_kind=3,cost1_amt=4,cost2_kind=9,cost2_amt=2

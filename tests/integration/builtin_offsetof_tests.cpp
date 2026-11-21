@@ -77,14 +77,17 @@ TEST_FUNC(BuiltinOffsetOf_StructPadding) {
     return run_offsetof_test(source, "4U");
 }
 
-TEST_FUNC(BuiltinOffsetOf_Union) {
+TEST_FUNC(BuiltinOffsetOf_Union_Reject) {
     const char* source =
         "const U = union { a: u8, b: i32 };\n"
         "fn foo() usize {\n"
         "    return @offsetOf(U, \"b\");\n"
         "}";
-    // In a union, all fields start at offset 0.
-    return run_offsetof_test(source, "0U");
+    // Volume II D9 (FF) — Zig-0.15.2 parity: @offsetOf is struct-only. The
+    // historical bootstrap behavior folded a union field to 0U; the C++
+    // checker now mirrors the self-hosted compiler and rejects the union as a
+    // non-aggregate target (Z98 reports its own level-0 error[3072]).
+    return run_offsetof_error_test(source, ERR_OFFSETOF_NON_AGGREGATE);
 }
 
 TEST_FUNC(BuiltinOffsetOf_NonAggregate_Error) {

@@ -1,0 +1,275 @@
+// piece.zig — z9torr: block/piece bookkeeping, request pipelining, verification.
+//
+// Spec 2026-10-08 §6/§7, blueprint `piece`/`peer` sections. A piece is split
+// into fixed 16 KiB blocks (the last block is shorter). Requests are pipelined
+// to a depth of 4 (`RequestQueue.in_flight[4]`). `onBlock` writes each received
+// block through to disk immediately (spec §7 write-through), and when every
+// block of the piece is present it reads the whole piece back, SHA-1s it, and
+// compares against `t.piece_hashes[index*20 .. index*20+20]`:
+//   match    -> every block `verified`, state `verified`, return `.Complete`;
+//   mismatch -> state `failed`, every block re-queued (`missing`), `.Corrupt`.
+//
+// Z98 rules: free functions only, no generics/`anytype`, strict `@intCast`,
+// `switch` needs `else`, string literals via `var s: []const u8 = "x";`.
+// D2: `[]PieceState`/`[]BlockState` are slices of *named* types (safe); the
+// only other slice is the primitive `[]u8` verification scratch buffer.
+
+const std = @import("std");
+const disk = @import("disk.zig");
+const torrent = @import("torrent.zig");
+const filemod = @import("std_file.zig");
+const crypto = @import("std_crypto");
+
+// One block is 16 KiB (blueprint §6; the request pipeline quantum).
+pub const BLOCK_SIZE: u32 = 16384;
+// In-flight request depth (spec §6 `RequestQueue.in_flight: [4]Request`).
+pub const DEPTH: u32 = 4;
+
+pub const HASH_LEN: usize = 20;
+
+pub const BlockState = enum(u8) {
+    missing,
+    requested,
+    received,
+    verified,
+    failed,
+};
+
+// Per-piece state (spec §6). `blocks` has one entry per 16 KiB block; `hash` is
+// the expected SHA-1 copied from `t.piece_hashes`; `length` is the true piece
+// length (the last piece may be shorter than `t.piece_length`).
+pub const PieceState = struct {
+    index: u32,
+    state: BlockState,
+    blocks: []BlockState,
+    block_mask: []u8,
+    received_bytes: u32,
+    received_count: u32,
+    outstanding_count: u32,
+    hash: [20]u8,
+    length: u32,
+    nblocks: u32,
+};
+
+pub const Request = struct { index: u32, begin: u32, length: u32 };
+
+// Depth-4 request queue. `in_flight[0..tail]` holds the requests `nextRequests`
+// produced this call (`head` is always 0 in this single-window design).
+pub const RequestQueue = struct {
+    in_flight: [4]Request,
+    head: u32,
+    tail: u32,
+};
+
+var g_zero_request_queue: RequestQueue;
+var g_zero_piece_state: PieceState;
+
+pub fn zeroRequestQueue() RequestQueue {
+    return g_zero_request_queue;
+}
+
+pub fn zeroPieceState() PieceState {
+    return g_zero_piece_state;
+}
+
+pub const BlockResult = enum(u8) { Continue, Complete, Corrupt };
+
+pub const PieceError = error{ OutOfMemory, BadPiece, DiskFailed };
+
+// Ambient context `onBlock` needs to write-through and verify (arena for the
+// read-back scratch, the torrent for offsets/hashes, the open target file).
+// Kept out of `PieceState` so the spec §6 struct stays data-only.
+pub const PieceIO = struct {
+    arena: *std.arena.Arena,
+    t: torrent.Torrent,
+    f: *filemod.File,
+};
+
+fn pieceHashOffset(index: u32) usize {
+    return @intCast(usize, index) * HASH_LEN;
+}
+
+// --- completed-piece bitset helpers (shared by peer.zig and main.zig) -------
+//
+// Bit `i` is MSB-first (BEP 3 bitfield order): byte `i / 8`, mask
+// `1 << (7 - (i % 8))`. The peer's `bitfield` message and the client's own
+// completed-piece bitset use the same order; `resume.zig`'s bitmap helpers
+// mirror this so the shared `completed_bits` buffer is decoded identically.
+
+pub fn bitGet(bits: []const u8, i: u32) bool {
+    var byte: usize = @intCast(usize, i / 8);
+    var sh: u8 = @intCast(u8, 7 - (i % 8));
+    return ((bits[byte] >> sh) & @intCast(u8, 1)) == @intCast(u8, 1);
+}
+
+pub fn bitSet(bits: []u8, i: u32) void {
+    var byte: usize = @intCast(usize, i / 8);
+    var sh: u8 = @intCast(u8, 7 - (i % 8));
+    var mask: u8 = @intCast(u8, 1) << sh;
+    bits[byte] = bits[byte] | mask;
+}
+
+// Per-piece received-block mask (LSB-first within each byte, matching the
+// resume sidecar's `partial[].block_mask`). Maintained incrementally so
+// `saveResume` never has to rescan every block of every live piece.
+pub fn maskSet(state: *PieceState, i: u32) void {
+    if (i >= state.nblocks) return;
+    var byte: usize = @intCast(usize, i / 8);
+    if (byte >= state.block_mask.len) return;
+    var sh: u8 = @intCast(u8, i % 8);
+    var m: u8 = @intCast(u8, 1) << sh;
+    state.block_mask[byte] = state.block_mask[byte] | m;
+}
+
+pub fn maskClear(state: *PieceState, i: u32) void {
+    if (i >= state.nblocks) return;
+    var byte: usize = @intCast(usize, i / 8);
+    if (byte >= state.block_mask.len) return;
+    var sh: u8 = @intCast(u8, i % 8);
+    var m: u8 = @intCast(u8, 1) << sh;
+    state.block_mask[byte] = state.block_mask[byte] & ~m;
+}
+
+pub fn maskClearAll(state: *PieceState) void {
+    for (state.block_mask) |*item| {
+        item.* = 0;
+    }
+}
+
+// Initialise `state` for piece `index`: size the block vector, zero the
+// counters, and copy the expected SHA-1 out of `t.piece_hashes`.
+pub fn pieceInit(arena: *std.arena.Arena, t: torrent.Torrent, state: *PieceState, index: u32) PieceError!void {
+    var plen: u32 = disk.pieceLength(t, index);
+    if (plen == 0) return error.BadPiece;
+
+    var n: u32 = (plen + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    var raw = std.arena.alloc(arena, @intCast(usize, n) * @sizeOf(BlockState)) catch return error.OutOfMemory;
+    var blocks: []BlockState = @ptrCast([*]BlockState, raw)[0..@intCast(usize, n)];
+
+    for (blocks) |*item| {
+        item.* = BlockState.missing;
+    }
+
+    var mbytes: usize = (@intCast(usize, n) + 7) / 8;
+    var mraw = std.arena.alloc(arena, mbytes) catch return error.OutOfMemory;
+    var mask: []u8 = mraw[0..mbytes];
+    for (mask) |*item| {
+        item.* = 0;
+    }
+
+    state.index = index;
+    state.state = BlockState.missing;
+    state.blocks = blocks;
+    state.block_mask = mask;
+    state.received_bytes = 0;
+    state.received_count = 0;
+    state.outstanding_count = 0;
+    state.length = plen;
+    state.nblocks = n;
+
+    var off: usize = pieceHashOffset(index);
+    if (off + HASH_LEN > t.piece_hashes.len) return error.BadPiece;
+    for (0..HASH_LEN) |k| {
+        state.hash[k] = t.piece_hashes[off + k];
+    }
+}
+
+// Fill `out` with up to `DEPTH` requests for missing blocks of `state`,
+// marking each requested block `requested`. The last block is length
+// `piece_len - (n-1)*16384` (clamped to the remaining piece bytes).
+pub fn nextRequests(state: *PieceState, out: *RequestQueue) void {
+    out.head = 0;
+
+    var n: u32 = 0;
+    var j: u32 = 0;
+    while (j < state.nblocks and (state.outstanding_count + n) < DEPTH) : (j += 1) {
+        var bi: usize = @intCast(usize, j);
+        if (state.blocks[bi] == BlockState.missing) {
+            var begin: u32 = j * BLOCK_SIZE;
+            var len: u32 = BLOCK_SIZE;
+            if (begin + len > state.length) len = state.length - begin;
+            out.in_flight[@intCast(usize, n)] = Request{ .index = state.index, .begin = begin, .length = len };
+            state.blocks[bi] = BlockState.requested;
+            n += 1;
+        }
+    }
+    state.outstanding_count += n;
+    out.tail = n;
+}
+
+// Receive one block of `state` at `begin`. Writes through to disk, and on the
+// final block reads the piece back + SHA-1 verifies. Returns `.Continue` while
+// blocks remain, `.Complete` when the piece verifies, `.Corrupt` when the
+// received bytes do not hash to `state.hash` (all blocks are re-queued).
+pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) PieceError!BlockResult {
+    if (begin % BLOCK_SIZE != 0) return BlockResult.Corrupt;
+    var bi: u32 = begin / BLOCK_SIZE;
+    if (bi >= state.nblocks) return BlockResult.Corrupt;
+
+    var expect: u32 = BLOCK_SIZE;
+    if (begin + expect > state.length) expect = state.length - begin;
+    if (bytes.len != @intCast(usize, expect)) return BlockResult.Corrupt;
+
+    disk.writeBlock(io.f, io.t, state.index, begin, bytes) catch return error.DiskFailed;
+
+    var biu: usize = @intCast(usize, bi);
+    var prev = state.blocks[biu];
+    if (prev == BlockState.requested) {
+        if (state.outstanding_count > 0) state.outstanding_count -= 1;
+    }
+    if (prev == BlockState.missing or prev == BlockState.requested) {
+        state.received_count += 1;
+    }
+    state.blocks[biu] = BlockState.received;
+    maskSet(state, bi);
+    state.received_bytes += @intCast(u32, bytes.len);
+
+    // All blocks present? (O(1): the counter is exact on every transition.)
+    if (state.received_count != state.nblocks) return BlockResult.Continue;
+
+    // Verify-on-complete: read the piece back in fixed bounded chunks and
+    // SHA-1 it (spec §7). Never allocate the whole piece: the work arena is
+    // 1 MiB while legal piece lengths go up to 16 MiB.
+    var raw = std.arena.alloc(io.arena, @intCast(usize, BLOCK_SIZE)) catch return error.OutOfMemory;
+    var buf: []u8 = raw[0..@intCast(usize, BLOCK_SIZE)];
+    var hs = crypto.sha1Init();
+    var off: u32 = 0;
+    while (off < state.length) {
+        var want: u32 = state.length - off;
+        if (want > BLOCK_SIZE) want = BLOCK_SIZE;
+        var got: usize = disk.readPieceAt(io.f, io.t, state.index, off, buf[0..@intCast(usize, want)]) catch return error.DiskFailed;
+        if (got != @intCast(usize, want)) return BlockResult.Corrupt;
+        crypto.sha1Update(&hs, buf[0..@intCast(usize, want)]);
+        off += want;
+    }
+    var h: [20]u8 = [20]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
+    crypto.sha1Final(&hs, &h);
+
+    var match: bool = true;
+    for (h) |item, k| {
+        if (item != state.hash[k]) match = false;
+    }
+
+    if (match) {
+        for (0..state.nblocks) |i| {
+            state.blocks[@intCast(usize, i)] = BlockState.verified;
+        }
+        state.state = BlockState.verified;
+        return BlockResult.Complete;
+    }
+
+    // Corrupt: mark failed and re-queue every block (spec §7 — mismatch is
+    // re-requested; the peer that delivered it is dropped by the caller).
+    state.state = BlockState.failed;
+    for (0..state.nblocks) |i| {
+        state.blocks[@intCast(usize, i)] = BlockState.missing;
+    }
+    maskClearAll(state);
+    state.received_bytes = 0;
+    state.received_count = 0;
+    state.outstanding_count = 0;
+    return BlockResult.Corrupt;
+}

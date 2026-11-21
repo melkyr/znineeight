@@ -1,0 +1,6 @@
+range ok
+continuity ok
+determinism ok
+fbm0 ok
+pgm fnv1a64 4921c94f3ec08543
+noise basic ok

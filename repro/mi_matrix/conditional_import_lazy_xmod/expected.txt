@@ -1,0 +1,3 @@
+real ping
+real ping
+cond import lazy ok

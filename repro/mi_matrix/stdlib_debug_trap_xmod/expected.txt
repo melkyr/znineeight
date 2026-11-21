@@ -1,0 +1,2 @@
+assertion failed
+debug trap ok

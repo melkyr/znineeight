@@ -1,0 +1,48 @@
+# iswindows_deadarm_prune_xmod — D2 emission-pruning fixture with pre-fix golden (T0)
+
+## What it tests
+Same dead-arm error-union reference shape as `iswindows_deadarm_errunion_xmod`
+(error-union `open` in each arm of `if (@isWindows())`), but the two dependency
+modules are host-neutral (no `@cInclude`), so the current compiler BUILDS AND
+RUNS the program. The red defect is purely the EMISSION of the comptime-dead
+module (the arm is folded and never lowered; the wrong-platform module is kept
+by the `E!*void` type-name pin via `pruneTypeMarkByValue`,
+`sf/src/main.zig:1149-1199` — see `iswindows_deadarm_errunion_xmod/NOTES.md`
+"Mechanism"); the runtime behavior the fix must preserve is frozen in
+`expected.txt`/`expected.rc`.
+
+## Measured pre-fix (2026-10-16, seed-built `/tmp/d1d2_build/zig1_5_clean`, md5 `f18b69ece1917bf970a036b276e5e403`)
+- `zig1 -ffast -o <out> main.zig`: dump rc=0, 8 `.c` — **BOTH**
+  `windep_F4B0B95D.c` (wrong-platform; must be pruned after T3) and
+  `linuxdep_C8F2DBE9.c` (live) present.
+- `sh <out>/build_target.sh linux <out>/prog`: rc 0.
+- run: stdout `iswindows prune ok\n` (19 bytes), rc 0 — 3x byte-identical via
+  `scripts/stdlib/run_fixtures.sh --capture` (CAPTURED; goldens written).
+
+## Expected classification
+- Pre-fix: **OK** (class-stable by design — the corpus classifier compares
+  CLASS files, not emitted C; this is exactly why gate 2 carries that note).
+- After T3: **OK** + goldens still match (behavior preserved) + emission
+  contract: `windep_*.c` ABSENT from a linux-build output dir /
+  `linuxdep_*.c` ABSENT from an `-osw` output dir. No class mover either way.
+
+## Goldens
+`expected.txt` = `iswindows prune ok\n` (exact stdout bytes);
+`expected.rc` = `0`. Measured from the CURRENT (pre-fix) compiler via
+`scripts/stdlib/run_fixtures.sh --capture` (harness: `-ffast -o` + gcc
+binding flag-set + `build_target.sh linux` + 3x run, byte-identical asserted).
+This fixture therefore matches the mi_matrix runtime-anchor SET definition
+(non-stdlib ∧ non-empty `expected.txt` ∧ `expected.rc==0`) but is a T0
+addition — the frozen 25-anchor set is enumerated by name in
+`.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-0-report.md`
+§3.4; later tasks run that explicit list, not a re-enumeration.
+
+## Post-fix measured (2026-10-16, T3 gate compiler `/tmp/d1d2_t3/zig1_5_clean`)
+Emission contract met: linux `-ffast --dump-c89 --output-dir` emits
+`windep_*.c`/`.h` **ABSENT** (only `linuxdep_*.c` + std); `-osw` emits
+`linuxdep_*` ABSENT (only `windep_*`). Golden PRESERVED byte-identical
+(`run_fixtures.sh` PASS, `expected.txt`/`expected.rc` unchanged — the
+pre-fix capture stands). mingw `build_target.sh mingw` build clean; wine run
+`iswindows prune ok` rc 0. Class **OK → OK** (no class mover; the red was
+purely emission-side). Mechanism correction: see the errunion NOTES
+post-fix section (the pin was the runtime-init root seed).

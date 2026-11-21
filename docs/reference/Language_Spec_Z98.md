@@ -3,7 +3,7 @@
 # Z98 Language Specification
 **A Zig subset for 1998-era hardware and software.**
 
-Z98 is a restricted subset of the Zig programming language designed to be compiled by the Z98 bootstrap compiler into C89 code. It maintains the core spirit of Zig while adhering to the extreme technical constraints of the late 90s.
+Z98 is a restricted subset of the Zig programming language compiled by the self-hosted `zig1` compiler into C89 code. `zig1` is written in Z98 and rebuilt from the committed seed `release/seed/zig1-seed.tgz`. It maintains the core spirit of Zig while adhering to the extreme technical constraints of the late 90s.
 
 ## 1. Types
 
@@ -12,50 +12,69 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 |------|-------------|----------------|
 | `i8`, `i16`, `i32`, `i64` | Signed integers | `signed char`, `short`, `int`, `__int64` |
 | `u8`, `u16`, `u32`, `u64` | Unsigned integers | `unsigned char`, `unsigned short`, `unsigned int`, `unsigned __int64` |
+| `u1`..`u64`, `i1`..`i63` | Arbitrary-width integers | Smallest power-of-two C integer carrier that holds the width |
 | `isize`, `usize` | Platform-sized integers | `int`, `unsigned int` (32-bit) |
 | `c_char` | C char type | `char` (signedness is implementation-defined) |
 | `f32`, `f64` | Floating-point | `float`, `double` |
-| `bool` | Boolean (`true`, `false`) | `int` (1, 0) |
+| `bool` | Boolean (`true`, `false`) | `unsigned char` (1, 0) |
 | `void` | Empty type | `void` |
 | `noreturn` | Never-returning type | `void` |
 
+Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsigned and `i1`..`i63` signed. Values are stored in the smallest power-of-two C carrier that holds the width, so `@sizeOf(uN)`/`@alignOf(uN)` report that carrier size (1/2/4/8) while `@bitSizeOf(uN)` reports the declared width. Arithmetic results are masked (unsigned) or sign-extended (signed) back to the declared width, and `@intCast` to an arbitrary width is range-checked. The runtime range check (like the other five runtime checks) is enabled by default (`-fsafe`) and disabled by `-ffast` (see §5). Widths outside the supported ranges are rejected with `error[3000]`. Widths are also accepted as the explicit backing type of an enum (`enum(uN)` or signed `enum(iN)`, see §1.3).
+
+**Frozen 32-bit layout model (FX14, 2026-09-29).** The compiler is single-target 32-bit and its layout model is the contract: `i64`, `u64` and `f64` are size 8 / alignment 8, and `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf` report that model for every type. Structs, unions, tagged unions, optionals, error unions, tuples and arrays inherit the maximum member/element alignment, so any composite containing an `i64`/`u64`/`f64` is align 8 and padded accordingly (e.g. `struct { a: u8, b: i64, c: u8 }` is size 24, align 8, with `b` at 8 and `c` at 16). The emitted C **pins** the model on every supported host compiler: each program's 64-bit declarations route through per-program carrier typedefs — `typedef long long <carrier> Z98_ALIGN8;`, `typedef unsigned long long <carrier> Z98_ALIGN8;`, `typedef double <carrier> Z98_ALIGN8;` — and the shared `zig_compat.h` typedefs `z64`/`zu64`/`f64` carry the same `Z98_ALIGN8`. `Z98_ALIGN8` is `__attribute__((aligned(8)))` on GCC/Clang/mingw and empty on MSVC/Watcom, whose 32-bit defaults (`/Zp8`, `-zp8`) already align 64-bit scalars to 8. A packing override such as `/Zp4` or `-zp4` would break the pin and is not supported. Packed aggregates are exempt (they are bit-packed byte arrays; 64-bit packed fields reject `error[3000]`), and the handmade/extern C boundary structs carry no 64-bit fields.
+
 ### 1.2 Pointers
-- **Single-item pointers**: `*T` and `*const T`.
-- **Many-item pointers**: `[*]T` and `[*]const T`. Supported for C-style array access.
+- **Single-item pointers**: `*T`, `*const T`, and `*volatile T`. `const` and `volatile` may be combined (`*const volatile T`).
+- **Many-item pointers**: `[*]T`, `[*]const T`, and `[*]volatile T`. Supported for C-style array access.
+- **Qualified-pointer scope**: `[]volatile T` slices and `*volatile fn(...)` function pointers are **not** supported; use `*volatile T` / `[*]volatile T` for memory-mapped I/O.
 - **Multi-level pointers**: `**T`, `***T`, etc., are fully supported.
 - **Address-of**: `&variable` produces a pointer.
 - **Dereference**: `pointer.*` accesses the value.
-- **Indexing**: `ptr[i]` is allowed for many-item pointers, but strictly rejected for single-item pointers.
+- **Indexing**: `ptr[i]` is supported for many-item pointers (`[*]T`) and for pointers to fixed-size arrays (`*[N]T`, Zig's auto-deref indexing); indexing any other single-item pointer (`*T`, `*const T`, `*volatile T`, and multi-level pointers) is strictly rejected at compile time with `error[3066]` (`type '*T' does not support indexing`), matching Zig 0.15.2. A `type` base (`(*p)[i]`, the prefix-`*` pointer-type syntax — not the `.*` dereference) rejects the same code (`unable to resolve comptime value`) instead of silently lowering the traced initializer.
+- **Pointer slicing**: `*T` may be sliced only with the comptime-known bounds `[0..0]`, `[0..1]`, or `[1..1]` (Zig compatibility); Z98 yields `*[0]T`/`*[1]T` (Zig 0.15.2's result types, carrying the base's `const`/`volatile` qualifiers). Every other form rejects `error[3067]`: an open end (`p[0..]`) reports `slice of single-item pointer must be bounded`, a runtime bound (`p[0..n]`) reports `unable to resolve comptime value`, and an illegal comptime pair (`p[0..2]`, `p[1..0]`, `p[-1..1]`) reports `slice of single-item pointer must have bounds [0..0], [0..1], or [1..1]`. The results iterate: a `for` whose iterable is a pointer-to-array (`*[N]T`, including the `*[0]T`/`*[1]T` slice results above) auto-derefs and iterates the pointee array exactly like an array value (`for (p[0..1]) |v|`, `for (pa) |v|`, the explicit `for (pa, start..end)` forms and the by-value row copy for an array element), matching Zig 0.15.2. A pointer-to-array iterable also accepts a mutable row capture (`for (pa) |*row|`) when its rows are writable; see the `for` capture rules in §3. **Residuals (recorded, follow-up):** a `*[0]T` emits a C array typedef clamped to `[1]` (C89 has no zero-length array) while the frontend length stays 0, so `.len` is 0 and an index rejects `error[3062]` — behavior is correct, the C model is the clamp. `*[N]T` slicing (including `pa.*[i]`) is documented in §1.4.
 - **Arithmetic**: `ptr + i`, `ptr - i`, and `ptr1 - ptr2` are allowed for many-item pointers.
 - **Identifiers**: Identifiers starting with `__` are reserved for the compiler. User-defined identifiers starting with `__` are automatically mangled to avoid collisions with internal compiler symbols.
 - **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a single-level pointer to a struct.
-- **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). However, the C89 backend may drop these qualifiers to simplify code generation for complex types.
-- **Function Pointers**: `fn(...) T` types are supported.
+- **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). The C89 backend still **drops** `const` in emission (it is not rendered), so `const` remains a frontend-only guarantee.
+- **Volatile Enforcement**: `volatile` is enforced by the frontend **and preserved** in C89 emission. A `*volatile T` cannot be implicitly converted to `*T` (`error[3000]`); remove the qualifier only with `@volatileCast`, and `@ptrCast` cannot discard it. `*volatile T` renders as `volatile T*`.
+- **Function Pointers**: `fn(...) T` types are supported. A function-pointer value may only be assigned or coerced to a target whose signature matches exactly (return type, parameter count/types, variadic flag and calling convention); a mismatch rejects with the level-0 site `error[3000]`, including through one level of `?fn` optional wrapping. Explicit `@ptrCast` and exact matches stay legal — see "Function-Pointer Signature Matching" under Type Coercions.
+- **Pointer Builtins**: Pointer casts and pointer/introspection are provided by builtins — `@ptrCast`, `@ptrToInt`/`@intFromPtr`, `@intToPtr`/`@ptrFromInt`, `@fieldParentPtr`, `@bitCast`, and `@as` (see §4).
 
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
-- **Enums**: `const E = enum(T) { Member, ... };`
+- **Packed Structs**: `const P = packed struct { field: uN, ... };`. Fields are packed LSB-first with no padding; `@sizeOf(P)` is `(total_bits + 7) / 8`. Every field must be `bool` or an integer type whose width is at most 31 bits; a `packed struct` member is admitted by its inner total width, even when that exceeds 31 bits. Field reads/writes lower to generated bitfield load/store code. A whole-value move of a nested `packed struct` sub-container (a struct-literal element, whole-field assignment, or whole-value read, including through a `packed union` member) lowers per leaf: one scalar bitfield load/store per leaf with composed offsets. Two clean rejects (`error[3000]`) remain: a whole-sub-container **store** whose access chain crosses a byte-aligned container field below the packed edge (no addressable-lvalue model), and a whole move of a type nested deeper than 32 packed levels (the per-leaf copy recursion is bounded).
+- **Enums**: `const E = enum { Member, ... };` (inferred `u32` backing), `const E = enum(uN) { Member, ... };` (explicit unsigned integer backing of width `N`), or `const E = enum(iN) { Member = -1, ... };` (explicit signed integer backing of width `N`). A member may carry an explicit discriminant; implicit members continue from the previous value plus one. Every discriminant must fit its backing: an unsigned backing accepts `0 .. 2^N - 1`, a signed backing accepts `-2^(N-1) .. 2^(N-1) - 1`. A negative discriminant on an unsigned backing is rejected at the member with level-0 `error[3062]` (`type '<T>' cannot represent integer value '<v>'`, e.g. `type 'u32' cannot represent integer value '-1'`), and any other out-of-range discriminant is rejected with the enum-backing-width `error[3000]`. Negative discriminants on signed backings emit signed C: the enum typedef uses the signed backing (`int` / the signed 64-bit carrier) and members are defined as the signed value (e.g. `#define E_A -1`). Wide member macros are carrier-legal C89: a negative magnitude above `2147483647` uses `(-Z98_I64_C(<n>))`, a positive value above `4294967295` uses `Z98_U64_C(<n>)`, a positive value from `2147483648` to `4294967295` uses the `u` suffix, and the i64 minimum keeps `Z98_I64_MIN` (the i32 minimum keeps `(-2147483647 - 1)`). **Full `u64` range (D13, Phase 3.5):** enum member values are stored in a raw `u64` slot with the signed interpretation derived from the backing type, so the full `enum(u64)` discriminant range is accepted: `18446744073709551615` is valid and emitted as `Z98_U64_C(18446744073709551615)`. An implicit successor beyond `u64` max (`enum(u64) { A = 18446744073709551615, B }`) is rejected with a clean level-0 `error[3000]`; signed/negative enums and duplicate-tag behavior are unchanged.
 - **Unions**:
+    - **Packed Unions**: `const U = packed union { field: uN, ... };`. All members overlap at bit offset 0; total bits is the widest member; `@sizeOf` is `max(1, (total_bits + 7) / 8)`, alignment 1. Members must be `bool` or an integer type of at most 31 bits; a `packed struct` member is admitted by its inner total width, even when that exceeds 31 bits (the ≤31-bit cap applies to the `bool`/integer leaves). A whole-value move of a packed-struct member (literal, assignment or whole-value read) lowers per leaf like a nested packed-struct field.
     - **Bare Unions**: `const U = union { field: T, ... };` (standard C union).
     - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
         - **Naked Tags**: In tagged unions, fields without an explicit type (e.g., `A,` instead of `A: void,`) are automatically treated as having a `void` payload. This sugar is NOT allowed in bare unions or structs.
         - **Anonymous Payloads**: Tagged union variants can have nested anonymous struct payloads (e.g., `Cons: struct { car: *Value, cdr: *Value }`). The compiler handles the C89 declaration and initialization of these internal structures.
+        - **`.tag` (FX16-F, 2026-09-29)**: `.tag` is a synthetic field typed `u32` holding the variant ordinal (declaration order), independent of any payload. A **direct** `.tag` access on a tagged union — paren-transparent, with pointer/many-pointer bases auto-dereferencing (`p.tag`, `(*p).tag`) — gets contextual member sugar: compared against a member of the SAME union it resolves the member to its ordinal and yields `bool` for all six comparison ops (`s.tag == .m`, `s.tag != Shape.m`, `s.tag < lib.Shape.m`, member-on-left, shorthand/qualified/alias qualifiers), and used as a `switch` condition it accepts member prongs (`switch (s.tag) { .m => ..., Shape.m => ..., else => ... }`) and a value form; the comparison/switch is on **ordinals**. A `|c|` capture on a `.tag` switch binds a `u32` copy of the ordinal (there is no payload). Numeric uses are unchanged: `s.tag == 0`, `switch (s.tag) { 0 => ..., 1 => ... }`, `@enumToInt(s.tag)`, `const t = s.tag;` (a plain `u32` copy), and `switch (s)` on the whole union. A pointer `.tag` read dereferences the pointee and `p.tag = v` stores through it. **A union member named `tag` is permanently shadowed by the synthetic tag**: every `.tag` field access on the union (value or pointer base) reads/writes the ordinal, never the same-named member's payload (fix round 1 made lowering agree with sema); the collision is accepted silently, but avoid naming a member `tag` — the member still exists as a variant (switch prongs, whole-union `==`, struct-init `.tag = ...` use it normally). A **bare enum literal beside a numeric operand** whose type is not an enum/tagged union has no context to resolve against: the copied-tag compare `const t = s.tag; t == .m` (and `1 == .Red`) rejects level-0 `error[3076]` `unable to infer type of enum literal in comparison with a numeric operand` instead of comparing silently false; a typed-enum compare (`c == .Red`) is accepted. Official Zig 0.15.2 has no `.tag` member: the equivalent spelling is `std.meta.activeTag(u)` for comparisons and `switch (u)` for dispatch.
+        - **Payload-member stores (S2, FX16-F)**: a per-member payload store (`x.i = 5`, global/param/pointer/compound/cross-module), a whole nested payload store (`b.box = .{...}`) and taking the address of a payload member (`&x.i`, `b.box.w = 7`) are **clean level-0 rejects** — `cannot store to a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })` and the address twin `cannot take the address of a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })` (one diagnostic per offending statement, rc=2 / 0 `.c`). Before FX16-F these were `error[3043]` ICEs. The supported mutation is the whole-union reassignment: `x = .{ .i = 5 }`, `x = .{ .box = ... }`, `p.* = U{ .i = 21 }`.
 - **Tuples**: `struct { T1, T2, ... }` for types and `.{ val1, val2, ... }` for positional anonymous literals.
-    - **Member Access**: Accessed via numeric indices (e.g., `t.0`, `t.1`).
-    - **C89 Representation**: Lowered to C structs with fields named `field0`, `field1`, etc.
-    - **Usage**: Primarily used for `std.debug.print` arguments and grouped return values.
-    - **Initialization**: Anonymous tuple literals are automatically coerced to concrete tuple types based on context.
+    - **Member Access**: Accessed via numeric indices. All three spellings are supported and lower to the same positional field: `t.0` / `t.1` (the spec's original spelling), `t._0` / `t._1` (the emitted C field spelling), and `t[0]` / `t[1]` (a **comptime-known** index; a runtime index is rejected with `error[3069]` `tuple field index must be comptime-known`). An out-of-range ordinal (`.N`, `._N` or `t[N]`) rejects with `error[3070]` `index N outside tuple of length L`; a numeric member on a non-tuple rejects with `error[3060]` (a numeric member is never treated as an interned member name).
+    - **C89 Representation**: Lowered to C structs with fields named `_0`, `_1`, etc.
+    - **Element Typing (FB2, 2026-09-27)**: An inferred tuple literal types each element by what it is, not by a fallback. An untyped integer literal element takes its value-chosen carrier (`comptimeIntUntypedType`: i32 when the value fits, else u32/i64/u64), so the tuple's C field type matches the value (`const t = .{ 3000000000, -3000000000 };` is `{u32, i64}`, not `{i32, i32}`); an exact value outside the 64-bit comptime window rejects `error[3000]`. A `void` element stays `void` (no fabricated i32 element) and the `print` validator rejects it with `error[3063]`; this includes a `void`-typed struct FIELD read (`.{ s.v, 1 }` with `struct { v: void, a: i32 }` — a void field is legal and readable, so the element is a real void value; only a bare unresolved forward reference keeps the pass-1 i32 fallback for the tuple-identity fixpoint). A TYPE used as an element (`.{ i32, 5 }`, `.{ S, 5 }`, `.{ mod.T, 5 }`, an inline `struct {...}`) rejects `error[3063]` on both the literal and tuple-variable print paths.
+    - **Usage**: Primarily used for `print` arguments and grouped return values.
+    - **Initialization**: Anonymous tuple literals are automatically coerced to concrete tuple types based on context. A named tuple type and a shape-identical tuple are assignable element-wise (`const p: Pair = .{ 1, 2 };`, tuple-to-tuple assignment, arguments and returns), lowered as a field-wise copy; a mismatched arity or element type is a level-0 `error[3000]`.
+    - **Boundary (operator ruling)**: a spelled tuple type with an **array element** (`struct { [2]i32, i32 }`) is a clean reject (`error[3000]`), because a field-wise copy of an array element has no C assignment. Inferred tuple literals holding arrays are allowed for layout/read/print (the print path rejects them with the Task-4 `error[3063]`), but a distinct tuple-to-tuple assignment with an array element is a level-0 `error[3000]` mismatch.
 
 ### 1.4 Arrays and Slices
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
 - **Slices**: `[]T` and `[]const T`. Represented internally as a structure containing a pointer (`ptr`) and a length (`len`).
-- **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`. Slices are guaranteed to be non-null when indexed if their length is greater than zero (enforced by the compiler's static analysis).
+- **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`. Slices are guaranteed to be non-null when indexed if their length is greater than zero (enforced by the compiler's static analysis). A **comptime-known** index that is provably out of bounds for a fixed-size array (`scores[5]`, `scores[scores.len]`, a negative index, a `const` chain, a `*[N]T`, or a struct/union array field) is rejected at compile time with `error[3062]` (`index N outside array of length L`; a negative value gets Zig's `type 'usize' cannot represent integer value '-N'`), matching official Zig 0.15.2; a runtime index keeps the mode-independent `-fsafe` out-of-bounds runtime check.
 - **Ranges**:
   - **Exclusive**: `start..end` (inclusive of `start`, exclusive of `end`). Used in `for` loops and slicing.
   - **Inclusive**: `start...end` (inclusive of both `start` and `end`). Supported primarily in `switch` cases.
-- **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers.
-  - In the current bootstrap compiler, both `start` and `end` indices **must** be explicitly provided for all types (e.g., `arr[0..arr.len]`). Implicit start/end (e.g., `arr[5..]`) is not yet supported.
+- **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers. A single-item pointer (`*T`) may be sliced only with the three comptime bounds named in §1.2 (`error[3067]` otherwise; the result is `*[0]T`/`*[1]T`).
+  - The `end` index may be omitted (`arr[5..]`); the resulting slice runs from `start` to the end of the source. Omitting the `start` index (`arr[..5]`) is **not** supported.
   - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
+  - **Constant bounds** on a fixed-size array are checked at compile time with `error[3062]`, matching official Zig 0.15.2: `end index N out of bounds for array of length L`, `start index S is larger than end index E` (compared only against a comptime-known effective end — the array length for the open-ended `arr[s..]`, the folded end for a closed range; a closed range whose present end is runtime, e.g. `arr[7..ri]`, is not compile-checked), and a negative bound gets `type 'usize' cannot represent integer value '-N'`. `arr[len..]` and `arr[len..len]` are legal empty slices; a runtime bound keeps the `-fsafe` runtime check.
+  - **Pointer-to-array slices (`*[N]T`, FX5 2026-09-28)**: `pa[start..end]` is legal for every comptime or runtime bound; the result is the Z98 slice `[]T` (`[]const T` for a `*const [N]T` base), whose pointer is the element pointer `(T*)pa + start` (ONE-element scaling, not the whole-array scale a raw `pa + start` would use) and whose length is `end - start`. An omitted `end` (`pa[start..]`) runs to the array length N; `pa[N..]` is the legal empty slice. `pa.*[i]` (and `&pa.*[i]`, `pa.*[i] = v`, `pa.*[i] += v`) indexes the dereferenced array directly as `(*pa)[i]` — the array value is never materialised into a C temp. Zig 0.15.2 types these ranges `*[M]T` (`M = end - start`); Z98 keeps its frozen `[]T` result (documented divergence). **Emission-shape note (FX5 review, 2026-09-28):** a closed range with `start == 0` emits the element many-pointer plus a length constant (pre-FX5 emitted an array-pointer temp and shifted temp numbering); runtime values, goldens, corpus and the 4-MD5 gates are unchanged — the start>0 one-element-scaling fix requires the element-pointer form.
+  - **Many-item-pointer open end (`mp[s..]`, FX5 fix round 1 2026-09-28)**: the open-ended range on a `[*]T` is **accepted** and yields `[*]T` — the pointer offset by `start` (no length, so there is no `end <= len` guard; a many-item pointer carries no length). This matches Zig 0.15.2 exactly (`@TypeOf(mp[s..])` is `[*]T` for both comptime and runtime `s`) and replaces the former `error[3043]` ICE. Const/volatile qualifiers carry (`[*]const T` in, `[*]const T` out). A struct/union **array field** is unchanged: `h.arr[s..]` resolves as the field's declared array type, so it keeps the Z98 `[]T` slice result with the declared length as the effective end.
+  - **`-fsafe` runtime bounds checks (FX5 2026-09-28)**: a runtime-capable slice range traps like the existing index-out-of-bounds check (the reused `check_trap{kind=5}`; the spec's six runtime checks have no separate slice trap). For `base[start..end]` the checks are `start <= end` and, when the length is known, `end <= len`; for `base[start..]` the check is `start <= len`. The length is the compile-time N for arrays and `*[N]T` (or a decayed struct/union array field), and the runtime `.len` for slices; a `[*]T` has no length, so only `start <= end` is checked (matching Zig's many-pointer behavior). A bound that is a signed integer wider than `usize` also requires `>= 0`, mirroring the index guard. Compile-time-known bound pairs on a static-length base are already checked by `error[3062]` and emit no runtime guard; `-ffast` emits none of these checks. **Signed-bound residual (FX5 review, 2026-09-28):** runtime equal-width signed bounds are neither coerced nor rejected, so a runtime `i32` bound (`var i: i32 = -1;` used as `arr[i..4]` / `pa[i..4]`, and the accepted `mp[i..]`) compiles rc 0 and bypasses the guards (`-fsafe` reads out of bounds). A **literal** negative bound (`arr[-1..4]`) or a comptime-folded one (`const i: i32 = -1;`) still rejects `error[3062]` (`type 'usize' cannot represent integer value '-1'`), matching Zig's coercion message; Zig 0.15.2 additionally compile-rejects a runtime signed bound (`expected type 'usize', found 'i32'`). This is systemic pre-existing signed-bound laxity (the nonneg conjunct covers only signed integers wider than `usize`); bounded, no fix scheduled.
 - **Properties**: Slices have built-in `.ptr` and `.len` properties.
   - `slice.ptr` returns a many-item pointer (`[*]T` or `[*]const T`).
   - `slice.len` returns a `usize`.
@@ -71,9 +90,12 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `!T` (success).
   - An error literal can be implicitly coerced to any error union `!T`.
+- **`try` context**: `try` unwraps an error union only inside a function that returns an error union whose error set contains the operand's set, and the operand itself must be an error union — enforced since FX12 with level-0 `error[3075]`; see §3.3 for the exact rules and the anonymous-set bounded divergence.
+- **Per-module named sets and name-subset compatibility (Phase 3.3):** an error set is a per-module named set, and an `error{...}` list interns names from any domain (an upstream module's names may be repeated in a downstream widened set). A cross-module `try` is a **name-subset check**, not a set-identity check: when the operand's names are a subset of the enclosing return set, bare `try` is valid without a catch-map. When they are not a subset, the call site must either catch-map the extra names (`catch |e| switch (e) {...}`, or `catch |e| return error.X`) or widen the enclosing return set to include them. This is what lets `TlsIoError` be the full `TlsError`∪`NetError` name union (31 names) and collapse only at the HTTP/2 boundary.
+- **Not supported**: `@errorName` and the `anyerror` type (see §7).
 
 ### 1.6 Optional Types
-- **Optional Types**: `?T`. Represented as a C struct containing the payload and a `has_value` flag. (Note: pointers `?*T` also use this uniform struct representation in the bootstrap compiler).
+- **Optional Types**: `?T`. Represented as a C struct containing the payload and a `has_value` flag. (Note: pointers `?*T` also use this uniform struct representation.)
 - **Null Literal**: `null`.
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `?T` (present).
@@ -84,42 +106,82 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   x = 42; // implicitly wrapped
   ```
 
+### 1.7 Type Aliases
+`const T = <type>;` names a type. Supported alias targets include primitive and arbitrary-width integers (`i32`, `u7`), arrays (`[N]T`), slices (`[]T`), many-item pointers (`[*]T`), single-item pointers (`*T`), optionals (`?T`), error unions (`E!T`), function types (`fn(...) T`), and other named aggregate/alias types. Aliases may chain (`const B = A;`) and may be re-exported across modules with `pub const`.
+
+**Where type names may appear (FX13-F, 2026-09-28).** Every function-signature type position — `fn` parameters and returns, `extern fn` declarations, and fn-pointer parameter/return types — must name a type that resolves. An unresolved name is a level-0 `error[20]` (`identifier '<x>' is not declared or imported in this module`), emitted once per unresolved leaf: a `*`/`[*]`/`[N]`/`[]`/`?`/`E!T`/`fn(...)` wrapper is walked to its inner leaf (span on that ident), while a qualified `mod.unknown` reports the whole `mod.unknown` node. Same-module forward references and self-references, alias chains, `@import` aliases, `pub` cross-module members, arbitrary widths (`u4`/`u7`), builtin scalars (`c_char`/`void`/`bool`), `error{...}` sets, named fn-pointer types, implicit-`void` returns, and bare cross-module names resolved by the compiler's global name-cache scan all keep resolving. The `anytype` marker is NOT a resolvable type name and is rejected in every signature/type position (A1-F, 2026-09-30): a level-0 `error[16]` (`ERR_2012_ANYTYPE_NOT_SUPPORTED`, `anytype not supported in Z98`), one per `anytype` node, whether direct (`fn f(x: anytype)`, `fn f() anytype`) or nested (`?anytype`, `[*]anytype`, `fn (anytype) void`); `var x: anytype` rejects separately. `noreturn` is the one exemption (see §7.2).
+```zig
+const MyInt = i32;
+const MyArr = [3]i32;
+const Buffer = []u8;
+```
+**Limitation — alias names are erased:** each alias resolves to its underlying type at registration, so diagnostics and emitted C report the underlying type, never the alias name.
+
 ## 2. Memory Management (Arena Pattern)
 
 Z98 relies on **Arena Allocation** for almost all dynamic memory needs. This pattern simplifies memory management and ensures performance on legacy systems.
 
-### 2.1 Initialization Pattern
-Since Z98 targets C89 and avoids complex destructors, the standard "constructor" pattern is a function that takes an `*Arena` and returns a pointer to an initialized object.
+### 2.1 The Arena API
+The standard library re-exports an arena allocator as `std.arena` (`sf/src/std_arena.zig`). It wraps caller-provided backing storage:
+
+- `std.arena.init(data: []u8) Arena` — constructs an `Arena` over the given byte buffer.
+- `std.arena.alloc(self: *Arena, size: usize) ArenaError![*]u8` — bumps within the backing storage and returns the raw block, or `error.OutOfMemory` when the arena is exhausted. (`pub const ArenaError = error{OutOfMemory};`)
+- `std.arena.reset(self: *Arena) void` — reclaims all allocations by setting the used length back to zero.
+
+Z98 has no method syntax, so these are called as free functions (e.g. `std.arena.alloc(&a, n)`).
+
+Canonical usage:
+
+```zig
+var g_buf: [65536]u8 = undefined;
+var g_arena = std.arena.init(g_buf[0..]);
+```
+
+### 2.2 Initialization Pattern
+Since Z98 targets C89 and avoids complex destructors, the standard "constructor" pattern is a function that takes a `*std.arena.Arena` and returns a pointer to an initialized object.
 
 ```zig
 const MyStruct = struct {
     x: i32,
 };
 
-fn MyStruct_init(arena: *Arena, x: i32) *MyStruct {
-    const self = arena_alloc(arena, @sizeOf(MyStruct));
+fn MyStruct_init(arena: *std.arena.Arena, x: i32) !*MyStruct {
+    const raw = try std.arena.alloc(arena, @sizeOf(MyStruct));
+    const self = @ptrCast(*MyStruct, raw);
     self.x = x;
     return self;
 }
 ```
+`std.arena.alloc` returns an error union (`ArenaError![*]u8`), so `orelse` is rejected with `error[3016]`; use `try`/`catch`. In a helper that cannot propagate the error, `catch unreachable` is the fallback and now traps (rather than falling through) if the arena is exhausted.
 
-### 2.2 Reclaiming Memory
-Memory is reclaimed by resetting or destroying the arena.
-- If a type manages external resources (like file handles), a `deinit` function should be provided and called manually before the arena is reset.
-- Memory allocated via `arena_alloc` should **not** be manually freed using `free()`.
+### 2.3 Reclaiming Memory
+Memory is reclaimed by resetting the arena.
+- `std.arena.reset(&arena)` reclaims every allocation made through that arena; there is no `deinit`.
+- If a type manages external resources (like file handles), it must clean those up manually before the arena is reset.
+- Memory obtained from `std.arena.alloc` should **not** be passed to `free()`.
 
-### 2.3 Advanced Patterns (Dual-Arena)
+### 2.4 Advanced Patterns (Dual-Arena)
 For complex applications like compilers or interpreters (e.g., the Lisp interpreter), a **dual-arena system** is highly effective:
 - **Permanent Arena**: Stores long-lived data (e.g., global symbols, environment nodes, persistent AST).
 - **Transient Arena**: Stores temporary data that is cleared frequently (e.g., per-eval, per-file, or per-request data).
 This approach maximizes performance on legacy hardware by minimizing the active working set and avoiding frequent small allocations.
+
+### 2.5 Non-Nested Lifetimes (`std.gpa`, `std.pool`)
+The arena is the default: every allocation shares the arena's lifetime and is released together by `std.arena.reset`. When a program needs **individual allocations with explicit free** (non-nested lifetimes), use the general-purpose allocator `std.gpa` (`sf/src/std_gpa.zig`, barrel-exported as `std.gpa`):
+
+- `std.gpa.gpaInit(cfg: GpaConfig) std.page.PageError!Gpa` / `std.gpa.gpaDeinit(&g)` — create/destroy a GPA (it owns a `std.page` reservation).
+- `std.gpa.gpaAlloc(&g, size, align) ?[*]u8`, `std.gpa.gpaAllocZeroed(...)`, `std.gpa.gpaFree(&g, ptr) bool`, `std.gpa.gpaResize(&g, ptr, new_size, align) ?[*]u8`, `std.gpa.gpaStats(&g)`.
+- Profiles: `gpaConfigDefault()` is `target64` (64 KiB medium cap, 2 MiB chunks, 64 MB target); `gpaConfigTarget32/64/128/256/512/Modern()` select the others. `align` must be a power of two in `[8, 4096]`. `GpaConfig.safe_checks` is explicit — `-fsafe` alone does **not** enable the allocator's magic/ownership validation (see §5).
+- For many same-sized objects, `std.pool` provides a fixed-block pool: `poolInit(buf, block_size, align) ?Pool`, `poolAlloc(&p)`, `poolFree(&p, ptr) bool`, `poolReset(&p)`, `poolLen(&p)`. The pool aliases caller-provided storage and never calls the page layer.
+
+Both are explicit library allocators over `std.page` mappings; the compiler itself is not migrated to them.
 
 ## 3. Control Flow
 
 ### 3.1 Statements
 - `if (cond) statement else statement`: Braces are **optional** for `if` statement bodies. Single statements are normalized into synthetic blocks by the compiler.
   - **Capture**: `if (result) |payload| ...` supports capturing payloads from error unions and optional types.
-  - **Example**: `if (a) return 1; else return 0;`
+  - **Example**: `if (a) { return 1; } else { return 0; }` (the brace-less form `if (a) return 1; else return 0;` is rejected: a semicolon may not precede `else`; write the braces, or omit the semicolon as in `if (a) return 1 else return 0;`). The condition must be `bool`; an assignment is not an expression, so `if (a = 3)` is a parse error.
   - **Optional Capture**: `if (optional_val) |val| statement`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
@@ -128,25 +190,30 @@ This approach maximizes performance on legacy hardware by minimizing the active 
   - **Capture**: `while (optional_expr) |capture| { ... }` is supported for optional unwrapping. The loop continues as long as `optional_expr` yields a value.
 - `for (iterable) |item| statement`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`. Braces are **optional** for the loop body.
   - **Example**: `for (arr) |item| sum = sum + item;`
-  - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
-  - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
+  - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), pointer-to-array (`*[N]T`, auto-deref iteration — Zig parity: direct `for (pa) |v|`, the `*[0]T`/`*[1]T` slice results, and a by-value array-row item all work), and ranges (`start..end`).
+  - **Explicit Index Range**: `for (arr, start..) |item, index|` and `for (arr, start..end) |item, index|` (Zig 0.15.2 parity) iterate **every** element of the iterable; the index capture is `start + j` (j = the 0-based iteration count) and is **not** clamped to the iterable. `start`/`end` must be `usize`-compatible unsigned integers. `start..end` requires `end - start == arr.len` (a compile-time error when both lengths are known, otherwise a runtime trap under `-fsafe`); `end < start` is an overflow (compile-time error when known, runtime trap otherwise). The index capture is mandatory for this form. The iterable must be an array, slice, or pointer-to-array (whose length is the pointee array's): an explicit index range over a range iterable (`for (0..5, 0..) |x, i|`) is a parse error (`error[2000]`), although Zig 0.15.2 accepts it.
+  - **Capture**: The default `item` capture is by value and immutable. For ranges, it is of type `usize`.
+  - **Mutable item capture**: `for (xs) |*item|` / `for (xs) |*item, index|` binds `item` to a pointer into the iterable storage instead of a copy; `|*_|` is allowed. The capture type is `*T` for a writable slice/array/pointer-to-array (and `*[N]T` for a writable array-typed row), or `*const T` when the element type is const (`[]const T`, `*const [N]T`); an array iterable also consults its binding, so a `const`-bound array yields `*const T`. A `const` binding of a mutable slice/pointer (`const s: []T`) keeps the type's mutability, so the capture stays `*T`. The capture binding itself is immutable, but the pointee is writable through it (`item.* = v`, `item.field = v`). The iterable must supply an addressable element: an identifier (`for (arr) |*item|`), a module-member array, and the `for_index_range` form (`for (arr, start..) |*item, index|`) are legal. Range iterables (`for (0..n) |*item|`), non-variable array values (an array literal or call result), and iterables with no resolvable element type (e.g. a `*T` whose pointee is not an array) reject with `error[3078]` (see §5).
   - **Index Capture**: An optional second capture `|item, index|` provides the current index as a `usize`.
-  - **Discarding**: Captures can be discarded using the underscore `_` (e.g., `for (arr) |_, index|` or `for (arr) |_|`). Discarded captures are not bound to a symbol and cannot be accessed.
-  - **Immutability**: All loop captures and function parameters are immutable. Attempting to assign to them will result in a compile-time error.
+  - **Discarding**: Captures can be discarded using the underscore `_` (e.g., `for (arr) |_, index|`, `for (arr) |_|`, or `for (arr) |*_|`). Discarded captures are not bound to a symbol and cannot be accessed.
+  - **Immutability (binding-level)**: All loop capture bindings and function parameters are immutable: assigning to the binding (`item = ...`, `x = ...`) is `error[3002]`. A `|*item|` binding is immutable too, but its pointee is writable (`x.* = ...`, `x.field = ...`); the pointee's constness is carried by the pointer type (`*T` vs `*const T`).
 - `switch (expr) { ... }`: Pattern matching and conditional evaluation.
-  - **Condition**: Must be a tagged union, integer, enum, or boolean.
+  - **Condition**: Must be a tagged union, integer, enum, or boolean. A condition whose C carrier is 8 bytes (nominal `i64`/`u64` and the 33..63-bit arbitrary integers and enums backed by one) is lowered to a portable if/else chain rather than a C `switch`; its case literals use carrier-legal C89 spellings (`Z98_U64_C(<n>)`, `(-Z98_I64_C(<n>))`, `Z98_I64_MIN`). 32-bit and narrower conditions keep the C `switch`.
+  - **`.tag` condition (FX16-F)**: `switch (s.tag)` is a valid switch on the union's `u32` ordinal with contextual member prongs — shorthand `.m` and qualified `Shape.m`/`lib.Shape.m`/alias qualifiers resolve against the base union and emit ordinal `case` labels; unknown/foreign prongs reject `error[3071]` exactly like a whole-union switch; payload members are allowed (`switch (s.tag)` never inspects a payload); numeric prongs (`0`, `1`) are unchanged. A `|c|` capture binds the ordinal as `u32` (see Payload Captures for the whole-union form).
   - **Prongs**: Comma-separated case items followed by `=>` and an expression. If a prong consists of a single expression, it is automatically treated as an expression-statement when the switch is used as a statement.
-  - **Payload Captures**: Tagged union switches support payload captures `case => |val| ...`. `val` is an immutable reference to the union's payload for that specific tag.
-  - **Case Items**: Can be single values or ranges.
+  - **Payload Captures**: Tagged union switches support payload captures `case => |val| ...`. `val` is an immutable reference to the union's payload for that specific tag. A prong may be spelled shorthand (`.circle => |r|`) or container-qualified (`Shape.circle => |r|`, including a module-qualified `shapes.Shape.circle => |r|`); both spellings bind the capture identically. The prong's qualifier and member are validated (FX4): a qualifier that denotes a different enum/tagged-union type (a foreign qualifier such as `B.x` on an `A` condition) and a qualified or shorthand prong naming a non-existent member (`Shape.bogus`, `.bogus`) reject with level-0 `error[3071]` (rc=2 / 0 `.c`); see §4's compile-time diagnostics. Same-type, alias (`const C = A; C.x`) and module-qualified (`shapes.Shape.circle`) prongs are unchanged, and a qualifier whose type identity cannot be established is conservatively not rejected.
+  - **Enum-operand Captures**: A capture on an enum switch prong (`Color.red => |v|`, `.red => |v|`) binds the switch OPERAND value (type: the enum), matching Zig 0.15.2. An UNUSED capture is accepted by Z98 on enum and tagged-union prongs; official Zig 0.15.2 rejects an unused capture ("unused capture") — a documented Z98 tolerance.
+  - **Case Items**: Can be single values or ranges. A single value may be a literal, an unqualified enum member (`.Red` / `Red`), or an `identifier` naming a compile-time constant (name resolution below). On a `bool` condition, `true` / `false` and the non-negative integer values `0` / `1` are accepted; a negative integer item is rejected at the case item with level-0 `error[3062]` (`type 'bool' cannot represent integer value '-1'`, rc=2 / 0 `.c`).
+  - **Named Constants**: `identifier` case items and range bounds resolve to their compile-time values: typed/untyped integer `const`s in the same module, module-qualified constants (`mod.LO`, including a direct-import base), and enum-member constants (`const LOMEM = Color.Red;`, `const LOMEM_T: Color = .Red;`, and alias chains such as `const A = LOMEM;`). The constant's initializer may be constant arithmetic. Negative-valued named constants, negative literals, and negative range endpoints resolve to their two's-complement values on **signed** integer conditions (so `-1`, `NEG`, and `-5...-1` emit the matching signed `case` labels). On a concrete **unsigned** integer condition (`u8`/`u16`/`u32`/`u64`/`usize` and arbitrary-width unsigned), a negative literal, named-constant value, or range endpoint is rejected with level-0 `error[3062]` (`type '<T>' cannot represent integer value '<v>'`, rc=2 / 0 `.c`) at the case item, matching Zig. Enum conditions follow their backing signedness: a negative discriminant on an `enum(iN)` backing (for example `enum(i32) { A = -1 }; switch (x) { .A => ... }`) emits the matching signed `case` label (`case -1:` for a 32-bit backing, `(-Z98_I64_C(1))` in a 64-bit chain), while an `enum(uN)` declaration with a negative discriminant is already rejected at the member with `error[3062]` (see §1.3). A function-local `const` is still **not** resolved (lowering has no local-const scope; documented limitation).
   - **Ranges**:
     - **Inclusive**: `start...end` (includes both `start` and `end`).
     - **Exclusive**: `start..end` (includes `start`, excludes `end`).
-    - **Bounds**: Must be compile-time constants of the same type as the switch condition.
-    - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members.
+    - **Bounds**: Must be compile-time constants of the same type as the switch condition — integer/char literals, named constants (`LO...HI`, `mod.LO...mod.HI`) and enum members (`.Red... .Blue`). On signed conditions bounds may be negative (`-5...-1`, including ranges that cross zero); on unsigned conditions a negative bound rejects `error[3062]` (see Named Constants above).
+    - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members. Both bounds may be qualified members (`Color.Red...Color.Green`) or shorthand literals (`.Red... .Blue`); they resolve by member name against the enum condition via each member's underlying value, so `enum(uN)` gaps are exact. A signed backing may use negative members as endpoints (`enum(i32) { A = -5, B = -1 }; .A... .B` expands to `case -5:` through `case -1:`); an unsigned backing cannot declare a negative member in the first place (`error[3062]`, see §1.3).
     - **Expansion**: Ranges are lowered into sequential C `case` labels at compile-time.
-    - **Character Literals**: Character literals (e.g., `'a'...'z'`) are fully supported in constant expressions, including `switch` ranges. They are treated as their underlying Unicode codepoint (ASCII) values.
-    - **Limit**: To prevent excessive C code generation, each range is limited to 1000 individual case labels.
-  - **Else**: An `else` prong is **mandatory** in all switch expressions.
+    - **Character Literals**: Character literals (e.g. `'a'...'z'`) are fully supported in constant expressions, including `switch` ranges. They are treated as their underlying Unicode codepoint (ASCII) values.
+  - **Else**: An `else` prong is **mandatory** in all switch expressions (value and statement position). A `switch` without one is rejected with level-0 `error[3068]` (`switch must have an 'else' prong`, rc=2 / 0 `.c`) at the switch node. Strict enforcement also closes the former silent uninitialized-result-temp path: before this rule, a value switch with no matching prong read an uninitialized temporary.
+    - **Z98-vs-Zig divergence (unreachable `else`)**: Z98 **tolerates** a redundant/unreachable `else` prong on an exhaustive switch (`switch (e) { .a => 1, .b => 2, else => 0 }` compiles and runs); official Zig 0.15.2 rejects the same shape with "unreachable else prong". Because `else` is mandatory here, an exhaustive switch must still spell one out (a `else => unreachable` arm traps under both `-fsafe` and `-ffast`; use `else => {}` or a real fallback instead).
   - **Grammar**:
     ```
     switch (expression) {
@@ -158,8 +225,8 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     range   ::= start '...' end   (inclusive)
              |  start '..' end    (exclusive)
     ```
-  - **Result Type**: Computed by merging the types of all non-divergent prongs. If all prongs diverge, the result type is `noreturn`.
-  - **Divergent Prongs**: Prongs may contain `return`, `break`, `continue`, or `unreachable`. These prongs have the type `noreturn`.
+  - **Result Type (D15, Phase 3.5)**: When the switch has a known expected type (return, typed `var`/`const`, call argument, field/element initializer, or another nested result position), every prong must be assignable to that expected type and is coerced to it; optional/error-union/null/`noreturn` prongs use the existing assignability coercions. When there is no expected type, the prong types are peer-resolved and incompatible prongs are rejected once with a level-0 `error[3000]` type mismatch (0 `.c`); unannotated mixed prongs remain invalid. If all prongs diverge, the result type is `noreturn`.
+  - **Divergent Prongs**: Prongs may contain `return`, `break`, `continue`, or `unreachable`. These prongs have the type `noreturn`. An `unreachable` prong now emits a live trap (`pal_trap()`), not a fall-through no-op (see §4).
   - **Value Blocks**: Switch prongs can use blocks that yield a value (e.g., `=> { var x = 5; x + 1 }`).
   - **Examples**:
     ```zig
@@ -186,7 +253,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
   - **Example**: `defer cleanup();`
   - `defer` statements are executed in reverse order of declaration (LIFO).
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
-  - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
+  - Control flow **out of** a `defer` body is rejected, matching official Zig: `return` anywhere inside the body is `error[3051]` (`cannot return from defer expression`); `break`/`continue` that transfer control out of the body are `error[3052]`/`error[3053]` (`cannot break`/`cannot continue out of defer expression`); `try` is `error[3054]` (`'try' not allowed inside defer expression`). A `break` whose target loop or labeled block, or a `continue` whose target loop, is **declared inside** the body is allowed, and a nested `fn` resets the restriction. The same rule applies to `errdefer`.
 - `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**.
   - **Example**: `errdefer rollback();`
 - `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block. `orelse` is **right-associative**, so `a orelse b orelse c` is equivalent to `a orelse (b orelse c)`.
@@ -198,18 +265,30 @@ This approach maximizes performance on legacy hardware by minimizing the active 
         return;
     };
     ```
+  - **Operand Requirement**: `orelse` requires an **optional** operand. Applying it to a non-optional value (including an error union) is rejected with `error[3016]: orelse requires an optional operand; use 'catch' for error unions`.
 
-### 3.2 Loop Control
-- `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
-- `break :label`: Exits the loop with the matching label.
-- `continue`: Jumps to the next iteration of the innermost loop. Only allowed within `while` or `for` loop bodies.
-- `continue :label`: Jumps to the next iteration of the loop with the matching label.
+### 3.2 Labeled Blocks and Loop Control
+- **Labeled Blocks**: A block can be labeled (`blk: { ... }`) and exited early with a value-less `break :blk;`. A labeled block is a statement, not a value-producing expression: yielding a value out of a labeled block (`break :blk value;`) is **not implemented** (see §7).
+  ```zig
+  blk: {
+      if (cond) break :blk;
+      doStuff();
+  }
+  ```
+- `break`: Exits the innermost `while` or `for` loop; when labeled, exits the matching loop or labeled block.
+- `break :label`: Exits the matching loop or labeled block.
+- `continue`: Jumps to the next iteration of the innermost `while` or `for` loop.
+- `continue :label`: Jumps to the next iteration of the matching loop.
 - **Loop Labels**: Loops can be labeled using `label: while ...` or `label: for ...`. Labels must be unique within their function.
-- **Validation**: Both `break` and `continue` (labeled or unlabeled) are strictly forbidden inside `defer` and `errdefer` blocks.
+- **Validation**: A `break` or `continue` inside `defer`/`errdefer` is rejected with `error[3052]`/`error[3053]` only when it transfers control **out of** the defer body; a `break` targeting a loop or labeled block, or a `continue` targeting a loop, **declared inside** the body is allowed (official Zig behaviour, verified against `AstGen.zig`). `return` and `try` inside the body are always rejected (`error[3051]`/`error[3054]`), except inside a nested `fn`.
 
 ### 3.3 Error Handling Expressions
 - `try expr`: Unwraps an error union. If `expr` is an error, it is returned from the current function. Otherwise, the payload is yielded.
-  - The enclosing function must return a compatible error union.
+  - The enclosing function must return a compatible error union. Enforced since FX12 with level-0 `error[3075]` (`ERR_3075_TRY_ENCLOSING_RETURN`), in Zig's check order:
+    - the operand must be an error union, else `expected error union type, found '<kind>'` + note `consider omitting 'try'` (`try 5;`, `try (g() catch 5);`, `try voidFn()`). Note the binding: the unparenthesized `try g() catch 5` parses as `(try g()) catch 5`, so it reports the enclosing-return rule; parenthesize the `catch` operand to get the operand message;
+    - the enclosing function's declared return type must be an error union, else `expected type '<ret-kind>', found error set` + note `function cannot return an error`. This reject is **unconditional**: an anonymous/opaque operand set (`!T`, `error_set == 0`) cannot be distinguished from an empty set, so the theoretical Zig-valid empty-inferred-set shapes (`fn g() !void {}` with `try g();` in a `void` function) are a documented bounded divergence (§7.2, zero occurrences in the tree);
+    - the operand's error set must be a subset of the function's return set, else `try error set may not be compatible with the enclosing function's return type`. The comparison is **set-only** — payloads need not match, so an `E!void` operand in an `E!i32` function is legal; a named set versus an anonymous `!T` set always passes (the anonymous side is opaque). Compatibility is by **name subset** (per §1.5): the operand's error names must all be present in the enclosing return set, regardless of which module declared them. When they are not, the **widen-or-map** rule applies at the call site — either widen the enclosing function's return set to include the extra names, or map them explicitly (`catch |e| return error.Mapped` / a `switch` over the names);
+    - a `try` outside any function (a module-level initializer, `const x = try f();`) rejects with `'try' outside function scope`.
   - Example:
     ```zig
     fn mightFail() !i32 { return error.Bad; }
@@ -219,7 +298,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     }
     ```
 - `expr catch |err| fallback`: Handles an error from an error union.
-  - If `expr` is an error, the `err` variable is bound to the error code and `fallback` is evaluated.
+  - If `expr` is an error, the `err` variable is bound to the error union's **error set** (`err: E` for `E!T`) and `fallback` is evaluated. The capture is an ordinary error-set value: `print("{}", .{err})` prints `error.Name`, and an explicit `{d}`/`{x}` on it rejects `error[3013]` like any other error-set value. A bare `!T` union (no named error set) keeps the numeric i32 capture — a documented residual.
   - If `expr` is a success, the payload is yielded and `fallback` is NOT evaluated.
   - The `|err|` capture is optional.
   - The `fallback` can be any expression, including a block `{ ... }`.
@@ -234,41 +313,167 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     ```
 
 ## 4. Built-in Functions
-- `@import("file.zig")`: Includes another module.
-- `std.debug.print(fmt: []const u8, args: anytype)`: Lowered by the compiler to a sequence of runtime print calls.
-    - **Format Specifiers**: Supports `{}` (default), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string).
-    - **Arguments**: `args` **must** be a tuple literal (e.g., `.{arg1, arg2}`) or a tuple variable. The compiler decomposes the format string and emits individual print calls for each tuple element.
-- `@sizeOf(T)`: Byte size of type `T`.
-- `@alignOf(T)`: Alignment of type `T`.
-- `@offsetOf(T, "field")`: Byte offset of a field.
-- `@ptrCast(T, expr)`: Explicit pointer cast.
-- `@intCast(T, expr)`: Checked integer conversion.
-- `@floatCast(T, expr)`: Checked float conversion.
-- `@intToPtr(T, expr)`: Converts an integer to a pointer of type `T`.
-- `unreachable`: Diverges with a panic. Has type `noreturn`.
+
+Builtins are invoked as `@name(...)` and are recognized by name; an unknown or unsupported builtin is rejected with `error[3000]: unsupported builtin function`. The supported surface is:
+
+**Cast / conversion / introspection**
+| Builtin | Description |
+|---------|-------------|
+| `@ptrCast(T, expr)` | Explicit pointer cast |
+| `@ptrToInt(expr)` / `@intFromPtr(expr)` | Pointer to integer (`@intFromPtr` is the modern alias) |
+| `@intToPtr(T, expr)` | Integer to pointer, explicit result type |
+| `@ptrFromInt(expr)` | Integer to pointer, result type taken from context |
+| `@fieldParentPtr(T, "field", expr)` | Pointer to the containing struct from a pointer to one of its fields |
+| `@bitCast(T, expr)` | Same-size integer-to-integer bit reinterpretation |
+| `@volatileCast(T, expr)` | Remove the `volatile` qualifier; source must be a volatile pointer and target the same base type |
+| `@intCast(T, expr)` / `@intCast(expr)` | Checked integer conversion / width change |
+| `@floatCast(T, expr)` | Float conversion (not runtime-checked; narrowing may lose precision) |
+| `@intToFloat(T, expr)` | Integer to float |
+| `@intToEnum(T, expr)` | Integer to enum |
+| `@enumToInt(expr)` | Enum to integer |
+| `@as(T, expr)` | Explicit type coercion |
+| `@sizeOf(T)` | Byte size of type `T` |
+| `@alignOf(T)` | Alignment of type `T` |
+| `@offsetOf(T, "field")` | Byte offset of a field; `T` must be a struct (packed included) — a union or non-struct target rejects `error[3072]` (Zig parity; no union "offset 0" fold) |
+| `@bitSizeOf(T)` | Bit size of type `T` |
+| `@bitOffsetOf(T, "field")` | Bit offset of a field; struct-only like `@offsetOf` (union/non-struct target rejects `error[3072]`) |
+
+The one-argument form `@intCast(expr)` is also accepted (accepted-arity range 1..2) — identity typing via the sema single-argument builtin fallback (the operand's own type), where official Zig 0.15.2 infers the target from context; that narrowing-context residual is the documented Task 7 divergence (EXPECTED_FAIL.md).
+
+The Zig introspection/name builtins `@addr`, `@name`, `@enumFromInt`, and `@typeName` are **not** implemented; each rejects with `error[3000]: unsupported builtin function`. `@cInclude(...)` is handled as a declaration by the lexer/parser rather than as a sema builtin (see Declarations below).
+
+**Runtime**
+- `@putChar(c)`: Writes a single character.
+- `@stdoutWrite(ptr, len)` / `@stderrWrite(ptr, len)`: Writes `len` bytes to stdout / stderr.
+- `@getChar()`: Reads one raw byte through the PAL. The PAL returns `0..255`, or `-1` at EOF/error, with no CRT CRLF→LF or Ctrl-Z→EOF translation; the contract is identical on POSIX and Win32 and with or without the CRT. The builtin result is typed `u8`, so an EOF/error result is observed as `255` at the language level.
+- `@exit(code)`: Terminates the process with `code`.
+- `@sleepMs(ms)`: Sleeps for `ms` milliseconds.
+- `@isWindows()`: Compile-time-folded target predicate (true only for the Windows target).
+- `@consoleClear()`, `@consoleGotoxy(x, y)`, `@consoleSetColor(fg, bg)`: Console control helpers.
+- `@panic(msg)`: Evaluates `msg`, writes `panic: <msg>\n` to **stderr**, then **traps** (`pal_trap()`; x86 `int 3`, elsewhere `pal_abort()`). It is typed `noreturn` and is **not** a no-op. `unreachable` is likewise a real unconditional trap. Both trap in `-fsafe` and `-ffast`. `std.debug.assert`/`std.debug.panic` also call `pal_trap()`, but their message is written to **stdout**, which is buffered and may be lost before the trap — treat them as terminators, not as a reliable printed abort.
+
+**C varargs**
+- `@cVaStart`, `@cVaArg`, `@cVaEnd`: Access a C variadic argument list (`va_list`).
+
+**Async / coroutines**
+- `@asyncInit(ctx, buf, fn, args)`: Initialize a coroutine root frame in `buf` (returns the frame as `*void`). See §4.1.
+- `@asyncSuspend(data)`: Explicit suspension point; valid only inside a suspending function. See §4.1.
+- `@asyncResume(frame, arg)`: Resume a coroutine step; returns `null` when the coroutine has finished. See §4.1.
+- `@asyncFrameSize(fn)`: Compile-time byte size of a suspending function's frame. See §4.1.
+
+**Declarations**
+- `@import("file.zig")`: Includes another module. The standard library is imported as `@import("std")`; `sf/src/std.zig` re-exports the **17** core modules `io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `page`, `gpa`, `pool`, `buf`, and `fold`. **Cross-module visibility:** only `pub` declarations are visible to an importing module — a reference through an imported module (flat `mod.member`, nested `mod.sub.member`, or a direct `@import("file.zig").member` callee) to a declaration that is not `pub` is rejected with `error[3007]` (`'<name>' is not marked 'pub'`, matching official Zig 0.15.2), in value positions, type positions, and const-fold positions (array sizes and enum initializers); references to a module's own non-`pub` declarations are unaffected.
+- `@cInclude("header.h")`: Emits a C header `#include` (used by the extern OS bindings, e.g. `std.net`).
+
+**Lazy `@import` (D3, Phase 3.5).** An `@import` is resolved only when the compiler's comptime evaluator selects its arm: a comptime-dead arm in a conditional (`if`/`switch`) import never opens its file, and an unparsable dead arm does not fail the build. When the selector or any non-`else` case label cannot be evaluated decisively (an unknown selector, a range, an undecidable label, or an unfoldable/cross-module condition), the resolver conservatively keeps every import prong live and may open extra arms (over-load) — it never under-loads the live arm and never selects the wrong module. A live import of a missing file still rejects. The live arm's binding is typed as the selected module; the conditional binding has no runtime value.
+
+**Calling conventions on definitions (D5/D10, Phase 3.5).** `extern "stdcall" fn f(...) { ... }` is a **definition** with the stdcall convention; the emitter writes `Z98_STDCALL` on the C definition. `extern fn f(...) { ... }` and `extern "c" fn f(...) { ... }` are **cdecl definitions** with the body emitted under the original symbol name. `extern fn f(...);` (no body) remains an external declaration. A body-carrying `extern` definition and any same-name prototype must agree on their calling convention, otherwise the program rejects with level-0 `error[3000]` (`prototype and definition calling conventions disagree`). `callconv(...)` remains rejected (`error[2000]`); conventions are carried as the `extern` string / fn-pointer type (see Function-Pointer Signature Matching).
+
+**Formatted `print`**
+- A call whose callee is named `print` (for example `std.io.print`) is a compiler special case: the compiler parses the format string, type-checks each argument against its placeholder, and emits one runtime print call per argument. The formatting bodies live in the standard module `std.fmt` (`sf/src/std_fmt.zig`), which the compiler **auto-imports** whenever a `print` is lowered (the user writes no new import). Aggregates, tuples, enum/error-set names, pointers and hex floats are printed by **compiler-generated per-type helpers** emitted alongside the program.
+    - **Format Specifiers**: `{}` (default), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string). An unknown specifier (e.g. `{q}`) is rejected with `error[3013]`; a known specifier that is invalid for the argument's static type is also `error[3013]` (`invalid print format specifier for the argument type`). A type Z98 has no printer for is rejected with the new `error[3063]` (`print argument type is not supported`). Both are level 0 at the argument node: rc=2 / 0 `.c`. A bare `{}` is validated separately from an explicit `{d}` (enums and error sets accept the former and reject the latter), and an unknown specifier is never double-reported.
+    - **Arguments**: The arguments **must** be a tuple literal (e.g., `.{arg1, arg2}`) or a tuple variable. The compiler decomposes the format string and emits individual print calls for each tuple element. **Container validation (FD1, 2026-09-26):** the last call argument is the argument container and must be a tuple literal or a tuple variable; anything else (a bare value, a non-tuple variable, an expression, a nested call, a typed or anonymous struct/array initializer, an anonymous field initializer) rejects the level-0 `error[3065]` (`ERR_3065_PRINT_CONTAINER_NOT_TUPLE`, message `print arguments must be a tuple literal`) at the container node's span, deduped per node, rc=2 / 0 `.c`. A `print` call with more than two arguments (the format plus more than one container) rejects the existing `error[3061]` (`expected 2 argument(s), found N`) at the call span, matching official Zig 0.15.2. **Tuple variables (FD2, 2026-09-27):** a tuple **variable** container is accepted and each placeholder reads its element through the FB tuple-access mechanism (the same `lowerTupleElemRead` path as `.N`/`t[0]`), so `const t = .{ 7, 8 }; print("{} {}\n", t)` prints `7 8` (Zig 0.15.2 parity). The container expression is lowered **once**, lazily on the first placeholder it serves, so a placeholder-free format does not evaluate it; a placeholder beyond the tuple's arity is silently dropped, matching the literal container's extra-child behavior. Aliased callees, cross-module tuple parameters, nested tuples, tuple-typed fields and tuple-returning calls work unchanged; the literal container path stays byte-identical. **Element typing (FB2, 2026-09-27):** each element is typed by value (see §1.3), so an untyped integer element outside i32 prints its exact value (`const t = .{ 3000000000, -3000000000 }; print("{} {}\n", t)` prints `3000000000 -3000000000`, Zig 0.15.2 parity; it previously printed silent wrong values), and a `void` element or a TYPE used as an element rejects `error[3063]` on both print paths. The per-specifier routes are valid per element type (integer-like / float / bool / enum / slice / aggregate, with the documented `{c}`-on-untyped-literal `error[3013]` residual and the count-mismatch silent drop). The empty tuple literal `.{ }` is accepted and takes the same literal path with zero elements.
+    - This is the only variadic form Z98 supports; there is no `anytype`. The shipped wrapper is `std.io.print(s: [*]const c_char, ...) void`.
+    - **Per-type routes** (a bare `{}` is distinguished from an explicit specifier; `3013` / `3063` name the rejection code):
+
+| Argument type | `{}` / `{d}` | `{x}` | `{c}` | `{s}` |
+|---------------|--------------|-------|-------|-------|
+| `bool` | `true` / `false` | 3013 | 3013 | 3013 |
+| `iN` / `uN` (fixed and arbitrary width, `usize` / `isize`, `c_char`) | decimal | lowercase hex; a negative **signed** value prints `-` followed by the hex magnitude (`-10` -> `-a`, `-549755813888` -> `-8000000000`) | `u8` only (3013 otherwise) | 3013 |
+| `u8` | decimal | hex | the byte as a character | 3013 |
+| `integer_literal` (untyped literal) | decimal (exact value; carrier `i32`/`u32`/`i64`/`u64` chosen by value) | hex of the same carrier | 3013 (bounded residual R5; Zig accepts an in-range literal) | 3013 |
+| `f32` / `f64` | decimal; an integral value omits `.0` (`7.0` -> `7`) | C89 hex float (`0x1.8p0`) | 3013 | 3013 |
+| `enum` | `.member` (bare `{}`); explicit `{d}`/`{x}` stay numeric | numeric | 3013 | 3013 |
+| `error_set` | `error.Name` | 3013 | 3013 | 3013 |
+| `struct` / `union` / tagged union / packed union / tuple | `.{ .a = 1, .b = 2 }` / `.{ 1, 2, 3 }` (generated per-type printer; recursion capped at `std.fmt.default_max_depth` = 3 -> `.{ ... }`) | 3013 | 3013 | 3013 |
+| one-pointer `*T` / `*const T` | `T@<lowercase-hex>` with **no `0x`** (`i32@7fff8668af48`); `*struct`/`*union`/`*tagged`/`*packed`/`*tuple` delegate to the pointee printer, `*enum` to the name printer | 3013 | 3013 | 3013 |
+| many-pointer `[*]T` | 3013 (Zig rejects; a many-pointer **field** inside a printable aggregate does print `T@<hex>` when the pointee name is expressible) | 3013 | 3013 | 3013 |
+| C-pointer `[*c]T` | unparseable in Z98 (`error[2000]: expected ']'`; the grammar accepts only `[*]` plus const/volatile) | `error[2000]` | `error[2000]` | `error[2000]` |
+| `[]u8` / `[]const u8` | 3013 (a slice needs `{s}`, matching Zig) | 3063 (Q3 bounded residual) | 3013 | raw bytes |
+| `[]T` (`T` != `u8`) | 3013 | 3013 | 3013 | 3013 |
+| fixed array `[N]T` | 3063 (no printer; Zig rejects too) | 3063 | 3063 | 3063 |
+| one-pointer to fixed array `*[N]T` | 3013 (Zig rejects) | 3063 for `*const [N]u8` (Q3 residual), else 3013 | 3013 | 3063 for `*const [N]u8` (Q3), else 3013 |
+| optional `?T`, error union `E!T` | 3063 (Zig rejects both) | 3063 | 3063 | 3063 |
+| function value `fn(...)...`, `void`, `null`, `type`, `undefined`, `noreturn`, exotic kinds | 3063 (`void`/`null`/`type` are Q3 residuals where Zig accepts) | 3063 | 3063 | 3063 |
+| any other type / a `type`-valued expression (e.g. `. {u32}`) | 3063 | 3063 | 3063 | 3063 |
+
+    - **Exact untyped-literal values** (final whole-branch review fix wave, 2026-09-25): a `{}`/`{d}`/`{x}` argument whose static type is `integer_literal` is materialised at lowering into the carrier of its exact value (`i32` when it fits, else `u32`/`i64`/`u64`; literal-only arithmetic is folded exactly the same way the unannotated-local slot type already is) **inside the evaluable window** — a literal-only expression the exact ComptimeInt evaluator folds within its 256-bit magnitude cap into one of those runtime slots. Inside the window, `print("{}", .{3000000000})` -> `3000000000`, `{x}` -> `b2d05e00`, `0 - 3000000000` -> `-3000000000`, and `18446744073709551615` -> `18446744073709551615` (each equal to the Zig 0.15.2 twin); values that fit `i32` keep the pre-fix temp and emit byte-identical C, while a folded value outside the 64-bit window rejects clean `error[3000]` (`1 << 100`; the documented no->64-bit-runtime-slot bound). **Two documented losses bound that guarantee**: an unfoldable out-of-domain shift falls back to the legacy 32-bit `integer_literal` route, so under `-ffast` the emitted C expression's own evaluation prints (a C `int` shift dispatched to `printI32`: `1 << 256` -> `1`, `1 << 300` -> `4096`; under the default `-fsafe` the runtime shift guard traps instead), while a source literal >= 2^64 is clamped to `u64` max at lex time BEFORE evaluation, so the exact path materialises that clamped value as a `u64` (`18446744073709551616` -> `18446744073709551615`, emitted as `printU64((...)(18446744073709551615ULL))`). Zig 0.15.2 prints the exact value in both cases. Fixture `repro/mi_matrix/stdlib_print_untyped_lit_xmod`.
+    - **Aggregate field closure**: a `{}`-printed aggregate is admitted only when every value the generated printer would read has a final route (integer-like, `bool`, `f32`/`f64`, `u8`, enum, error set, pointer/fn-pointer, nested aggregates). An aggregate with an array / slice / optional / error-union / `void` field, or a nested packed aggregate whose C model is pre-existing-broken, rejects the **argument** with `error[3063]` (Zig accepts and prints it) - operator-principle bounded residual (R4/R8).
+    - **Documented bounded residuals of this program** (all Zig-0.15.2-accepted unless stated; each is a deliberate clean reject or a pre-existing limitation; the print route has no silent wrong value inside the evaluable window since the exact untyped-literal fix above (outside it the documented lex-clamp/unfoldable fallback values apply)):
+        - **Q3 byte-view forms** (operator ruling 2026-09-24): `[]u8 {x}` and `[]const u8 {x}`, `[N]u8 {s}`/`{x}`, `*const [N]u8 {s}`/`{x}`, and `{}` on `void`/`null`/`type` reject `error[3063]`. The `[*c]u8 {s}`/`{x}` pair named in the operator ruling is Zig-side-only: a C-pointer type is **unparseable in Z98** (`error[2000]`), so no validation is reached.
+        - **R5**: `{c}` on an `integer_literal` rejects `error[3013]`.
+        - **R7**: an anonymous aggregate (`print("{}", .{.{ .a = 1 }})`) rejects `error[3063]`; Zig prints `.{ .a = 1 }`.
+        - **R10**: a bare `error.X` with no expected type resolves to `void` in Z98 sema and rejects `error[3063]`; Zig prints `error.X`.
+        - **R8**: a nested packed `struct`/`union` field, and a packed enum/error-set field, reject the containing aggregate with `error[3063]`.
+        - **R11** (operator ruling, final whole-branch review fix wave 2026-09-25): a recursive aggregate (`struct Node { v: i32, next: *Node }`) or a mutually recursive pair (`A { b: *B }` / `B { a: *A }`) rejects `{}` with `error[3063]`; Zig 0.15.2 accepts and prints the nested `.{ .next = .{ ... } }` form (a cycle terminates at `std.fmt.default_max_depth` = 3). Latent emitter risk recorded with the residual: `emitAggPrinterRec`'s `emitted`/`visiting` guard (`sf/src/c89_emit.zig`) terminates emission on any cycle, but the printers are emitted post-order with no forward declarations, so a mutual `A -> B -> A` cycle would reference a not-yet-defined printer (a gcc forward-declaration error); relaxing the validator would first need forward declarations (a self-cycle's printer is already legal C — its name is in scope inside its own definition). Fixture `repro/mi_matrix/print_recursive_aggregate_reject_xmod`.
+        - **Composite pointee names**: `*?S`, `**S`, `*?E` and a many-pointer/aggregate field whose pointee is a **named** aggregate reject `error[3063]` (Zig's `@typeName` is container-qualified, e.g. `main.S@addr`, which Z98 cannot reproduce).
+        - **Q2 floats** (operator ruling 2026-09-24): the non-integral decimal path is the PAL's 6-digit truncating printer (`1.0/3.0` -> `0.333333`, Zig `0.3333333333333333`); `1e20` hits the `(i64)` cast UB (`-9223372036854775808...`); `-0.0` prints `0` (Zig `-0`). Full shortest-form decimal is not implemented.
+        - **Forward-referenced global initializers (Task 9, 2026-09-25; resolved by dependency ordering in fix round 3, operator ruling Q7)**: `__module_init` emits a module's global initializers in a **stable dependency order** — a depth-first walk emits a global's same-module initializer dependencies first, and cross-module references order the emitted `__module_init` calls (dependency module first). A forward-referenced global therefore always has its value materialized before use, and the module-var fixpoint settles its true type, so a module-level tuple literal whose element references a global declared later matches Zig 0.15.2 exactly: bare int/char literals (`const b = 5`, `2147483647`, `'A'`), annotated literals (`const b: u32 = 5`), parenthesized refs (`(b)`), non-literal scalar consts (`const b: i32 = 5 + 7`, `-5`, `@as(i32, 5)`), aliased module members (`colors.C`), direct `@import("x.zig").C` members, transitive cross-module consts (`aux.A = colors.C2`), same-module literal-const alias chains (`const s2 = s` with `const s = 5`, in both declaration orders and as a scalar use), struct-literal field refs (`Inner{ .a = fwd }`), call-argument refs (`id(fwd)`), and composite/wide/float/bool elements (`const b = Pair{...}`, `3000000000`, `1.5`, `true`) — the tuple type is rebuilt from the settled element types, so the composite case emits a `Pair`-valued tuple field instead of the old gcc-invalid `int` slot. Programs whose globals are already dependency-ordered keep their exact previous emission. The only unresolvable shape is a **cycle** in the initializer dependency graph (`var a = .{ b, 1 }; var b = .{ a, 2 };`, same module or across modules), which has no valid order and clean-rejects the level-0 `error[3064]` (`ERR_3064_CYCLIC_GLOBAL_INIT`, message `cyclic global initializer dependency`), rc=2 / 0 `.c` — official Zig 0.15.2 likewise rejects it (`dependency loop detected`). A global initializer that references a **`var`** forward is accepted and ordered correctly although Zig rejects the initializer as not comptime-known (`var v: i32 = 5; var g = .{ v, 7 };` -> `.{ 5, 7 }`; Zig: `unable to evaluate comptime expression`) — Z98 is permissive here (not an over-rejection). Positive fixture `repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod` (21 rows, byte-identical to the Zig twin), reject fixture `repro/mi_matrix/tuple_fwd_global_reject_xmod` (1 x `error[3064]`, a cycle), standalone `repro/print_tuple_fwd.z98`; the same-module literal-const alias-chain class (fix round 4) is pinned by `repro/mi_matrix/stdlib_print_alias_chain_fwd_xmod` / `..._bwd_xmod` (golden `g=.{ 5, 7 }`) and `..._scalar_xmod` (golden `s2=5`), each rc 0, 3x deterministic and byte-identical to its Zig-0.15.2 twin.
+        - **Wide enum literals**: an enum member literal above `u32` max truncates at the literal (pre-existing `enum_value_table` is a `U32ToU32Map`); the runtime value and the generated name lookup are exact via `@intToEnum`.
+        - **Out-of-range enum fallback**: an enum value with no member prints Zig's `@enumFromInt(<n>)` form but has no committed golden fixture.
+        - **`need_fhex32/64`**: the hex-float helpers can be re-emitted per module in the `-o` path (dead re-emission only).
+        - **Pointer-chain caps (Task 8, 2026-09-25; final-review Minor 3 correction)**: ONE structural cap of 16 is enforced by the validator (`printFmtPointeeNameOk`/`printFmtAggFieldsOk`), the emitter's name renderer (`zigPrintNameAppend`) and the emitter's pointee typedef dependency walk (`emitPointeeDep`) — resolving a chain deeper than the print cap rejects `error[3063]` (Zig 0.15.2 accepts and prints arbitrary depth), while every accepted chain (validator max) emits correct C. **Deeper than the resolver's own representation** the failure precedes print validation: a **17-wrapper** declaration (e.g. `*?*?*?*?*?*?*?*?*?i32`) does not resolve (pre-existing 16-wrapper resolver cap), the declaration is dropped, and the identifier reports `error[20] identifier '<name>' is not declared` (verified 2026-09-25: `*A15` prints, `*A16` rejects `error[3063]`, `*A17`/`*A18` give `error[20]`). A rendered pointer `@typeName` whose bytes plus the trailing `@` exceed the emitter's 512-byte name buffer also rejects `error[3063]` (Zig prints arbitrarily long names; e.g. a >511-byte `error{...}` name) — previously such a name was silently dropped at emission.
+        - **`[*]fn () void`**: a many-pointer to a function type is a parser/type-model gap.
+        - **Empty named aggregates**: a pre-existing empty-struct registry defect makes them reject (not print).
+
+### 4.1 Async / coroutines
+
+Z98 supports cooperative, stackless coroutines through four `@async*` builtins and the `std.async` library. There is no `async`/`await` keyword and no `Future(T)` type: coroutine state is type-erased to `*void`, and the scheduler/root driver is the ordinary library module `std.async`.
+
+**Suspending functions.** A function is *suspending* when its body directly contains `@asyncSuspend`, or directly calls a suspending function (the property propagates over the direct-call graph; mutual recursion is ordinary propagation). The compiler computes this set once, before type resolution. Every suspending function is compiled to a *step machine* named `__Z98Step_<f>` with the signature
+
+```zig
+fn __Z98Step_<f>(frame: *void, arg: ?*void) ?*void
+```
+
+and the original synchronous body is not emitted. The step loads its hidden `state` word, jumps to the resume segment for the current suspension point, runs to the next suspension or to completion, and returns `null` at completion (non-`null` means "still suspended"). The exception is the root `pub fn main`: it keeps its source name/signature plus a minimal synchronous driver that zero-initializes its root frame and drives its own step to completion, so the C `int main` wrapper and direct calls keep working. `main` and `export fn` are ordinary functions for suspension analysis, so either may be suspending; the root `pub fn main` additionally gets the synthesized driver above, and a `main`/`export fn`/helper that is *not* itself suspending can host a `std.async` scheduler loop. A suspending function's address may **not** be taken (`error[3017]`).
+
+**Function pointers are never suspension or propagation edges.** A call through a `fn`-pointer field is an ordinary synchronous call: it neither makes the caller suspending nor carries a suspension through the pointer. Because a suspending function's address is rejected with `error[3017]`, a function pointer can only ever name a synchronous function, so a manual vtable (see §6.2) is necessarily a table of synchronous operations. Function-pointer signature matching still covers error-union returns and one level of `?fn` unwrapping (see FX17-F under Type Coercions).
+
+**Frame / step ABI.** Each coroutine owns one root *frame* in a caller-supplied buffer. The frame header is `{ step @0 (pointer-sized), ctx (pointer-sized), state (u8/u16/u32) }`, followed by the coroutine's parameters in order, then any locals live across a suspension, then hidden tail slots for child awaits. The `state` width is chosen from the suspension-point count (`u8` ≤ 255, `u16` ≤ 65535, else `u32`). Every frame is padded to 8 bytes. The `step` word is the address of the synthesized `__Z98Step_<f>`; `@asyncResume(frame, arg)` loads that word, calls the step with `(frame, arg)`, and returns its `?*void` result. A direct call to a suspending callee inside a suspending function is an *implicit await*: the step allocates a child frame from the caller's per-task pool, copies the arguments into it, drives the child to completion, and yields to its own driver while the child is still suspended.
+
+**The four builtins.**
+- `@asyncInit(ctx, buf, fn, args) *void` — initialize a fresh coroutine root frame in `buf` for the suspending function `fn`, using the per-task `ctx` pool, and return the frame as `*void`. It zero-fills the frame, writes the `__Z98Step_<fn>` word at offset 0, stores `ctx` and `state = 0`, resets the context header (`used = 0`, sticky `oom = 0`), and copies the `args` record **positionally** into `fn`'s parameters (so the record's fields *are* the coroutine's parameters). Pass the record as `@ptrCast(*const void, &record)` — a plain `*const void`, never `?*const void`.
+- `@asyncSuspend(data) *void` — an explicit suspension point. Only valid inside a suspending function (`error[3018]` otherwise) and rejected inside `defer`/`errdefer` (`error[3019]`). The `data` operand is accepted and type-checked but is not propagated by the landed step machine: the driver resumes through `@asyncResume`, and a suspended step returns a non-`null` `?*void` sentinel.
+- `@asyncResume(frame, arg) ?*void` — resume the coroutine rooted at `frame`, passing `arg` as the step's second argument. Returns `null` when the coroutine has finished and a non-`null` value while it is still suspended. It does not update any scheduler state; the caller (e.g. `std.async`) owns that.
+- `@asyncFrameSize(fn)` — the compile-time byte size of the root frame `fn` needs; the result is an untyped integer literal (`TYPE_INT_LIT`). `fn` must resolve to a known suspending function, else `error[3046]`.
+
+**Suspending wrappers with a non-void error-union payload (D14, Phase 3.5).** A suspending function that returns a non-void error-union payload (for example `E!u32`) is supported, including the wrapper shape whose only return is `return wait(c);`: tail-return lowering keeps the suspending callee as a normal implicit await (no generic tail-call rewrite) and delivers the payload through the reserved parent-result slot; `copyTailCall` preserves the callee name id. The historical non-tail `error[3043]` async parent-result-slot claim is **[suspicious]**/unreproduced (Task 0.2 recorded zero occurrences in 38 runs) and is not a currently observed defect. The `std_http2` `id_out` workaround remains valid and the public API is unchanged, but the compiler no longer requires it.
+
+**`-fsafe` checks.** Under the default `-fsafe` mode, `@asyncResume` traps if the frame's step word is zero, and `@asyncInit` traps when the frame size is compile-time known **and** the `buf` argument points at a concrete `[N]u8` array whose `N < @asyncFrameSize(fn)`. A slice / many-pointer buffer (`[]u8` / `[*]u8`) has no compile-time length, so the `@asyncInit` bounds check is skipped. `-ffast` emits neither check (a bad frame is undefined behavior). Independently of the mode, `contextInit` (below) traps if the context buffer is not 8-aligned.
+
+**Suspend-until + caller-driven pump contract (Phase 3.3).** A library that owns a nonblocking state machine exposes two layers: a **non-suspending pump** returning a status (`progress` / `would_block` / `closed`, or an error union containing `WouldBlock`) and a **suspending wait** that loops on `@asyncSuspend` until the operation completes. The pump never blocks and never suspends. The caller — not the library — owns readiness: it selects read **and** write readiness with a bounded timeout and a stall watchdog, calls the pump, and re-arms for writability whenever the pump reports pending output. `std_tls_io` and `std_http2` are the shipped examples (`tlsIo*Pump`; `http2Pump` + `http2Wait`).
+
+**Frame-layout limitation: `while` + `!?[]u8` return.** The step-machine frame layout rejects a suspending function whose shape combines a `while` loop with an error-union optional-slice return (`!?[]u8`). The supported workaround is a **scalar-status core** (`E!usize`/status code) plus a thin wrapper that maps the status to the slice result; keep the suspending body's return scalar. This is a lowering constraint, not a semantic rule.
+
+**The `std.async` root driver.** The scheduler and per-task child-frame pool live in `std.async`, not in the language. A task is a `Task { frame, ctx, state, cancel_requested, result, arg, waiting_on, has_waiting_on }`; a `Scheduler` holds `[*]*Task`. `@asyncInit` sets up the frame, `addTask` registers the task, and `tick` resumes every runnable task once via `@asyncResume(t.frame, t.arg)`, marking it `done` when the step returns `null`. `Context` owns a per-task LIFO child-frame pool: its 16-byte header is `{ used@0, capacity@4, oom@8, pad@9..15 }`, the pool bytes start at `ctx + 16`, and the caller's buffer must be 8-aligned (back it with a `[K]u64` array, never a bare `[N]u8`). `contextAlloc` rounds `used` up to 8 and returns `error.OutOfFrame` (setting a sticky `oom`) on exhaustion rather than crashing. See `sf/docs/tech_docs/12_async_coroutines.md` for the full API and the converted `rogue_mud` / `mud_server` examples.
 
 ## 5. Known Limitations and Workarounds
 
 To maintain C89 compatibility and compiler simplicity, Z98 has the following limitations:
 
-- **No `anyerror`**: The `anyerror` keyword is explicitly rejected.
-  - **Workaround**: Use explicit error sets (e.g., `const MyError = error { Bad };`) or anonymous error unions `!T`.
+**`--check` (sema-only) mode.** `zig1 --check` runs import resolution, type resolution, semantic analysis, the static analyzers, and const-init only; it performs no lowering or emission (no `.c`/`.h`/scripts/`.zig1_lir.tmp`). It exits 0 when analysis is clean and 2 on any error; warnings are printed, and `-W`/`--warn-error` turns a warning-only run into rc 2. `--check` ignores `-o`/`-d`.
+
+- **No `anyerror`**: The `anyerror` type does not exist in the token set; use explicit error sets (e.g., `const MyError = error { Bad };`) or anonymous error unions `!T`.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
-- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers).
-- **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
-- **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
-- **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
-- **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
-- **Global Constant Aggregates**: Global constant arrays of aggregates (structs) with complex nested initializers (e.g., optionals, unions) may fail to emit correctly.
-  - **Workaround**: Use `var` for the global and initialize it at runtime within an `init()` function.
+- **Anonymous types**: Anonymous `struct`/`enum` type expressions are accepted in type positions (`var x: enum { A, B } = .A;`, `var s: struct { a: i32 } = .{ .a = 1 };`), as are tuple literals `.{...}` and anonymous struct payloads in tagged union variants. Named aggregate types remain the form to use when a type must be referenced by name.
+- **Integer coercions warn rather than reject**: width/signedness-changing integer conversions in assignments and initializers (for example `i32` -> `usize`, `u32` -> `i32`, `i64` -> `i32`) are accepted with a level-1 `warning[3000]` (`type mismatch in variable declaration -- initialization type may not be compatible with declared type`) and the C assignment is emitted; `-W`/`--warn-error` makes the warning fatal (rc 2). Same-signedness widening is silent. Use `@intCast(...)` for an explicit, range-checked conversion.
+- **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: a call whose callee is named `print` gets format-string lowering; see §4.) A member not found on a value — which is always the case for `struct.func()`, since Z98 aggregate types cannot contain function declarations — is rejected at compile time with `error[3060]` (`no field or member function named '<name>' in <kind> type`), including member access/call on a non-aggregate value (`const x: i32 = 5; x.foo();`); `.len` on an array field, enum/error-set members, module members, `.ptr`, `.tag`/`.payload` and real aggregate fields stay valid. See `sf/docs/tech_docs/05_semantic_analysis.md` §semanticAnalyzerResolveFieldAccess Phases 3/5.
+- **Control-flow lowering**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are not transformed by an AST pass. The lowerer's phase machines emit branches and result temporaries directly into LIR, which keeps the emitted C89 expression forms legal; no AST transformation/lifting pass exists.
+- **Runtime Safety (`-fsafe` / `-ffast`)**: `-fsafe` is the **default** and enables six runtime checks — checked cast (`@intCast`), division/modulo-by-zero, shift-count, null-unwrap, index out-of-bounds, and integer overflow (`+`, `-`, `*`, unary `-`). A failed check calls `pal_trap()`. `-ffast` disables all six checks (the compiler self-build uses `-ffast`; user programs default to `-fsafe`). `unreachable`/`@panic` trap in **both** modes. Under `-fsafe`, storage initialized with `undefined` is byte-filled with `0xAA` to make reads visible; `-ffast` emits no poison fill (and does not zero it).
+- **Allocator safe checks are explicit**: `std.gpa`'s `GpaConfig.safe_checks` controls the allocator's own magic/ownership/double-free validation. It is independent of the six language checks: `-fsafe` does **not** auto-enable it — set `safe_checks = true` in the config when you want allocator-misuse detection (§2.5).
+- **`?fn` error-union call-through-unwrap is unproven**: function-pointer signature matching covers error-union returns and unwraps one level of `?fn` (FX17-F), but calling through the unwrapped optional and propagating its `E!T` result is not a proven shape — do not rely on it. **No suspending vtable is expressible**: a suspending function's address is rejected with `error[3017]`, so a virtual-table field can only name a synchronous function (§4.1, §6.2).
+- **Compile-time Diagnostics**: `var x: T;` with no initializer is `error[3014]` (write `= undefined` to opt out). A statement whose result is an error union and is discarded is `error[3015]`. A non-void function that can fall off its end, or a bare `return;` in a non-void function, is `error[3003]` (real reachability; an `if`/`else` where both arms return is not flagged). `orelse` on a non-optional operand is `error[3016]` (see §3.1). Indexing a single-item pointer whose pointee is not a fixed-size array (`p[0]`, a runtime `p[i]`, `(*p)[i]`) is `error[3066]` (`type '*T' does not support indexing`, or `unable to resolve comptime value` for the `type` base), and an illegal single-item-pointer slice bound is `error[3067]` (see §1.2/§1.4; an open-ended many-item-pointer range `mp[s..]` is **accepted** as `[*]T`, Zig 0.15.2 parity). A call whose argument count does not match the callee's parameter count is `error[3061]` (`expected N argument(s), found M`; a variadic callee reports `expected at least N ...`), and a call argument whose type is in a different type family from the parameter is `error[3000]` (see Type Coercions below). A `print` argument container that is neither a tuple literal nor a tuple variable is `error[3065]` (`ERR_3065_PRINT_CONTAINER_NOT_TUPLE`, message `print arguments must be a tuple literal`, at the container node; tuple variables take the FD2 element-read path — see §4 Formatted print), and a `print` call with more than two arguments is `error[3061]` at the call span (the variadic stub alone would only report `expected at least 1`). A tuple index that is not comptime-known is `error[3069]` (`tuple field index must be comptime-known`, at the index expression), an out-of-range tuple ordinal is `error[3070]` (`index N outside tuple of length L`, at the index expression), and a numeric member access on a non-tuple base keeps `error[3060]` (see §1.3). A switch case item whose qualifier denotes a different enum/tagged-union type than the switch condition, or whose (qualified or shorthand) member name does not exist on the condition type, is `error[3071]`: the foreign qualifier reports `type mismatch in switch case item -- case item type may not be compatible with the switch condition type` (the qualifier's mismatch wins over a missing member), the unknown member reports the `error[3060]` wording (`no field or member function named '<name>' in union type` / `in enum type`), both with a `union declared here` / `enum declared here` related span; valid same-type, alias and module-qualified prongs are unchanged, the diagnostic is not emitted when the qualifier's type identity cannot be established, and the unbound-capture cascade of a rejected captured prong stays visible (see §3.1). A cross-module reference to a non-`pub` declaration is `error[3007]` (`'<name>' is not marked 'pub'`; see §4 `@import`). A bare enum literal compared against a numeric operand with no expected enum context (the copied-tag case `const t = s.tag; t == .m`, or `1 == .Red`) is level-0 `error[3076]` `unable to infer type of enum literal in comparison with a numeric operand` at the literal (rc=2 / 0 `.c`; `s.tag == .m` and typed-enum compares are out of the class — see §1.3). A mutable `for` item capture (`|*item|`) whose iterable cannot supply an addressable element is `error[3078]` (`ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED`): a range iterable or a non-variable array value reports `mutable for-item capture requires an addressable element (a range or a copied array value has none)`, and a named capture over an iterable with no resolvable element type reports `mutable for-item capture requires an iterable with a resolvable element type` (both level-0, rc=2 / 0 `.c`; the capture name stays unbound, so its use also reports `error[20]`). A tagged-union payload-member store or address-of (`x.i = 5`, `b.box = .{...}`, `&x.i`, `b.box.w = 7`) is a clean level-0 `error[3000]` with the `cannot store to …` / `cannot take the address of …` wording naming the whole-union reassignment (see §1.3). A local declaration that shadows a declaration in an enclosing scope, redeclares one in the same scope, or shadows a container-level declaration is `error[3057]`; its diagnostic also renders a related span at the earlier declaration, the way official Zig's location note does (`<file>:<line>: note: previous declaration here`, or `declared here` for a container-level declaration). The same Zig-style declaration notes are rendered for a wrong-arity call (`error[3061]`, `note: function declared here`), a cross-module non-`pub` reference (`error[3007]`, `note: declared here` in the declaration's own file), a member not found on an aggregate (`error[3060]`, `note: struct/union/enum declared here`), and a wrong-type call argument (`error[3000]`, `note: parameter type declared here`). The semantic analyzer enforces an expression-nesting limit of `SEMA_GUARD_MAX` = 130; exceeding it reports level-0 `error[3077]` (`expression nesting too deep for semantic analysis (limit 130)`), rc=2 / 0 `.c`. All are mode-independent.
+- **Switch / assignment parity boundary (D16, open)**: the D15 expected-type-first rule covers value-result switches. Mixed statement switches, assignment-expression/`void` parity, comptime-selector pruning, and `anyerror` remain deferred to D16 — a documented parity boundary, not full Zig parity.
 
 ## 6. Z98 Idioms and Best Practices
 
 ### 6.1 The Arena Pattern
-Dynamic memory should almost exclusively be managed via `ArenaAllocator`.
-- **Ownership**: Functions should accept an `*Arena` rather than "owning" their memory.
+Dynamic memory should almost exclusively be managed via `std.arena` (`ArenaAllocator` is not the shipped name).
+- **Ownership**: Functions should accept an `*std.arena.Arena` rather than "owning" their memory.
+- **Allocation is fallible**: `std.arena.alloc` returns `ArenaError![*]u8`, so unwrap with `try`/`catch` (see §2.1/§2.2) — never `orelse`, which is rejected with `error[3016]`.
 - **Transient vs Permanent**: Use a dual-arena system to separate short-lived temporary allocations from long-lived application state.
-- **Cleanup**: Call `arena.deinit()` at the highest possible level (e.g., end of `main` or after a major processing loop).
+- **Cleanup**: Call `std.arena.reset(&arena)` at the highest possible level (e.g., end of `main` or after a major processing loop). There is no `deinit`.
 
 ### 6.2 Manual Virtual Tables
 Since Z98 lacks classes and methods, use structs of function pointers to implement polymorphism.
@@ -278,6 +483,7 @@ const Shape = struct {
     data: *void,
 };
 ```
+Function-pointer fields with an `E!T` return are **legal** (the `std_http.HttpTransport`/`std_http2.Transport` precedent): the field is called as an ordinary synchronous function and the caller handles the error union. A suspending function cannot be stored in such a field (`error[3017]`; §4.1), so there is no suspending vtable. The D8 typedef-ordering defect is fixed — holding a vtable **by pointer** rather than by value is now optional conservatism, not a workaround requirement.
 
 ### 6.3 Runtime Initialization
 For complex global state, avoid large constant initializers. Use a dedicated `init()` function called at startup.
@@ -287,6 +493,7 @@ fn initRegistry() void {
     // initialize here
 }
 ```
+`undefined` is an opt-out of the `error[3014]` "must be initialized" diagnostic, not a guaranteed zero: under `-fsafe` the storage is filled with `0xAA` so an uninitialized read is detectable, and `-ffast` emits no fill at all.
 
 ## Type Coercions
 
@@ -305,9 +512,200 @@ In specific contexts where a pointer or slice is expected, the compiler provides
 - **Array/Pointer to Slice**: Handled via a synthetic slicing node `arr[0..arr.len]`.
 
 **Const Correctness:**
-Coercions are only allowed if they do not discard const qualifiers.
+Coercions are only allowed if they do not discard const qualifiers. Every
+const-discarding coercion is a level-0 `error[3000]` (`cannot implicitly
+discard 'const' qualifier`, enforced at declarations, assignments, module
+initializers, returns, call arguments, array-literal elements and field
+initializers); no C is emitted.
+- `[]T` -> `[]const T` (Allowed)
 - `[]T` -> `[*]const T` (Allowed)
+- `[]const T` -> `[*]const T` (Allowed)
+- `[]const T` -> `[]T` (Forbidden)
 - `[]const T` -> `[*]T` (Forbidden)
+- `*const T` -> `*T` (Forbidden)
+- `[*]const T` -> `[*]T` (Forbidden)
+- `*const [N]T` -> `[]T` / `[*]T` (Forbidden: a string literal is `*const
+  [N]u8`, so `"abc"` coerces only to the const forms `[]const u8` /
+  `[*]const u8` / `*const u8`)
+- a `const`-bound ARRAY value -> `[]T` / `[*]T` (Forbidden: the array type
+  itself carries no qualifier, so the binding's `const` is what the coercion
+  would discard; `[]const T` / `[*]const T` stay Allowed). Scope: arrays bound
+  directly by an ident — a local `const`/`var`, a module constant, a parameter
+  or capture — and, since FX11, an array reached through a FIELD of a const
+  aggregate (`const S = struct { a: [3]i32 }; const cs: S = ...;`). The field
+  access is materialised as a `const` element pointer (`*const i32`) from the
+  binding, so `cs.a`, `cs.a[0..]` and `&cs.a` all discard `const` on a mutable
+  slice/many-pointer/pointer target exactly like the direct-binding forms
+  (Zig 0.15.2 rejects the same shapes). A mutable aggregate's field, a
+  const-bound aggregate's MUTABLE slice field (`struct { m: []i32 }`) and a
+  genuine pointer-typed field keep their pre-existing mutability.
+- a const array / `[]const T` / string-literal ELEMENT of an array literal
+  whose declared element type is mutable (Forbidden: `[2][]i32{ c, c }` with
+  `c: []const i32` rejects at the element span)
+
+**Const propagation through decay:**
+- Slicing a `const` array or a `[]const T` yields `[]const T` (§1.4); the
+  resulting slice then rejects at the ordinary sites if a mutable target is
+  expected (`var s: []i32 = arr[0..];` where `arr` is `const`). This
+  propagation covers the direct ident/module/parameter bindings and, since
+  FX11, a const aggregate's array field (`cs.a[0..]` is `[]const i32`).
+- `&arr` on a `const`-bound array is `*const [N]T`; coercing it to `*[N]T`,
+  `[]T` or `[*]T` is the same level-0 const discard, while `*const [N]T` /
+  `[]const T` / `[*]const T` stay accepted. The same applies to a const
+  aggregate's array field since FX11: `&cs.a` is `*const [3]i32` and
+  `&cs.a[i]` is `*const ElementType`. A const-bound MUTABLE slice
+  (`const s: []T`) keeps element mutability: `s[0..]` is `[]T` and `&s[0]` is
+  `*T`, matching Zig.
 
 **Restriction:**
 These coercions are **not** allowed in other contexts, such as arithmetic operations or comparisons.
+
+### Call-Site Arity and Argument Types
+A call is checked against the callee's signature at the call site.
+
+- **Arity**: the argument count must match the callee's parameter count. A variadic callee (`extern fn f(fmt: [*]const u8, ...)`) requires at least its fixed parameters. A violation rejects with `error[3061]` (`expected N argument(s), found M`; variadic too-few: `expected at least N argument(s), found M`) and emits no C.
+- **Argument types**: an argument whose type is in a different family from the parameter type rejects with `error[3000]` (`type mismatch in function argument ...`) with `source:`/`target:` notes — e.g. a `bool` passed for an `i32` parameter (previously a silent `bool` -> `i32` coercion), a **runtime** `i32` or `f64` for a `f32` parameter (a comptime-known value narrows per the value-aware rule below), or an integer literal for a `bool` parameter.
+- **Still implicit**: Z98's established conversions are unchanged — integer <-> integer of any width/signedness (including `u32` <-> `usize` and narrowing), the pointer/slice/array coercions above, `@enumToInt(<error set>)` into an integer parameter, and `@intCast`-based conversions (which remain the explicit form for a narrowing the program does not want to rely on).
+
+This matches official Zig 0.15.2's rejection of wrong arity and cross-family argument types; the integer-conversion tolerance is the documented Z98 divergence retained for the existing corpus and the compiler's own source.
+
+### Function-Pointer Signature Matching (FX17-F, 2026-10-01)
+A function-pointer value may be assigned or coerced only to a target whose
+signature matches exactly: return type, parameter count and parameter types,
+the variadic flag, and the calling convention (`extern "stdcall"` vs cdecl).
+`fn(...)` type expressions, named function values, `?fn` values (one level of
+optional wrapping is unwrapped on either side) and cross-module function values
+are all covered. A mismatch is a level-0 `error[3000]` with the site's existing
+message plus `source:`/`target:` kind notes, at every assignment/coercion
+position: local declaration initializer, local assignment, struct-literal field
+initializer, field assignment, call argument (a direct function value or one
+reached through a function pointer), return, module `const`/`var` initializer,
+and both directions of a field-to-field assignment. It emits no C. Exact
+matches, named aliases, matching callconv-qualified pairs, `?fn` matches, and
+explicit `@ptrCast` (which may retype a mismatched signature) stay legal.
+Explicit `@ptrToInt`/`@intToPtr` round trips and `undefined` stay accepted.
+The `*const fn(...)` double-pointer spelling keeps its pre-existing level-1
+`warning[3000]` (it is not part of the enforced set). Signature matching covers
+error-union returns (`fn (...) E!T` is matched as a signature, including across
+modules); `?fn` unwrap-matches one level on either side. Calling through the
+unwrapped `?fn` and propagating its `E!T` result (call-through-unwrap) remains
+unproven — see §5.
+
+### Value-Aware Narrowing to `f32`
+At an `f32` expectation site the value decides, matching Zig 0.15.2:
+
+- An **untyped `comptime_float`** — a float literal or literal-only float
+  arithmetic (`+`, `-`, `*`, `/`) — is accepted and **rounded** to f32,
+  including inexact values (`0.1` -> f32(0.1)) and overflow (`1e40` -> `inf`).
+- A **typed comptime-known `f64`** value (a typed `const`, `@as(f64, ...)`,
+  `@floatCast(f64, ...)`, `@intToFloat(f64, ...)`, or arithmetic with such an
+  operand) is accepted only when the f64 value is **exactly representable** in
+  f32 (`1.5` and `@as(f64, 4.0)` accept; `const d: f64 = 0.1`, `@as(f64, 0.1)`
+  and `1e40` reject).
+- A **comptime-known integer** (literal, typed or untyped `const`) is accepted
+  only when its exact value is exactly representable in f32 (`5` and `16777216`
+  accept; `16777217` = 2^24 + 1 rejects — Zig's int-exactness rule).
+- A **runtime `f64`, integer or other non-float** source rejects with level-0
+  `error[3000]` (the site's existing message plus `source:`/`target:` notes) —
+  previously a warning at declarations/assignments and silent at returns,
+  fields and union payloads. FX9: the same reject covers an `if`/`switch`
+  **value expression** at an f32 site with a runtime non-float arm —
+  `return if (c > 0) n else 2.5;` with runtime `n: i32` rejects
+  (`expected type 'f32', found 'i32'`; pre-FX9 the mismatched arms left the
+  expression void-typed and the runtime arm was silently dropped). A
+  **comptime-known condition** makes the untaken arm unreachable, exactly as
+  Zig skips its type check (`if (false) n else 2.5` accepts and yields 2.5;
+  `if (true) n else 2.5` rejects because the bad arm is the taken one).
+- **Mixed float arms** stay accepted and become f32-typed: for an `if` or
+  `switch` value expression, a runtime `f32` arm/prong beside a float literal
+  or an exactly-representable typed `i32`/`f64`
+  (`return if (c > 0) x else 2.5;`, the nested
+  `if (c > 0) (if (e > 0) x else 2.5) else 3.5`,
+  `return switch (c) { 1 => x, else => 2.5 };`, and the typed-integer first
+  prong `const C: i32 = 6; return switch (c) { 1 => C, else => 2.5 };`
+  yielding `6`/`2.5`), each arm/prong recording its own narrowing. FX10
+  retypes the `switch` form value-aware exactly like the `if` form, so a
+  typed-integer first prong no longer wins the prong unification and
+  truncates a later float prong (before FX10 that shape yielded `2` where
+  Zig yields `2.5`; the seed v88 was correct).
+- An **`undefined` arm** is neutral: `undefined` coerces to every type (Zig's
+  `undefined` is a valid f32 value), so `if (c) undefined else 2.5` is
+  accepted with no narrowing reject, at every listed site and in either arm
+  position.
+
+Sites: function parameters, returns, struct/union/tagged-union field
+initializers (including union payloads), local and module-level declarations,
+assignments, and the arms of an `if`/`switch` value expression at any of
+those. An accepted value records an explicit `float` conversion in
+the emitted C — there is no silent narrowing. `@floatCast`/`@intToFloat`
+remain the explicit forms when a runtime narrowing is intended.
+
+Boundary (pre-existing float-literal precision, see §7.2): the lexer's float
+parser accumulates digits, so an extreme literal such as
+`3.4028234663852886e38` (f32 max) may not be the correctly-rounded f64 and a
+typed `const` of it can reject where Zig accepts; the value-aware rule is
+applied to the lexed value.
+
+Historical note (truncation fixed by FX10): a `switch` VALUE expression
+whose first prong is a typed integer and a later prong a float used to
+truncate instead of narrowing — `const C: i32 = 6;
+switch (c) { 1 => C, else => 2.5 }` yielded `2` where Zig yields `2.5`, and
+`switch (c) { 1 => C, else => x }` (runtime `f32`) yielded `3`/`4` where Zig
+yields `3.5`/`4.5` (declaration/argument forms too; reverse prong order was
+correct). The seed v88 was correct; the FX3 fix round 1 introduced the
+truncation and FX10 (the `switch` retyping above) fixed it.
+
+Two further **pre-existing over-rejects** stay documented (the seed rejected
+these too, so they are not regressions): a **cross-module qualified const**
+(`helper.GoodF` where `helper.GoodF: f64 = 2.5`) and a **comptime struct-field
+read** (`const p = P{ .x = 2.5 }; takeF32(p.x)`) are not folded as
+comptime-known values by the narrowing probe, so the runtime-f64 reject applies
+where Zig accepts the exact values.
+
+## 7. Not Yet Supported
+
+### 7.1 Permanently Dropped Features
+
+These were considered and are **not** planned for `zig1`; use the documented idiom instead.
+
+- **`static` declarations**: dropped (the `static` keyword is not in the token set; `static var` is `error[2000]`). Use a container-level `var` for persistent state:
+  ```zig
+  var g_count: i32 = 0; // file/container scope, persists across calls
+  fn bump() void { g_count = g_count + 1; }
+  ```
+- **`do ... while` loops**: dropped. Use the equivalent `while (true)` idiom with an early `break`:
+  ```zig
+  while (true) {
+      body();
+      if (!cond) break;
+  }
+  ```
+  Caveat: `continue` in this emulation skips the condition test and re-enters the body, unlike a real `do ... while`.
+
+`volatile` qualifiers are **no longer** dropped: `*volatile T` / `[*]volatile T` and `@volatileCast` are supported (see §1.2/§4).
+
+### 7.2 Designed, Not Implemented
+
+> The following features appear in design/plan documents for Z98 but are **not implemented** in the current self-hosted `zig1` compiler. Do not rely on them.
+
+- **No built-in `malloc`/`free` or `std.mem.Allocator`.** Dynamic memory is arena-first (§2, `std.arena`); individual allocations with explicit free are the explicit library opt-in `std.gpa`, and fixed-size blocks use `std.pool` (§2.5). These are library allocators over `std.page` mappings — not a language-level heap and not the compiler's own allocation strategy.
+- Value-producing labeled blocks (`const n = blk: { ... break :blk 1; };`). Only value-less `break :blk;` is supported.
+- `@errorName`.
+- `extern struct`, `opaque`, and `vector` types.
+- Generics, `anytype` parameters, `@Type`, `@typeInfo`, and `comptime`.
+- The `anyerror` type (use explicit error sets or `!T`). It is **not** exempt from the signature name rule: `fn f(e: anyerror)` rejects `error[20]` (FX13-F).
+- **`noreturn` as a signature type (FX13-F residual).** The `noreturn` keyword is not registered as a type name, so outside a signature the name rejects (`var x: noreturn;` gives `error[20]` and `error[3000]`). By operator ruling it is the one exemption from the signature `error[20]` rule, keyed on the identifier text `noreturn` at any signature (not only the six `std` ones): a parameter silently degrades to C `int` and a return to `void`, so `fn f(x: noreturn) void` and `fn f() noreturn {}` both compile rc 0. A real `noreturn` type with a C companion is deferred; `noreturn` remains usable as the compiler's internal divergence result type.
+- `@cImport` (use bare `extern` declarations plus `@cInclude`).
+- `std.Io` / an event-loop interface, preemption, threads, and typed futures (`Future(T)`): the `@async*` coroutines (§4.1) are cooperative and round-robin only, and coroutine state is type-erased to `*void`. There is still no built-in event-loop interface. The shipped HTTP/2 client instead documents a **caller-owned event-loop contract** (§4.1): select read **and** write readiness with a bounded timeout and a stall watchdog, then drive the non-suspending `http2Pump` while request coroutines suspend in `http2Wait`.
+- Compile-time integer semantics (implemented; Task 2-5 of the comptime-int parity plan). Values are arbitrary-precision within a **256-bit magnitude cap** and **signedness-free until materialised**; `-0` normalises to `0`. `+`, `-`, `*`, `/` (truncating toward zero), `%` (truncating remainder), unary `-`, `&`, `|`, `^`, `~` (`~x = -x - 1`), `<<` and `>>` (floor) are exact; a result needing more than 256 magnitude bits, division/mod by zero, or an out-of-domain shift count is *unfoldable* (the existing reject/runtime path), never wrapped. Source integer literals are `u64`-lossy at lex/parse time (a literal `>= 2^64` clamps to `u64` max), so the cap governs arithmetic results, not literal spellings.
+- **Comparisons are signedness-free and exact** over magnitude+sign, and the short-circuit logical ops (`and`/`or`/`!`) fold like Zig. The Task 9D bounded divergence is RETIRED: `(umax - 1) > 0`, `0 < (umax - 1)`, `(umax - 1) > zero`, `umax > (0 + 0)`, `(a + 1) == 2`, `(imin + 1) < 0` and `-9223372036854775808 < 0` fold exactly, including when the condition of a capture-free no-`else` value `if` is stored and its branch elided at lowering (module-scope operands are runtime-equal to Zig; a then-arm that returns is handled, Task 3 fix rounds 1-2). The old divergence fixture was **split, not flipped wholesale**: its arithmetic-derived sites `subGt0`, `zeroLtSub`, `subGtZeroConst`, `gtAddZero`, `arithEq` (plus the `i64`-extreme `(imin + 1) < 0` / `(imax - 1) > 0` shapes) became accepted Zig-equal positives (`repro/mi_matrix/stdlib_comptime_compare_xmod`), while `subLt0` (`(umax - 1) < 0`) and `u8SubLt0` (`(u - 300) < 0` on a `u8`) stay rejected because official Zig rejects them too (`error[3059]`, now pinned with the other reject sites in `repro/mi_matrix/comptime_compare_reject_xmod`); `repro/mi_matrix/comptime_compare_diverge_reject_xmod` was removed.
+- Arithmetic folds over a DECLARED integer operand apply a **peer-fit rule**: an untyped operand's exact value and the exact result must fit the operand's sema type (including the unary `-`, nested arithmetic, and a name typed through an unannotated `const`'s initializer), so Zig-rejected shapes (`u - 300` on a `u8`, `0 - umax` and `-umax` on a `u64`) stay rejected. `~` is EXEMPT: Z98 folds the exact `-x - 1` while sema types `~x` as x's type and the runtime complement wraps — the accepted `(~u) != 0` class is runtime-equal to Zig, but a shape depending on the wrapped value (`(~u) == 4294967295` with `u: u32`) can false-reject (pre-existing divergence).
+- **Coercion happens only at materialisation**, against the target's exact width/signedness (`comptimeIntFitsType`), preserving the existing diagnostics (`error[3000]`/`[3050]`/`[3055]`/`[3059]`). Sites: typed `var`/`const` declarations, parameters, returns, `@intCast`/`@as` targets, enum backing/member values, and array sizes. The **array-size evaluator** folds exactly and accepts `0..0xFFFFFFFE` (the `0xFFFFFFFF` unfolding sentinel collision is pre-existing), so `[0 - 1]u8` is `error[3050]`, while `[1 << 4]u8`, `[(2 + 1) * 2]u8`, `[(1 << 200) >> 190]u8` and a module-const chain fold exactly. The **enum evaluator** materialises through the `[i64 min, u64 max]` member-storage window, so `enum(u64) { A = (1 << 200) >> 190 }` folds `1024`, while `enum { A = 18446744073709551615 + 1 }` and `enum(u64) { A = 18446744073709551615 * 2 }` are clean `error[3055]` rejects (the old 64-bit wrappers stored `0` / `2^64 - 2` silently).
+- **Remaining bounded divergences** (documented, deliberately not full parity): `const BIGFOLD = 1 << 100;` in a runtime/untyped slot rejects `error[3000]` where Zig accepts (Z98 has no >64-bit runtime integer slot; `repro/mi_matrix/comptime_coerce_reject_xmod`); `%` on signed comptime integers and `~` on `comptime_int` are accepted where Zig 0.15.2 requires `@rem` / rejects `~`; an over-u32 array size (`[1 << 40]u8`) is `error[3050]` although Zig accepts it at compile time (Z98's array length field is `u32`); **float comparisons fold (Task 9, Part II)** at the compiler's established `f64` precision with an exact-representability peer rule — an integer operand participates only when it fits the peer's significand (53 bits for `f64`/`comptime_float`, 24 for `f32`; its significant-bit count is `bitlen(magnitude) - trailing zeros`, corrected by Task 9 fix round 1), an `f32` operand against a non-`f32`-exact untyped literal declines, and `comptime_float` literals compare at `f64` rather than Zig's `f128` (bounded residual; `repro/mi_matrix/stdlib_comptime_float_compare_xmod` + `comptime_float_compare_reject_xmod`), while float comptime arithmetic precision stays out of scope; `@intToFloat` of a value above 2^53 may differ from a correctly-rounded conversion by 1 ulp; **runtime signed slice bounds** (a runtime `i32` bound such as `var i: i32 = -1; arr[i..4]` / `pa[i..4]`, and the accepted `mp[i..]`) are not coerced/rejected and bypass the `-fsafe` guards where Zig 0.15.2 compile-rejects (`expected type 'usize', found 'i32'`); a literal or comptime-folded negative bound still rejects `error[3062] type 'usize' cannot represent integer value '-1'` — systemic pre-existing laxity, no fix scheduled (see §1.4). Fixtures: `repro/mi_matrix/stdlib_comptime_compare_xmod`, `comptime_compare_reject_xmod`, `stdlib_comptime_float_compare_xmod`, `stdlib_comptime_noreturn_if_xmod`, `stdlib_comptime_bigint_arith_xmod`, `stdlib_comptime_coerce_typed_slots_xmod`, `comptime_coerce_reject_xmod`, `array_size_negative_reject_xmod`, `stdlib_comptime_constfold_exact_xmod`, `comptime_constfold_reject_xmod`; standalone repros under `repro/comptime_*.z98`.
+- **Const correctness residue (FX11 scope boundary):** the address of a const
+  array's ELEMENT in the direct-binding form, `const arr: [3]i32 = ...; var q:
+  *i32 = &arr[0];`, still yields a mutable `*i32` (pre-existing; the element
+  WRITE `arr[0] = 9` rejects `error[3002]`, and the aggregate-field form
+  `&cs.a[i]` is `*const ElementType` since FX11). The field-bound guarantee
+  itself is complete; this direct-binding residue is not scheduled.
+- **`try` bounded divergences (FX12, 2026-09-28):** the `try` context rules (§3.3) are Zig-0.15.2 parity except where the anonymous/opaque `!T` set (`error_set == 0`) erases information. A `try` in a NON-error-union-returning function is rejected **unconditionally**, so the theoretical Zig-valid shapes whose operand's inferred set is provably empty (`fn g() !void {}` plus `try g();` in a `void` function; zero occurrences in the tree) are rejected too — the ruled bounded divergence. A named operand set feeding a function with an anonymous `!T` set (and vice versa) is accepted because the opaque side is treated as compatible (set-only `errorSetIsSubset`). Two diagnostic-shape notes: a rejected `try` used as an arm of a `const`-bound `if` expression types the `if` `void` through the pre-existing arm fall-through, so the pre-existing `error[3000]: cannot declare variable of type void` co-fires (the reject fixture pins the value-discard form); a `try <unresolved-ident>` adds 3075 on top of the pre-existing `error[20]`. Fixtures: `repro/mi_matrix/try_return_type_reject_xmod` (`3075 9`), positive `repro/mi_matrix/stdlib_try_return_type_ok_xmod`, standalone `repro/try_enclosing_return_reject.z98` / `repro/try_enclosing_return_ok.z98`, and the Task 1 discovery repros `repro/try_void_err_reject.z98`, `try_i32_reject.z98`, `try_incompat_reject.z98`, `try_nonunion_reject.z98`, `try_void_reject.z98`.

@@ -17,7 +17,7 @@ struct Type;
  */
 struct TypeRegistry {
     struct Entry {
-        struct Module* owner;
+        const char* module_path;
         const char* name;
         struct Type* type_ptr;
         Entry* next;
@@ -27,45 +27,38 @@ struct TypeRegistry {
     Entry* buckets[BUCKET_COUNT];
     ArenaAllocator& arena;
 
-    static inline bool sameModule(Module* a, Module* b) {
-        if (!a || !b) return false;
-        if (a == b) return true;
-        // If pointers differ but names match, it's a problem
-        if (a->name && b->name && strings_equal(a->name, b->name)) {
-            plat_printf_debug("WARNING: Module name collision detected!\n");
-            plat_printf_debug("  Module A: %s at %p\n", a->name, (void*)a);
-            plat_printf_debug("  Module B: %s at %p\n", b->name, (void*)b);
-        }
-        return a == b;
-    }
-
     TypeRegistry(ArenaAllocator& arena_ref);
 
     /**
      * @brief Hashes a module and name pair.
      */
-    u32 hash(struct Module* owner, const char* name) const;
+    u32 hash(const char* module_path, const char* name) const;
 
     /**
      * @brief Finds a type in the registry.
      */
-    struct Type* find(struct Module* owner, const char* name) const;
+    struct Type* find(const char* module_path, const char* name) const;
 
     enum InsertStatus { OK, DUPLICATE, MISMATCH };
 
     /**
      * @brief Inserts a type into the registry.
-     * @param owner The module that owns the type.
+     * @param module_path The canonical path of the module that owns the type.
      * @param name The name of the type.
      * @param type_ptr The pointer to the type.
      * @param verify_structure If true, verifies that the type's structure matches if it's a duplicate.
      */
-    InsertStatus insert(struct Module* owner, const char* name, struct Type* type_ptr, bool verify_structure = false);
+    InsertStatus insert(const char* module_path, const char* name, struct Type* type_ptr, bool verify_structure = false);
 
     /**
      * @brief Returns the total number of entries in the registry.
      */
     int get_count() const;
+
+    /**
+     * @brief Collects all registered types into the provided array.
+     */
+    void getAllTypes(DynamicArray<struct Type*>& out) const;
 
     /**
      * @brief Clears the registry (mainly for testing).

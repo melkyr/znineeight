@@ -1,0 +1,29 @@
+// repro/shadow_local.z98 — standalone Task 7D reproduction (local shadowing).
+//
+// Official Zig 0.15.2 rejects shadowing of an identifier from any outer scope:
+// "Variable identifiers are never allowed to shadow identifiers from an outer
+// scope." Zig1 accepted every form (rc=0). After the fix:
+//
+//   <seed-built zig1 with its sibling lib/> --dump-c89 repro/shadow_local.z98
+//
+// EXPECTED: dump rc=2, 0 emitted `.c`, and one `error[3057]` per shadowing
+// declaration (span on the shadowing declaration). See
+// repro/mi_matrix/shadow_reject_xmod (one site per supported form) and the
+// positive control repro/mi_matrix/shadow_ok_xmod.
+const std = @import("std");
+
+const g: i32 = 1;
+
+pub fn main() void {
+    var x: i32 = 1;
+    {
+        var x: i32 = 2;
+        std.io.printInt(x);
+    }
+    const g = 2;
+    std.io.printInt(g);
+    var dup: i32 = 0;
+    var dup: i32 = 1;
+    _ = dup;
+    _ = x;
+}

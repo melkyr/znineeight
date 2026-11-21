@@ -1,0 +1,16 @@
+param=.c
+basic .a 2 2
+glob .c
+explicit .green 9 9
+ite .blue 12 c
+wide .big 5000000001 12a05f201
+errs error.A error.B
+errx error.OOM
+se=.{ .e = error.B, .n = 42 }
+se2=.{ .e = .b, .n = 7 }
+sn=.{ .s = .{ .e = .c, .n = 1 }, .t = .a }
+tu=.{ .e = .b }
+u=.{ ... }
+tup=.{ .c, error.A, 3 }
+direct=.b error.B
+done

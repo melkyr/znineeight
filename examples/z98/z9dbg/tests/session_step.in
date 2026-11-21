@@ -1,0 +1,7 @@
+step
+break main.zig:16
+dump variables /tmp/z9dbg_step_dump.txt
+break main.zig:9
+continue
+break main.zig:10
+quit

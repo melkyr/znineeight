@@ -1,0 +1,9 @@
+file_stdin_usage
+exists: 1
+readall: 14
+size: 14
+line: one
+line: two
+line: three
+eof: 1
+file_stdin ok

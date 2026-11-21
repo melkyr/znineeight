@@ -1,0 +1,1 @@
+catch discard struct ok

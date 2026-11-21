@@ -1,0 +1,10 @@
+const std = @import("std");
+
+fn double(n: i32) i32 {
+    n = n * 2;
+    return n;
+}
+
+pub fn main() void {
+    std.io.print("double is {}\n", .{double(21)});
+}

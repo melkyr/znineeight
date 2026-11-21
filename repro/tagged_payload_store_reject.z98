@@ -1,0 +1,29 @@
+// repro/tagged_payload_store_reject.z98 — standalone FX16-F (S2) reject mirror.
+//
+// Before FX16-F a tagged-union payload-member store was an `error[3043]` ICE
+// (rc 3): `x.i = 5` died in `lowerFieldStore` and `&x.i`/`b.box.w = 7` died in
+// `lowerLValueAddr`. Contract: dump rc 2, 0 `.c`, exactly 2 level-0
+// `error[3000]` (one per offending statement, no signals, no other codes):
+//   store:   cannot store to a tagged-union payload member;
+//            assign the whole union instead (e.g. x = .{ .i = 5 })
+//   address: cannot take the address of a tagged-union payload member;
+//            assign the whole union instead (e.g. x = .{ .i = 5 })
+//
+// The supported mutation is the whole-union reassignment
+// (repro/mi_matrix/tagged_payload_whole_reassign_xmod).
+const std = @import("std");
+
+const Box = struct { w: i32, h: i32 };
+const U = union(enum) {
+    i: i32,
+    box: Box,
+};
+
+pub fn main() void {
+    var x: U = U{ .i = 1 };
+    x.i = 5;
+    var b: U = U{ .box = Box{ .w = 1, .h = 2 } };
+    const p = &b.box.w;
+    _ = p;
+    std.io.writeByte('\n');
+}

@@ -1,0 +1,77 @@
+// defer_traversal.z98 — FX2 (D1 extras) standalone repro.
+//
+// Pins the analyzer statement-traversal widening: a statement switch is parsed
+// as `expr_stmt(swt_ex)` and a bare block statement fell to `on_stmt`, so
+// defers inside switch prongs and bare blocks were never queued or
+// leak-checked. FX2 routes both shapes through the shared walker
+// (`swt_ex` arm / `walkBlock`) with the correct scope depth and block-exit
+// drain.
+//
+// The runtime behavior is unchanged by definition (lowering owns defer
+// execution): compile/build/run rc 0 with this exact stdout, 3x deterministic.
+//
+// Expected stdout (exact), rc 0:
+//   plain-body
+//   plain-defer
+//   prong 1
+//   prong-defer
+//   prong-else
+//   block-body
+//   block-defer
+//   nested-prong-body
+//   nested-defer
+//   nested-block-body
+//   nested-block-defer
+//   done
+const std = @import("std");
+
+fn plain() void {
+    defer std.io.print("plain-defer\n", .{});
+    std.io.print("plain-body\n", .{});
+}
+
+fn switchDefer(v: i32) void {
+    switch (v) {
+        1 => {
+            defer std.io.print("prong-defer\n", .{});
+            std.io.print("prong {}\n", .{v});
+        },
+        else => {
+            std.io.print("prong-else\n", .{});
+        },
+    }
+}
+
+fn blockDefer() void {
+    {
+        defer std.io.print("block-defer\n", .{});
+        std.io.print("block-body\n", .{});
+    }
+}
+
+fn nested() void {
+    {
+        switch (1) {
+            1 => {
+                defer std.io.print("nested-defer\n", .{});
+                std.io.print("nested-prong-body\n", .{});
+            },
+            else => {
+                std.io.print("nested-else\n", .{});
+            },
+        }
+        {
+            defer std.io.print("nested-block-defer\n", .{});
+            std.io.print("nested-block-body\n", .{});
+        }
+    }
+}
+
+pub fn main() void {
+    plain();
+    switchDefer(1);
+    switchDefer(2);
+    blockDefer();
+    nested();
+    std.io.print("done\n", .{});
+}

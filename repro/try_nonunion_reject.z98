@@ -1,0 +1,17 @@
+// repro/try_nonunion_reject.z98 — FX12 (Volume II ch12) discovery evidence.
+//
+// Converted from the Task 1 Finding-A probe `/tmp/t1/probes/n_try_nonunion.z98`
+// (task-1-report.md §3, A4): `try` on a non-error-union operand. Pre-FX12 Z98
+// compiled rc 0, silently typed the expression void and printed `after`. Zig
+// 0.15.2 rejects with `expected error union type, found 'comptime_int'` +
+// `note: consider omitting 'try'`.
+//
+// Contract now: dump rc 2, 0 `.c`, exactly 1 level-0 `error[3075]`
+// (`expected error union type, found 'comptime_int'` + `consider omitting
+// 'try'`), no signals.
+const std = @import("std");
+
+pub fn main() void {
+    try 5;
+    std.io.print("after\n");
+}

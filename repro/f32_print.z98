@@ -1,0 +1,23 @@
+// repro/f32_print.z98 — standalone Task 7F reproduction (f32 print dispatch).
+//
+// `getPrintFnName` (`sf/src/c89_emit.zig`) routed every TypeKind without an
+// explicit arm to `std_print_i32`, so an `f32` (C `float`) was passed to a C
+// `int` parameter and truncated toward zero: `1.5` printed `1`. The fix adds an
+// `f32_type` arm next to the `f64_type` arm, routing `f32` to the existing
+// `std_print_f64` (C widens `float` -> `double` via the prototype).
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/f32_out
+//   <zig1> -o /tmp/f32_out repro/f32_print.z98
+//   cd /tmp/f32_out && sh build_target.sh linux f32_print && ./f32_print
+//
+// EXPECTED (after the fix): prints `ratio = 1.5`, rc=0.
+// DEFECT (before the fix): prints `ratio = 1`.
+//
+// See repro/mi_matrix/stdlib_f32_print_xmod for the pinned runtime golden.
+const std = @import("std");
+
+pub fn main() void {
+    const ratio: f32 = @floatCast(f32, 1.5);
+    std.io.print("ratio = {}\n", .{ratio});
+}

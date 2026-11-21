@@ -1,0 +1,5 @@
+default-lib-lookup-ok
+len=3
+max=9
+parsed=-42
+done

@@ -1,0 +1,72 @@
+// defer_control_flow.z98 — standalone reproduction for the Task 10D fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -o /tmp/defer_cf repro/defer_control_flow.z98 ; echo "rc=$?"
+//
+// DEFECT (before the fix): the compiler accepted `return`, `break`, `continue`,
+// and `try` inside a `defer`/`errdefer` body, contradicting the language spec
+// §3.1/§3.2. Lowering then inlined the defer body; its own terminator set
+// `block_terminated`, so the enclosing transfer was silently dropped. For
+// `errdefer { continue; }` this discarded the explicit error return and turned
+// an error exit into a success exit.
+//
+// FIX (Task 10D): `sf/src/semantic_analyzer.zig` now rejects, before lowering,
+// the Zig-defined outward transfers (official Zig `src/AstGen.zig`):
+//   return   -> error[3051] cannot return from defer expression
+//   break    -> error[3052] cannot break out of defer expression
+//   continue -> error[3053] cannot continue out of defer expression
+//   try      -> error[3054] 'try' not allowed inside defer expression
+// A `break`/`continue` whose target loop or labeled block is DECLARED INSIDE
+// the body stays legal (see repro/mi_matrix/stdlib_defer_control_flow_xmod).
+//
+// EXPECTED after the fix: dump rc=2, 0 emitted `.c`, five diagnostics (the
+// shapes below). Before the fix the same file compiled with rc=0.
+const E = error{Boom};
+
+fn boomOnly() E!void { return error.Boom; }
+
+fn outwardReturn() void {
+    defer {
+        return;
+    }
+}
+
+fn outwardBreak() void {
+    while (true) {
+        defer {
+            break;
+        }
+    }
+}
+
+fn outwardContinue() void {
+    while (true) {
+        defer {
+            continue;
+        }
+    }
+}
+
+fn tryInside() E!void {
+    defer {
+        try boomOnly();
+    }
+    return;
+}
+
+fn errdeferContinue() E!void {
+    while (true) {
+        errdefer {
+            continue;
+        }
+        return error.Boom;
+    }
+}
+
+pub fn main() void {
+    outwardReturn();
+    outwardBreak();
+    outwardContinue();
+    tryInside() catch {};
+    errdeferContinue() catch {};
+}

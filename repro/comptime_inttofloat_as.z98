@@ -1,0 +1,66 @@
+// comptime_inttofloat_as.z98 — standalone reproduction for the Task 11U fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/comptime_inttofloat_as repro/comptime_inttofloat_as.z98
+//   cd /tmp/comptime_inttofloat_as && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): `sf/src/comptime_eval.zig` interned `@intCast` but
+// never `@as`, and `comptimeEvalBuiltin`'s fold arm was gated on `int_cast_id`
+// only. `@as` and `@intCast` share the exact extra-child layout `[target_type,
+// value]`, but `@as` fell through to `return null`, so it never folded. For a
+// typed `u64` const above `i64` max the const was elided from the emitted C
+// while the un-folded runtime `int_to_float` still referenced it, so a valid
+// Z98 program failed to build with gcc `'zG_..._X' undeclared`.
+//
+// FIX (Task 11U, AMENDMENT 15 general fix): intern `@as` and share the
+// `@intCast` fold/range-check arm in `comptimeEvalBuiltin`; mirror the `@as`
+// case in `comptimeEvalOperandSigned`. The shared arm carries a mandatory
+// integer-target guard so a NON-integer `@as` never folds to an integer
+// `ComptimeVal` (which would miscompile float arithmetic).
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0. The fold is
+// additionally visible in the emitted `__module_init`: the folded constants
+// appear as float literals with ZERO `int_to_float`/`float_cast` ops for them.
+//
+//   u64-as-ok
+//   i64-neg-ok
+//   lit-ok
+//   f32-ok
+//   as-float-div-ok
+//   as-float-add-ok
+//   as-float-mul-ok
+//   done
+const std = @import("std");
+
+// Comptime-known `@as` folds.
+const U: u64 = 18446744073709551615;
+const UF: f64 = @intToFloat(f64, @as(u64, U));
+const NI: f64 = @intToFloat(f64, @as(i64, -1));
+const L: f64 = @intToFloat(f64, @as(u64, 5));
+const AF32: f32 = @intToFloat(f32, @as(u32, 7));
+
+// The integer-target guard: these NON-integer `@as` operands must NOT fold to
+// an integer value. On an unguarded arm `A` folds as `3 / 2` = 1 (not 1.5).
+const A: f64 = @as(f64, 3) / 2;
+const B: f64 = @as(f64, 3) + 2;
+const C: f64 = @as(f64, 10) * @as(f64, 2);
+
+fn tof_u(x: u64) f64 { return @intToFloat(f64, x); }
+fn tof_i(x: i64) f64 { return @intToFloat(f64, x); }
+
+pub fn main() void {
+    var uu: u64 = U;
+    if (UF == tof_u(uu)) { std.io.print("u64-as-ok\n"); } else { std.io.print("u64-as-bad\n"); }
+
+    var ni: i64 = -1;
+    if (NI == tof_i(ni)) { std.io.print("i64-neg-ok\n"); } else { std.io.print("i64-neg-bad\n"); }
+
+    if (L == 5.0) { std.io.print("lit-ok\n"); } else { std.io.print("lit-bad\n"); }
+    if (AF32 == 7.0) { std.io.print("f32-ok\n"); } else { std.io.print("f32-bad\n"); }
+
+    if (A == 1.5) { std.io.print("as-float-div-ok\n"); } else { std.io.print("as-float-div-bad\n"); }
+    if (B == 5.0) { std.io.print("as-float-add-ok\n"); } else { std.io.print("as-float-add-bad\n"); }
+    if (C == 20.0) { std.io.print("as-float-mul-ok\n"); } else { std.io.print("as-float-mul-bad\n"); }
+
+    std.io.print("done\n");
+}

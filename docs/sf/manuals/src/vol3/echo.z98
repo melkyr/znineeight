@@ -1,0 +1,157 @@
+const std = @import("std");
+const std_stream = @import("std_stream");
+
+const PORT: u16 = 18080;
+const BUF_SIZE: usize = 128;
+const POOL_WORDS: usize = 512;
+
+// The connection coroutine's parameters. The line reader and its buffer live
+// in `main` for the whole run, so each coroutine holds only a pointer to them.
+const ConnArgs = struct {
+    sock: i32,
+    lr: *std_stream.SocketLineReader,
+    echoed: *i32,
+};
+const ConnRec = struct { ca: *ConnArgs };
+
+const ClientArgs = struct {
+    sock: i32,
+    lr: *std_stream.SocketLineReader,
+};
+const ClientRec = struct { ca: *ClientArgs };
+
+fn sendLine(sock: i32, msg: []const u8) void {
+    _ = std.net.send(sock, msg.ptr, @intCast(i32, msg.len));
+}
+
+// One coroutine per connection: read a line, echo it back, yield.
+fn echoConnection(ca: *ConnArgs) void {
+    const nl: []const u8 = "\n";
+    while (true) {
+        const maybe = std_stream.readSocketLineAsync(ca.lr) catch return;
+        if (maybe) |line| {
+            _ = std.net.send(ca.sock, line.ptr, @intCast(i32, line.len));
+            _ = std.net.send(ca.sock, nl.ptr, @intCast(i32, nl.len));
+            ca.echoed.* += 1;
+        } else {
+            break;
+        }
+    }
+    std.net.close(ca.sock);
+}
+
+// A tiny client coroutine, so the program is its own test driver.
+fn echoClient(ca: *ClientArgs) void {
+    const m0: []const u8 = "hello, echo\n";
+    const m1: []const u8 = "coroutines are cooperative\n";
+    const m2: []const u8 = "goodbye\n";
+
+    sendLine(ca.sock, m0);
+    const e0 = std_stream.readSocketLineAsync(ca.lr) catch return;
+    if (e0) |line| {
+        std.io.print("client got: {s}\n", .{line});
+    }
+
+    sendLine(ca.sock, m1);
+    const e1 = std_stream.readSocketLineAsync(ca.lr) catch return;
+    if (e1) |line| {
+        std.io.print("client got: {s}\n", .{line});
+    }
+
+    sendLine(ca.sock, m2);
+    const e2 = std_stream.readSocketLineAsync(ca.lr) catch return;
+    if (e2) |line| {
+        std.io.print("client got: {s}\n", .{line});
+    }
+
+    std.net.close(ca.sock);
+}
+
+pub fn main() void {
+    if (std.net.init() != 0) {
+        std.io.print("socket init failed\n", .{});
+        return;
+    }
+
+    const server = std.net.createTcpServer(PORT);
+    if (server < 0) {
+        std.io.print("could not create server\n", .{});
+        return;
+    }
+    if (std.net.bindListen(server, 5) < 0) {
+        std.io.print("could not listen\n", .{});
+        return;
+    }
+
+    var client = std.net.createTcpClient(PORT);
+    if (client < 0) {
+        std.io.print("could not connect\n", .{});
+        return;
+    }
+
+    var conn: i32 = -1;
+    var tries: usize = 0;
+    while (conn < 0 and tries < 100000) : (tries += 1) {
+        conn = std.net.accept(server);
+    }
+    if (conn < 0) {
+        std.io.print("could not accept\n", .{});
+        return;
+    }
+
+    std.net.setNonBlocking(&conn) catch return;
+    std.net.setNonBlocking(&client) catch return;
+
+    // Reader and buffer live in main for the whole run.
+    var conn_buf: [BUF_SIZE]u8 = undefined;
+    var client_buf: [BUF_SIZE]u8 = undefined;
+    var conn_lr = std_stream.initSocketLineReader(&conn, conn_buf[0..]);
+    var client_lr = std_stream.initSocketLineReader(&client, client_buf[0..]);
+
+    var echoed: i32 = 0;
+    var ca = ConnArgs{ .sock = conn, .lr = &conn_lr, .echoed = &echoed };
+    var crec = ConnRec{ .ca = &ca };
+    var cla = ClientArgs{ .sock = client, .lr = &client_lr };
+    var clrec = ClientRec{ .ca = &cla };
+
+    var conn_pool: [POOL_WORDS]u64 = undefined;
+    var conn_frame: [POOL_WORDS]u64 = undefined;
+    var client_pool: [POOL_WORDS]u64 = undefined;
+    var client_frame: [POOL_WORDS]u64 = undefined;
+    var tasks: [2]std.async.Task = undefined;
+    var task_ptrs: [2]*std.async.Task = undefined;
+    var sched_tasks: [2]*std.async.Task = undefined;
+    var sched = std.async.schedulerInit(sched_tasks[0..]);
+
+    // Client first: its first action sends a line, so the connection task
+    // always has data waiting when it runs.
+    task_ptrs[0] = &tasks[0];
+    task_ptrs[0].ctx = std.async.contextInit(@ptrCast([*]u8, &client_pool)[0 .. POOL_WORDS * 8]);
+    task_ptrs[0].frame = @asyncInit(task_ptrs[0].ctx, @ptrCast([*]u8, &client_frame), echoClient, @ptrCast(*const void, &clrec));
+    task_ptrs[0].state = .ready;
+    task_ptrs[0].cancel_requested = false;
+    task_ptrs[0].result = @ptrCast(*void, &echoed);
+    task_ptrs[0].arg = @ptrCast(*void, &clrec);
+    task_ptrs[0].waiting_on = task_ptrs[0];
+    task_ptrs[0].has_waiting_on = false;
+    _ = std.async.addTask(&sched, task_ptrs[0]);
+
+    task_ptrs[1] = &tasks[1];
+    task_ptrs[1].ctx = std.async.contextInit(@ptrCast([*]u8, &conn_pool)[0 .. POOL_WORDS * 8]);
+    task_ptrs[1].frame = @asyncInit(task_ptrs[1].ctx, @ptrCast([*]u8, &conn_frame), echoConnection, @ptrCast(*const void, &crec));
+    task_ptrs[1].state = .ready;
+    task_ptrs[1].cancel_requested = false;
+    task_ptrs[1].result = @ptrCast(*void, &echoed);
+    task_ptrs[1].arg = @ptrCast(*void, &crec);
+    task_ptrs[1].waiting_on = task_ptrs[1];
+    task_ptrs[1].has_waiting_on = false;
+    _ = std.async.addTask(&sched, task_ptrs[1]);
+
+    std.async.waitAll(&sched) catch {
+        std.io.print("frame pool exhausted\n", .{});
+    };
+
+    std.net.close(server);
+    std.net.cleanup();
+    std.io.print("echoed {} lines\n", .{echoed});
+}

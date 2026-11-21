@@ -1,0 +1,49 @@
+// print_init_order_dep.z98 — standalone reproduction for the final-review
+// Critical fix wave (2026-09-25, z98-print-formatting Amendment 1).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/print_init_order_dep_out
+//   <zig1> -o /tmp/print_init_order_dep_out repro/print_init_order_dep.z98
+//
+// EXPECTED (fixed compiler): rc 0; the program prints, in order:
+//   g=15
+//   a=3
+//   b=12
+//   g2=15
+//   a2=3
+//   b2=12
+// byte-identical to the Zig 0.15.2 `std.debug.print` twin.
+//
+// DEFECT (v87 compiler): `lowerInitOrderVisit` shared one `dep_buf` across
+// recursive calls; a nested visit overwrote it, so the outer loop read stale
+// name ids and dropped its remaining dependency edges. `var g = a + b;` with
+// `const a = c + d; const b: i32 = 5 + 7;` emitted the global stores as
+// `a; g; b`, so `g` ran as `3` where Zig prints `15` (silent wrong value,
+// rc 0). FIX: each global's same-module edge list is precomputed once into a
+// flat adjacency and the ordering walk is iterative with an explicit stack
+// (`sf/src/lower.zig`, `lowerModuleInit`), so no visit can clobber another's
+// edges and the walk no longer recurses.
+const std = @import("std");
+
+// Literal-const variant (the exact review repro).
+var g = a + b;
+const a = c + d;
+const b: i32 = 5 + 7;
+const c = 1;
+const d = 2;
+
+// Runtime-init variant (module-init stores instead of folded literals).
+var g2 = a2 + b2;
+const a2 = c2 + d2;
+const b2: i32 = 5 + 7;
+const c2: i32 = 1 + 0;
+const d2: i32 = 2 + 0;
+
+pub fn main() void {
+    std.io.print("g={}\n", .{g});
+    std.io.print("a={}\n", .{a});
+    std.io.print("b={}\n", .{b});
+    std.io.print("g2={}\n", .{g2});
+    std.io.print("a2={}\n", .{a2});
+    std.io.print("b2={}\n", .{b2});
+}

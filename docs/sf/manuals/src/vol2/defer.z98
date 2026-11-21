@@ -1,0 +1,67 @@
+const std = @import("std");
+
+fn note(tag: []const u8) void {
+    std.io.print("{s}\n", .{tag});
+}
+
+fn loadConfig(ok: bool) !i32 {
+    defer note("config: defer (always)");
+    errdefer note("config: errdefer (rollback)");
+    note("config: body");
+    if (!ok) return error.BadConfig;
+    return 11;
+}
+
+fn commit(ok: bool) !void {
+    defer note("commit: release writer");
+    errdefer note("commit: roll back transaction");
+    defer note("commit: release reader");
+    if (!ok) return error.CommitFailed;
+    note("commit: committed");
+}
+
+fn successPath() !i32 {
+    defer note("success: outer defer");
+    {
+        defer note("success: inner B");
+        defer note("success: inner A");
+        note("success: block body");
+    }
+    const v = try loadConfig(true);
+    return v + 1;
+}
+
+fn errorPath() !i32 {
+    defer note("error: defer");
+    errdefer note("error: errdefer 1");
+    errdefer note("error: errdefer 2");
+    const v = try loadConfig(false);
+    return v;
+}
+
+pub fn main() void {
+    const a = successPath() catch 0;
+    std.io.print("success value {}\n", .{a});
+
+    errorPath() catch {
+        note("error path caught");
+    };
+
+    commit(false) catch {
+        note("commit failed");
+    };
+
+    var i: i32 = 0;
+    while (i < 2) : (i += 1) {
+        defer note("loop defer");
+        if (i == 0) continue;
+        note("loop tail");
+    }
+
+    var j: i32 = 0;
+    while (true) {
+        defer note("break-loop defer");
+        j += 1;
+        if (j == 2) break;
+    }
+}

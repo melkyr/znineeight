@@ -1,0 +1,16 @@
+// repro/orelse_empty_block_reject.z98 — A9-F standalone reject control.
+//
+// A value-less/empty `orelse { ... }` fallback in a value position is rejected
+// (Volume IV Amendment A9, operator m1740). Baseline (fp ca21a1ba) compiled
+// this rc 0 and emitted gcc-invalid C (`zT_7 = zT_8;` with `zT_8` undeclared).
+// Fixed: rc 2, 0 `.c`,
+//   error[3059]: orelse block fallback without a value cannot be used as a value
+// Zig 0.15.2 rejects the same shape (`expected type 'i32', found 'void'`).
+// census: 3059 1
+
+fn maybe(x: i32) ?i32 { return if (x > 0) x else null; }
+
+pub fn main() void {
+    var a: i32 = maybe(-1) orelse {};
+    _ = a;
+}

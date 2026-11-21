@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Canonical gcc-exit-code corpus classifier (referenced by
+# scripts/corpus/w3000_census.sh). Canonicalized from the Task-4 harness
+# `/tmp/t4bf_classify.sh` because the repo copy was missing.
+#
+# usage: classify <zig1> <outfile>
+#
+#   <zig1>     compiler under test. Pass the seed-built `zig1_5_clean` so its
+#              sibling `lib/` resolves the 9 std modules.
+#   <outfile>  receives one `<repo-relative-dir> <CLASS>` line per corpus dir.
+#
+# Classification (per docs/sf/QUICK_REF.md, "Corpus gate"):
+#   dump rc >= 128                              -> CRASH
+#   genuine ICE marker in stdout/stderr         -> ICE
+#   0 emitted .c + error[3000]                  -> GREEN (documented green-guard)
+#   0 emitted .c otherwise                      -> FAIL  (frontend gap / reject)
+#   all emitted .c compile clean with gcc       -> OK
+#   otherwise                                   -> FAIL
+#
+# ICE regex (Task 4c-I refinement, operator ruling 2026-09-16):
+#   error[3042] (`non-value base expression in field access`) is a CLEAN
+#   frontend rejection of an undefined module member (dump rc=2, 0 .c), not an
+#   internal compiler error, so it was REMOVED from the ICE regex and now
+#   buckets as FAIL. Genuine ICE markers (error[48]/error[9001]/error[3043],
+#   AddressSanitizer) stay ICE. (error[3048] was already deliberately excluded.)
+set -u
+ZIG1="$1"; OUTFILE="$2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$ROOT" || exit 2
+ICE_RE='error\[(48|9001|3043)\]|AddressSanitizer'
+: > "$OUTFILE"
+while IFS= read -r rel; do
+  d="${rel%/}"
+  name="$(basename "$d")"
+  if [ -f "$d/main.zig" ]; then entry="$d/main.zig"
+  elif [ -f "$d/$name.zig" ]; then entry="$d/$name.zig"
+  else entry="$(find "$d" -maxdepth 1 -type f -name '*.zig' | LC_ALL=C sort | head -1)"
+  fi
+  [ -n "$entry" ] || { echo "$d NOENTRY" >> "$OUTFILE"; continue; }
+  OUT="$(mktemp -d /tmp/corpus_classify.XXXXXX)"
+  timeout 120 "$ZIG1" -ffast --dump-c89 --output-dir "$OUT" "$entry" >"$OUT/.stdout" 2>"$OUT/.stderr"
+  drc=$?
+  ncf=$(ls "$OUT"/*.c 2>/dev/null | wc -l)
+  if [ "$drc" -ge 128 ]; then cls=CRASH
+  elif grep -Eq "$ICE_RE" "$OUT/.stderr" "$OUT/.stdout" 2>/dev/null; then cls=ICE
+  elif [ "$ncf" -eq 0 ]; then
+    if grep -q 'error\[3000\]' "$OUT/.stderr" 2>/dev/null; then cls=GREEN; else cls=FAIL; fi
+  else
+    gfail=0
+    for f in "$OUT"/*.c; do
+      gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I "$ROOT/sf/src/include" -c "$f" -o /dev/null 2>/dev/null || { gfail=1; break; }
+    done
+    if [ "$gfail" -eq 0 ]; then cls=OK; else cls=FAIL; fi
+  fi
+  echo "$d $cls" >> "$OUTFILE"
+  rm -rf "$OUT"
+done < <(bash scripts/corpus/list_corpus_dirs.sh)
+echo "wrote $OUTFILE: $(wc -l < "$OUTFILE") dirs"

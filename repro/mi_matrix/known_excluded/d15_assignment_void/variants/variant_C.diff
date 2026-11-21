@@ -1,0 +1,10 @@
+--- /tmp/phase35-9l-clean/sf/src/semantic_analyzer.zig	2026-11-09 15:43:44.860938898 +0000
++++ expC/sf/src/semantic_analyzer.zig	2026-11-09 15:48:14.130508047 +0000
+@@ -5041,7 +5041,6 @@
+     // behavior), so the D15 mismatch reject/poison applies only to value
+     // switches (typed nodes and inferred bindings).
+     var sw_is_stmt_expr: u8 = @intCast(u8, 0);
+-    if (self.stmt_expr_node != @intCast(u32, 0) and semaUnwrapParens(self, node_idx) == self.stmt_expr_node) { sw_is_stmt_expr = @intCast(u8, 1); }
+ 
+     while (i < @intCast(usize, prongs_n)) : (i += 1) {
+         var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));

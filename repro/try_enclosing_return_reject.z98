@@ -1,0 +1,46 @@
+// repro/try_enclosing_return_reject.z98 — standalone FX12 (Volume II ch12)
+// reject census (A1-A4 in one file).
+//
+// Before FX12 each shape compiled rc 0 (A1 silently dropped the error, A2
+// emitted gcc-invalid C, A3 accepted the mismatched set, A4 silently typed
+// void). Contract: dump rc 2, 0 `.c`, exactly 4 level-0 `error[3075]`
+// (`ERR_3075_TRY_ENCLOSING_RETURN`, one per site, deduped per try node), no
+// signals, no warnings, no other codes:
+//   a1  expected type 'void', found error set + note function cannot return an error
+//   a2  expected type 'i32', found error set + note function cannot return an error
+//   a3  try error set may not be compatible with the enclosing function's return type
+//   a4  expected error union type, found 'comptime_int' + note consider omitting 'try'
+const E1 = error{A};
+const E2 = error{B};
+
+fn g() !void {
+    return error.Boom;
+}
+
+fn a1() void {
+    try g();
+}
+
+fn a2() i32 {
+    try g();
+    return 1;
+}
+
+fn gE2() E2!void {
+    return error.B;
+}
+
+fn a3() E1!void {
+    try gE2();
+}
+
+fn a4() void {
+    try 5;
+}
+
+pub fn main() void {
+    _ = a1;
+    _ = a2;
+    _ = a3;
+    _ = a4;
+}

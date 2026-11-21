@@ -1,0 +1,922 @@
+# 03 — Type Resolution [updated: 2026-10-15 — P7 (module-scope-first name resolution, D7 root-cause, Amendment 8 widened): unqualified type-name resolution is locals → MODULE scope (module-qualified name-cache key + the module's symbol table) → cross-module flat fallback (FX13-F bare cross-module names stay legal only when module scope misses). `resolveTypeExprFull`'s `ident_expr` arm: module-symbol lookup promoted above the flat cache and the all-module scans. Fold type-arg resolution (`comptimeEvalResolveTypeArg`, `comptime_eval.zig`) now receives the lexical module (`ComptimeEval.module_id`; `phase_ComptimeEvaluation` attributes each swept node to its parse-chunk module — each module's contiguous node range ends at its `module_root`, so a node's module is the smallest `ast_root >= node_idx`), closing the D7 `@sizeOf(Mode)` cross-module steal (reproducer z9play-order: pre 4 → post 8; battery 0 movers, pins 0/8).] [updated: 2026-10-12 — P4 fix round 2 (placement correction, Decision-vs-spelling): classification COMPLETES at the backend-neutral `phase_EmissionClassification` boundary (`sf/src/main.zig`, between `phase_LIRLowering` and `phase_C89Emission`) — the emitter NEVER invokes classification. State lives in `EmissionClassification{shared_set, pointer_only_map, needs_def_map, needed_tuple_set}` on `CompilerContext` (maps on permanent; `C89Emitter` holds `classif: *EmissionClassification`, reads only). `classifyTypeEmissionGroups` (resolution-time, unchanged rules) fills the three group maps; `collectNeededTuples` MOVED here verbatim from `c89_emit.zig` and its two call loops (LIR hoisted temps via `lirStreamReadFunction`, module globals) run in the boundary step; `classifyTypeEmissionFinalize` (body verbatim) is invoked from the boundary (full-registry walk incl. the E4 needed-tuple seed) — the former emit-time invocation (the P4 in-flight late-type patch) is DELETED. Zero decision-logic change (rules verbatim; the I.2 map E1–E11 outputs identical); dump pins 0/8.] [updated: 2026-10-12 — P4 (emitter sanitization: single classification pass, operator amendment option (a) — extend + re-time): `classifyTypeEmissionGroups` is THE emission classification — it now returns THREE groups in `ClassificationResult` (`pointer_only` / `needs_def` / `shared` `U32ToU32Map`s): the pointer-only set (E1, the pre-P4 CLS:p snapshot — a type absent from it counts as value-embedding, the historical fallthrough), the needs-definition set (E8/E9/E11 — the deleted emitter `shouldSkipTypeEmission`'s emit-vs-skip decision as its positive complement, via `classificationNeedsDef`; the `skip_arb` arm is absent: unreachable-equivalent) and the shared-header set (E2/E3'/E5/E6 seeds + the E7 `typeRefs` closure via `classificationSharedClosure`). **Spec §4 "Type classification" row AMENDED (operator, 2026-10-12):** the row's `pointer-only / value-embeds / needs-definition` is carried/extended to the three emission groups above (pointer-only / needs-definition / shared-header; value-embeds = pointer-only complement) — recorded here and in the P4 report; closeout will note it. A second step of the SAME mechanism, `classifyTypeEmissionFinalize(reg, shared, po, nd, needed)`, is called by the emitter from `emitTypePasses` where the remaining inputs exist: `needed_tuple_set` (the E4 seed; LIR-derived, `phase_C89Emission`) and types registered AFTER the step-1 snapshot (`front_resolution`/sema/lowering `typeRegistryGetOrCreate*` — the old emitter evaluated its rules LIVE at emission and covered them via the po-map fallthrough). One copy of each rule (`classificationIsSyntheticEmittable`/`classificationNeedsDef`/`classificationSharedClosure`); step 2 re-applies them (idempotent) over the grown registry. CLS markers unchanged. Deleted from `c89_emit.zig`: `computeSharedSet`, `shouldSkipTypeEmission`, `skip_arb`. See doc 08.] [updated: 2026-10-12 — P3 (emitter sanitization: canonical `typeCName`, D2 residue CLOSED): `type_registry.zig` now holds THE one canonical C-type-name derivation `typeCName` (+ private `typeSliceElementName`) — a verbatim relocation of the emitter's former `getCTypeName` body, with synthetic names (`Arr_`/`Tup_`/`Slice_`/`Opt_`/`EU_`/`FS_`/`FP_`/`FN_`/`ES_`) minted ONCE through the P1 `name_mangler.zig` authority. The `c_name_map` memo is now owned by the derivation (every post-memo-check kind stores its mangled name id on first derivation; the old emitter write-back at `emitErrorUnionType` is removed) and the emitter is a pure READER — `getCTypeName` is a thin consumer wrapper and the declaration sites (struct/union/tagged-union/enum/carrier/`emitArrayType`/`emitOptionalType`) consume the same derivation, so decl and use cannot drift. Every kind's spelling is byte-identical to the pre-P3 emitter (pins 0/8). New import edge `type_registry` ↔ `name_mangler` (mutual; seed-proven compilable). Fn-table rows below.] [updated: 2026-10-12 — P2 (emitter sanitization: type-reference relation + ordering, D8): `type_registry.zig` now holds the SINGLE type-reference relation `typeRefs`/`typeNeedsFullDef` (+ `typeHasForwardDecl`/`typeRefPtrLeaf`/`typeRefEdgeTarget`/`typeRefsNote`/`typeRefsSeenOut`/`typeRefsWalk`/`typeRefsContains`) consumed by BOTH graphs — `typeResolverBuildDependencyGraph` and the emitter's `tstTopologicalSort`/`computeSharedSet`. By-value positions (aggregate fields incl. `packed_union`, tu tag, array elem, tuple elems, opt/EU payload) contribute `typeNeedsFullDef(R)` refs; name-spelling positions (fn return, fn params, slice elem) require additionally NOT `typeHasForwardDecl(R)`; pointer refs contribute a name-visibility edge to their chain-leaf (the D8 shape: a ptr-to-fn struct field spells the fn typedef name, and the fn typedef spells its error-union return name). Deleted: `isValueDependency` (dead), `typeResolverGetSorted` (dead), `layoutFieldNeedsEdge`/`layoutAddTypeEdge`/`layoutAddFieldEdges` (divergent resolver edge predicates). fn-table rows below updated. See doc 08.] [updated: 2026-10-12 — P5 (emitter sanitization: predicates + promotion centralized): `type_registry.zig` EXPOSES the 8 canonical int-kind/signedness/width/scalar predicates relocated verbatim from `c89_emit.zig`'s deleted truth tables — `typeKindIsSignedIntBase`, `typeKindIsUnsignedIntBase`, `typeKindIntWidthBytes`, `typeRegistryIntSignednessClass`, `typeRegistryIntNeedsWidthWrap`, `typeRegistryIntByteWidth`, `typeRegistryIsIntKind`, `typeRegistryIsScalarC` (fn-table rows after `typeRegistryGetPointeeType` below; per-caller membership preserved exactly). `typeRegistryIntSignednessClass` (C-codegen tri-state) intentionally coexists with `typeRegistryIntIsSigned` (semantic bool). The emitter's `typeIsPtrKind` is dropped in favor of the existing `typeRegistryIsPointer` (membership-identical for reachable tids). See docs 05 (`coercionUsualArithPromote`) and 08.] [updated: 2026-10-08 — zig1 type-limit widening (Task 1): `Type` widened 16 B → 20 B — `name_id`/`payload_idx` u16→u32, `module_id`/`alignment` u8→u16 (the two u16 columns moved after the u8 columns to reuse the old tail padding); the `typeDbCeiling`/`typeNarrowU16`/`typeNarrowU8` guards and their call-site wrappers are removed (plain `@intCast`/identity). Summary Table + `Type` row + Data Structures below updated to match.] [updated: 2026-10-07 — zig1 structural live-set (Task 4): `Type` shrunk 32 B → 16 B — dropped the write-only `is_signed` field, moved `c_name_id` to the registry-private `c_name_map` side memo, narrowed `name_id`/`payload_idx` to u16 and `alignment`/`module_id` to u8 (the arb-int width column is now `iw`); `typeRegistryInitSized` + `arrayReserve` add hint-seeded pre-sizing of the master array, per-kind payload arrays and the 8 caches. Summary Table + `Type` row + Data Structures below updated to match.] [updated: 2026-10-04 — A3-F (Volume IV Amendment A3, operator m1500): `[_]T` (inferred-length array) is now clean-rejected wherever a concrete type is required. New shared detector `typeResolverIsInferredLenArray` identifies the `array_type` with a `_` size child; `resolveTypeExprFull`'s `array_type` arm emits level-0 `error[3000]` "unable to infer array size" (Zig 0.15.2 oracle text) at the `_` span instead of silently returning `TYPE_UNDEFINED`, and its kind-agnostic child-0 recursion is guarded so an aggregate literal's own `[_]T` annotation is never treated as a type. The allowed literal/initializer sites are guarded in `front_resolution.resolveStmtTypesRec` and `semanticAnalyzerResolveArrayInit`. Fixtures `repro/mi_matrix/array_inferred_len_decl_reject_xmod` (5 x `error[3000]`) + standalone `repro/array_inferred_len_decl_reject.z98` (1 x `error[3000]`); fixed point `7fc608358f4f6af5abab43e633d44f83` -> `2794fe04e0828c95dd5c2c6fecdea362` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 emitted-C UNCHANGED 8/8; corpus 1091 = 922 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH (the only mover is the new reject fixture FAIL -> GREEN; zero pre-existing movers).] [updated: 2026-09-28 — FX13-F (Volume II ch12 signature-type amendment): `resolveFnSignatures` no longer lets an unresolvable return/param type degrade silently (param -> C `int`, return -> `void`). New `typeResolverDiagnoseSignatureType` walks the already-unresolved expression through wrapper / fn-pointer / error-union / `mod.member` leaves and emits the variable-declaration path's level-0 `error[20]` (`ERR_3001_UNDEFINED_SYMBOL`, text `identifier '<x>' is not declared or imported in this module`), one per unresolved leaf, deduped via `diagnosticCollectorMarkNodeOnce`; the leaf ident carries the span, `mod.unknown` reports the whole node. `noreturn` is the operator-ruled exemption keyed on the ident text at the unresolved leaf (no registry name exists; never registered). Enforced in every loaded module; before FX13-F every bogus signature name compiled rc 0 with zero diagnostics. Fixtures `repro/mi_matrix/sig_unknown_type_reject_xmod` (10 x error[20]) + `sig_known_type_ok_xmod` (positive, gcc+run) + standalone `repro/sig_unknown_type_reject.z98` / `sig_known_type_ok.z98`; fixed point `7cce731f757e8458c25604557ddc3427` -> `aebefa0c9ceca1361c523d944c5e6b0b` (hop1 == hop2; seed v88 NOT rotated); 4-MD5 emitted-C UNCHANGED 8/8; corpus 1073 = 911 OK / 53 GREEN / 109 FAIL / 0 ICE / 0 CRASH, join-diff vs base EMPTY.] [updated: 2026-09-26 — FF (Volume II defect fix, D6+D9): the packed-union `@offsetOf`/`@bitOffsetOf` fold is DELETED from `evalConstIntFull`, so `[@offsetOf(PU, "a")]u8` is now a clean `error[3050]` (the value-position builtin is clean-rejected by sema's new `semanticAnalyzerCheckIntrospectionBuiltin` with `error[3072]`/`[3073]`/`[3074]`; the `error[3043]` ICE is gone). Fixed point `536ed494…` -> `cadf3c241abd1baf4d31da52b0ccd649` (hop1 == hop2; seed v88 NOT rotated).] [updated: 2026-09-23 — Task 5 (fold-consumer migration): the two 64-bit type-resolver evaluators are replaced by ONE exact `evalConstIntFull` over the Task-2 `ComptimeInt` core (shared with `comptime_eval.zig` through the deliberate mutual import); `evalConstU32Full` (array sizes) and `evalConstI64Full` (enum member values) are thin materialisation wrappers, and `intValueFitsType`/`evalConstSignClass`/`EvalSignClass` are DELETED (the `wb >= 64` syntactic sign-class hack is gone — the exact value decides). Array sizes now fold shifts/bitwise/parens and >64-bit intermediates reduced back into range (`[1 << 4]u8`, `[(1 << 200) >> 190]u8`), while enum initializers are exact, so a 64-bit-wrapping value (`18446744073709551615 + 1`-class) is a clean `error[3055]`] [updated: 2026-09-23 — Task 4 (coercion into typed slots): the array-size fold is now EXACT — `evalConstU32Full` accepts only `0..0xFFFFFFFE` (the `0xFFFFFFFF` sentinel stays unfoldable) and rejects negative/wrapping/over-u32 arithmetic (`[0 - 1]u8` → `error[3050]`, Task 1 §9.3); the `array_type` arm routes EVERY size expression through it (the former inline u32-wrapping `add`/`sub`/`mul` arms are gone); `evalConstI64Full`/`intValueFitsType`/`evalConstSignClass` (enum-backing twin) are unchanged and remain Task 5's migration scope] [updated: 2026-09-21 — Task B2 final fix wave: `registerContainerType` clean-rejects a struct/union with more than `MAX_CONTAINER_FIELDS` (32) `field_decl` children (`error[3000]`, 0 `.c`) BEFORE registering, instead of silently truncating the fixed-size field scratch buffers (which emitted a truncated C struct and miscompiled field access beyond the cap); the new `containerFieldCount` helper does the pre-count and the field loops/buffers share the `MAX_CONTAINER_FIELDS` constant; the new `isCompoundTypeExprKind` predicate identifies the compound type-expression node kinds (`*E`/`[*]E`/`[N]E`/`[]E`/`?E`/`E!T`/`fn(...)T`) so the semantic analyzer can clean-reject a local `type`-value binding] [updated: 2026-09-21 — Task B5: `typeRegistryIsAssignable`'s error-union→error-union branch now requires exact payload TypeId equality (`eu_src.payload == eu_tgt.payload`) instead of general payload assignability, so a runtime payload-differing EU→EU coercion (return / assignment / declaration / call argument) clean-rejects with `error[3000]`, matching official Zig's in-memory-payload rule; the same-payload subset path (`F!i32 → E!i32`) is unchanged and byte-identical] [updated: 2026-09-21 — Task B3 item 2: `intValueFitsType` no longer blanket-accepts a `wb >= 64` target; it classifies the cast operand syntactically via the new `evalConstSignClass` (a tri-state mirror of `comptime_eval.comptimeEvalSignClass`) so `@as(u64,-1)`/`@intCast(u64,-1)` in an enum initializer reject (`error[3055]`) while a large non-negative literal/unsigned source stays accepted] [updated: 2026-09-21 — Task B2 fix round 1: `registerContainerType`'s union branch captures `UnionPayload.fields_start` AFTER the field-type resolve loop (a nested aggregate field appends its own `fe` entries, so the old pre-loop capture pointed the union into the nested type's fields); the new `validateLocalEnum` runs the shared strict member walk for inline enums (via `registerContainerType`) as well as the sema binding/expression forms, so `var e: enum(u8){A=1,B=1}` clean-rejects `ERR_3055`] [updated: 2026-09-21 — Task B2: function-local / inline named container types register through ONE helper `registerContainerType` (synthesized `anon_<node_idx>` name + direct struct/union field resolution + shared `populateTypePayload` for enum/error-set); `resolveTypeExprFull`'s `struct_decl` arm delegates and gains `enum_decl`/`union_decl` arms; `TypeResolveEnv` gains a function-local type scope (`LocalTypeScope`) consulted first in the `ident_expr` arm; `layoutEnsure` is now `pub` so sema can lay out a type registered after the layout pass] [updated: 2026-09-21 — Task 11S (a): `evalConstU32Full`'s array-size `@intCast` arm now resolves the target type, folds the operand with the U32 evaluator, and requires `intValueFitsType`, emitting `error[3000]` for an out-of-range/non-integer target (previously the target was ignored — the Task 11F regression)] [updated: 2026-09-21 — Task 11J fix round 1 (AMENDMENT 13): `evalConstI64Full`'s `@as`/`@intCast` arm now requires an integer target and range-checks the folded value against the target width/signedness via the new `intValueFitsType` helper (non-integer target / out-of-range → `null` → `ERR_3055`); `enumMembersResolve` gains a `check_only` mode used by the semantic analyzer for function-local enums] [updated: 2026-09-21 — Task 11J: enum member initializers fold as comptime integer expressions via a post-layout re-evaluation pass (`enumReevaluateAll`) and the shared `enumMembersResolve` walk; `evalConstI64Full` gains a depth cap (16) plus the integer-expression and integer-valued-builtin arms; an unfoldable initializer or a duplicate tag rejects with ERR_3055] [updated: 2026-09-21 — Task 11H: the layout math is factored into `layoutCompute` and reached through one shared, order-independent `layoutEnsure(registry, tid, depth)` used by BOTH the normal topological pass and the array-size fold; `evalConstU32Full` now completes a struct on demand and folds struct `@sizeOf`/`@alignOf`/`@bitSizeOf` in array-size positions (only from `state == 2`)] [updated: 2026-09-21 — Task 11F: `evalConstU32Full` folds the integer-valued builtins (`@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf`) in array-size positions; `evalConstScalarKind` restricts the `@sizeOf`/`@alignOf`/`@bitSizeOf` fold to complete primitive/alias types] [updated: 2026-09-20 — refreshed against current source: `front_resolution.zig` front pass, arbitrary-width int/`enum(uN)` layer, packed struct/union kinds, `volatile`/calling-convention type layer, `TYPE_VA_LIST`; line references and dated evidence removed] [updated: 2026-09-24 — Task 15 (S3): `resolveTypeExprFull`'s `field_access` arm enforces cross-module `pub` visibility in TYPE positions via the new `typeResolverCheckMemberVisibility` (same rule and ASCII message as the semantic analyzer's `semanticAnalyzerCheckMemberVisibility`): an ident-base module member or a `module_type` member owned by another module without the `pub` flag is `error[3007]` `ERR_3007_VISIBILITY_VIOLATION` (`'<name>' is not marked 'pub'`, rc=2 / 0 `.c`) and the type resolves to `TYPE_UNDEFINED`; only passes with a live `env.diag` emit (lower/symbol_registrator/comptime_eval pass null and resolve already-accepted programs)] [updated: 2026-09-24 — Task 15 (S3) fix round 1: the `evalConstIntFull` `field_access` fold arm now runs the same `typeResolverCheckMemberVisibility` gate before folding a module const, closing the const-fold positions (`var arr: [mod.hidden_const]u8` and `enum(u8){A = mod.hidden_const}` were accepted with no diagnostic; now rc=2 / 0 `.c` with `error[3007]` plus the declined-fold `error[3050]`/`error[3055]` cascade). Fixture `pub_visibility_fold_reject_xmod` + standalone `repro/pub_visibility_fold.z98`; positive fold controls in `stdlib_pub_visibility_ok_xmod`; fixed point `b6bcb1bb…` → moving point `c9e5d744…` (hop2 == hop3); 4-MD5 emitted-C UNCHANGED]
+
+> Covers: `type_resolver.zig`, `type_registry.zig`, `const_alias_prepass.zig`, `front_resolution.zig`
+
+## Summary Table
+
+| Artifact | Count | Notes |
+|----------|-------|-------|
+| `TypeId` sentinels | 21 | TYPE_VOID(1) through TYPE_TYPE(20), TYPE_VA_LIST(21) |
+| `TypeKind` variants | 44 | none_sentinel(0) through packed_union_type(43) |
+| `Type` fields | 9 | size, name_id(u32), payload_idx(u32), kind, module_id(u16), flags(u8), state(u8), iw(u8), alignment(u16) — declaration order places the two u16 columns after the u8 columns (20 bytes) |
+| Payload structs | 15 | PtrPayload, ArrayPayload, SlicePayload, OptionalPayload, EUPayload, ErrorSetPayload, FnPayload, StructPayload, EnumPayload, UnionPayload, TaggedUnionPayload, TuplePayload, UnresolvedPayload, PackedBitField, PackedStructInfo |
+| Per-kind payload arrays | 13 | ptr/array/slice/opt/eu/es/fn/st/en/un/tu/tup/unr |
+| Auxiliary arrays | 7 | fe(FieldEntry), em(EnumMember), xt(TypeId list), xn(u32 list), pk(PackedBitField), pk_struct(PackedStructInfo), pk_un(PackedStructInfo) |
+| Type caches | 8 | ptr_cache, many_ptr_cache, slice_cache, optional_cache, array_cache, eu_cache, es_cache, name_cache |
+| TypeResolver fields | 13 | registry, depend_items/len/cap, in_degree_items/cap, sorted_items/len, worklist_items/len/cap, diag, alloc |
+| Layout kinds resolved | 9 | struct (incl. packed), enum, union, packed_union, tagged_union, optional, error_union, array, tuple |
+| Debug markers | ~40+ | `DC`, `NP`, `U2H`, `U2N`, `O0`, `O1H`, `O2N`, `P2`, `NGC`, `RN`, `X`, `MC`, `RTD`, `NF`, `N2`, `OPTVOID`, `FAH`, `PTR`, `P`, `M`, `SL`, `T0`-`T3`, `A`, `CAP`, `CAT`, `GATE`, `KAHN`, `CLS`, `FER`, `FSW`, `DFT`, `FTW`, `B2`, `DTWR`, `DTSK`, `TUI`, `UND` |
+
+---
+
+## TypeId Sentinel Values
+
+Defined in `type_registry.zig`:
+
+| Sentinel | Value | Size (bytes) | Alignment (bytes) |
+|----------|-------|-------------|-------------------|
+| `TYPE_VOID` | 1 | 0 | 0 |
+| `TYPE_BOOL` | 2 | 4 | 4 |
+| `TYPE_NORETURN` | 3 | 0 | 0 |
+| `TYPE_I8` | 4 | 1 | 1 |
+| `TYPE_I16` | 5 | 2 | 2 |
+| `TYPE_I32` | 6 | 4 | 4 |
+| `TYPE_I64` | 7 | 8 | 8 |
+| `TYPE_U8` | 8 | 1 | 1 |
+| `TYPE_U16` | 9 | 2 | 2 |
+| `TYPE_U32` | 10 | 4 | 4 |
+| `TYPE_U64` | 11 | 8 | 8 |
+| `TYPE_ISIZE` | 12 | 4 | 4 |
+| `TYPE_USIZE` | 13 | 4 | 4 |
+| `TYPE_C_CHAR` | 14 | 1 | 1 |
+| `TYPE_F32` | 15 | 4 | 4 |
+| `TYPE_F64` | 16 | 8 | 8 |
+| `TYPE_NULL` | 17 | 0 | 0 |
+| `TYPE_UNDEFINED` | 18 | 0 | 0 |
+| `TYPE_INT_LIT` | 19 | 0 | 0 |
+| `TYPE_TYPE` | 20 | 0 | 0 |
+| `TYPE_VA_LIST` | 21 | 4 | 4 |
+
+Synthetic field indices: `SLICE_FIELD_PTR=0`, `SLICE_FIELD_LEN=1`, `TU_FIELD_TAG=0`, `TU_FIELD_PAYLOAD=1`.
+
+`FIRST_USER_TYPE = 20` — **stale** (see below). Adding the
+`va_list` primitive (`TypeKind.va_list_type`, registered by `typeRegistryRegisterPrimitives`,
+primitive name `va_list` via `registerPrimitiveName`) shifted every user type id by 1 — the F4
+"va_list user-type-id shift" re-baselined the mud/lisp/json MD5 gates for this (gol coincidentally
+unchanged). Since primitives now occupy 1-21, user types in practice start ≥22, but the
+`FIRST_USER_TYPE` constant in `type_registry.zig` still reads `20` (pre-existing drift:
+`TYPE_TYPE` was already a primitive while `FIRST_USER_TYPE` was never bumped). Docs-only task —
+the source constant is left unchanged.
+
+---
+
+## type_registry.zig (`sf/src/type_registry.zig`)
+
+Central type store. Flat arrays of `Type` entries indexed by `TypeId` (u32). Per-kind payload arrays hold variable-length data.
+
+### Types
+
+| Type | Description |
+|------|-------------|
+| `TypeId` | `u32` alias — index into `TypeRegistry.types_items` |
+| `TypeKind` (enum u8) | 44 variants: none_sentinel(0), void/bool/noreturn/i8/i16/i32/i64/u8/u16/u32/u64/isize/usize/c_char/f32/f64, ptr/many_ptr/array/slice/optional/error_union/error_set/fn/struct/enum/union/tagged_union/tuple/unresolved_name/type_type/module_type/null_type/undefined_type/integer_literal_type/anon_struct_init/anon_array/anon_tuple/anon_union/va_list_type, arb_uint_type, arb_int_type, packed_union_type |
+| `Type` (struct) | declaration order: `size(u32, 0)`, `name_id(u32, 4)`, `payload_idx(u32, 8)`, `kind(TypeKind u8, 12)`, `flags(u8, 13)`, `state(u8, 14)`, `iw(u8, 15, arb-int width)`, `module_id(u16, 16)`, `alignment(u16, 18)` — **20 bytes total** (widened from 16: `name_id`/`payload_idx` u32, `module_id`/`alignment` u16; `is_signed` dropped and `c_name_id` now the registry-private `c_name_map` side memo) |
+| `VOLATILE_FLAG` / `FN_FLAG_VARIADIC` / `FN_FLAG_STDCALL` | flag-bit constants: `VOLATILE_FLAG=2`, `FN_FLAG_VARIADIC=1`, `FN_FLAG_STDCALL=2` |
+| `PtrPayload` | `base: TypeId` — shared by ptr_type and many_ptr_type |
+| `ArrayPayload` | `elem: TypeId`, `length: u32` |
+| `SlicePayload` | `elem: TypeId` |
+| `OptionalPayload` | `payload: TypeId` |
+| `EUPayload` | `payload: TypeId`, `error_set: TypeId` |
+| `ErrorSetPayload` | `tags_start: u32`, `tags_count: u16` |
+| `FnPayload` | `name_id, module_id: u32`, `params_start: u32`, `params_count: u16`, `return_type: TypeId`, `is_extern: u8`, `flags_packed: u8` — bit0 `is_variadic`, bit1 `stdcall` |
+| `StructPayload` | `fields_start: u32`, `fields_count: u16` |
+| `EnumPayload` | `members_start: u32`, `members_count: u16`, `backing_type: TypeId`, `explicit_backing: u8` |
+| `UnionPayload` | `fields_start: u32`, `fields_count: u16`, `tag_type: TypeId` |
+| `TaggedUnionPayload` | `tag_type: TypeId`, `fields_start: u32`, `fields_count: u16` |
+| `TuplePayload` | `elems_start: u32`, `elems_count: u16` |
+| `UnresolvedPayload` | `name_id, module_id: u32` |
+| `FieldEntry` | `name_id: u32`, `type_id: TypeId`, `offset: u32` |
+| `PackedBitField` | `bit_offset: u32`, `bit_width: u16` |
+| `PackedStructInfo` | `pk_start: u32`, `pk_count: u16`, `total_bits: u32` |
+| `EnumMember` | `name_id: u32`, `value: i64` |
+| `FnParam` | `name_id: u32`, `type_id: TypeId` |
+
+### TypeRegistry struct
+
+Defined in `type_registry.zig`:
+
+- **types**: `types_items([*]Type)`, `types_len`, `types_cap`, `types_alloc(*Sand)` — the master type array; TypeId is the index. Also holds `interner(*StringInterner)`.
+- **Per-kind payload arrays**: `ptr/array/slice/opt/eu/es/fn/st/en/un/tu/tup/unr` — each with `_items([*]PayloadType)`, `_len(usize)`, `_cap(usize)`
+- **Auxiliary arrays**: `fe(FieldEntry)`, `em(EnumMember)`, `xt(TypeId)`, `xn(u32)`, `pk(PackedBitField)`, `pk_struct(PackedStructInfo)`, `pk_un(PackedStructInfo)`
+- **Caches**: 8 hash maps — `ptr_cache(U64ToU32Map)`, `many_ptr_cache(U64ToU32Map)`, `slice_cache(U64ToU32Map)`, `optional_cache(U32ToU32Map)`, `array_cache(U64ToU32Map)`, `eu_cache(U64ToU32Map)`, `es_cache(U64ToU32Map)`, `name_cache(U64ToU32Map)`
+
+### Functions
+
+| Function | Scope | `[inference]` | Description |
+|----------|-------|---------------|-------------|
+| `typeRegistryInit` | pub | `[inference: zero-init all arrays, init 8 caches via u64ToU32MapInit/u32ToU32MapInit, return TypeRegistry]` | Creates an empty registry. Arrays start undefined, len=cap=0; all 8 hash maps initialized. |
+| `typeDbOom` | private | `[inference: print "OOM: type_db <used> -> <new>" to stderr, pal.exit(1)]` | Soft-OOM handler for the type_db arena (see note below). |
+| `arrayGrow` | private | `[inference: 2x growth (min 8), sandAlloc, byte-copy old elements, update cap]` | Grows a per-kind payload array. |
+| `payloadEnsure` | private | `[inference: no-op if new_cap <= cap, else arrayGrow]` | Capacity guard used by the `*Append` helpers. |
+| `typeRegistryEnsureCapacity` | private | `[inference: grow types array (2x, min 32), sandAlloc, copy Type entries]` | Grows `types_items`. |
+| `typeRegistryAppend` | private | `[inference: ensure capacity, write Type at types_len, increment len, emit DC:k<n>t marker, emit X:id for struct_type]` | Core append to `types_items`. Returns the new `TypeId` (old `types_len`). |
+| `typeWidthBitsForKind` | private | `[inference: map fixed kinds to 8/16/32/64, else 0]` | Bit width for the fixed primitive kinds. |
+| `registerPrimitive` | private | `[inference: typeRegistryAppend with state=2, set iw from kind]` | Appends a resolved (state=2) primitive type. |
+| `alignUp` | pub | `[inference: (v + a - 1) & ~(a - 1), round v up to multiple of a, a must be power of 2]` | Aligns `v` up to alignment `a`; used by optional/error-union size computation. |
+| `initArray` | private | `[inference: items=undefined, len=cap=0]` | Zero-inits an array slot. |
+| `nameCacheGet` | pub | `[inference: u64ToU32MapGet on name_cache, return value or null; emit NGC:g1 marker for key_lo==1]` | Looks up a `(module<<32)\|name_id` key in `name_cache` (also used for bare primitive keys). Returns a cached TypeId or null. |
+| `nameCachePut` | pub | `[inference: u64ToU32MapPut on name_cache, emit NP:k<key_lo_16bits>v<value> marker]` | Stores a `(module<<32)\|name_id` → TypeId mapping. |
+| `typeRegistryGetOrCreatePtr` | pub | `[inference: delegate to typeRegistryGetOrCreatePtrQ(is_volatile=false)]` | Creates/retrieves `*T`. |
+| `typeRegistryGetOrCreatePtrQ` | pub | `[inference: key = (base<<2) \| (is_const \| is_volatile<<1), ptr_cache check, ptrAppend, append size=4 align=4 flags=q]` | Creates/retrieves `*T` with `const`/`volatile` qualifiers (`VOLATILE_FLAG` bit). |
+| `typeRegistryGetOrCreateManyPtr` | pub | `[inference: delegate to typeRegistryGetOrCreateManyPtrQ(is_volatile=false)]` | Creates/retrieves `[*]T`. |
+| `typeRegistryGetOrCreateManyPtrQ` | pub | `[inference: same as ptr but many_ptr_cache, kind=many_ptr_type]` | Creates/retrieves `[*]T` with qualifiers. |
+| `typeRegistryGetOrCreateSlice` | pub | `[inference: key = (elem<<1) \| is_const, slice_cache check, emit U2H hit or U2N new marker, sliceAppend, append size=8 align=4]` | Creates/retrieves `[]T`. Size=8 (ptr+len), align=4. |
+| `typeRegistryGetOrCreateOptional` | pub | `[inference: optional_cache check, if payload resolved compute size/align, optAppend, append, cache put only if state=2]` | Creates `?T`. If payload resolved, `size = alignUp(alignUp(payload.size,4)+4, max(payload.align,4))`. `[updated: 2026-10-17 — D1 fix T1: cache put is UNCONDITIONAL (the old `state=2` guard minted duplicate ids for the same payload); cache hit runs `optionalCompleteIfReady` to complete a pending layout in place.]` |
+| `typeRegistryGetOrCreateErrorUnion` | pub | `[inference: eu_key = (payload<<32) \| error_set, eu_cache check, compute union_size=max(payload.size,4), total=alignUp(alignUp(union_size,union_align),4)+4, size=alignUp(total,union_align)]` | Creates `E!T` error-union type. |
+| `typeRegistryGetOrCreateArray` | pub | `[inference: key = (elem<<32) \| length, array_cache check, emit O0/O1 markers, arrayAppend, size=elem.size*length, cache put only if elem resolved, emit O2 marker]` | Creates `[N]T`. `[updated: 2026-10-17 — D1 fix T1: cache put is UNCONDITIONAL (the old `elem resolved` guard minted duplicate ids); cache hit runs `arrayCompleteIfReady`.]` |
+| `typeRegistryGetOrCreateTuple` | pub | `[inference: tupAppend(TuplePayload), append(state=2,size=0,align=1), no caching]` | Creates a tuple type; size computed later by the layout resolver. |
+| `typeRegistryGetOrCreateFn` | pub | `[inference: linear scan for matching fn_type+name_id+module_id+stdcall bit, fnAppend(FnPayload), append(size=4,align=4,name_id), emit P2 marker]` | Creates/retrieves a function type. `is_variadic` is `flags_packed` bit0 (`FN_FLAG_VARIADIC`), `call_conv==1` sets bit1 (`FN_FLAG_STDCALL`). |
+| `typeRegistryMarkFnPtrUsed` | pub | `[inference: types_items[tid].flags \|= 1]` | Marks that this fn type is referenced as a pointer (enables C89 fn-ptr emission). |
+| `typeRegistryGetOrCreateErrorSet` | pub | `[inference: key = FNV-fold of tag names, es_cache check, esAppend, append(size=4,align=4), cache put]` | Creates an error-set type. Tags are `xn_items[tags_start..tags_start+tags_count]`. |
+| `typeRegistryErrorSetMemberIndex` | pub | `[inference: bounds check, linear scan of xn_items for matching name_id]` | Returns the member index within an error set, or `0xFFFFFFFF` if not found. |
+| `typeRegistryGetOrCreateModule` | pub | `[inference: linear scan for matching module_type+module_id, append(state=0), emit MC marker]` | Creates/retrieves a module type reference. |
+| `typeRegistryRegisterPrimitives` | pub | `[inference: registerPrimitive for kinds 0-21, then registerPrimitiveName for the named ones]` | Populates sentinel TypeIds 0-21 (none_sentinel + 21 named primitives: void, bool, i8-i64, u8-u64, isize, usize, c_char, f32, f64, null, undefined, type, va_list). |
+| `registerPrimitiveName` | private | `[inference: interner.intern name, set Type.name_id, nameCachePut(key=name_id, value=tid)]` | Interns a primitive name and registers it in `name_cache` under the bare `name_id` key. |
+| `parseArbIntWidth` | pub | `[inference: parse uN/iN name; u1..u64, i1..i63; 0 on invalid]` | Parses an arbitrary-width integer type name. |
+| `typeRegistryGetOrCreateArbInt` | pub | `[inference: parseArbIntWidth, name_cache check, carrier = 1/2/4/8 by width, append arb_uint_type/arb_int_type with width_bits/is_signed, registerPrimitiveName]` | Creates an arbitrary-width int type (`uN`/`iN`); the carrier is 1 byte for width ≤8, 2 for ≤16, 4 for ≤32, 8 for ≤64. |
+| `typeRegistryEnumBackingType` | pub | `[inference: enum_type → en_items[payload].backing_type, else TYPE_U32]` | Returns an enum's backing TypeId. |
+| `typeRegistryEnumHasExplicitBacking` | pub | `[inference: enum_type → en_items[payload].explicit_backing != 0]` | Whether the enum declared an explicit `(uN)`/int backing. |
+| `typeRegistryIntWidthBits` | pub | `[inference: enum → backing width; arb → width_bits; else typeWidthBitsForKind]` | Bit width of an integer / enum-backed / arbitrary-width type (0 otherwise). |
+| `typeRegistryIntIsSigned` | pub | `[inference: enum → backing signedness; arb_int → true; arb_uint → false; fixed kinds by kind]` | Signedness of an integer / enum-backed / arbitrary-width type. |
+| `typeRegistryRegisterNamedType` | pub | `[inference: key = module_id*2^32 + name_id, nameCacheGet check, append kind+name_id+module_id, nameCachePut, emit RN marker]` | Registers a user-defined named type (struct, enum, union, etc.). State=0 (unresolved). |
+| `typeRefs` | pub | `[inference: typeRefsWalk over the ordering refs of tid — by-value positions contribute typeNeedsFullDef(R); name-spelling positions (fn return/params, slice elem) additionally require NOT typeHasForwardDecl(R); pointer refs contribute a name edge to typeRefPtrLeaf(R); distinct edge targets, self excluded; writes out[0..] and returns the count]` | **P2 (2026-10-12, D8):** THE single type-reference relation. Returns the typedef-ordering edge targets that must precede `tid` — consumed by `typeResolverBuildDependencyGraph`, the planner's `tstTopologicalSort` (`c89_plan`; P12 — was the emitter's), and (P4) the classification's shared closure `classificationSharedClosure`. Replaces the three divergent memberships (`isValueDependency` (deleted, dead), `c89NeedsEmitEdge`, `layoutFieldNeedsEdge`). |
+| `typeNeedsFullDef` | pub | `[inference: kind ∈ {slice, struct, union, tagged_union, array, optional, error_union, enum, error_set, fn, tuple, unresolved_name, packed_union}]` | **P2:** a typedef-ordering reference to this type needs its definition before the referrer (forward decl insufficient). = historical `c89NeedsEmitEdge` membership PLUS `packed_union_type`. |
+| `typeHasForwardDecl` | private | `[inference: name_id != 0 and (tagged_union, union, or non-packed struct)]` | **P2:** mirrors `emitTypePasses` Pass 1 exactly — the emitter forward-declares exactly these names before any sub-pass 2 typedef, so a name-spelling reference to them needs no ordering edge. |
+| `typeRefPtrLeaf` | private | `[inference: walk ptr/many_ptr bases (cap 64) to the first non-pointer type]` | **P2:** the type whose C name a pointer spelling uses (`getCTypeName` renders `*fn` as the fn typedef name and `*T` as `<T-cname>*`). |
+| `typeRefEdgeTarget` | private | `[inference: self/OOB → 0xFFFFFFFF; pointer ref → name edge to the chain-leaf (needsFullDef(leaf) AND NOT hasForwardDecl(leaf)); non-pointer by-value → needsFullDef(ref); non-pointer name-spelling → needsFullDef(ref) AND NOT hasForwardDecl(ref); else target tid]` | **P2:** the per-reference edge rule (the D8 shape is a ptr-to-fn field: the container's typedef spells the fn typedef name, and the fn typedef spells its return/param names). |
+| `typeRefsNote` / `typeRefsSeenOut` / `typeRefsWalk` | private | `[inference: one walk; probe mode returns 1 at the first target match; fill mode appends distinct targets]` | **P2:** the single enumeration behind `typeRefs`/`typeRefsContains` (count/fill/probe agree — one Kahn decrement per entry). |
+| `typeRefsContains` | pub | `[inference: fast-guard target != tid and typeNeedsFullDef(target); probe walk]` | **P2:** membership probe (replaces `tstIsDep`). |
+| `typeCName` | pub | `[inference: one per-kind derivation — verbatim relocation of the emitter's former `getCTypeName` body: primitives → fixed C spellings; i64/u64/f64/enum/named error_set/struct/union/packed_union/tagged_union/fallback kinds → nameManglerMangle(name_id, 2, module_id); array → MintSyntheticType("Arr_", typeCName(elem), length, 127); tuple → MintSyntheticType("Tup_", "", tid, 31); slice → MintSyntheticType("Slice_", typeSliceElementName(elem), "", 63); optional → MintSyntheticType("Opt_", "", payload-id, 63); ptr/many_ptr → `*fn` spells the fn typedef name, `*const [N]u8` decays to `unsigned char*`, else `base + "*"` with the volatile placements; error_union → `EU_` + payload digits (least-significant-digit-first) mangled kind-2/module-0; fn_type → `FS_`/`FP_`/`FN_` + sanitized return/param names mangled; anonymous error_set → `ES_` + payload_idx digits (least-significant-digit-first) mangled]` | **P3 (2026-10-12, D2 residue):** THE one canonical C-type-name derivation — synthetic names minted ONCE through the P1 `name_mangler.zig` authority; the `c_name_map` memo is owned here (every post-memo-check kind stores its mangled name id on first derivation) and the emitter is a pure READER (declaration + use sites go through the `c89_emit.getCTypeName` consumer wrapper). Every kind's spelling is byte-identical to the former emitter derivation; same tid → same C name every compilation. |
+| `typeSliceElementName` | private | `[inference: elem.name_id == 0 → typeCName(elem) (F2 recursion for synthetic elements); else nameManglerMangle(elem.name_id, 2, 0)]` | **P3:** the F2 slice-element name component (moved from `c89_emit.zig`; note the preserved module-0 spelling). |
+| `typeRegistryGetTypeState` | pub | `[inference: read types_items[tid].state]` | Returns the resolution state (0=unresolved, 2=resolved). |
+| `typeRegistryIsNumeric` | pub | `[inference: fixed int kinds + arb types + f32/f64 + integer_literal]` | Numeric types. |
+| `typeRegistryIsInteger` | pub | `[inference: same as IsNumeric minus f32/f64]` | Integer types only (fixed + arbitrary-width + integer_literal). |
+| `typeRegistryIsUnsigned` | pub | `[inference: u8/u16/u32/u64/usize + arb_uint_type]` | Unsigned integer types only. |
+| `typeRegistryIsPointer` | pub | `[inference: kind == ptr_type or many_ptr_type]` | Regular or many-item pointer. |
+| `typeRegistryIsSlice` | pub | `[inference: kind == slice_type]` | Slice type. |
+| `typeRegistryGetPointeeType` | pub | `[inference: if ptr/many_ptr, return ptr_items[payload_idx].base; else null]` | Returns the base type of a pointer. |
+| `typeKindIsSignedIntBase` | pub | `[inference: kind ∈ {i8,i16,i32,i64,isize,arb_int} → 1, else 0]` | P5 (2026-10-12): signed base int-kind truth table (kind-level; relocated verbatim from `c89_emit.zig`). |
+| `typeKindIsUnsignedIntBase` | pub | `[inference: kind ∈ {u8,u16,u32,u64,usize,arb_uint} → 1, else 0]` | P5 (2026-10-12): unsigned base int-kind truth table (relocated verbatim from `c89_emit.zig`). |
+| `typeKindIntWidthBytes` | pub | `[inference: i8/u8/c_char→1; i16/u16→2; bool→1; i32/u32/isize/usize/integer_literal/null/undefined→4; i64/u64→8; else 0]` | P5 (2026-10-12): int-kind byte-width table; 0 = not handled here (caller keeps its own fallback). |
+| `typeRegistryIntSignednessClass` | pub | `[inference: TYPE_VOID→-1; signed-base ∪ c_char ∪ integer_literal ∪ undefined ∪ null→1; unsigned-base ∪ bool→0; else -1]` | P5 (2026-10-12): C-codegen signedness class (tri-state) — the single classifier behind `coercionUsualArithPromote` (doc 05); intentionally NOT `typeRegistryIntIsSigned` (different membership: c_char/integer_literal/undefined/null count signed here; no enum-backing recursion). |
+| `typeRegistryIntNeedsWidthWrap` | pub | `[inference: TYPE_VOID→0; only arb_int/arb_uint; 1 when 1 ≤ typeRegistryIntWidthBits(tyid) < size*8]` | P5 (2026-10-12): whether an arbitrary-width int needs width-wrap emission (former emitter `intTypeNeedsWidthWrap`). |
+| `typeRegistryIntByteWidth` | pub | `[inference: TYPE_VOID→0; typeKindIntWidthBytes(kind) if ≠0 else ty.size]` | P5 (2026-10-12): byte width used by usual-arithmetic width comparison (former emitter `intTypeByteWidth`). |
+| `typeRegistryIsIntKind` | pub | `[inference: TYPE_VOID→0; signed-base ∪ unsigned-base ∪ {c_char,bool,integer_literal,undefined,null}→1, else 0]` | P5 (2026-10-12): C-codegen integer-kind predicate (former emitter `typeIsIntKind`). |
+| `typeRegistryIsScalarC` | pub | `[inference: TYPE_VOID/TYPE_UNDEFINED/0→0; signed-base ∪ unsigned-base ∪ {c_char,integer_literal,bool,null,f32,f64,enum,error_set,ptr,many_ptr,fn}→1, else 0]` | P5 (2026-10-12): C scalar-return predicate (former emitter `retTypeIsScalarC`). |
+| `typeRegistryArrayByteSize` | pub | `[inference: if array_type and state==2, return size; else null]` | Byte length of a concrete array (used by the `-fsafe` `@asyncInit` buffer check). |
+| `typeRegistryGetSliceElem` | pub | `[inference: if slice_type, return slice_items[payload_idx].elem; else null]` | Returns the element type of a slice. |
+| `typeRegistryIndexedElemType` | pub | `[inference: array→array.elem, slice→slice.elem, ptr→pointee (deref array), else TYPE_UNDEFINED]` | Element type for indexing `base_tid[i]`; handles `*[N]T` → `T`. |
+| `typeRegistryIsOptional` | pub | `[inference: kind == optional_type]` | Is this an optional type? |
+| `typeRegistryIsErrorSet` | pub | `[inference: kind == error_set_type]` | Is this an error-set type? |
+| `typeRegistryGetStructFields` | pub | `[inference: resolve StructPayload, return slice of fe_items]` | Returns struct field entries (with computed offsets). |
+| `typeRegistryIsPacked` | pub | `[inference: struct_type with flags & 0x10]` | Whether a struct is packed. |
+| `typeRegistryComputePackedLayout` | pub | `[inference: per-field bit widths (bool=1, nested packed struct=its total_bits, else int width), accumulate total_bits, size=ceil(bits/8) min 1, align=1]` | Computes a packed struct's bit layout and writes `pk_struct_items[payload_idx]`. |
+| `typeRegistryGetPackedBitFields` | pub | `[inference: packed struct → slice of pk_items, else false]` | Returns the packed bit-field entries. |
+| `typeRegistryGetPackedTotalBits` | pub | `[inference: packed struct → total_bits, else 0]` | Total bit width of a packed struct. |
+| `typeRegistrySetPacked` | pub | `[inference: flags \|= 0x10]` | Marks a struct type as packed. |
+| `typeRegistryComputePackedUnionLayout` | pub | `[inference: max member bit width, size=ceil(max_bits/8) min 1, align=1]` | Computes a packed union's bit layout and writes `pk_un_items[payload_idx]`. |
+| `typeRegistryGetPackedUnionBitFields` | pub | `[inference: packed_union_type → slice of pk_items, else false]` | Returns the packed-union bit-field entries. |
+| `typeRegistryGetPackedUnionTotalBits` | pub | `[inference: packed_union_type → max bits, else 0]` | Max member bit width of a packed union. |
+| `typeRegistryGetUnionFields` | pub | `[inference: resolve UnionPayload, return slice of fe_items]` | Returns union field entries. |
+| `pointerQualifiersMonotone` | pub | `[inference: ((src_flags & mask) & ~(tgt_flags & mask)) == 0]` | Qualifier-monotonicity helper (no dropping `const`/`volatile`). |
+| `typeRegistryIsAssignable` | pub | `[inference: ~30 rule branches for implicit coercion]` | Type assignability check. See [typeRegistryIsAssignable Rules](#typeregistryisassignable-rules). |
+| `errorSetIsSubset` | pub | `[inference: every source tag name_id is a member of the target set]` | Error-set subset check used by error-union assignability. |
+| `canLiteralFitInType` | pub | `[inference: range check per fixed integer type, true for f32/f64]` | Whether an `i64` value fits in the given fixed integer type (see Known Issues for arbitrary-width coverage). |
+
+### *Append Helpers
+
+All follow same pattern: `payloadEnsure` → write at `len` → `len += 1`.
+
+| Helper | Scope | Payload Type |
+|--------|-------|-------------|
+| `ptrAppend` | private | `PtrPayload` |
+| `arrayAppend` | private | `ArrayPayload` |
+| `sliceAppend` | private | `SlicePayload` |
+| `optAppend` | private | `OptionalPayload` |
+| `euAppend` | private | `EUPayload` |
+| `esAppend` | pub | `ErrorSetPayload` |
+| `fnAppend` | private | `FnPayload` |
+| `stAppend` | pub | `StructPayload` (also seeds `pk_struct_items`) |
+| `pkFieldAppend` | pub | `PackedBitField` |
+| `pkStructAppend` | private | `PackedStructInfo` |
+| `pkSetFields` | pub | `PackedStructInfo` (overwrite by index) |
+| `enAppend` | pub | `EnumPayload` |
+| `unAppend` | pub | `UnionPayload` (also seeds `pk_un_items`) |
+| `pkUnStructAppend` | private | `PackedStructInfo` |
+| `pkUnSetFields` | pub | `PackedStructInfo` (overwrite by index) |
+| `tuAppend` | pub | `TaggedUnionPayload` |
+| `tupAppend` | pub | `TuplePayload` |
+| `unrAppend` | private | `UnresolvedPayload` |
+| `feAppend` | pub | `FieldEntry` |
+| `emAppend` | pub | `EnumMember` |
+| `xtAppend` | pub | `TypeId` |
+| `xnAppend` | pub | `u32` |
+
+Note: `stAppend`/`unAppend` also append a zeroed `PackedStructInfo` to the parallel `pk_struct`/`pk_un` side table; `pkSetFields`/`pkUnSetFields` overwrite it by index (no append). `xtAppend` and `xnAppend` use `elem_size=4` (u32), unlike the struct-payload `*Append` helpers which use `@sizeOf(PayloadStruct)`.
+
+**[updated: 2026-08-14 — F-TYPEDB soft OOM]:** `arrayGrow` and `typeRegistryEnsureCapacity` no longer `catch unreachable` on a failed `sandAlloc` from the type_db growable arena — both route through the new `typeDbOom(used, new_bytes)` helper, which prints `OOM: type_db <used> -> <new>` to stderr (mirroring the `sandAlloc` OOM diagnostic style) and exits `pal.exit(1)` (soft OOM, visible to `--track-memory`, instead of a panic). The type_db arena is pool-backed via the unified growable pool (Task 3), so its OOM only fires on true pool exhaustion.
+
+### Type Caches
+
+| Cache | Key Type | Key Construction | Used By |
+|-------|----------|-----------------|---------|
+| `ptr_cache` | u64 | `(base << 2) \| (is_const \| is_volatile<<1)` | `typeRegistryGetOrCreatePtrQ` |
+| `many_ptr_cache` | u64 | `(base << 2) \| (is_const \| is_volatile<<1)` | `typeRegistryGetOrCreateManyPtrQ` |
+| `slice_cache` | u64 | `(elem << 1) \| is_const` | `typeRegistryGetOrCreateSlice` |
+| `optional_cache` | u32 | `payload TypeId` | `typeRegistryGetOrCreateOptional` |
+| `array_cache` | u64 | `(elem << 32) \| length` | `typeRegistryGetOrCreateArray` |
+| `eu_cache` | u64 | `(payload << 32) \| error_set` | `typeRegistryGetOrCreateErrorUnion` |
+| `es_cache` | u64 | XOR-fold FNV hash of tag name_ids | `typeRegistryGetOrCreateErrorSet` |
+| `name_cache` | u64 | `(module_id << 32) \| name_id` (bare key for primitives) | `typeRegistryRegisterNamedType`, `registerPrimitiveName`, `typeRegistryGetOrCreateArbInt`, `resolveTypeExprFull`, `constAliasPrepass`, `front_resolution.zig` |
+
+**[updated: 2026-10-17 — D1 root fix (T1, canonical synthetic composites; fix commit `5a56b501`)]:** `typeRegistryGetOrCreateOptional` and `typeRegistryGetOrCreateArray` now key-cache **unconditionally** at creation (model: `typeRegistryGetOrCreatePtr`'s unconditional `MapPut`). The pre-fix `MapPut` was guarded on the layout state (`if (opt_state == 2)` / `if (elem_ty.state == 2)`), so a composite requested before its payload/elem was laid out was appended **uncached** and the next request minted a **second id for the same parts** — the D1 optional/array identity bug (a field's `?Key` and a function's `?Key` became distinct synthetic ids). A cache hit now completes layout in place (`optionalCompleteIfReady` / `arrayCompleteIfReady`, guarded on `payload.state == 2`) instead of returning a frozen `state=0` twin: same parts → same id forever, and the id's layout catches up once the payload resolves. `eu_cache` was already unconditional (unchanged); `GetOrCreateSlice`/`Ptr`/`ManyPtr` were already canonical; tuples stay creation-order-keyed (audit note, pre-existing). Residual (identity fixed, layout still lazy): a composite created before its payload resolves stays `state=0/size=0` until a later in-place completion — identity never splits. Fixtures: `repro/mi_matrix/fnptr_opt_aggregate_{coerce,emit}_xmod` (green).
+
+### typeRegistryIsAssignable Rules
+
+Implicit coercion rules (`typeRegistryIsAssignable`, with helper `pointerQualifiersMonotone` for `const`/`volatile` and `errorSetIsSubset` for error sets):
+
+1. **Identity**: `source == target` → true
+2. **Undefined / noreturn source**: `undefined_type → any`, `noreturn_type → any` → true
+3. **Integer literal → numeric / c_char**: `integer_literal_type → any numeric type or TYPE_C_CHAR` → true
+4. **Integer widening (same sign, wider)**: both integer, `source != TYPE_INT_LIT`, same `typeRegistryIsUnsigned`, and `typeRegistryIntWidthBits(source) < typeRegistryIntWidthBits(target)` → true (covers arbitrary-width ints and `enum(uN)` backing)
+5. **Float widening**: `f32 → f64` → true
+6. **null → pointer/optional/fn**: `null_type → *T, ?T, fn` → true
+7. **fn → fn pointer**: `fn_type → *fn` when return type, param count, variadic bit, stdcall bit, and every param TypeId match `[updated: 2026-10-17 — D1 root fix (T1): the return/params comparison is STRUCTURAL — `typeRegistryTypesEquiv` / `typesEquivRec` walks the synthetic-composite family (optional payload, error-union payload + error-set id, array elem+length, slice elem+flags, tuple elems, fn return+params+`flags_packed`), depth-capped at 16, instead of raw TypeId equality; a residual duplicate `?T`/`E!T`/`[N]T`/tuple id cannot reject an otherwise-identical signature. Ptr/many-ptr/slice/error-set/primitive/named-aggregate ids still compare by id (named types stay distinct per Zig semantics). Belt-and-braces on top of the canonical caches (Type Caches).]`
+8. **Optional wrapping**: `source → ?T` if `source → T`; also `null → ?T`
+9. **Error union (equal/subset error set, in-memory payload)**: `E!A → E!B` where the error sets are equal or the source set is a subset of the target set, and the payloads are **in-memory identical** (`A == B`, exact TypeId equality). **Task B5 (2026-09-21):** the payload check was general assignability (`A → B`), which wrongly accepted integer-widening payloads — invalid Zig, because official Zig's EU→EU rule is in-memory payload compatibility and only comptime-known values may coerce. This one branch gates every EU→EU context (return, assignment, var-declaration, call argument), so all runtime payload-differing coercions now clean-reject with `error[3000]`. Declared stricter-than-Zig divergences (safe clean rejects): any in-memory qualifier difference in the payload is rejected — e.g. pointer-qualifier EU→EU (`F!*u8 → E!*const u8`) and slice-qualifier EU→EU (`F![]u8 → E![]const u8`) — and comptime-known payload-differing EU→EU is rejected, because exact payload TypeId equality is also what the payload-keyed C EU typedef can represent without a rewrap.
+10. **Error union wrapping**: `source → E!T` if `source → T`
+11. **Error set → error union**: `error_set → E!T`
+12. **ptr → ptr**: `*void` ↔ `*T`; `*const T ← *T`; `*volatile T ← *T` (qualifier-monotone over `VOLATILE_FLAG`; const and volatile widening can combine)
+13. **slice → slice**: `[]T → []const T`, `[]T → []volatile T` (qualifier-monotone)
+14. **ptr → slice**: only `*[N]T → []T` (a bare `*T`/`*c_char` has no length and is not assignable)
+15. **many ptr → many ptr**: `[*]T → [*]const T`, `[*]T → [*]volatile T` (qualifier-monotone)
+16. **array → slice**: `[N]T → []T` (const/volatile monotone)
+17. **array → many ptr**: `[N]T → [*]T`
+18. **ptr → many ptr**: `*[N]T → [*]T`
+19. **array → array**: same element TypeId and length
+20. **slice → many ptr**: `[]T → [*]T`
+21. **ptr → optional pointer**: `*T → ?*T`
+22. **u8 ↔ c_char** (bidirectional)
+23. **tuple → array**: same element count and every tuple element assignable to the array element
+
+---
+
+## type_resolver.zig (`sf/src/type_resolver.zig`)
+
+Depends-on-graph topological sort and layout computation for all compound types. Also handles type expression resolution from AST nodes.
+
+### Types
+
+| Type | Description |
+|------|-------------|
+| `MODULE_ID_NONE` | `u32` sentinel `0xFFFFFFFF` — "no module context" for `TypeResolveEnv.module_id` (global fallback). |
+| `MAX_FN_PARAMS` | `64` — maximum fn-type parameter count; exceeding it is a hard `@panic` in `resolveFnSignatures`, never a silent truncation. |
+| `TypeResolveEnv` | Bundle: `store(*AstStore)`, `typereg(*TypeRegistry)`, `symbol_reg(*SymbolRegistry)`, `interner(*StringInterner)`, `module_id(u32)`, `source_file_id(u32)`, `diag(?*DiagnosticCollector)`, `local_consts(?*LocalConstScope)`, `local_types(?*LocalTypeScope)`. |
+| `LocalConstScope` | Function-local `const` name → `var_decl` node scope: `names([*]u32)`, `nodes([*]u32)`, `count`, `cap`, `alloc(*Sand)`. |
+| `LocalTypeScope` | **Task B2.** Function-local named-type name → `TypeId` scope: `names([*]u32)`, `types([*]u32)`, `count`, `cap`, `alloc(*Sand)`; `localTypeScopeInit`/`localTypeScopePush`/`localTypeScopeLookup` (newest-first). Consulted FIRST by `resolveTypeExprFull`'s `ident_expr` arm so a local type shadows module names inside the enclosing function (used for compound uses `E!T`, `*E`, `[N]E`, `?E`). |
+| `EmissionClassification` | **P4 fix round 2:** the classification state on `CompilerContext` (maps on permanent) — actual fields: `shared_set`, `pointer_only_map` (CLS:p snapshot — absent = value-embedding), `needs_def_map` (typedef must be emitted), `needed_tuple_set` (E4 seed). The emitter holds `classif: *EmissionClassification`, reads only. |
+| `TypeResolver` | Kahn topological sorter: `registry(*TypeRegistry)`, `depend_items/len/cap([*]DepEdge)`, `in_degree_items/cap([*]u32)`, `sorted_items/len([*]u32)`, `worklist_items/len/cap([*]u32)`, `diag(*DiagnosticCollector)`, `alloc(*Sand)`. |
+
+### Functions
+
+| Function | Scope | `[inference]` | Description |
+|----------|-------|---------------|-------------|
+| `typeResolverInit` | pub | `[inference: zero-init TypeResolver with undefined items, len/cap=0]` | Creates an empty resolver. |
+| `typeResolverAddEdge` | pub | `[inference: dependEnsureCapacity, store DepEdge{from,to}, increment depend_len]` | Appends a dependency edge. |
+| `dependEnsureCapacity` | private | `[inference: 2x growth, min 8, realloc-in-place then sand alloc 8-byte edges]` | Grows the dependency edge array. |
+| `worklistEnsureCapacity` | private | `[inference: 2x growth (min 64), realloc-in-place then sandAlloc u32 array, copy old items]` | Grows the Kahn worklist array. |
+| `worklistPush` | private | `[inference: worklistEnsureCapacity, write id at worklist_len, increment len]` | Pushes a TypeId onto the Kahn worklist. |
+| `worklistPop` | private | `[inference: return null if empty, decrement len, return worklist_items[len]]` | Pops a TypeId from the Kahn worklist (LIFO). |
+| `inDegreeEnsureCapacity` | private | `[inference: grow in_degree array to requested capacity (min 64), sandAlloc, update pointer and cap]` | Ensures the in_degree array is large enough. |
+| `alignUp` | private | `[inference: (v + a - 1) & ~(a - 1), round v up to multiple of a, a must be power of 2]` | Aligns `v` up to alignment `a`; used by `layoutCompute`. |
+| `layoutCompute` | private | `[inference: switch on kind, compute size/alignment, update Type in registry; does NOT touch state]` | The ONE layout math (the former `typeResolverResolveLayout` body, verbatim). Callable only when every direct dependency is complete. See [Layout Resolution](#layout-resolution). |
+| `layoutDepOk` | private | `[inference: false for dep 0/TYPE_UNDEFINED/TYPE_VOID, else layoutEnsure(dep, depth)]` | One direct-dependency completeness check for the shared walk. |
+| `layoutFieldDepsOk` | private | `[inference: for each FieldEntry type_id in fe_items[fstart..fstart+fcount], layoutDepOk]` | Field-list dependency completeness check. |
+| `layoutEnsure` | **pub** | `[inference: true if state==2; false past depth cap 16; walk direct deps (fields/tag/enum backing/tuple elems/array elem/optional+EU payload), false if any incomplete; else layoutCompute + state=2]` | **Task 11H (Option B, AMENDMENT 10).** The ONE shared, order-independent layout entry point. Used by the normal topological pass AND the on-demand array-size fold, so there is exactly one layout implementation and one dependency walk. **Task B2:** now `pub` so the semantic analyzer can lay out a container type registered during `phase_SemanticAnalysis` (which misses the earlier layout pass). |
+| `typeResolverResolveLayout` | private | `[inference: layoutEnsure(registry, tid, 0); on false fall back to layoutCompute]` | Normal-pass wrapper. The fallback preserves the historical behavior for a legitimate zero-size `void` field, a depth cap, or a kind with no layout math; the on-demand fold never takes it. |
+| `typeResolverBuild` | pub | `[inference: copy dep edges, alloc in_degree array of size types_len, zero-init, count edges per target]` | Initializes the in-degree array from the dependency graph (symbol-registrator DUMMY `0->tid` edges PLUS the real `field_type -> container_tid` edges added by `typeResolverBuildDependencyGraph`). Allocates `sorted_items`. |
+| `typeResolverResolve` | pub | `[inference: Kahn's algorithm — push zero-in-degree nodes, pop→resolveLayout→set state=2, decrement dependents' in-degree, push new zeros; detect circular deps]` | Topological sort + layout resolution. See [Kahn's Algorithm](#kahns-algorithm). |
+| `fieldEmbedsByValue` | private | `[inference: true for struct/tagged_union/union/packed_union/array/tuple/enum/error_set]` | Classification helper: kinds that require the full type definition when used as a field. |
+| `requiresFullDef` | private | `[inference: true for struct/tagged_union/union/packed_union/array/tuple/optional/error_union]` | Classification helper for optional payloads. |
+| `layoutFieldNeedsEdge` → deleted (P2; replaced by `typeNeedsFullDef`) | — |
+| `layoutAddTypeEdge` / `layoutAddFieldEdges` → deleted (P2; replaced by `typeRefs`) | — |
+| `typeResolverBuildDependencyGraph` | pub | `[inference: for each type ti, typeRefs(registry, ti, buf) and typeResolverAddEdge(ref, ti) per ref]` | **P2 (2026-10-12, D8):** derives the resolver dependency graph from the single type-reference relation (`type_registry.typeRefs`) — the SAME edges the typedef ordering uses (one source; the ordering is planned at `phase_EmissionClassification` by `c89_plan.tstTopologicalSort` — P12, was the emitter's). The former kind-switch + `layoutFieldNeedsEdge`/`layoutAddTypeEdge`/`layoutAddFieldEdges` helpers are deleted; `fn_type` return/param refs, `packed_union`, and pointer chain-leaf name refs are covered like every other kind. Called from `phase_TypeResolution` AFTER `typeResolverResolveNames` and BEFORE `typeResolverBuild`/`typeResolverResolve`. |
+| `classifyTypeEmissionGroups` | pub | `[inference: PO set via forward+backward propagation (verbatim pre-P4 body); then build the three group maps + shared closure; emit CLS markers; assign into the EmissionClassification]` | **P4 (2026-10-12):** THE resolution-time classification step (`phase_TypeResolution`; P4 fix round 2: fills `EmissionClassification` instead of returning). `pointer_only` (the pre-P4 CLS:p snapshot; a type absent from it counts as value-embedding, the historical fallthrough), `needs_def` (E8/E9/E11 via `classificationNeedsDef`) and `shared` (E2/E3'/E5/E6 seeds + E7 closure). |
+| `collectNeededTuples` | pub | `[inference: bounds-check; only tuple_type; idempotent set Put; recurse into tuple elements]` | **P4 fix round 2:** moved verbatim from `c89_emit.zig` — collects the tuple types that hold a runtime value (the E4 input); its two call loops run in `phase_EmissionClassification`. |
+| `classificationIsSyntheticEmittable` | private | `[inference: kind ∈ {slice, optional, error_union, error_set, tagged_union, union, array, fn_type}]` | **P4:** the eight synthetic-emittable kinds (shared by `classificationNeedsDef` and the shared synthetic seed; the same list lived twice in the deleted emitter `computeSharedSet`/`shouldSkipTypeEmission`). |
+| `classificationNeedsDef` | private | `[inference: false for void/bool/noreturn/null/undefined/integer_literal/type/module; false for unnamed non-synthetic-emittable kinds; else true]` | **P4:** the needs-definition decision (positive complement of the deleted `shouldSkipTypeEmission`'s skip rules E8/E9/E11). The deleted `skip_arb` arm (E10) is intentionally absent — unreachable-equivalent (named arb_int/arb_uint never join the shared set and are filtered by the require_shared/po filters before any skip check; the single-file path ran with skip_arb=0). |
+| `classificationSharedClosure` | private | `[inference: fixed point — promote pointer-only named aggregates {struct,tu,union,packed_union,enum,error_set} referenced (typeRefsContains) from any shared member]` | **P4:** the E7 shared closure (verbatim map-based relocation of the deleted `computeSharedSet` closure); used by step 1 and `classifyTypeEmissionFinalize`. |
+| `classifyTypeEmissionFinalize` | pub | `[inference: for all current types — classificationNeedsDef → nd; synthetic/carrier64/fn_named/clsv(po-ABSENT)/needed-tuple seeds → shared; then classificationSharedClosure]` | **P4 fix round 2:** the boundary COMPLETION step — called by `phase_EmissionClassification` (NEVER the emitter), full-registry walk where all inputs exist (`needed_tuple_set` E4 + types registered after the resolution step). Body verbatim from P4; the emit-time invocation (the in-flight late-type patch) is deleted. Idempotent re-application of the same rule helpers. |
+| `growWpEdges` | private | `[inference: 2x growth for the backward edge adjacency list]` | Grows the classification backward-edge arrays. |
+| `typeResolverGetSorted` → deleted (P2, dead — 0 callers) | — |
+| `evalConstModuleOfExpr` | private | `[inference: resolve a field-access base to a module id, walking module aliases; 0 when not a module reference]` | Module-base resolver used by `evalConstIntFull`'s `field_access` arm. |
+| `evalConstIntFull` | private | `[inference: exact internal fold over the Task-2 ComptimeInt core — int/char literals (ciFromU64), parens, negate (ciNeg), add/sub/mul/div/mod/bit_and/bit_or/bit_xor/shl/shr (ci*), ident chains (local const scope then all module symbol tables), field-access module consts, and the integer-valued builtins @intCast/@as (integer target + exact fit), @sizeOf/@alignOf/@bitSizeOf (complete types, struct completed via layoutEnsure), @offsetOf/@bitOffsetOf; depth-limit 16; returns ?ComptimeInt]` | **Task 5** (Task 1 §6.5): the ONE exact evaluator replacing the old 64-bit wrapping u32/i64 twins. `null` = unfoldable (unsupported shape, depth/cycle cap, div/mod by zero, >256-bit cap overflow, non-integer/non-fitting cast target). `~`, floats/bools, enum-member references and calls stay unfoldable here (the callers' ERR_3050/ERR_3055 paths own the rejects). |
+| `evalConstU32Full` | pub | `[inference: evalConstIntFull + the preserved @intCast error[3000] arm + the 0..0xFFFFFFFE bound (evalConstIntToSize); falls back to the 0xFFFFFFFF sentinel]` | Array-size evaluator. **Task 11S (a)/Task 5:** the `@intCast` arm resolves the target, folds the operand exactly, and on a non-fit emits `error[3000]` (`@intCast value does not fit the target type`) once per node; a fit still passes the `0..0xFFFFFFFE` bound. **Task 4:** the fold is exact (no u32 wrapping), so `[0 - 1]u8` reaches `error[3050]`. **Task 5:** delegates everything else to `evalConstIntFull` (shifts/bitwise/parens and >64-bit intermediates now fold; `[1 << 40]u8` stays the sentinel — Z98's array length field is u32). |
+| `evalConstI64Full` | pub | `[inference: evalConstIntFull materialised through [i64 min, u64 max] (comptimeIntFits64) into the two's-complement i64 pattern; null outside the window]` | Enum member-value evaluator. **Task 5:** exact — a wrapping initializer (`enum { A = 18446744073709551615 + 1 }`) is now `null` → `ERR_3055` instead of being stored as `0`; `@as`/`@intCast` targets use the shared exact fit. |
+| `evalConstIntToSize` | private | `[inference: negative, over-0xFFFFFFFE, or the 0xFFFFFFFF sentinel collision -> the sentinel; else @intCast(u32, ciToU64(v))]` | **Task 5:** the `0..0xFFFFFFFE` array-size bound used by `evalConstU32Full`. |
+| `enumMembersResolve` | pub | `[inference: one shared enum-member walk — fresh auto_val cascade; append vs overwrite; check_only keeps values in a local buffer; strict mode folds each explicit initializer via evalConstI64Full and rejects an unfoldable one (out_fail_kind=1) or a duplicate tag (out_fail_kind=2)]` | **Task 11J** (AMENDMENT 10): the ONE walk used by symbol registration (`append=true, strict=false`), the post-layout re-evaluation pass (`append=false, strict=true`), and the semantic analyzer's function-local enum check (`check_only=true, strict=true`). **Task 5:** the explicit-initializer fold is exact, so a 64-bit-wrapping value is rejected instead of silently stored. |
+| `enumReevaluateAll` | pub | `[inference: iterate modules/decls, detect enum decls mirroring the sema gate, nameCacheGet the enum tid, re-walk with strict=true and overwrite em_items[].value; on failure emit ERR_3055]` | **Task 11J** Option B (P1): post-layout enum re-evaluation, called at the end of `phase_TypeResolution` immediately after `typeResolverResolve`. |
+| `symbolLookupAllModules` | private | `[inference: linear scan of all symbol tables for a name_id]` | Name → symbol lookup across modules. |
+| `resolveTypeExprFull` | pub | `[inference: recursive AST type-expression resolver, depth-limit 16]` | See [Type Expression Resolution](#type-expression-resolution). **Task B2:** the `ident_expr` arm consults `env.local_types` first; the `struct_decl`/`enum_decl`/`union_decl` arms all delegate to `registerContainerType`. **A3-F:** the kind-agnostic child-0 recursion is guarded so an aggregate literal's own inferred `[_]T` annotation returns `TYPE_UNDEFINED` instead of being resolved as a type. **[updated: 2026-10-15 — P7 (module-scope-first, D7):]** the `ident_expr` arm resolves unqualified names locals → MODULE scope (`mkey(module_id, name)` cache, then the module's symbol table via `symbolTypeIdOfModule`) → cross-module fallback (bare/flat cache, the all-module `mkey` scan, `symbolLookupTypeAllModules`) — the module-symbol consult moved ABOVE the flat cache and the all-module scans (previously demoted below them). The module-scope steps stay `MODULE_ID_NONE`-guarded: module-less inputs (`symbol_registrator.populateTypePayload`) keep fallback-first resolution. `symbolLookupAllModules`'s value-ident call site (`evalConstIntFull`) is unchanged. |
+| `typeResolverIsInferredLenArray` | pub | `[inference: an `array_type` node whose `child_1` is the ident `_` -> true]` | **A3-F.** Shared detector for the inferred-length `[_]` form. Guards the allowed literal/initializer annotation sites (`front_resolution.resolveStmtTypesRec`, `semanticAnalyzerResolveArrayInit`) and the aggregate-literal child-0 recursion in `resolveTypeExprFull`; everywhere else `[_]T` clean-rejects `error[3000]`. |
+| `isContainerDeclKind` | pub | `[inference: kind in {struct_decl, enum_decl, union_decl, error_set_decl}]` | **Task B2.** Shared predicate for the four first-class container decls; used by the sema var-decl binding branch and the lower var-decl skip. |
+| `typeResolverCheckMemberVisibility` | private | `[inference: (owning module, pub flag) -> bool | emit error[3007]]` | **Task 15 (S3).** Cross-module `pub` gate for type positions and const-fold positions; called by `resolveTypeExprFull`'s `field_access` arm (ident-base + `module_type` sites) and by `evalConstIntFull`'s `field_access` arm (array sizes via `evalConstU32Full`, enum member values via `evalConstI64Full`). Returns true when `sym.module_id == env.module_id` or the symbol is `pub`; otherwise emits level-0 `error[3007]` `ERR_3007_VISIBILITY_VIOLATION` with the ASCII message `'<name>' is not marked 'pub'` (deduped per node) when `env.diag` is live, and returns false so the caller maps the expression to `TYPE_UNDEFINED` / declines the fold. Mirrors the semantic analyzer's `semanticAnalyzerCheckMemberVisibility`. |
+| `isCompoundTypeExprKind` | pub | `[inference: kind in {ptr_type, many_ptr_type, array_type, slice_type, optional_type, error_union_type, fn_type}]` | **Task B2 final fix wave.** Predicate for the compound type-expression node kinds (`*E`/`[*]E`/`[N]E`/`[]E`/`?E`/`E!T`/`fn(...)T`); a local binding whose initializer is one names a `type` value, so the sema var-decl arm clean-rejects it rather than leak `TYPE_TYPE` into lowering. |
+| `containerFieldCount` | private | `[inference: walk a struct/union node's extra children and count `field_decl` nodes]` | **Task B2 final fix wave.** Pre-count used to enforce `MAX_CONTAINER_FIELDS` before `registerContainerType` registers; module-scope `MAX_CONTAINER_FIELDS` (= 32) sizes the field scratch buffers. |
+| `containerAnonNameId` | private | `[inference: intern "anon_<node_idx>" into the string interner]` | **Task B2.** ONE synthesized-name scheme for anonymous / function-local container types (module 0), extracted from the former inline-struct arm so its emitted C stays byte-identical. |
+| `registerContainerType` | pub | `[inference: enum -> validateLocalEnum; nameCacheGet("anon_<node>") short-circuit; reject a struct/union with > MAX_CONTAINER_FIELDS field_decl children; typeRegistryRegisterNamedType(module 0, kind); setPacked for packed struct/union; resolve struct/union field types DIRECTLY (the module-only `resolveAggregateFieldTypesAll` never visits local/inline aggregates) then capture fields_start and append the payload; delegate enum/error-set payloads to the shared `populateTypePayload`]` | **Task B2.** Registers one struct/enum/union/error-set container type and populates its payload; idempotent across passes. **Fix round 1:** union `fields_start` captured after the resolve loop; inline enums validated. **Final fix wave:** a >32-field aggregate clean-rejects (`error[3000]`, 0 `.c`) instead of silently truncating. |
+| `validateLocalEnum` | pub | `[inference: diagnosticCollectorMarkNodeOnce(env.diag, enum_node); enumMembersResolve(check_only=true, strict=true); on failure emit ERR_3055 with the failing member span (duplicate vs non-constant message)]` | **Task B2 fix round 1.** The ONE strict local/inline enum validation, shared by `registerContainerType` and the sema `semanticAnalyzerCheckLocalEnum`; a null `env.diag` pass is a no-op. |
+| `localTypeScopeInit` / `localTypeScopePush` / `localTypeScopeLookup` | pub | `[inference: init/append/newest-first scan of the function-local type scope]` | **Task B2.** `LocalTypeScope` helpers used by the semantic analyzer (binding) and `resolveTypeExprFull`. |
+| `resolveDeclAggregateFieldTypes` | pub | `[inference: nameCacheGet by (mod<<32)|name_id, walk field children, resolveTypeExprFull each field_decl.child_0, write fe_items[].type_id]` | Resolves inline field type annotations for struct/tagged_union/union/packed_union declarations. |
+| `varDeclInitNeedsNameCache` | private | `[inference: return false for struct/union/enum/error_set/ident/import/fn decl, true otherwise]` | Filters var_decl init types that need name_cache registration. |
+| `resolveNamedTypeExpressions` | private | `[inference: iterate modules/decls, filter by varDeclInitNeedsNameCache, resolveTypeExprFull on init, nameCachePut]` | Top-level var_decl type expressions. |
+| `resolveImportFieldAlias` | private | `[inference: resolve @import(...).A field aliases, recursing through chained aliases, depth 8]` | Single import re-export alias. |
+| `resolveImportFieldAliases` | private | `[inference: iterate modules/decls, resolve import_expr field_access aliases, set symbol.type_id + nameCachePut]` | All import re-export aliases. |
+| `resolveAggregateFieldTypesAll` | private | `[inference: iterate modules/decls, filter struct_decl/union_decl inits, call resolveDeclAggregateFieldTypes]` | Field type annotations across modules. |
+| `resolveFnSignatures` | private | `[inference: iterate modules/decls, resolve fn return/param types, create fn via typeRegistryGetOrCreateFn, resolve var_decl annotations, update symbol.type_id + ResolvedTypeTable; on TYPE_UNDEFINED call typeResolverDiagnoseSignatureType]` | Function signatures + annotated var types. **FX13-F:** an unresolved return/param type now emits `error[20]` per unresolved leaf instead of degrading silently. **A1-F:** the parser's `anytype` ident sentinel resolves to `TYPE_UNDEFINED` and is appended to `xt_items` (so `params_count` no longer desyncs) but `typeResolverDiagnoseSignatureType` exempts it, leaving the reject to the analyzer's `ERR_2012`. |
+| `typeResolverDiagnoseSignatureType` | pub | `[inference: walk an unresolved signature type expression — ident leaf (skip `noreturn`, `anytype`, and names that re-resolve), field_access (`mod.member` via the cached module type or the module-symbol fallback), error_union (child_0/child_1), fn_type (return + payload extra children), ptr/many-ptr/slice/optional/array (child_0) — and emit ERR_3001 once per unresolved leaf node via diagnosticCollectorMarkNodeOnce; depth cap 16]` | **FX13-F.** The signature-type `error[20]` emitter; container literals, error-set member names and non-module field bases are deliberately out of scope (FX13-I §7). **A1-F:** `anytype` is exempted beside `noreturn` (the marker is rejected once as `ERR_2012`/`error[16]` by the analyzer). |
+| `localConstScopeInit` / `localConstScopePush` / `localConstScopeLookup` | pub | `[inference: init/append/newest-first scan of the function-local const scope]` | `LocalConstScope` helpers used by `front_resolution.zig` and `evalConstIntFull` (the array-size/enum fold). |
+| `typeResolverResolveNames` | pub | `[inference: create TypeResolveEnv, call resolveNamedTypeExpressions, resolveImportFieldAliases, resolveAggregateFieldTypesAll, resolveFnSignatures]` | **Phase entry point.** Resolves all type expressions across all modules. |
+
+### Kahn's Algorithm
+
+`typeResolverResolve`:
+
+```
+in_degree[0..type_count] = count of unsatisfied dependencies per type
+
+Phase 1 — Seed:
+  for each type_id where in_degree[tid] == 0:
+    worklistPush(tid)
+
+Phase 2 — Process:
+  while worklist not empty:
+    tid = worklistPop()
+    sorted_items.append(tid)
+    typeResolverResolveLayout(tid)          # layoutEnsure: compute size/alignment
+    registry.types_items[tid].state = 2     # mark resolved
+    for each edge where edge.from == tid:
+      dep = edge.to
+      in_degree[dep] -= 1
+      if in_degree[dep] == 0:
+        worklistPush(dep)
+
+Phase 3 — Cycle detection:
+  for each type where state != 2 and in_degree > 0:
+    emit ERR_3005_CIRCULAR_TYPE_DEPENDENCY
+    set kind = void_type, size = 0, align = 1, state = 2 (safety-valve)
+```
+
+### Layout Resolution
+
+`layoutCompute` (reached via `layoutEnsure` from `typeResolverResolveLayout`):
+
+| Kind | Logic |
+|------|-------|
+| **struct_type** | If the packed flag (`flags & 0x10`) is set, delegate to `typeRegistryComputePackedLayout` (bit layout). Otherwise iterate fields: `alignUp(offset, ft.alignment)`, set `fe.offset`, `offset += ft.size`, track `max_align`; final `size = alignUp(offset, max_align)` (min 1). Voids are laid at the current offset without advancing. |
+| **enum_type** | `size = backing_type.size`, `alignment = backing_type.alignment` |
+| **union_type** | Iterate fields: `max_sz = max(field.size)`, `max_align = max(field.alignment)`; `size = alignUp(max_sz, max_align)` (min 1). |
+| **packed_union_type** | Delegate to `typeRegistryComputePackedUnionLayout`: max member bit width, `size = ceil(max_bits/8)` (min 1), `alignment = 1`. |
+| **tagged_union_type** | Tag first: `total = tag_type.size`, `total = alignUp(total, max_pa)`, then `total += alignUp(max_payload_size, max_pa)`; `size = alignUp(total, overall_align)` where `overall_align = max(tag_type.alignment, max_pa)`. |
+| **optional_type** | `pay_align = max(pt.alignment, 4)`; `size = alignUp(alignUp(pt.size, 4) + 4, pay_align)`. |
+| **error_union_type** | `union_sz = max(pt.size, 4)`, `union_align = max(pt.alignment, 4)`; `total = alignUp(alignUp(union_sz, union_align), 4) + 4`; `size = alignUp(total, union_align)`. |
+| **array_type** | `size = elem.size * length`, `alignment = elem.alignment`. |
+| **tuple_type** | Same as struct: sequential layout, `size = alignUp(offset, max_align)` (min 1). |
+
+There is no `error_set_type` branch: named error-set types keep their registration `size=0`/`alignment=0`; the unnamed/empty sets created by `typeRegistryGetOrCreateErrorSet` are created directly with `size=4`/`alignment=4`.
+
+### Defect D — layout dependency graph ordering (FIXED, F5, m0898 Option B)
+
+**[updated: 2026-08-13] FIXED.** Root cause: the dependency graph driving the layout
+topological sort carried only DUMMY edges — `addTypeDependencies` in `symbol_registrator.zig`
+adds `0 -> tid` for every field, never `field_type -> tid`, because at symbol-registration time
+field `type_id`s are still `TYPE_VOID` placeholders. The real field types are resolved LATER
+(`resolveAggregateFieldTypesAll`). So the LIFO worklist popped a container struct BEFORE its
+union/enum field types were sized → `typeResolverResolveLayout` read `size=0`/`align=0` for the
+field → `alignUp(0,0)=0` → the `size==0 → 1/1` clamp → `@sizeOf`/`@alignOf` folded 1/1 in
+`comptime_eval.zig` for any struct with a by-value union field (e.g. lisp `Value`, json
+`JsonValue`).
+
+Fix (general, ordering-only): **build the real graph after field types are resolved.**
+**[updated: 2026-10-12 — P2]** `typeResolverBuildDependencyGraph` now derives EVERY edge from
+the single type-reference relation `type_registry.typeRefs` (the same edges the planner's
+typedef ordering uses — `c89_plan.zig` `spellPlanPlanTypeOrder`/`tstTopologicalSort` (P12 moved
+the sort out of the emitter; combined fix H3 truth-up) — one source; closes D8): by-value positions, name-spelling positions
+(fn return/params, slice elem), `packed_union`, and pointer chain-leaf name refs. The former
+F5 edge rule (`layoutFieldNeedsEdge`: struct/tagged_union/union/packed_union/enum/array/
+tuple/optional/error_union) and its `layoutAddTypeEdge`/`layoutAddFieldEdges` helpers are
+deleted. Pointer/slice/fn/error_set/primitive/void fields still produce no edge UNLESS their
+spelled C name has no forward typedef (the `typeRefEdgeTarget` rule — this keeps
+`struct Node { next: *Node }` cycle-free, since `Node` HAS a forward typedef). The Kahn pass
+(`typeResolverResolve`, with its cycle guard) then guarantees every field type is laid out before
+its container. `phase_TypeResolution` calls it AFTER `typeResolverResolveNames` (which runs
+`resolveAggregateFieldTypesAll`) and BEFORE `typeResolverBuild`/`typeResolverResolve`.
+
+The readers (`comptime_eval.zig`), the layout math, and the C emitter needed no change.
+
+**Surfaced follow-up (NOT this fix):** a plain untagged `union` is emitted as a C `struct` with
+all variants stacked (`c89_emit` `ZIG_UNION_` guard, `struct` body) while its layout uses the
+max-member model — so a union-holding struct's `@sizeOf` can under-size the emitted C struct.
+Tracked for the F3 closeout / union-emission task; tagged unions are unaffected. See Known Issues.
+
+### classifyTypeEmissionGroups
+
+Computes which types can be emitted as pointer-only forward declarations (C89 requirement) vs must have full value layout.
+
+1. **Forward pass** (per type kind):
+   - Check every field (or element for array/error_union) of a value-embedding kind:
+     - If field is `struct_type`/`tagged_union_type`/`union_type`/`packed_union_type`/`array_type`/`tuple_type`/`enum_type`/`error_set_type` → type is NOT pointer-only (requires full definition)
+     - If field is `optional_type` or `error_union_type` → add a backward edge from parent to optional's/error_union's *payload* (the payload type's resolution status may propagate)
+   - If none of these conditions trigger → type marked pointer-only (1)
+2. **Backward propagation** (worklist):
+   - Types that are NOT pointer-only (0) propagate: any parent that depends on them (via optional/error_union edge) also becomes NOT pointer-only
+3. **Result**: **P4 (2026-10-12; fix round 2 placement)** — fills the `EmissionClassification` maps instead of the former `{ids, len}` pointer-only list: `pointer_only` from the bitmap (CLS:p snapshot), `needs_def` per type via `classificationNeedsDef`, `shared` via the synthetic/carrier64/fn_named/clsv seeds + `classificationSharedClosure`. Boundary completion (`classifyTypeEmissionFinalize`, at `phase_EmissionClassification` — NEVER the emitter) completes `needs_def`/`shared` over the full registry + needed-tuple seed. CLS:c/CLS:p/CLS:v markers unchanged.
+
+Internal helpers:
+- `fieldEmbedsByValue`: returns true for `struct/tagged_union/union/packed_union/array/tuple/enum/error_set` — these kinds require the full type definition when used as fields.
+  `enum_type` and `error_set_type` were added (F-S8): both emit as inline integer typedef aliases
+  (`typedef <backing> <cname>;` / `typedef int <cname>;`), so a holder whose field is an
+  enum/error_set embeds it by value and must NOT be classified pointer-only. A struct whose *only*
+  by-value content is an enum/error_set (e.g. `struct { color: Color, next: *Node }`) moves
+  CLS:p → CLS:v. **This is a classification-only rule**: `classifyTypeEmissionGroups` has NO
+  `enum_type`/`error_set_type` branch, so the enum/error_set **itself** always stays CLS:p
+  (`is_po = 1`, default). Enums are never seeded into the shared group by classification — their
+  promotion happens via the `classificationSharedClosure` fixpoint (P4; formerly the
+  `computeSharedSet` fixpoint in `c89_emit.zig`) when a shared member
+  references them. Do not "fix" this by adding an enum CLS:v branch: it would push every enum into
+  the shared header and break slice/optional-of-enum ordering (08 §1.17).
+- `growWpEdges`: 2x growth for the backward edge adjacency list.
+
+### Type Expression Resolution
+
+#### `resolveTypeExprFull`
+
+`[inference: switch on AstKind (ident/struct/field_access/error_set/error_union/fn/ptr/many_ptr/slice/optional/array), resolve each child recursively, depth-limit 16, return tid or TYPE_UNDEFINED, emit RTD/NF/N2/OPTVOID/UND markers]` recursive type expression resolver.
+
+| AST Kind | Behavior |
+|----------|----------|
+| `ident_expr` | **Task B2:** consult the function-local type scope (`env.local_types`, newest-first) FIRST, so a local named type shadows module names. Then current-module-first lookup: `nameCacheGet((module_id<<32)|canonical_id)` when `module_id != MODULE_ID_NONE`, then bare `nameCacheGet(canonical_id)` (primitive + module-0 named-type fallback), then a per-module `nameCacheGet` scan, then current-module `symbolRegistryQualifiedLookup`, then all-module symbol scan, then `parseArbIntWidth`/`typeRegistryGetOrCreateArbInt` for `uN`/`iN` names. Returns `s.type_id` or `TYPE_UNDEFINED`. Emits `NF`, `N2`, `OPTVOID:*` markers. |
+| `struct_decl` / `enum_decl` / `union_decl` | **Task B2:** all three delegate to `registerContainerType(env, node_idx, kind, depth)`: synthesize `anon_<node_idx>`, `nameCacheGet` short-circuit, `typeRegistryRegisterNamedType(module 0, kind)` (packed via `typeRegistrySetPacked` when `node.flags & 0x10`), then populate the payload — struct/union resolve each `field_decl.child_0` DIRECTLY (`feAppend` + `stAppend`/`unAppend`/`tuAppend`), enum reuses the shared `populateTypePayload`. The former struct arm's name/registration order is preserved so the inline-`struct` emitted C is byte-identical. |
+| `field_access` | Resolve base expression. If base is `TYPE_UNDEFINED` and base is `ident_expr`, try module-qualified lookup (module symbol → field symbol). If base is `module_type`, look the field up in that module's symbol table. Emits `FAH:*` markers. **Task 15 (S3):** both module-member branches run `typeResolverCheckMemberVisibility` before using the symbol — a non-`pub` symbol owned by another module emits level-0 `error[3007]` `ERR_3007_VISIBILITY_VIOLATION` (`'<name>' is not marked 'pub'`, ASCII, deduped per node) and the arm returns `TYPE_UNDEFINED` (rc=2, 0 `.c`); same-module members are unchanged. |
+| `error_set_decl` | Append each tag name to `xn_items` and create the error set via `typeRegistryGetOrCreateErrorSet`. |
+| `error_union_type` | Resolve payload type (`child_1`) and optional error set (`child_0`). With no explicit error set, passes 0 (empty). Returns `typeRegistryGetOrCreateErrorUnion`. |
+| `fn_type` | Resolve return type, resolve up to 16 param types. Builds unique name `"fnt_<ret>_<p0>..."` (`"fnts_"` prefix when the stdcall flag bit is set). Registers the fn type (passing the calling convention), marks it fn-ptr-used, and returns `typeRegistryGetOrCreatePtr(fn_tid, false)`. |
+| `ptr_type` / `many_ptr_type` | Resolve child as base type. `is_const = (node.flags & 1) != 0`, `is_volatile = (node.flags & 2) != 0`. Returns `typeRegistryGetOrCreatePtrQ` / `typeRegistryGetOrCreateManyPtrQ`. Emits `PTR:i...`, `P<tid>` / `M<tid>`. |
+| `slice_type` | `is_const = (node.flags & 1) != 0`. Returns `typeRegistryGetOrCreateSlice(child, is_const)`. |
+| `optional_type` | Returns `typeRegistryGetOrCreateOptional(child)`. |
+| `array_type` | Resolve element type (`child_0`). Evaluate length from `child_1` via `evalConstU32Full` (every size expression kind — literal, arithmetic/bitwise/shift/parens, `ident_expr`, module-member `field_access`, integer-valued `builtin_call`). On success returns `typeRegistryGetOrCreateArray(elem, len)`; on failure emits `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` (once per node) for a non-inferred size. **A3-F:** an inferred `[_]` size reaching this arm means the type was used where a concrete type is required (the allowed literal/initializer annotation sites are guarded before recursion), so it emits level-0 `error[3000]` `unable to infer array size` at the `_` span. Emits `T0`, `T1e`, `T2L`, `T3a`, `A`/`a`. **Task 4:** the former inline u32-wrapping `add`/`sub`/`mul` arms are gone; the fold is exact and rejects negative/over-u32 results. **Task 5:** the exact fold is shared with the enum evaluator (`evalConstIntFull`), so shifts/bitwise/parens and >64-bit intermediates reduced back into range fold exactly. |
+
+**Array-size evaluation:** the `array_type` arm's size node is folded by `evalConstU32Full` (module-member `field_access`, function-local consts, exact arithmetic/bitwise/shift/parens, and the integer-valued builtins `@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf` — Task 11H also folds a struct's `@sizeOf`/`@alignOf`/`@bitSizeOf` by completing it on demand via `layoutEnsure`). An uncomputable size is a hard `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` diagnostic instead of a silent `TYPE_UNDEFINED`. **Task 4/5:** the fold is exact over the shared `ComptimeInt` core and the accepted range is exactly `0..0xFFFFFFFE` (the `0xFFFFFFFF` sentinel stays unfoldable), so `[0 - 1]u8` and `[4000000000 + 400000000]u8` reject (Zig: `type 'usize' cannot represent integer value '-1'`), while `[4 * 8]u8` / `[10 - 3]u8` / `[1 << 4]u8` / `[(2 + 1) * 2]u8` / `[(1 << 200) >> 190]u8` accept. An over-u32 exact size (`[1 << 40]u8`) is the sentinel (`ERR_3050`; Z98's array length field is u32, so this stays stricter than 64-bit Zig). **A3-F:** the inferred `_` size is no longer folded-and-ignored — when it reaches this arm it emits level-0 `error[3000]` `unable to infer array size` (span on the `_`, per-node dedupe, `env.source_file_id`); the `array_init`/`struct_init`/`tuple_literal` child-0 recursion guard and the two allowed-site guards keep `[_]T{...}` / `[N]T = [_]T{...}` legal.
+
+#### `evalConstIntFull`
+
+`[inference: exact internal fold over the Task-2 `ComptimeInt` core, shared by both public evaluators, depth-limit 16, returns `?ComptimeInt`]` (Task 5, Task 1 §6.5 — replaces the two 64-bit wrapping twins):
+
+1. **depth guard**: `depth > 16` → `null` (const-cycle guard, same cap as `resolveTypeExprFull`).
+2. **int_literal / char_literal**: `ciFromU64(store.int_values[node.payload])` (the source value is already a u64).
+3. **negate**: fold the child; `ciNeg` (`-0` normalises to `0`).
+4. **paren_expr**: fold the child (transparent).
+5. **add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr**: fold both children and apply the exact `ci*` op; a cap-overflowing result (>256 magnitude bits), division/mod by zero, or a negative/out-of-domain shift count declines (`null`) — never a 64-bit wrap.
+6. **ident_expr**: consult the function-local const scope first (`localConstScopeLookup`), then `symbolLookupAllModules`; a const symbol (`flags & 0x01 == 0`) recurses into `decl.child_1`.
+7. **field_access**: resolve the base module via `evalConstModuleOfExpr`, then fold the member const's initializer. **Task 15 (S3) fix round 1:** the member symbol is gated by `typeResolverCheckMemberVisibility` first — a const owned by another module without the `pub` flag emits level-0 `error[3007]` `ERR_3007_VISIBILITY_VIOLATION` (`'<name>' is not marked 'pub'`, ASCII, deduped per node, only when `env.diag` is live) and the fold declines (`null`), so the caller's `ERR_3050` (array size) / `ERR_3055` (enum member) diagnostic also fires; `[mod.hidden_const]u8` and `enum(u8){A = mod.hidden_const}` previously folded the non-`pub` value silently.
+8. **builtin_call**: the integer-valued builtins only:
+   - `@intCast(T, e)` / `@as(T, e)` → resolve the target and fold the operand exactly; the target must be an integer type and the exact value must fit it (`comptimeIntFitsType`), else `null` (no diagnostic here — the enum caller's `ERR_3055` path owns its reject; the `evalConstU32Full` wrapper re-checks its `@intCast` arm with the preserved `error[3000]`);
+   - `@sizeOf(T)` / `@alignOf(T)` / `@bitSizeOf(T)` → `resolveTypeExprFull` the type arg. If the resolved type is a not-yet-complete `struct_type` (packed or not), call the shared `layoutEnsure(registry, bt_tid, 0)` first, then re-read the type. Fold only if COMPLETE (`state == 2`) and (`evalConstScalarKind(kind)` — the integer whitelist — OR `struct_type`); return the registry `size` / `alignment` / bit-size (`@bitSizeOf`: `size*8`, overridden by `typeRegistryIntWidthBits` for integer/enum, `1` for bool, and `typeRegistryGetPackedTotalBits` for a packed struct). The `state == 2` gate is mandatory — reading `size`/`alignment` before layout produced a silently wrong `[1]` for an aggregate field;
+   - `@offsetOf(T, "f")` / `@bitOffsetOf(T, "f")` → the resolved complete **struct** field offset (bit offset for packed fields); a literal field name only. **FF (Volume II D9):** the packed-union arm is deleted (Zig parity rejects every union kind before this fold: sema `error[3072]`), and the arity is exact (2 args); an unfoldable shape now reaches the clean `error[3074]` fallback instead of the former `error[3043]` ICE;
+   - `@isWindows`/`@intToFloat`/`@floatCast`, `~`, enum-member references, bools, and calls → `null` (the enum caller rejects `ERR_3055`; array positions `ERR_3050`). A forward-referenced/mutual aggregate also defers (`layoutEnsure` returns false on a `TYPE_VOID` placeholder or past the depth cap).
+9. **Fallback**: `null` (unfoldable).
+
+#### `evalConstU32Full` / `evalConstI64Full` (public wrappers)
+
+- **`evalConstU32Full(env, node, depth) u32`** (array sizes): `null` → `0xFFFFFFFF`; a concrete value is accepted only in `0..0xFFFFFFFE` (negative/over-u32 and the `0xFFFFFFFF` collision are the sentinel). The `@intCast` arm keeps the Task 11S (a) diagnostic: resolve the target, fold the operand exactly, and on a non-fit emit `error[3000]` once per node (`@intCast value does not fit the target type`, `env.source_file_id`) and return the sentinel; on a fit the value still passes the `0..0xFFFFFFFE` bound (`evalConstIntToSize`). The result feeds the `array_type` arm, whose non-inferred failure emits the existing `ERR_3050_ARRAY_SIZE_NOT_CONSTANT`.
+- **`evalConstI64Full(env, node, depth) ?i64`** (enum member values): materialises the exact value into the registry's i64 storage — a value outside `[i64 min, u64 max]` is `null` (`ERR_3055` at the enum walk), otherwise the two's-complement low 64 bits. The cast target check is the shared one. `~`, enum-member references, bool/float builtins, and calls stay `null`.
+- `enumMembersResolve` (the shared strict member walk) and `enumReevaluateAll` (the post-layout re-evaluation pass) are structurally unchanged; their explicit-initializer fold now goes through the exact evaluator, so a wrapping initializer (`enum { A = 18446744073709551615 + 1 }`) is a clean `ERR_3055` instead of a silently stored `0`.
+
+Helpers: `symbolLookupAllModules` — linear scan of all symbol tables for a `name_id`; `evalConstModuleOfExpr` — resolves a field-access base to a module id by walking module aliases; `evalConstScalarKind` — true for the primitive/alias kinds whose `@sizeOf`/`@alignOf`/`@bitSizeOf` are safe to fold (excludes struct/union/tagged-union/packed-union/tuple/array/slice/optional/error-union/fn/module/type/unresolved/none); Task 11H keeps it as the integer whitelist and adds `struct_type` as the only on-demand-completed aggregate; `evalConstIntToSize` (Task 5) applies the `0..0xFFFFFFFE` array-size bound.
+
+#### `resolveDeclAggregateFieldTypes`
+
+`[inference: nameCacheGet lookup by (mod<<32)|name_id, walk field children, resolveTypeExprFull each field_decl.child_0, write result to fe_items[].type_id, emit B2/FSW/DFT/FTW/DTWR/TUI markers]` resolves field type annotations for `struct_type`, `tagged_union_type`, and `union_type`/`packed_union_type` declarations that have inline field type expressions.
+
+#### `resolveNamedTypeExpressions`
+
+`[inference: iterate modules/decls, filter by varDeclInitNeedsNameCache, resolveTypeExprFull on init, nameCachePut under (mod<<32)|name_id, set symbol.type_id]` iterates top-level `var_decl`s where the init expression is a type expression (not an inline type decl, import, ident, or fn_decl).
+
+#### `resolveImportFieldAliases`
+
+`[inference: iterate modules/decls; for a var_decl whose init is a field_access on an import_expr, resolve the imported symbol (recursing through chained aliases, depth 8), then set symbol.type_id and nameCachePut]` resolves `pub const Arena = @import("...").Arena` re-export aliases (helper `resolveImportFieldAlias`).
+
+#### `resolveAggregateFieldTypesAll`
+
+`[inference: iterate modules/decls, filter struct_decl/union_decl inits, call resolveDeclAggregateFieldTypes for each]` iterates all modules' top-level var_decls whose init is `struct_decl` or `union_decl`.
+
+#### `resolveFnSignatures`
+
+`[inference: iterate modules/decls, resolve fn return/param types via resolveTypeExprFull, create fn via typeRegistryGetOrCreateFn, resolve var_decl type annotations, update symbol.type_id and ResolvedTypeTable]` iterates all modules:
+- **fn_decl**: skips a fn whose symbol already has a `type_id`; resolves return and param types via `resolveTypeExprFull` (param count capped at `MAX_FN_PARAMS = 64`, else `@panic`), creates the fn type via `typeRegistryGetOrCreateFn` (passing `is_extern` from `decl.flags & 0x04`, `is_variadic` from `decl.flags & 0x01`, and `proto.call_conv`), records it in `ResolvedTypeTable`, and sets `symbol.type_id`. The fn-pointer path (`resolveTypeExprFull`'s `fn_type` arm) always passes `is_variadic=0` and `is_extern=0`. **FX13-F:** when the return or a parameter resolves `TYPE_UNDEFINED`, `typeResolverDiagnoseSignatureType` emits one level-0 `error[20]` per unresolved leaf (implicit-`void` returns are node 0 and never trigger). The `noreturn` spelling is exempt — keyed on the ident text at the unresolved leaf, since the resolver registers no name for it; `mod.unknown` reports the whole field-access node span. **A1-F:** the `anytype` ident sentinel emits `TYPE_UNDEFINED` and is appended (no count desync), but `typeResolverDiagnoseSignatureType` exempts it beside `noreturn` — the reject is the analyzer's `ERR_2012_ANYTYPE_NOT_SUPPORTED` (`error[16]`), and the retired call-path segfault is gone.
+- **var_decl with explicit type annotation** (`child_0 != 0`): resolves the type expression, records it in `ResolvedTypeTable`, sets `symbol.type_id`.
+
+#### `typeResolverResolveNames` (entry point)
+
+Orchestrates all name resolution:
+1. `resolveNamedTypeExpressions` — var_decl type expressions
+2. `resolveImportFieldAliases` — import re-export field aliases (`pub const Arena = @import(...).Arena`)
+3. `resolveAggregateFieldTypesAll` — field type annotations
+4. `resolveFnSignatures` — fn signatures + annotated var types
+
+#### D2 defect — bare `ident_expr` type resolution — FIXED (F1) [updated: 2026-08-14]
+
+`resolveTypeExprFull`'s `ident_expr` arm resolves a bare type name (e.g. a fn return type `Arena`)
+in tiers:
+
+1. **current-module name_cache**: `nameCacheGet((module_id<<32)|canonical_id)` when
+   `module_id != MODULE_ID_NONE`.
+2. **bare name_cache**: `nameCacheGet(canonical_id)` — the key shared by primitive names
+   (`registerPrimitiveName` in `type_registry.zig`) and module-0 named types
+   (`typeRegistryRegisterNamedType` writes `(0<<32)|name_id == name_id`).
+3. **per-module name_cache scan**: builds `(mi << 32) | canonical_id` for each module and returns
+   the **first** match, lowest module_id first.
+4. **symbol scan**: current-module `symbolRegistryQualifiedLookup`, then all-module scan.
+5. **arbitrary-width int**: `parseArbIntWidth` / `typeRegistryGetOrCreateArbInt` for `uN`/`iN`.
+
+The pre-F1 defect was that the per-module scan ran before the current module, so `create()` in
+module instance N resolved its return type `Arena` to module 0's `Arena` TypeId, not instance N's
+own. The `field_access` arm never had this problem — `arena_mod.Arena` resolves the base
+`module_type` then looks the field up in *that* module's table.
+
+Emission consequence: the struct typedef is emitted from the type's *own* `module_id` (so the
+instance-N `Arena` typedef mangles with a collision suffix), but the fn signature/return type
+referenced the *module-0* TypeId, emitting the unsuffixed name — gcc rejects the C as `return type
+is an incomplete type`. Reproduced by `repro/mi_matrix/arena_multi_inst_xmod/` (two-path import
+`a/std_arena.zig` + `b/std_arena.zig`).
+
+**FIXED (F1, 2026-08-14), then reordered (F-task, 2026-08-14).** `TypeResolveEnv` gained
+`module_id: u32` (sentinel `MODULE_ID_NONE = 0xFFFFFFFF` = "no module context", global fallback).
+The bare name-cache key collides with module-0's scoped key, so an un-scoped
+`nameCacheGet(canonical_id)` silently resolved module-0-first; the F1 reorder alone was still
+vulnerable because its bare lookup ran first. The F-task fix makes the current-module scoped lookup
+run **first**, the bare lookup **second** (the primitive + module-0 named-type fallback), and the
+all-modules scan **third**. For module 0 the scoped key equals the bare key, so the reorder is a
+no-op (control behavior preserved). Every `resolveTypeExprFull` call site sets `module_id`
+explicitly; the genuinely-global sites (comptime `@sizeOf`/`@alignOf`/`@intCast` type args, enum
+backing type) use `MODULE_ID_NONE`.
+
+---
+
+## const_alias_prepass.zig (`sf/src/const_alias_prepass.zig`)
+
+Resolves `const Alias = TypeName` patterns where the RHS is a simple identifier referring to another type. Invoked from `phase_TypeResolution` (`main.zig`) before `typeResolverResolveNames`.
+
+### Functions
+
+| Function | Scope | `[inference]` | Description |
+|----------|-------|---------------|-------------|
+| `resolveWellKnownTypeName` | private | `[inference: switch on string length (2-5), byte-compare for built-in type names, return sentinel or TYPE_UNDEFINED]` | Matches string names to TypeId sentinels: void(4), bool(4), i32/u32(3), u64/i64(3), f32/f64(3), i8/u8(2), usize/isize(5). Returns `TYPE_UNDEFINED` for non-well-known. |
+| `growDep` | private | `[inference: 2x growth (min 16), sandAlloc for to/next arrays, copy old elements, update pointers and cap]` | Grows the dependency tracking arrays (`to_ptr`, `next_ptr`) used during the catalog phase. |
+| `constAliasPrepass` | pub | `[inference: 3-phase Kahn worklist: catalog global const aliases, seed resolvable ones, propagate resolved types through dep chain]` | Resolves `const X = Y` type aliases before full type resolution. |
+
+### constAliasPrepass — Three Phases
+
+```
+Phase 1 — Catalog:
+  for each module's symbol table:
+    for each SymbolKind.global symbol with type_id == 0 and decl kind == 1 (var_decl):
+      if init is ident_expr (AstKind 24):
+        record alias: alias_name[count] = canonicalized dep_name
+        record dep edge: dep_head[dep_name] → alias_count (linked list)
+        alias_count += 1
+    Emits: GATE:g0/g1/g2/g3, CAT:ik, CAT:dn markers
+
+Phase 2 — Seed:
+  for each alias:
+    lookup dep_name in (first hit wins):
+      (1) name_cache((alias mod_id)<<32 | name_id)  → alias's declaring-module name
+      (2) name_cache(name_id only)  → global/primitive name
+      (3) name_cache(module<<32 | name_id) scan  → per-module fallback
+      (4) resolveWellKnownTypeName → "void", "i32", etc.
+    if resolved:
+      sym.type_id = resolved
+      sym.kind = SymbolKind.type_alias
+      nameCachePut((mod_id<<32) | dep_name, resolved)
+      worklist.push(alias_idx)
+
+Phase 3 — Kahn propagation:
+  while worklist not empty:
+    resolved_idx = worklist.pop()
+    resolved_sym.type_id = rt  (the resolved TypeId)
+    alias_own_name = resolved_sym's declared name
+    for each dependent alias (linked list via dep_head[alias_own_name]):
+      if dep_sym.type_id == 0:
+        dep_sym.type_id = rt
+        dep_sym.kind = SymbolKind.type_alias
+        nameCachePut((dep_mod<<32) | dep_name, rt)
+        worklist.push(dep_alias_idx)
+    Emits: KAHN:start, KAHN:end markers
+```
+
+The source file-top comment calls the pass "KEPT (unwired)", but it **is** wired: `phase_TypeResolution` calls it before `typeResolverResolveNames`. It catalogs only `SymbolKind.global` symbols, so a symbol already classified `type_alias` is skipped.
+
+---
+
+## front_resolution.zig (`sf/src/front_resolution.zig`)
+
+The front pass that resolves module-level initializer/type-annotation expressions and function-body statement type annotations into the `ResolvedTypeTable`. `phase_FrontResolution` (`main.zig`) runs **after** `phase_TypeResolution` and **before** `phase_ComptimeEvaluation`; it builds a `FrontResCtx` and calls `frontResolveModuleInits`. The `resolveStmtTypes` entry point is called from `phase_SemanticAnalysis`, once per function body, before `semanticAnalyzerResolveFnBody`.
+
+### Types
+
+| Type | Description |
+|------|-------------|
+| `FrontResCtx` | Bundle passed to both entry points: `store`, `typereg`, `symbol_reg`, `resolved_types`, `module_reg`, `interner`, `diag`, `scratch(*Sand)`, `coercion_table`, `enum_value_table`, `error_code_registry`, `call_arg_types`, `call_param_map`, `suspending_fns` |
+
+### Functions
+
+| Function | Scope | Description |
+|----------|-------|-------------|
+| `resolveTypeExpr` | private | Wraps `type_resolver.resolveTypeExprFull` with a `TypeResolveEnv` built from the `FrontResCtx` (threads `module_id`, `source_file_id`, `diag`, and the local-const scope). |
+| `countUntypedGlobals` | private | Counts `SymbolKind.global`/`type_alias` symbols with `type_id == 0`; bounds the `frontResolveModuleInits` fixed-point loop. |
+| `frontResolveModuleInits` | pub | Resolves module-level declarations to a fixed point (see below). |
+| `resolveStmtTypes` | pub | Public wrapper that creates a `LocalConstScope` (`type_resolver.localConstScopeInit`) and calls the recursive helper. |
+| `resolveStmtTypesRec` | private | Walks a statement subtree (depth cap 16); resolves `var_decl` type annotations, records function-local `const`s in the scope, and resolves `array_init`/`struct_init`/`tuple_literal` type annotations. **A3-F:** the aggregate-literal annotation is skipped when it is the inferred-length `[_]T` form (`typeResolverIsInferredLenArray`), so it is left to the array-init path rather than recorded as a concrete type. Does not descend into `builtin_call` children. |
+
+### `frontResolveModuleInits` behavior
+
+1. `sandReset(scratch)`; loop bound = `countUntypedGlobals + 1` iterations.
+2. For each module, build a `SemanticAnalyzer` via `semanticAnalyzerInit` and walk its top-level decls.
+3. For each `var_decl`:
+   - `child_0` (type annotation) → `resolveTypeExpr`; on success record the type in the `ResolvedTypeTable` for both the annotation node and the decl node.
+   - `child_1` (init) that is not a `struct_decl`/`union_decl` → `semanticAnalyzerResolveModuleVarDecl`.
+     - `ident_expr` init: `nameCachePut((module_id<<32)|decl_payload, init_type)`; if the referenced symbol is a `type_alias` and the decl's own symbol is not, promote the decl's symbol to `SymbolKind.type_alias` (sets `changed`).
+     - Record the init type on the decl node, excluding `TYPE_VOID`/`TYPE_UNDEFINED`/`TYPE_TYPE`. **Task 9 fix round 3 (Q7):** for an UNANNOTATED binding the record is UPDATED whenever the re-resolved type differs (a forward-referenced global's true type only appears on a later pass), so the decl and symbol converge together; an ANNOTATED binding keeps the annotation's first-wins record.
+     - `TYPE_INT_LIT` with an annotation: copy the annotation's resolved type onto the init node.
+     - Back-fill `symbol.type_id` for the declaring symbol (sets `changed`). **Task 9 fix round 3 (Q7):** for an UNANNOTATED binding the symbol is updated whenever its type differs from the re-resolved init type (this drives another pass); an ANNOTATED binding is only back-filled when still 0.
+4. Repeat until a full pass makes no change (`changed == 0`), then `sandReset(scratch)`.
+
+---
+
+## Data Flow
+
+```
+phase_TypeResolution (main.zig)
+    │
+    │  scratch arena reset; re-run registerModuleSymbols(populate=false)
+    │
+    ├─ constAliasPrepass (const_alias_prepass.zig)
+    │   │  marker: "CAP:ent"
+    │   │
+    │   ├─ Phase 1 — Catalog: find all "const X = Y" aliases
+    │   │   └─ dep_head linked list per name_id
+    │   │
+    │   ├─ Phase 2 — Seed: resolve directly-known names
+    │   │   └─ scoped nameCache, bare nameCache, per-module scan, well-known types
+    │   │
+    │   └─ Phase 3 — Kahn: propagate through alias chain
+    │       └─ emit KAHN:start / KAHN:end
+    │
+    ├─ typeResolverResolveNames (type_resolver.zig)
+    │   │
+    │   ├─ resolveNamedTypeExpressions
+    │   │   └─ var_decl type expressions → nameCachePut
+    │   │
+    │   ├─ resolveImportFieldAliases
+    │   │   └─ `pub const A = @import(...).A` re-export aliases
+    │   │
+    │   ├─ resolveAggregateFieldTypesAll
+    │   │   └─ resolveDeclAggregateFieldTypes (per struct/tagged_union/union)
+    │   │       ├─ resolveTypeExprFull for each field_decl.child_0
+    │   │       └─ fe_items[].type_id = resolved type
+    │   │
+    │   └─ resolveFnSignatures
+    │       ├─ fn_decl return type + param types → resolveTypeExprFull
+    │       ├─ var_decl with type annotation → resolveTypeExprFull
+    │       ├─ → typeRegistryGetOrCreateFn (is_extern, is_variadic, call_conv)
+    │       ├─ → ResolvedTypeTable.set
+    │       └─ → symbol.type_id = resolved
+    │
+    ├─ typeResolverInit (type_resolver.zig)
+    │   └─ zero init
+    │
+    ├─ typeResolverBuildDependencyGraph (type_resolver.zig)   [P2: derives from typeRefs]
+    │   ├─ iterate all types
+    │   ├─ for each: typeRefs(registry, ti) → edge ref -> ti (one source, D8)
+    │   └─ covers by-value + name-spelling refs, fn_type ret/params, packed_union, ptr chain-leaf
+    │
+    ├─ typeResolverBuild (type_resolver.zig)
+    │   ├─ copy DepGraph edges from symbol_registrator (dummy 0->tid) + the typeRefs edges
+    │   ├─ alloc sorted_items[0..types_len]
+    │   ├─ alloc in_degree_items[0..types_len]
+    │   └─ count edges per target type
+    │
+    ├─ typeResolverResolve (type_resolver.zig)
+    │   │  Kahn's algorithm:
+    │   │
+    │   ├─ Seed: push zero-in-degree types to worklist
+    │   │
+    │   ├─ Loop: pop → layoutEnsure (→ layoutCompute) → state=2
+    │   │   ├─ struct_type   → sequential offset+size per field (packed → bit layout)
+    │   │   ├─ enum_type     → backing_type.size/align
+    │   │   ├─ union_type    → max field size/align
+    │   │   ├─ packed_union  → max member bit width
+    │   │   ├─ tagged_union  → tag + max payload, aligned
+    │   │   ├─ optional      → payload + 4-byte tag
+    │   │   ├─ error_union   → union + 4-byte error code
+    │   │   ├─ array_type    → elem.size * length
+    │   │   └─ tuple_type    → sequential layout
+    │   │   │
+    │   │   └─ decrement dependents' in_degree
+    │   │       └─ push newly-zero types
+    │   │
+    │   └─ Cycle detection: unresolved → ERR_3005 → void_type fallback
+    │
+    ├─ typeResolverGetSorted → deleted (P2, dead)
+    │
+    └─ classifyTypeEmissionGroups (type_resolver.zig)
+        └─ emission classification (P4: pointer-only / needs-definition / shared-header groups)
+
+phase_FrontResolution (main.zig)   [runs after phase_TypeResolution]
+    └─ frontResolveModuleInits (front_resolution.zig)
+        ├─ fixed-point over untyped globals/type-aliases
+        ├─ var_decl type annotations → resolveTypeExprFull → ResolvedTypeTable
+        ├─ module-var init expressions → semanticAnalyzerResolveModuleVarDecl
+        ├─ ident_expr init → nameCachePut + global→type_alias promotion
+        └─ symbol.type_id back-fill
+
+phase_SemanticAnalysis (main.zig)
+    └─ resolveStmtTypes (front_resolution.zig) per fn body
+        └─ function-local type annotations + local-const scope for array sizes
+
+State transitions in types_items[*].state:
+  0 (initial) → 2 (resolved) — set by layoutEnsure (the normal-pass wrapper `typeResolverResolveLayout` falls back to `layoutCompute` when the shared walk declines, then `typeResolverResolve` sets `state = 2`)
+```
+
+### Data Structures After Type Resolution
+
+```
+TypeRegistry (permanent arena)
+    │
+    ├─ types_items[0..n] — all types, state=2 for resolved
+    │   ├─ [1-21] primitives (state=2 from registration)
+    │   ├─ [22..] user types (state updated during resolve)
+    │   └─ size, alignment, iw (arb width), payload_idx populated
+    │
+    ├─ Per-kind payload arrays
+    │   ├─ st_items[*] → StructPayload{fields_start, fields_count}
+    │   ├─ fe_items[*] → FieldEntry{name_id, type_id, offset}
+    │   ├─ en_items[*] → EnumPayload{members_start, count, backing, explicit_backing}
+    │   ├─ em_items[*] → EnumMember{name_id, value}
+    │   ├─ pk_items[*] → PackedBitField{bit_offset, bit_width}
+    │   ├─ pk_struct_items[*] → PackedStructInfo{pk_start, pk_count, total_bits}
+    │   ├─ pk_un_items[*] → PackedStructInfo (packed-union variant)
+    │   └─ ... (all payload types populated)
+    │
+    ├─ Caches (hash maps)
+    │   ├─ ptr_cache: (base<<2)|(const|volatile<<1) → TypeId
+    │   ├─ many_ptr_cache: (base<<2)|(const|volatile<<1) → TypeId
+    │   ├─ slice_cache: (elem<<1)|const → TypeId
+    │   ├─ array_cache: (elem<<32)|len → TypeId
+    │   ├─ optional_cache: payload → TypeId
+    │   ├─ eu_cache: (payload<<32)|es → TypeId
+    │   ├─ es_cache: hash(tags) → TypeId
+    │   └─ name_cache: (mod<<32)|name → TypeId
+    │
+    └─ All Type entries with state=2 (resolved). Size/alignment are populated for the 9
+        layout kinds; NOT for named error_set types (no error_set branch in
+        typeResolverResolveLayout) and NOT for zero-size sentinels (void/noreturn/null/type).
+
+TypeResolver (scratch arena, consumed by next phase)
+    │
+    ├─ sorted_items[0..sorted_len] — topological order
+    └─ in_degree_items — consumed, used for cycle detection
+```
+
+---
+
+## Debugging
+
+### Phase Entry/Exit Markers
+
+| Marker | File | Description |
+|--------|------|-------------|
+| `CAP:ent` | `const_alias_prepass.zig` | constAliasPrepass entry |
+| `CAP:ac<count>` | `const_alias_prepass.zig` | Alias count after catalog |
+| `CAP:ac0` | `const_alias_prepass.zig` | No aliases found, early exit |
+| `KAHN:start` / `KAHN:end` | `const_alias_prepass.zig` | Kahn propagation loop start / end |
+| `CLS:c<count>` | `type_resolver.zig` | classifyTypeEmissionGroups result count |
+
+### Type Creation Markers (type_registry.zig)
+
+| Marker | Description |
+|--------|-------------|
+| `DC:k<kind>n<name_id>t<type_id>` | Type created — kind enum, name_id, assigned TypeId |
+| `X:<id>` | Struct type created (TypeId) |
+| `MC<id>` | Module type created (TypeId) |
+| `NP:k<key_lo>v<type_id>` | nameCachePut — key low 16 bits + cached type_id |
+| `NGC:g1<result>` | nameCacheGet for `key_lo == 1` (debug only) |
+| `RN:m<mod>n<name>k<kind>t<tid>` | Register named type — module_id, name_id, kind enum, assigned tid |
+| `U2H:e<elem>r<existing>c<const>` | Slice cache hit (U2H="use-to-hit") |
+| `U2N:e<elem>r<new_tid>c<const>` | Slice cache miss, created new (U2N="use-to-new") |
+| `O0:e<elem>L<len>` | Array type creation start |
+| `O1H<existing>` | Array cache hit |
+| `O2N<new_tid>` | Array cache miss, new type ID |
+| `P2:n<name_id>H<existing_tid>` | Fn type hit (linear scan) |
+| `P2:n<name_id><tid>` | Fn type created |
+
+### Type Expression Resolution Markers (type_resolver.zig)
+
+| Marker | Description |
+|--------|-------------|
+| `RTD:n<node>k<kind>` | `resolveTypeExprFull` entry — node index and AstKind |
+| `T0` | Array type resolution start |
+| `T1e<elem>` | Array element type ID |
+| `T2L<len>` | Array length |
+| `T3a<tid>` | Array type created (TypeId) |
+| `A` / `a` | Array success (`A`) or `TYPE_UNDEFINED` (`a`) |
+| `FAH:r<resolved>` | Field access hit — resolved type ID |
+| `FAH:m<child_0>` | Field access miss — base node index |
+| `FAH:N<node>` | Field access no match |
+| `PTR:i<node>k<kind>c<child>` | Pointer / many-pointer type resolution |
+| `P<tid>` / `M<tid>` | Pointer (`P`) or many-pointer (`M`) created |
+| `SL:e<elem>s<tid>` | Slice type created |
+| `OPTVOID:*` | Optional / void type resolution markers (`id`, `nc`, `ids`, `idF`, `fntR`, `fntT`, `opt`, `optR`) |
+| `FER:n<idx>t<type_id>` | Field entry read during tagged_union layout |
+| `FSW:n<fe_idx>t<type_id>` | Field slot write during struct field resolution |
+| `DFT:n<fi>t<tid>` | Decl field type tag (tagged_union) |
+| `FTW:n<fe_idx>t<tid>` | Field type write (tagged_union) |
+| `B2:p<payload>t<tid>` | Field decl payload and resolved type |
+| `DTWR` | Field type written (tagged_union) |
+| `DTSK` | Field type skipped (`TYPE_UNDEFINED`, tagged_union) |
+| `TUI:fs<start>fc<count>` | Tagged union field range |
+| `NF` | Name not found in global name_cache |
+| `N2` | Name not found in per-module caches |
+| `UND:n<node>k<kind>` | `resolveTypeExprFull` returning `TYPE_UNDEFINED` |
+
+### constAliasPrepass Markers
+
+| Marker | Description |
+|--------|-------------|
+| `CAP:tlm<total>` | Total symbols across all modules |
+| `CAP:tl0` | No symbols, early return |
+| `GATE:g0<type_id>` | Global alias type check (must be 0 to continue) |
+| `GATE:g1` | Gate passed: `type_id == 0` |
+| `GATE:g2<kind>` | Gate failed: not a const decl (`kind != 1`) |
+| `GATE:g3` | Gate failed: no `child_1` (no init expr) |
+| `CAT:ik<init_kind>` | Catalog: init expression AstKind |
+| `CAT:dn<name_id>` | Catalog: dependency name_id |
+
+### classifyTypeEmissionGroups Markers
+
+`[updated: 2026-10-12 — P4]` Marker stream UNCHANGED by the P4 single-pass rewrite (the CLS block is verbatim; the `--markers` capture is byte-identical to the P3-era stream).
+
+| Marker | Description |
+|--------|-------------|
+| `CLS:c<count>` | Total pointer-only type count |
+| `CLS:p<tid>k<kind>` | Per pointer-only type |
+| `CLS:v<tid>k<kind>` | Per value-emitted type |
+
+### Diagnostic Error Codes
+
+| Constant | Description |
+|----------|-------------|
+| `ERR_3005_CIRCULAR_TYPE_DEPENDENCY` | Type refers to itself (directly or transitively). Emitted during `typeResolverResolve` cycle detection; the offending type is set to `void_type` as fallback. |
+| `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` | An array-size expression could not be const-folded (emitted once per node by `resolveTypeExprFull`'s `array_type` arm; `[_]T` inferred length is exempt). |
+
+The `3005`/`3050` in the constant names are labels, not discriminants — the `ErrorCode` enum auto-increments several early members, so `ERR_3005_*` has a small ordinal value (see `00_shared_infra.md`).
+
+### How to Inspect TypeId Values
+
+Use the marker system (`pal_mod.markerWrite` / `markerWriteInt`):
+
+```
+Marker format: "<prefix><key><value>\n"
+Examples:
+  "DC:k17n493t25\n"   → created type kind=17 name_id=493 TypeId=25
+  "RN:m1n200k12t30\n" → registered named type mod=1 name=200 kind=12 TypeId=30
+  "NP:k3a5v22\n"      → name_cache put key_low=0x3a5→type_id=22
+```
+
+Type ID values are dense monotonically increasing u32s starting at 0. Sentinels occupy 0-21 (index 0 is the `none_sentinel` sentinel at type_id=0, though `TYPE_VOID=1` is the first meaningful type; `TYPE_VA_LIST=21` is the last primitive). The stale `FIRST_USER_TYPE = 20` constant means user types in practice start at TypeId ≥ 22.
+
+To trace a specific TypeId through the pipeline:
+- Search `DC:k*` for creation
+- Search `RN:t<id>` for named type registration
+- Search `NP:v<id>` for cache population
+- `RTD:n<node>k<kind>` traces every `resolveTypeExprFull` entry
+
+### Known Issues
+
+1. **Linear dedup for `fn_type`**: `typeRegistryGetOrCreateFn` scans all of `types_items` on every call (no hash cache). The scan now also matches on the calling-convention bit (`FN_FLAG_STDCALL`), so a cdecl and a stdcall function of the same name are distinct entries.
+
+2. **`typeRegistryGetOrCreateModule`**: linear scan of all types for a matching `module_type+module_id`. No hash cache.
+
+3. **No hash cache for optional when unresolved** `[updated: 2026-10-17 — FIXED by the D1 root fix (T1, canonical synthetic composites; see Type Caches): `typeRegistryGetOrCreateOptional` AND `typeRegistryGetOrCreateArray` now key-cache UNCONDITIONALLY at creation and complete layout in place on a cache hit — the item body is the pre-T1 behavior, kept as history.]`: `typeRegistryGetOrCreateOptional` populates `optional_cache` only when the payload is already resolved (`state == 2`). Unresolved optionals miss the cache on subsequent lookups.
+
+4. **Depth limit in `resolveTypeExprFull`**: hardcoded max depth of 16 (the `evalConstU32Full` const-cycle guard uses the same cap). Deeply nested type expressions silently return `TYPE_UNDEFINED`.
+
+5. **`evalConstU32Full` fallback ambiguity (pre-existing):** `0xFFFFFFFF` is both a valid `u32` and the "uncomputable" sentinel, so an array of length `0xFFFFFFFF` cannot be distinguished from a failed fold. **Task 5:** the evaluator delegates to the shared exact `evalConstIntFull` (int/char literals, parens, `negate`, the ten integer binops, ident/module-const chains, field-access module consts, and the integer-valued builtins `@intCast`/`@as`/`@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf`); a cap-overflow/div-by-zero/shift-domain decline or a non-integer/non-fitting cast target falls back to the sentinel. `@isWindows`/float builtins, `~`, and every non-struct aggregate kind still fall back to the sentinel (`ERR_3050`); a forward-referenced/mutual aggregate defers. **FF (Volume II D9):** the packed-union `@offsetOf`/`@bitOffsetOf` fold is deleted here too, so `[@offsetOf(PU, "a")]u8` is now `error[3050]` (the value-position builtin is separately clean-rejected by sema with `error[3072]`). The accepted concrete range is exactly `0..0xFFFFFFFE`.
+
+6. **SURFACED (2026-08-13, F5): plain untagged `union` layout vs C emission mismatch.** A bare `union` layout uses the max-member model (`typeResolverResolveLayout` union branch, `size = alignUp(max_sz, max_align)`), but `c89_emit` emits a plain union as a C `struct` with ALL variants stacked — so a union-holding struct's `@sizeOf` can under-size the emitted C struct, overflowing arena bump-alloc slots. Pre-fix masked by the Defect D 1/1 clamp; post-F5 `lisp_interpreter` `(+ 1 2)` SEGFAULTs (was silent fail) because eval now runs against the still-mismatched `Value` size. Tagged unions are unaffected (emitted correctly). Tracked for the F3 closeout / union-emission task.
+
+7. **`FIRST_USER_TYPE = 20` is stale**: `type_registry.zig` still defines it as `20`, but primitives now occupy TypeIds 1-21, so user types in practice start at ≥22 (`TYPE_TYPE` was already a primitive while the constant was never bumped). Docs-only task — the source constant is left unchanged.
+
+8. **`canLiteralFitInType` does not cover arbitrary-width / enum-backed ints**: it range-checks only the fixed sentinel TypeIds (`TYPE_I8`…`TYPE_USIZE`, `TYPE_F32`/`TYPE_F64`), so an integer literal targeted at an `arb_int_type`/`arb_uint_type` (or an `enum(uN)` backed by one) is not range-checked by this helper.
+
+9. **FIXED (2026-08-08, F1): `@ptrToInt` resolves to `usize` for single-arg calls.** The `builtin_call` resolver in `semantic_analyzer.zig` had the `@ptrToInt → TYPE_USIZE` branch nested *inside* the `ec.len >= 2` guard, making it dead code for the single-arg `@ptrToInt(x)` form — the call fell through to the `ec.len >= 1` branch and returned the *argument's* type (a pointer). An untyped `const current_pos = @ptrToInt(ptr);` was typed as the pointer, and a following `(current_pos + mask) & ~mask` chain failed the bitwise equal-integer-types check → const init resolved to `TYPE_VOID` → `error[3000]`. Fix: the `ptrtoint_name_id` check is hoisted above the `ec.len` dispatch, mirroring the lowerer's already-correct handling. `@ptrToInt` now resolves to `TYPE_USIZE` regardless of arg count.

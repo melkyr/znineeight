@@ -1,0 +1,55 @@
+const std = @import("std");
+
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+pub fn main() void {
+    var n: i32 = 41;
+
+    var p: *i32 = &n;
+    p.* = 42;
+    std.io.print("*T n={} p.*={}\n", .{ n, p.* });
+
+    const cp: *const i32 = &n;
+    std.io.print("*const T cp.*={}\n", .{cp.*});
+
+    var vn: i32 = 7;
+    var vp: *volatile i32 = &vn;
+    vp.* = 9;
+    std.io.print("*volatile T vn={} vp.*={}\n", .{ vn, vp.* });
+
+    var pp: **i32 = &p;
+    pp.*.* = 43;
+    std.io.print("**T n={} pp.**={}\n", .{ n, pp.*.* });
+
+    var arr: [3]i32 = .{ 10, 20, 30 };
+    var mp: [*]i32 = arr;
+    mp[1] = 25;
+    std.io.print("[*]T mp[0]={} mp[1]={} mp[2]={}\n", .{ mp[0], mp[1], mp[2] });
+
+    var pt: Point = .{ .x = 1, .y = 2 };
+    var sp: *Point = &pt;
+    sp.x = 5;
+    std.io.print("ptr.field x={} y={}\n", .{ sp.x, sp.y });
+
+    const erased: *void = @ptrCast(*void, p);
+    const restored: *i32 = @ptrCast(*i32, erased);
+    std.io.print("@ptrCast roundtrip={}\n", .{restored.*});
+
+    const addr_from: usize = @intFromPtr(p);
+    const addr_to: usize = @ptrToInt(p);
+    std.io.print("@intFromPtr!=0={} @ptrToInt!=0={}\n", .{ addr_from != 0, addr_to != 0 });
+
+    const from_addr: *i32 = @ptrFromInt(addr_from);
+    const to_addr: *i32 = @intToPtr(*i32, addr_from);
+    std.io.print("@ptrFromInt roundtrip={} @intToPtr roundtrip={}\n", .{ from_addr.*, to_addr.* });
+
+    var neg: i32 = -1;
+    const all_ones: u32 = @bitCast(u32, neg);
+    std.io.print("@bitCast u32(-1)={} hex={x}\n", .{ all_ones, all_ones });
+
+    const mutable: *i32 = @volatileCast(*i32, vp);
+    std.io.print("@volatileCast read={}\n", .{mutable.*});
+}

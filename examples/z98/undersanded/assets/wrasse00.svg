@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" shape-rendering="crispEdges">
+<g stroke="#0A1420" stroke-width="1" stroke-linejoin="miter">
+<polygon points="22,48 34,30 60,26 82,36 88,48 82,60 60,70 34,66" fill="#126A5E"/>
+<polygon points="22,48 8,32 12,48 8,64" fill="#126A5E"/>
+<polygon points="50,26 56,12 66,26" fill="#126A5E"/>
+<polygon points="50,70 56,82 66,68" fill="#126A5E"/>
+</g>
+<g stroke="none">
+<polygon points="30,48 40,35 60,31 78,40 83,48 78,56 60,65 40,61" fill="#28A88A"/>
+<polygon points="44,40 62,36 74,43 78,48 70,49 56,44 46,46" fill="#5DD5B5"/>
+<polygon points="24,48 14,38 16,48 14,58" fill="#28A88A"/>
+<polygon points="40,36 48,34 48,62 40,60" fill="#126A5E"/>
+<polygon points="52,33 60,32 60,64 52,63" fill="#126A5E"/>
+<polygon points="64,34 72,37 72,60 64,62" fill="#126A5E"/>
+<polygon points="76,40 84,44 84,52 76,56" fill="#082A28"/>
+<rect x="78" y="44" width="4" height="4" fill="#0A1420"/>
+<rect x="79" y="45" width="2" height="2" fill="#5DD5B5"/>
+<rect x="44" y="46" width="3" height="3" fill="#5DD5B5"/>
+<rect x="56" y="46" width="3" height="3" fill="#5DD5B5"/>
+<rect x="66" y="47" width="3" height="3" fill="#5DD5B5"/>
+</g>
+</svg>

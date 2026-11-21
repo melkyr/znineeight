@@ -1,0 +1,7 @@
+debug-ok
+pos: 42
+neg: -7
+zero: 0
+idx: 6
+dash: 1
+wide: 1

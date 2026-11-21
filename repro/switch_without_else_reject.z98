@@ -1,0 +1,20 @@
+// switch_without_else_reject.z98 — FA-a standalone reject repro.
+//
+// Language Spec §3.1 makes the `else` prong mandatory in all switch
+// expressions. FA-a enforces it with error[3068] (`switch must have an 'else'
+// prong`, rc 2 / 0 `.c`); pre-FA-a this program compiled and `pick(7)` read an
+// uninitialized result temp (D3 garbage).
+//
+// Expected: compile rc 2 / 0 emitted `.c` / exactly 1 x error[3068].
+const std = @import("std");
+
+fn pick(x: i32) i32 {
+    return switch (x) {
+        1 => 100,
+        2 => 200,
+    };
+}
+
+pub fn main() void {
+    std.io.print("pick={}\n", .{pick(7)});
+}

@@ -1,0 +1,582 @@
+// validate_assets_test.zig — native gate for the M10 Z98 asset validator.
+//
+// Build/run (repo root):
+//   "$ZIG" -fsafe -W -osl --output-dir "$OUT" \
+//       examples/z98/undersanded/tests/validate_assets_test.zig
+//   sh "$OUT/build_target.sh" linux "$OUT/validate_assets_test"
+//   "$OUT/validate_assets_test"
+//
+// The synthetic `.ZSP` files are constructed here (no committed converter);
+// a full 26-A/12-V/F ledger is generated in /tmp for the manifest checks and
+// for the `undtool --validate-assets` CLI probe. Prints `ok - <case>` /
+// `FAIL - <case>`; non-zero exit on any failure.
+
+const io = @import("std_io");
+const os = @import("std_os");
+const arena_mod = @import("std_arena");
+const file_mod = @import("std_file");
+const text_scan = @import("../text_scan.zig");
+const validate_assets = @import("../validate_assets.zig");
+const zsp = @import("../zsp.zig");
+const palette = @import("../palette.zig");
+const undtool = @import("../undtool.zig");
+
+@cInclude("<sys/stat.h>");
+
+extern "c" fn mkdir(path: [*]const u8, mode: u32) i32;
+extern "c" fn chdir(path: [*]const u8) i32;
+
+const DIR = "/tmp/z98_m10_validate_assets";
+const EMIT_DIR = "/tmp/z98_m10_validate_assets/should_not_emit";
+const BG_KEY_DIR = "/tmp/z98_m10_validate_assets/bg_key";
+const BG_A_ZSP = "examples/z98/undersanded/assets/out/bg_a.zsp";
+const A_COUNT: usize = validate_assets.A_COUNT;
+const V_COUNT: usize = validate_assets.V_COUNT;
+const BG_A_INDEX: usize = 11;
+
+var fails: usize = 0;
+var g_pix: [640 * 300]u8 = undefined;
+var g_enc: [640 * 300 * 2]u8 = undefined;
+var g_buf: [400 * 1024]u8 = undefined;
+var g_len: [A_COUNT]usize = undefined;
+var g_man: [8192]u8 = undefined;
+var g_src_arena_buf: [64 * 1024]u8 = undefined;
+
+fn report(name: []const u8, ok: bool) void {
+    if (ok) {
+        io.write("ok - ");
+    } else {
+        io.write("FAIL - ");
+        fails += 1;
+    }
+    io.write(name);
+    io.write("\n");
+}
+
+fn eq(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+fn wr16(buf: []u8, off: usize, v: u16) void {
+    buf[off] = @intCast(u8, v & 0xFF);
+    buf[off + 1] = @intCast(u8, v >> 8);
+}
+
+fn ensureDir(path: []const u8) void {
+    var b: [256]u8 = undefined;
+    if (path.len + 1 > b.len) return;
+    var i: usize = 0;
+    while (i < path.len) : (i += 1) b[i] = path[i];
+    b[path.len] = 0;
+    _ = mkdir(@ptrCast([*]const u8, &b[0]), 493);
+}
+
+fn makePath(dir: []const u8, name: []const u8, suffix: []const u8, out: []u8) ?[]u8 {
+    var p: usize = 0;
+    var i: usize = 0;
+    while (i < dir.len) : (i += 1) {
+        if (p >= out.len) return null;
+        out[p] = dir[i];
+        p += 1;
+    }
+    if (dir.len > 0 and dir[dir.len - 1] != '/') {
+        if (p >= out.len) return null;
+        out[p] = '/';
+        p += 1;
+    }
+    i = 0;
+    while (i < name.len) : (i += 1) {
+        if (p >= out.len) return null;
+        out[p] = name[i];
+        p += 1;
+    }
+    i = 0;
+    while (i < suffix.len) : (i += 1) {
+        if (p >= out.len) return null;
+        out[p] = suffix[i];
+        p += 1;
+    }
+    return out[0..p];
+}
+
+fn firstRamp(csv: []const u8) u8 {
+    var v: u8 = 0;
+    var i: usize = 0;
+    while (i < csv.len and csv[i] != ',') : (i += 1) {
+        v = v * 10 + @intCast(u8, csv[i] - '0');
+    }
+    return v;
+}
+
+fn baseHeaderRamp(name: []const u8, spec: validate_assets.AssetSpec) u8 {
+    if (eq(name, "eel00")) return 6;
+    if (eq(name, "tuna00")) return 7;
+    if (eq(name, "crab00")) return 8;
+    if (eq(name, "jelly00")) return 9;
+    if (eq(name, "barn00")) return 10;
+    if (eq(name, "anem00")) return 11;
+    if (eq(name, "ray00")) return 12;
+    if (eq(name, "squid00")) return 13;
+    if (eq(name, "angler00")) return 14;
+    if (eq(name, "wrasse00")) return 15;
+    if (eq(name, "boss00")) return 10;
+    return firstRamp(spec.allowed_ramps);
+}
+
+fn kindToken(k: validate_assets.Kind) []const u8 {
+    switch (k) {
+        .creature => return "creature",
+        .bg => return "bg",
+        .boat => return "boat",
+        .overlay => return "overlay",
+        else => return "overlay",
+    }
+}
+
+fn buildAsset(spec: validate_assets.AssetSpec, header_ramp: u8, fill_ramp: u8, border_key: bool, out: []u8) usize {
+    const w: usize = @intCast(usize, spec.w);
+    const h: usize = @intCast(usize, spec.h);
+    const total: usize = w * h;
+    if (total > g_pix.len) return 0;
+    const fill_index: u8 = @intCast(u8, @intCast(u32, fill_ramp) * 16 + 5);
+
+    var y: usize = 0;
+    while (y < h) : (y += 1) {
+        var x: usize = 0;
+        while (x < w) : (x += 1) {
+            var idx = fill_index;
+            if (border_key and (x == 0 or y == 0 or x == w - 1 or y == h - 1)) idx = 255;
+            g_pix[y * w + x] = idx;
+        }
+    }
+
+    const n = zsp.zspCanonicalEncode(g_pix[0..total], spec.w, spec.h, g_enc[0..]);
+    if (n == 0) return 0;
+    const len = 16 + 512 + n;
+    if (len > out.len) return 0;
+
+    out[0] = 'Z';
+    out[1] = 'S';
+    out[2] = 'P';
+    out[3] = '1';
+    wr16(out, 4, @intCast(u16, spec.w));
+    wr16(out, 6, @intCast(u16, spec.h));
+    out[8] = 255;
+    out[9] = header_ramp;
+    wr16(out, 10, 0);
+    out[12] = 0;
+    out[13] = 0;
+    out[14] = 0;
+    out[15] = 0;
+    var i: usize = 0;
+    while (i < 256) : (i += 1) wr16(out, 16 + i * 2, palette.RGB565[i]);
+    i = 0;
+    while (i < n) : (i += 1) out[528 + i] = g_enc[i];
+    return len;
+}
+
+fn buildWideBg(spec: validate_assets.AssetSpec, out: []u8) usize {
+    const w: usize = @intCast(usize, spec.w);
+    const h: usize = @intCast(usize, spec.h);
+    const total: usize = w * h;
+    if (total > g_pix.len) return 0;
+    var i: usize = 0;
+    while (i < total) : (i += 1) {
+        if ((i & 1) == 0) {
+            g_pix[i] = 5;
+        } else {
+            g_pix[i] = 21;
+        }
+    }
+    const n = zsp.zspCanonicalEncode(g_pix[0..total], spec.w, spec.h, g_enc[0..]);
+    if (n == 0) return 0;
+    const len = 16 + 512 + n;
+    if (len > out.len) return 0;
+    out[0] = 'Z';
+    out[1] = 'S';
+    out[2] = 'P';
+    out[3] = '1';
+    wr16(out, 4, @intCast(u16, spec.w));
+    wr16(out, 6, @intCast(u16, spec.h));
+    out[8] = 255;
+    out[9] = firstRamp(spec.allowed_ramps);
+    wr16(out, 10, 0);
+    out[12] = 0;
+    out[13] = 0;
+    out[14] = 0;
+    out[15] = 0;
+    i = 0;
+    while (i < 256) : (i += 1) wr16(out, 16 + i * 2, palette.RGB565[i]);
+    i = 0;
+    while (i < n) : (i += 1) out[528 + i] = g_enc[i];
+    return len;
+}
+
+fn buildBgWithColours(spec: validate_assets.AssetSpec, colours: usize, out: []u8) usize {
+    const w: usize = @intCast(usize, spec.w);
+    const h: usize = @intCast(usize, spec.h);
+    const total: usize = w * h;
+    if (total > g_pix.len or colours == 0 or colours > 255) return 0;
+    var i: usize = 0;
+    while (i < total) : (i += 1) g_pix[i] = @intCast(u8, (i % colours) + 1);
+
+    const n = zsp.zspCanonicalEncode(g_pix[0..total], spec.w, spec.h, g_enc[0..]);
+    if (n == 0) return 0;
+    const len = 16 + 512 + n;
+    if (len > out.len) return 0;
+    out[0] = 'Z';
+    out[1] = 'S';
+    out[2] = 'P';
+    out[3] = '1';
+    wr16(out, 4, @intCast(u16, spec.w));
+    wr16(out, 6, @intCast(u16, spec.h));
+    out[8] = 255;
+    out[9] = firstRamp(spec.allowed_ramps);
+    wr16(out, 10, 0);
+    out[12] = 0;
+    out[13] = 0;
+    out[14] = 0;
+    out[15] = 0;
+    i = 0;
+    while (i < 256) : (i += 1) wr16(out, 16 + i * 2, palette.RGB565[i]);
+    i = 0;
+    while (i < n) : (i += 1) out[528 + i] = g_enc[i];
+    return len;
+}
+
+fn writeFile(dir: []const u8, name: []const u8, suffix: []const u8, buf: []const u8) bool {
+    var path_buf: [600]u8 = undefined;
+    const path = makePath(dir, name, suffix, path_buf[0..]) orelse return false;
+    file_mod.writeAll(path, buf) catch return false;
+    return true;
+}
+
+fn buildAllFiles(dir: []const u8) bool {
+    var i: usize = 0;
+    while (i < A_COUNT) : (i += 1) {
+        const spec = validate_assets.EXPECTED_A[i];
+        const hr = baseHeaderRamp(spec.name, spec);
+        const len = buildAsset(spec, hr, hr, spec.kind == .creature, g_buf[0..]);
+        if (len == 0) return false;
+        if (!writeFile(dir, spec.name, ".zsp", g_buf[0..len])) return false;
+        g_len[i] = len;
+    }
+    return true;
+}
+
+fn appendV(out: []u8, p: *usize, id: []const u8, base: []const u8, from_ramp: u8, to_ramp: u8) void {
+    text_scan.appendText(out, p, "V ");
+    text_scan.appendText(out, p, id);
+    text_scan.appendText(out, p, " ");
+    text_scan.appendText(out, p, base);
+    text_scan.appendText(out, p, " ");
+    text_scan.appendInt(out, p, @intCast(i64, from_ramp));
+    text_scan.appendText(out, p, " ");
+    text_scan.appendInt(out, p, @intCast(i64, to_ramp));
+    text_scan.appendText(out, p, "\n");
+}
+
+fn makeManifest(out: []u8, skip_a: i32, bad_name: bool, add_orphan: bool, dup_v: bool, wrong_from: bool) usize {
+    var p: usize = 0;
+    var i: usize = 0;
+    while (i < A_COUNT) : (i += 1) {
+        if (@intCast(i32, i) != skip_a) {
+            const spec = validate_assets.EXPECTED_A[i];
+            text_scan.appendText(out, &p, "A ");
+            if (bad_name and i == 0) {
+                text_scan.appendText(out, &p, "EEL00");
+            } else {
+                text_scan.appendText(out, &p, spec.name);
+            }
+            text_scan.appendText(out, &p, " ");
+            text_scan.appendText(out, &p, kindToken(spec.kind));
+            text_scan.appendText(out, &p, " ");
+            text_scan.appendInt(out, &p, @intCast(i64, spec.w));
+            text_scan.appendText(out, &p, " ");
+            text_scan.appendInt(out, &p, @intCast(i64, spec.h));
+            text_scan.appendText(out, &p, " ");
+            text_scan.appendInt(out, &p, @intCast(i64, g_len[i]));
+            text_scan.appendText(out, &p, " ");
+            text_scan.appendText(out, &p, spec.allowed_ramps);
+            text_scan.appendText(out, &p, "\n");
+        }
+    }
+    i = 0;
+    while (i < V_COUNT) : (i += 1) {
+        const v = validate_assets.EXPECTED_V[i];
+        const from = if (wrong_from and i == 0) @intCast(u8, 5) else v.from_ramp;
+        appendV(out, &p, v.id, v.base, from, v.to_ramp);
+        if (dup_v and i == 0) appendV(out, &p, v.id, v.base, from, v.to_ramp);
+    }
+    if (add_orphan) appendV(out, &p, "orphan", "nope", 1, 2);
+    text_scan.appendText(out, &p, "F font8x16 95 16\n");
+    return p;
+}
+
+fn goodAssetLen() usize {
+    return buildAsset(validate_assets.EXPECTED_A[0], 6, 6, true, g_buf[0..]);
+}
+
+fn tGoodAsset() bool {
+    const len = goodAssetLen();
+    if (len == 0) return false;
+    return validate_assets.validateAsset(g_buf[0..len], validate_assets.EXPECTED_A[0]) == .Ok;
+}
+
+fn tBadMagic() bool {
+    const len = goodAssetLen();
+    if (len == 0) return false;
+    g_buf[0] = 'X';
+    return validate_assets.validateAsset(g_buf[0..len], validate_assets.EXPECTED_A[0]) == .BadMagic;
+}
+
+fn tTruncatedRun() bool {
+    const len = goodAssetLen();
+    if (len == 0) return false;
+    return validate_assets.validateAsset(g_buf[0 .. len - 1], validate_assets.EXPECTED_A[0]) == .Truncated;
+}
+
+fn tOversizedDims() bool {
+    const len = goodAssetLen();
+    if (len == 0) return false;
+    wr16(g_buf[0..], 4, 0xFFFF);
+    wr16(g_buf[0..], 6, 0xFFFF);
+    return validate_assets.validateAsset(g_buf[0..len], validate_assets.EXPECTED_A[0]) == .BadDims;
+}
+
+fn tOffRamp() bool {
+    const len = buildAsset(validate_assets.EXPECTED_A[0], 6, 7, true, g_buf[0..]);
+    if (len == 0) return false;
+    return validate_assets.validateAsset(g_buf[0..len], validate_assets.EXPECTED_A[0]) == .OffRamp;
+}
+
+fn tBadPalette() bool {
+    const len = goodAssetLen();
+    if (len == 0) return false;
+    g_buf[16] = g_buf[16] ^ 1;
+    return validate_assets.validateAsset(g_buf[0..len], validate_assets.EXPECTED_A[0]) == .BadPalette;
+}
+
+fn tBadBorder() bool {
+    const len = buildAsset(validate_assets.EXPECTED_A[0], 6, 6, false, g_buf[0..]);
+    if (len == 0) return false;
+    return validate_assets.validateAsset(g_buf[0..len], validate_assets.EXPECTED_A[0]) == .BadBorder;
+}
+
+fn tNonCanonical() bool {
+    const len = goodAssetLen();
+    if (len == 0) return false;
+    const first = g_buf[528];
+    if (first < 2 or g_buf[529] != 255) return false;
+    var k: usize = len;
+    while (k > 528) {
+        k -= 1;
+        g_buf[k + 2] = g_buf[k];
+    }
+    g_buf[528] = first - 1;
+    g_buf[529] = 255;
+    g_buf[530] = 1;
+    g_buf[531] = 255;
+    return validate_assets.validateAsset(g_buf[0 .. len + 2], validate_assets.EXPECTED_A[0]) == .NonCanonical;
+}
+
+fn tManifestGood() bool {
+    const n = makeManifest(g_man[0..], -1, false, false, false, false);
+    return validate_assets.validateManifest(g_man[0..n], DIR) == .Ok;
+}
+
+fn tManifestBadName() bool {
+    const n = makeManifest(g_man[0..], -1, true, false, false, false);
+    return validate_assets.validateManifest(g_man[0..n], DIR) == .BadName;
+}
+
+fn tManifestMissingEntry() bool {
+    const n = makeManifest(g_man[0..], 0, false, false, false, false);
+    return validate_assets.validateManifest(g_man[0..n], DIR) == .MissingEntry;
+}
+
+fn tManifestOrphanV() bool {
+    const n = makeManifest(g_man[0..], -1, false, true, false, false);
+    return validate_assets.validateManifest(g_man[0..n], DIR) == .OrphanVariant;
+}
+
+fn tManifestDuplicateV() bool {
+    const n = makeManifest(g_man[0..], -1, false, false, true, false);
+    return validate_assets.validateManifest(g_man[0..n], DIR) == .DuplicateVariant;
+}
+
+fn tManifestWrongFromRamp() bool {
+    const n = makeManifest(g_man[0..], -1, false, false, false, true);
+    return validate_assets.validateManifest(g_man[0..n], DIR) == .BadFromRamp;
+}
+
+fn tManifestBudgetOverrun() bool {
+    const spec = validate_assets.EXPECTED_A[BG_A_INDEX];
+    const len = buildWideBg(spec, g_buf[0..]);
+    if (len == 0) return false;
+    if (!writeFile(DIR, spec.name, ".zsp", g_buf[0..len])) return false;
+    const saved = g_len[BG_A_INDEX];
+    g_len[BG_A_INDEX] = len;
+    const n = makeManifest(g_man[0..], -1, false, false, false, false);
+    const e = validate_assets.validateManifest(g_man[0..n], DIR);
+    g_len[BG_A_INDEX] = saved;
+    return e == .Budget;
+}
+
+fn restoreGoodBg() bool {
+    const spec = validate_assets.EXPECTED_A[BG_A_INDEX];
+    const hr = baseHeaderRamp(spec.name, spec);
+    const len = buildAsset(spec, hr, hr, false, g_buf[0..]);
+    if (len == 0) return false;
+    if (!writeFile(DIR, spec.name, ".zsp", g_buf[0..len])) return false;
+    g_len[BG_A_INDEX] = len;
+    return true;
+}
+
+// Non-vacuity: copy the committed bg_a into a temp dir, flip one decoded run
+// index to the 255 key (keeping the run canonical) and require rejection. The
+// committed asset is only read.
+fn tBackgroundRejectsKeyPixel() bool {
+    const spec = validate_assets.EXPECTED_A[BG_A_INDEX];
+    ensureDir(BG_KEY_DIR);
+
+    var arena = arena_mod.init(g_src_arena_buf[0..]);
+    const src = file_mod.readAll(&arena, BG_A_ZSP) catch return false;
+    if (src.len > g_buf.len) return false;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) g_buf[i] = src[i];
+    const len = src.len;
+
+    if (validate_assets.validateAsset(g_buf[0..len], spec) != .Ok) return false;
+
+    var p: usize = 528;
+    var flipped = false;
+    while (p + 1 < len) : (p += 2) {
+        const prev_key = p == 528 or g_buf[p - 1] == validate_assets.KEY_INDEX;
+        const next_key = p + 3 >= len or g_buf[p + 3] == validate_assets.KEY_INDEX;
+        if (g_buf[p + 1] != validate_assets.KEY_INDEX and !prev_key and !next_key) {
+            g_buf[p + 1] = validate_assets.KEY_INDEX;
+            flipped = true;
+            break;
+        }
+    }
+    if (!flipped) return false;
+    if (!writeFile(BG_KEY_DIR, "bg_a", ".zsp", g_buf[0..len])) return false;
+
+    return validate_assets.validateAsset(g_buf[0..len], spec) == .BadKey;
+}
+
+// Non-vacuity: the same synthetic background shape is accepted at 8 distinct
+// colours and rejected at 9. Removing the <=8 guard would make the 9-colour
+// case return Ok and fail this test.
+fn tBackgroundRejectsTooManyColours() bool {
+    const spec = validate_assets.EXPECTED_A[BG_A_INDEX];
+    ensureDir(BG_KEY_DIR);
+
+    const ok_len = buildBgWithColours(spec, 8, g_buf[0..]);
+    if (ok_len == 0) return false;
+    if (validate_assets.validateAsset(g_buf[0..ok_len], spec) != .Ok) return false;
+
+    const len = buildBgWithColours(spec, 9, g_buf[0..]);
+    if (len == 0) return false;
+    if (!writeFile(BG_KEY_DIR, "bg_9col", ".zsp", g_buf[0..len])) return false;
+    return validate_assets.validateAsset(g_buf[0..len], spec) == .BadColours;
+}
+
+fn argz(buf: []u8, s: []const u8) [*]u8 {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) buf[i] = s[i];
+    buf[s.len] = 0;
+    return @ptrCast([*]u8, &buf[0]);
+}
+
+fn changeDir(path: []const u8) bool {
+    var b: [512]u8 = undefined;
+    if (path.len + 1 > b.len) return false;
+    var i: usize = 0;
+    while (i < path.len) : (i += 1) b[i] = path[i];
+    b[path.len] = 0;
+    return chdir(@ptrCast([*]const u8, &b[0])) == 0;
+}
+
+// Regression: --validate-assets combined with --emit-fallback must exit 2
+// before the emit branch, with no fallback_rows.zig written. The child runs
+// from the content dir so a buggy emit would succeed and be visible.
+fn tValidateEmitCombinedRejected() bool {
+    ensureDir(EMIT_DIR);
+    var fb_buf: [600]u8 = undefined;
+    const fb = makePath(EMIT_DIR, "fallback_rows", ".zig", fb_buf[0..]) orelse return false;
+    if (file_mod.exists(fb)) file_mod.remove(fb) catch {};
+
+    const pid = os.fork();
+    if (pid == 0) {
+        if (!changeDir("examples/z98/undersanded")) os.exit(98);
+        var b0: [16]u8 = undefined;
+        var b1: [32]u8 = undefined;
+        var b2: [32]u8 = undefined;
+        var b3: [8]u8 = undefined;
+        var b4: [32]u8 = undefined;
+        var b5: [128]u8 = undefined;
+        var args: [6][*]u8 = undefined;
+        args[0] = argz(b0[0..], "undtool");
+        args[1] = argz(b1[0..], "--validate-assets");
+        args[2] = argz(b2[0..], "missing.man");
+        args[3] = argz(b3[0..], ".");
+        args[4] = argz(b4[0..], "--emit-fallback");
+        args[5] = argz(b5[0..], EMIT_DIR);
+        undtool.run(6, @ptrCast([*][*]u8, &args[0]));
+        os.exit(99);
+    }
+    if (pid < 0) return false;
+    var status: i32 = 0;
+    _ = os.waitpid(pid, &status, 0);
+    const code = (status >> 8) & 255;
+    if (code != 2) return false;
+    return !file_mod.exists(fb);
+}
+
+pub fn main() void {
+    ensureDir(DIR);
+
+    const files_ok = buildAllFiles(DIR);
+    report("setup_synthetic_assets", files_ok);
+
+    report("cli_rejects_validate_assets_with_emit_fallback", tValidateEmitCombinedRejected());
+    report("asset_accepts_known_good", tGoodAsset());
+    report("asset_rejects_bad_magic", tBadMagic());
+    report("asset_rejects_truncated_run", tTruncatedRun());
+    report("asset_rejects_oversized_dims", tOversizedDims());
+    report("asset_rejects_off_ramp_pixel", tOffRamp());
+    report("asset_rejects_bad_palette", tBadPalette());
+    report("asset_rejects_noncanonical_rle", tNonCanonical());
+    report("asset_rejects_missing_creature_border", tBadBorder());
+    report("asset_rejects_background_key_pixel", tBackgroundRejectsKeyPixel());
+    report("asset_rejects_background_too_many_colours", tBackgroundRejectsTooManyColours());
+
+    report("manifest_accepts_full_ledger", tManifestGood());
+    report("manifest_rejects_bad_8_3_name", tManifestBadName());
+    report("manifest_rejects_missing_entry", tManifestMissingEntry());
+    report("manifest_rejects_orphan_v", tManifestOrphanV());
+    report("manifest_rejects_duplicate_v", tManifestDuplicateV());
+    report("manifest_rejects_wrong_from_ramp", tManifestWrongFromRamp());
+    report("manifest_rejects_budget_overrun", tManifestBudgetOverrun());
+
+    const restored = restoreGoodBg();
+    report("setup_restore_good_bg", restored);
+
+    if (restored) {
+        const good_n = makeManifest(g_man[0..], -1, false, false, false, false);
+        const wrote_good = writeFile(DIR, "good", ".man", g_man[0..good_n]);
+        const bad_n = makeManifest(g_man[0..], -1, false, false, true, false);
+        const wrote_bad = writeFile(DIR, "bad", ".man", g_man[0..bad_n]);
+        report("setup_cli_manifests", wrote_good and wrote_bad);
+    }
+
+    if (fails != 0) os.exit(1);
+    io.write("validate_assets_test PASS\n");
+}

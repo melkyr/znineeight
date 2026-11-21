@@ -1,0 +1,11 @@
+file_stream_usage
+sync: [a]
+sync: [b]
+sync: []
+sync: [c]
+async: aaaaaaaaaa
+async: bbbbbbbbbb
+async: cccccccccc
+async-lines: 3
+max-suspends: 3
+file_stream ok

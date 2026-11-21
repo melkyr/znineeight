@@ -1,0 +1,37 @@
+All commands run from /workspace/znineeight unless noted. Builds used the clean
+HEAD worktree/archive in /tmp; the dirty main worktree was never built or edited.
+
+# oracle verify
+/tmp/phase35-d15-i/zig-0.17.1/zig version
+sha256sum /tmp/phase35-d15-i/zig-0.17.1/zig /tmp/phase35-d15-i/zig-0.17.1.tar.xz
+
+# clean baseline
+git worktree add --detach /tmp/phase35-9l-clean 93068f57
+cd /tmp/phase35-9l-clean
+bash scripts/self_compile/build_next_gen.sh /workspace/znineeight/zig1/zig1_5_clean /tmp/phase35-9l-work/build
+
+# Zig probes
+cd probes
+for f in z*.zig; do
+  /tmp/phase35-d15-i/zig-0.17.1/zig build-exe "$f" \
+    --cache-dir /tmp/phase35-9l-work/zcache \
+    --global-cache-dir /tmp/phase35-9l-work/zglobal \
+    -femit-bin=/tmp/phase35-9l-work/zout/${f%.zig}/out
+done
+
+# Z98 probes
+Z=/tmp/phase35-9l-work/build/zig1_5_clean
+for f in z*.zig; do
+  $Z --check -ffast "$f"
+  $Z --dump-c89 -ffast --output-dir /tmp/phase35-9l-work/out/${f%.zig} "$f"
+done
+
+# 185 canonical switch entries: entry resolution + isolated CWD
+bash scripts/corpus/list_corpus_dirs.sh
+# for each dir: HEAD/C/B/G/H --check -ffast -I /tmp/phase35-9l-clean/sf/src <entry>
+# (sequential; compiler .zig1_*.tmp scratch files collide in parallel)
+
+# full 1278 canonical entries: HEAD/A/B --check -ffast -I sf/src <entry>
+
+# emission: HEAD/A/D/E/G/H --dump-c89 -ffast -I sf/src --output-dir <tmp> <entry>
+# compare sha256 over sorted *.c/*.h

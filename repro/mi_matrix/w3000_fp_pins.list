@@ -1,0 +1,73 @@
+# Task 0l — warning[3000] false-positive pin set (the `(a)` valid-Z98 families).
+#
+# Contract: after Task 0m, each directory below MUST produce ZERO
+# `warning[3000]` diagnostics from the compiler under test. Check with:
+#
+#   bash scripts/corpus/w3000_census.sh <zig1> repro/mi_matrix/w3000_fp_pins.list
+#
+# This is the pin mechanism the gcc-based classifier cannot provide: a Z98
+# `warning[3000]` is tolerated (the program still compiles and runs), so it never
+# changes the gcc exit code.
+#
+# The 11 `(b)` invalid-Zig dirs are intentionally NOT here (Task 0q promotes
+# them to hard `error[3000]`, a different contract).
+# `repro/field_store_tagged` is NOT here: Task 0l found its `source: type` is the
+# diagnostics-string fallback for `usize`, and the warning is a REAL
+# `usize -> u32` same-width mismatch (see task-0l-report.md). Declared, not pinned.
+
+# --- self `(a)` families -------------------------------------------------------
+repro/mi_matrix/w3000_sliceptr_manyptr_xmod       # slice `.ptr` -> [*]T (spec:68)
+repro/mi_matrix/w3000_bool_or_xmod                # bool from and/or over enum cmps
+repro/mi_matrix/w3000fp_enumcmp_bool_xmod         # enum == / != -> bool (root cause)
+repro/mi_matrix/w3000_undefined_manyptr_xmod      # undefined -> any type
+
+# --- corpus `(a)` family D: enum literal with expected enum type --------------
+repro/mi_matrix/emission_conflation_control_xmod
+repro/mi_matrix/bare_enum_literal_xmod
+
+# --- corpus `(a)` family E: fn item -> fn pointer -----------------------------
+repro/mi_matrix/callconv_cdecl_fnptr_xmod
+repro/mi_matrix/callconv_fnptr_mismatch_green_xmod
+repro/mi_matrix/callconv_nonpub_stdcall_xmod
+repro/mi_matrix/callconv_stdcall_fnptr_xmod
+
+# --- corpus `(a)` family F: noreturn initializer / assignment -----------------
+repro/mi_matrix/w3000fp_noreturn_if_xmod
+repro/mi_matrix/w3000fp_noreturn_switch_xmod
+repro/mi_matrix/diag_missing_return_expr_ok_xmod
+repro/mi_matrix/noreturn_assign_rhs_xmod
+repro/mi_matrix/noreturn_if_init_block_xmod
+repro/mi_matrix/noreturn_opt_ctx_xmod
+repro/mi_matrix/noreturn_switch_init_xmod
+
+# --- corpus `(a)` family G: `if` with expected optional / error-union ---------
+repro/mi_matrix/w3000fp_if_optional_xmod
+repro/mi_matrix/w3000fp_if_errunion_xmod
+repro/mi_matrix/eu_err_if_expr
+repro/mi_matrix/eunum_err_if_expr
+repro/mi_matrix/euopt_err_if_expr
+repro/mi_matrix/euopt_val_if_expr
+repro/mi_matrix/euoptptr_err_if_expr
+repro/mi_matrix/opt_null_if_expr
+repro/mi_matrix/opteu_err_if_expr
+repro/mi_matrix/opteu_null_if_expr
+repro/mi_matrix/optnum_null_if_expr
+repro/mi_matrix/optopt_null_if_expr
+repro/mi_matrix/optopt_val_if_expr
+repro/mi_matrix/optptr_null_if_expr
+
+# --- corpus `(a)` family H: tuple literal -> array ----------------------------
+repro/mi_matrix/w3000fp_tuple_array_xmod
+repro/mi_matrix/emission_capture_control_xmod
+repro/mi_matrix/parsergap_many_ptr_xmod
+
+# --- corpus `(a)` family I: error set -> superset error set -------------------
+repro/mi_matrix/w3000fp_errset_subset_xmod
+repro/mi_matrix/errset_cross_set_compare
+
+# --- corpus `(a)` family J: @cVaArg result type -------------------------------
+repro/mi_matrix/w3000fp_cvaarg_xmod
+repro/mi_matrix/fn_varargs_body
+
+# --- corpus `(a)` family K: @enumToInt result type ----------------------------
+repro/mi_matrix/w3000_enumtoint_explicit_xmod

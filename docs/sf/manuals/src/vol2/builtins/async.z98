@@ -1,0 +1,29 @@
+const std = @import("std");
+
+const WArgs = struct { out: *i32 };
+
+fn worker(out: *i32) void {
+    var i: i32 = 0;
+    while (i < 3) : (i += 1) {
+        @asyncSuspend(null);
+    }
+    out.* = i;
+}
+
+pub fn main() void {
+    std.io.print("frame={}\n", .{@asyncFrameSize(worker)});
+    var result: i32 = 0;
+    var cbuf: [64]u8 = undefined;
+    var fbuf: [128]u8 = undefined;
+    var wa: WArgs = WArgs{ .out = &result };
+    var ctxp: *void = @ptrCast(*void, &cbuf);
+    var args: *const void = @ptrCast(*const void, &wa);
+    var frame: *void = @asyncInit(ctxp, &fbuf, worker, args);
+    var more: ?*void = @asyncResume(frame, null);
+    var steps: i32 = 1;
+    while (more != null) {
+        more = @asyncResume(frame, null);
+        steps += 1;
+    }
+    std.io.print("n={} steps={}\n", .{ result, steps });
+}

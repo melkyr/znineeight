@@ -1,0 +1,138 @@
+// switch_case_consts.z98 — FX1 (D2 extras) standalone repro.
+//
+// Pins the FX1 fix: named-constant switch case items and range bounds
+// (`LO...HI`, `PICK`, mixed `LO, 2`), enum-member consts (`const LOMEM =
+// Color.Red;`, typed `.Red` initializers, alias chains), unqualified member
+// names (`Blue`) and `bool_literal` items (`true`/`false`) emit real C `case`
+// labels. Pre-fix every value silently fell to `else` (wrong stdout, rc 0).
+//
+// Expected stdout (exact), rc 0:
+//   intrange 10 10 20
+//   untyped 12 12 22
+//   exact 14 24
+//   mixed 16 16 26
+//   enexact 50 60
+//   enalias 52 62
+//   engap 56 66
+//   enrange 70 70 80
+//   enrangeident 74 74 74
+//   boolp 90 92
+//   boolfull 94 96
+//   stmt 100 102
+const std = @import("std");
+
+const Color = enum { Red, Green, Blue };
+const Code = enum(u8) { A = 1, B = 5, C = 9 };
+
+const LO: i32 = 1;
+const HI: i32 = 5;
+const ULO = 2;
+const UHI = 4;
+const PICK = 3;
+const LOMEM = Color.Red;
+const HIMEM = Color.Green;
+const LOMEM_T: Color = .Red;
+const ALIAS = LOMEM;
+const CODE_A: Code = .A;
+
+fn intrange(x: i32) i32 {
+    return switch (x) {
+        LO...HI => 10,
+        else => 20,
+    };
+}
+
+fn untyped(x: i32) i32 {
+    return switch (x) {
+        ULO...UHI => 12,
+        else => 22,
+    };
+}
+
+fn exact(x: i32) i32 {
+    return switch (x) {
+        PICK => 14,
+        else => 24,
+    };
+}
+
+fn mixed(x: i32) i32 {
+    return switch (x) {
+        LO, 2 => 16,
+        else => 26,
+    };
+}
+
+fn enexact(c: Color) i32 {
+    return switch (c) {
+        LOMEM => 50,
+        else => 60,
+    };
+}
+
+fn enalias(c: Color) i32 {
+    return switch (c) {
+        ALIAS => 52,
+        else => 62,
+    };
+}
+
+fn engap(c: Code) i32 {
+    return switch (c) {
+        CODE_A => 56,
+        else => 66,
+    };
+}
+
+fn enrange(c: Color) i32 {
+    return switch (c) {
+        LOMEM...HIMEM => 70,
+        else => 80,
+    };
+}
+
+fn enrangeident(c: Color) i32 {
+    return switch (c) {
+        LOMEM...Blue => 74,
+        else => 84,
+    };
+}
+
+fn boolp(b: bool) i32 {
+    return switch (b) {
+        true => 90,
+        else => 92,
+    };
+}
+
+fn boolfull(b: bool) i32 {
+    return switch (b) {
+        true => 94,
+        false => 96,
+        else => 98,
+    };
+}
+
+fn stmt(x: i32) i32 {
+    var r: i32 = 0;
+    switch (x) {
+        LO...HI => { r = 100; },
+        else => { r = 102; },
+    }
+    return r;
+}
+
+pub fn main() void {
+    std.io.print("intrange {} {} {}\n", .{ intrange(1), intrange(5), intrange(6) });
+    std.io.print("untyped {} {} {}\n", .{ untyped(2), untyped(4), untyped(5) });
+    std.io.print("exact {} {}\n", .{ exact(3), exact(4) });
+    std.io.print("mixed {} {} {}\n", .{ mixed(1), mixed(2), mixed(3) });
+    std.io.print("enexact {} {}\n", .{ enexact(Color.Red), enexact(Color.Green) });
+    std.io.print("enalias {} {}\n", .{ enalias(Color.Red), enalias(Color.Green) });
+    std.io.print("engap {} {}\n", .{ engap(Code.A), engap(Code.B) });
+    std.io.print("enrange {} {} {}\n", .{ enrange(Color.Red), enrange(Color.Green), enrange(Color.Blue) });
+    std.io.print("enrangeident {} {} {}\n", .{ enrangeident(Color.Red), enrangeident(Color.Green), enrangeident(Color.Blue) });
+    std.io.print("boolp {} {}\n", .{ boolp(true), boolp(false) });
+    std.io.print("boolfull {} {}\n", .{ boolfull(true), boolfull(false) });
+    std.io.print("stmt {} {}\n", .{ stmt(2), stmt(9) });
+}

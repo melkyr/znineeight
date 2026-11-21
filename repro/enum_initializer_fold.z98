@@ -1,0 +1,90 @@
+// enum_initializer_fold.z98 — standalone reproduction for the Task 11J fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/enuminit repro/enum_initializer_fold.z98
+//   cd /tmp/enuminit && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): `sf/src/type_resolver.zig`'s enum evaluator
+// `evalConstI64Full` had arms only for `int_literal`, `negate`, and `ident_expr`
+// const chains bottoming out in a literal. Every other explicit initializer
+// returned `null`, and `symbol_registrator.zig` treated `null` as "no explicit
+// value" and silently kept the auto-increment ordinal:
+//   enum(u8){ A = 1 + 2, B }        -> A 0, B 1   (true 3, 4)
+//   enum(u8){ A = @sizeOf(S), B }   -> A 0, B 1   (true 16, 17; S a named struct)
+//   enum(u8){ A = 'A', B }          -> A 0, B 1   (true 65, 66)
+// The compile was clean (rc=0, 0 diagnostics); only a runtime trap exposed it.
+// The evaluator also hung (rc=124) on `const X = X`.
+//
+// FIX (Task 11J, Option B): a post-layout re-evaluation pass at the end of
+// `phase_TypeResolution` (after `typeResolverResolve`, before
+// `phase_FrontResolution`) re-walks every module enum with a fresh `auto_val`
+// cascade through ONE shared member walk, overwriting the stored member values
+// in place. `evalConstI64Full` gained a depth cap (16) plus integer
+// binary/bitwise/shift/paren/char arms, `@intCast`/`@as`, and
+// `@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf` for
+// primitive/alias and named aggregates (complete post-layout). Anything still
+// unfoldable — a function call, `~`, an enum-member reference, a bool/float
+// builtin — and any duplicate tag value is a clean `error[3055]`, never a
+// silent auto-increment.
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0. Before the fix
+// every value printed `-bad` (and the self-cycle case hung).
+//
+//   arith-ok
+//   paren-ok
+//   char-ok
+//   named-struct-size-ok
+//   offsetof-ok
+//   chain-ok
+//   mix-ok
+//   done
+const std = @import("std");
+
+const S = struct { a: u32, b: u64 };
+const NCHAIN = 2 + 2;
+
+const EArith = enum(u8) { A = 1 + 2, B = 10 - 3, C = 6 & 3, D = 1 << 4, E = 16 >> 2 };
+const EParen = enum(u8) { A = (1 + 2), B };
+const EChar = enum(u8) { A = 'A', B };
+const ESize = enum(u8) { A = @sizeOf(S), B };
+const EOffset = enum(u8) { A = @offsetOf(S, "b"), B = @bitOffsetOf(S, "b") };
+const EChain = enum(u8) { A = NCHAIN, B = @sizeOf(u32) + 1, C = @as(u8, 3) };
+const EMix = enum(u8) { A = 5, B, C = 10, D };
+
+pub fn main() void {
+    if (@enumToInt(EArith.A) != 3) @panic("arith A");
+    if (@enumToInt(EArith.B) != 7) @panic("arith B");
+    if (@enumToInt(EArith.C) != 2) @panic("arith C");
+    if (@enumToInt(EArith.D) != 16) @panic("arith D");
+    if (@enumToInt(EArith.E) != 4) @panic("arith E");
+    std.io.print("arith-ok\n");
+
+    if (@enumToInt(EParen.A) != 3) @panic("paren A");
+    if (@enumToInt(EParen.B) != 4) @panic("paren B");
+    std.io.print("paren-ok\n");
+
+    if (@enumToInt(EChar.A) != 65) @panic("char A");
+    if (@enumToInt(EChar.B) != 66) @panic("char B");
+    std.io.print("char-ok\n");
+
+    if (@enumToInt(ESize.A) != 16) @panic("size A");
+    if (@enumToInt(ESize.B) != 17) @panic("size B");
+    std.io.print("named-struct-size-ok\n");
+
+    if (@enumToInt(EOffset.A) != 8) @panic("offset A");
+    if (@enumToInt(EOffset.B) != 64) @panic("offset B");
+    std.io.print("offsetof-ok\n");
+
+    if (@enumToInt(EChain.A) != 4) @panic("chain A");
+    if (@enumToInt(EChain.B) != 5) @panic("chain B");
+    if (@enumToInt(EChain.C) != 3) @panic("chain C");
+    std.io.print("chain-ok\n");
+
+    if (@enumToInt(EMix.A) != 5) @panic("mix A");
+    if (@enumToInt(EMix.B) != 6) @panic("mix B");
+    if (@enumToInt(EMix.C) != 10) @panic("mix C");
+    if (@enumToInt(EMix.D) != 11) @panic("mix D");
+    std.io.print("mix-ok\n");
+
+    std.io.print("done\n");
+}

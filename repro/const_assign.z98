@@ -1,0 +1,29 @@
+// repro/const_assign.z98 — standalone Task 7B reproduction (const enforcement).
+//
+// Zig1 did not enforce `const`: assignment to a const local, a module const, or
+// a `*const T` deref compiled rc=0 with no diagnostic and the emitted C
+// performed the mutation, contradicting spec §1.7 and
+// `docs/sf/Design_p2.md:1375`. zig0 enforces it via `isLValueConst`
+// (`src/bootstrap/type_checker.cpp:6470`), so this was a regression.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 repro/const_assign.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, one `error[3002]` ("cannot
+// assign to immutable variable") per assignment, each at the l-value span.
+//
+// DEFECT (before the fix): rc=0, no diagnostic, 4 `.c`, and the emitted C
+// mutates `x`, `G`, and `*p`.
+//
+// See repro/mi_matrix/const_assign_reject_xmod (all 13 shapes) and the positive
+// runtime control repro/mi_matrix/const_assign_ok_xmod.
+const G: u32 = 1;
+var GV: u32 = 1;
+
+pub fn main() void {
+    const x: u32 = 1;
+    x = 2;
+    G = 2;
+    const p: *const u32 = &GV;
+    p.* = 2;
+}

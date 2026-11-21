@@ -1,0 +1,6 @@
+min: -2147483648
+max: 2147483647
+zero: 0
+neg1: -1
+one: 1
+debug stress ok

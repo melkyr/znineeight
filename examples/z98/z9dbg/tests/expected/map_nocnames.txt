@@ -1,0 +1,8 @@
+ok - nocnames symbol count 3
+ok - nocnames group count 1
+ok - nocnames line run count 6
+ok - nocnames cname count 0
+ok - nocnames cnameFor null
+ok - nocnames symbolAt main
+ok - nocnames lineAt 16
+ok - nocnames entryStop line

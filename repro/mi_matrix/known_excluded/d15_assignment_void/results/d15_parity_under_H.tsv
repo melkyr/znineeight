@@ -1,0 +1,29 @@
+probe	rc	dump_rc	c_files	diagnostic
+corpus_adapted/eu_err_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/eunum_err_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/euopt_err_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/euopt_val_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/euoptptr_err_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/opt_null_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/opteu_err_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/opteu_null_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/optnum_null_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/optopt_null_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/optopt_val_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+corpus_adapted/optptr_null_switch.zig	0	0	5	Z98 Compiler 2026 (map: off)
+neg/neg_mixed_bool_ret.zig	2	2	0	Z98 Compiler 2026 (map: off) | neg/neg_mixed_bool_ret.zig:2:29: error[3000]: type mismatch in switch expression -- prong type may not be compatible wi
+neg/neg_mixed_direct.zig	2	2	0	Z98 Compiler 2026 (map: off) | neg/neg_mixed_direct.zig:2:40: error[3000]: type mismatch in switch expression -- prong type may not be compatible with
+neg/neg_mixed_infer.zig	2	2	0	Z98 Compiler 2026 (map: off) | neg/neg_mixed_infer.zig:2:41: error[3000]: type mismatch in switch expression -- prong type may not be compatible with 
+neg/neg_mixed_reverse.zig	2	2	0	Z98 Compiler 2026 (map: off) | neg/neg_mixed_reverse.zig:2:29: error[3000]: type mismatch in switch expression -- prong type may not be compatible wit
+neg/neg_mixed_use.zig	2	2	0	Z98 Compiler 2026 (map: off) | neg/neg_mixed_use.zig:2:43: error[3000]: type mismatch in switch expression -- prong type may not be compatible with th
+selectors/sel_capture_tu.zig	0	0	5	Z98 Compiler 2026 (map: off)
+selectors/sel_comptime_mixed_i32.zig	2	2	0	Z98 Compiler 2026 (map: off) | selectors/sel_comptime_mixed_i32.zig:2:40: error[3000]: type mismatch in switch expression -- prong type may not be com
+selectors/sel_comptime_mixed_opt_i32.zig	2	2	0	Z98 Compiler 2026 (map: off) | selectors/sel_comptime_mixed_opt_i32.zig:2:43: error[3000]: type mismatch in switch expression -- prong type may not be
+selectors/sel_comptime_opt_i32.zig	0	0	5	Z98 Compiler 2026 (map: off)
+selectors/sel_noreturn_i32.zig	0	0	5	Z98 Compiler 2026 (map: off)
+selectors/sel_runtime_opt_i32.zig	0	0	5	Z98 Compiler 2026 (map: off)
+selectors/sel_undefined_i32.zig	0	0	5	Z98 Compiler 2026 (map: off)
+selectors/sel_undefined_opt_i32.zig	0	0	5	Z98 Compiler 2026 (map: off)
+selectors/stmt_mixed_int_bool.zig	2	2	0	Z98 Compiler 2026 (map: off) | selectors/stmt_mixed_int_bool.zig:2:33: error[3000]: type mismatch in switch expression -- prong type may not be compat
+selectors/stmt_mixed_int_void.zig	2	2	0	Z98 Compiler 2026 (map: off) | selectors/stmt_mixed_int_void.zig:3:34: error[3000]: type mismatch in switch expression -- prong type may not be compat
+selectors/stmt_void.zig	0	0	5	Z98 Compiler 2026 (map: off)

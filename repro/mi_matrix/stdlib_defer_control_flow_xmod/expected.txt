@@ -1,0 +1,12 @@
+inner-break-body
+inner-break-ok
+inner-continue-body
+inner-continue-ok
+labeled-block-body
+labeled-block-ok
+labeled-loop-body
+labeled-loop-ok
+errdefer-inner-body
+errdefer-inner-ok
+errdefer-inner-caught
+done

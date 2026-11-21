@@ -1,0 +1,12 @@
+PRE	repro/mi_matrix/eu_err_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/eunum_err_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/euopt_err_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/euopt_val_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/euoptptr_err_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/opt_null_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/opteu_err_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/opteu_null_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/optnum_null_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/optopt_null_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/optopt_val_switch	dump=0	c=5	build=0	run=0
+PRE	repro/mi_matrix/optptr_null_switch	dump=0	c=5	build=0	run=0

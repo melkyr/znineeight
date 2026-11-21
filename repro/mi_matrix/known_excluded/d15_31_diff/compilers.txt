@@ -1,0 +1,24 @@
+# Task 9f.1 compiler provenance
+
+Repo: /workspace/znineeight
+Branch: zig1_improvements
+HEAD at certification: 29b9f9236abb87073ea01ce7be298e9882c4e7c2 (docs(phase35): add 31-diff certification task)
+Compiler source for final: ace04574 (fix(sema): apply expected-value-type rules to switch prongs (Phase3.5 D15))
+sf/src diff final-source..HEAD: 0 files
+git status --porcelain -- sf/src: 0 lines
+
+pre-Task-9 base (built at d124055d): /tmp/t9a_base_build/zig1_5_clean
+3bf7602b9b396522e17ffc978eaba38d  /tmp/t9a_base_build/zig1_5_clean
+c2b2e4e4078460dafda45e7cd132caaeb26f0b810b3c17461360b4372b12538e  /tmp/t9a_base_build/zig1_5_clean
+
+final Task 9 (built from ace04574): /tmp/t9f2_final_build/zig1_5_clean
+cac6716d4417c16c2f4140e76f435872  /tmp/t9f2_final_build/zig1_5_clean
+a314303b51680c24ee8462ab6be10992edb22a0bdef28e52e28171c82ac65dc2  /tmp/t9f2_final_build/zig1_5_clean
+
+pre-D15 Z98 (32473a03): /tmp/phase35-d15-i/pre-d15-build/zig1_5_clean
+1bdedb7419952ed10be80f1cca7b5476  /tmp/phase35-d15-i/pre-d15-build/zig1_5_clean
+bb4ce380c84d2cc0495ba072ed31e07091aa08ad17b0485642ba70549fedfd02  /tmp/phase35-d15-i/pre-d15-build/zig1_5_clean
+
+Zig 0.17.1 oracle: /tmp/phase35-d15-i/zig-0.17.1/zig
+0.17.1
+58959f01285c05a74276f09327b551d42ed6006bf325a78dc661a024e314987b  /tmp/phase35-d15-i/zig-0.17.1/zig

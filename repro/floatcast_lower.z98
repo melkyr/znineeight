@@ -1,0 +1,79 @@
+// floatcast_lower.z98 — standalone reproduction for the Task 11B fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/floatcast repro/floatcast_lower.z98
+//   cd /tmp/floatcast && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): `@floatCast` was accepted by the front end and typed
+// to its target, but `LirLowerer` never interned `@floatCast` and the cast
+// dispatch chain in `lowerExprImpl` had no prong for it. Control fell through
+// to `return result;` with a fresh, never-assigned temp, so the emitted C
+// returned a poison-filled temp (or a zero-initialized temp under `-ffast`)
+// instead of the conversion. The program compiled clean (rc=0, zero
+// diagnostics) and silently returned the wrong value at runtime.
+//
+// FIX (Task 11B): `sf/src/lower.zig` now interns `@floatCast` (field
+// `floatcast_name_id`) and adds one `else if (node.child_0 ==
+// self.floatcast_name_id)` prong to the cast chain emitting the existing
+// `float_cast` LIR op, which `c89_emit.zig` renders as `result = (ctype)value;`.
+// No emitter change was needed: the op already existed and was exercised by the
+// implicit `f32`->`f64` coercion path.
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0. Before the fix
+// the same file printed the `-bad` lines instead.
+//
+//   widen-2.5-ok
+//   narrow-neg1.25-ok
+//   literal-3.5-ok
+//   computed-7-ok
+//   narrow-round-ok
+//   as-float-ok
+//   inttofloat-ok
+//   implicit-widen-ok
+//   done
+const std = @import("std");
+
+// f32 -> f64 widening via @floatCast.
+fn widen(x: f32) f64 { return @floatCast(f64, x); }
+
+// f64 -> f32 narrowing via @floatCast.
+fn narrow(x: f64) f32 { return @floatCast(f32, x); }
+
+pub fn main() void {
+    // f32 -> f64.
+    var a: f32 = 2.5;
+    var b: f64 = widen(a);
+    if (b == 2.5) { std.io.print("widen-2.5-ok\n"); } else { std.io.print("widen-2.5-bad\n"); }
+
+    // f64 -> f32 (negative value, exactly representable).
+    var c: f32 = narrow(-1.25);
+    if (c == -1.25) { std.io.print("narrow-neg1.25-ok\n"); } else { std.io.print("narrow-neg1.25-bad\n"); }
+
+    // Literal argument, f64 -> f32.
+    var d: f32 = @floatCast(f32, 3.5);
+    if (d == 3.5) { std.io.print("literal-3.5-ok\n"); } else { std.io.print("literal-3.5-bad\n"); }
+
+    // Computed widening: int -> f32 -> f64.
+    var x: f32 = @intToFloat(f32, 7);
+    var y: f64 = @floatCast(f64, x);
+    if (y == 7.0) { std.io.print("computed-7-ok\n"); } else { std.io.print("computed-7-bad\n"); }
+
+    // Narrowing rounds to nearest (2^24 + 1 is not representable in f32).
+    var big: f64 = 16777217.0;
+    var rounded: f32 = @floatCast(f32, big);
+    if (rounded == 16777216.0) { std.io.print("narrow-round-ok\n"); } else { std.io.print("narrow-round-bad\n"); }
+
+    // Control: @as float cast (separate lowering path).
+    var e: f32 = @as(f32, @as(f64, 5.5));
+    if (e == 5.5) { std.io.print("as-float-ok\n"); } else { std.io.print("as-float-bad\n"); }
+
+    // Control: @intToFloat (separate lowering path).
+    var g: f64 = @intToFloat(f64, 9);
+    if (g == 9.0) { std.io.print("inttofloat-ok\n"); } else { std.io.print("inttofloat-bad\n"); }
+
+    // Control: implicit f32 -> f64 coercion (the pre-existing float_cast path).
+    var h: f64 = a;
+    if (h == 2.5) { std.io.print("implicit-widen-ok\n"); } else { std.io.print("implicit-widen-bad\n"); }
+
+    std.io.print("done\n");
+}

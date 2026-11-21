@@ -1,0 +1,74 @@
+const std = @import("std");
+
+// A bare union: the C union. Its members overlap at offset 0, and the
+// program tracks which one is live; nothing else does.
+const Bits = union {
+    f: f32,
+    u: u32,
+};
+
+// A packed union: members overlap at bit offset 0, no padding, and every
+// member is a bool, an integer of at most 31 bits, or a packed struct of
+// them.
+const Halves = packed struct { lo: u4, hi: u4 };
+const Flags = packed union {
+    whole: u8,
+    halves: Halves,
+};
+
+// A tagged union: the compiler stores a tag beside a payload union.
+// `empty` is a naked tag (no payload); `box` carries an anonymous struct.
+const Shape = union(enum) {
+    circle: i32,
+    empty,
+    box: struct { w: i32, h: i32 },
+};
+
+// Both prong spellings bind the payload capture: qualified and shorthand.
+// The else prong is mandatory even when every variant is listed.
+fn area(s: Shape) i32 {
+    return switch (s) {
+        Shape.circle => |r| r * r * 3,
+        .box => |b| b.w * b.h,
+        else => 0,
+    };
+}
+
+fn name(s: Shape) []const u8 {
+    return switch (s) {
+        Shape.circle => "circle",
+        .box => |b| if (b.w == b.h) "square" else "box",
+        .empty => "empty",
+        else => "unknown",
+    };
+}
+
+pub fn main() void {
+    // Bare union: one storage, read through either member.
+    var bits: Bits = .{ .f = 1.5 };
+    std.io.print("bits f={} u={x}\n", .{ bits.f, bits.u });
+    bits.u = 0x3FC00000;
+    std.io.print("bits back f={}\n", .{bits.f});
+    std.io.print("bits size={} align={} bits={}\n", .{ @sizeOf(Bits), @alignOf(Bits), @bitSizeOf(Bits) });
+
+    // Packed union: one byte, members are bit fields.
+    var flags: Flags = .{ .whole = 0xAB };
+    std.io.print("flags lo={x} hi={x} whole={x}\n", .{ flags.halves.lo, flags.halves.hi, flags.whole });
+    var h: Halves = .{ .lo = 2, .hi = 7 };
+    flags.halves = h;
+    std.io.print("flags2 lo={d} hi={d} whole={x}\n", .{ flags.halves.lo, flags.halves.hi, flags.whole });
+    std.io.print("flags size={} align={} bits={}\n", .{ @sizeOf(Flags), @alignOf(Flags), @bitSizeOf(Flags) });
+
+    // Tagged union: tag, payload, and the switch.
+    var s: Shape = .{ .circle = 2 };
+    std.io.print("circle tag={} area={d}\n", .{ s.tag, area(s) });
+    s = .{ .box = .{ .w = 3, .h = 4 } };
+    std.io.print("box tag={} area={d} name={s}\n", .{ s.tag, area(s), name(s) });
+    s = .empty;
+    var is_empty: bool = false;
+    if (s == Shape.empty) {
+        is_empty = true;
+    }
+    std.io.print("empty tag={} area={d} eq={}\n", .{ s.tag, area(s), is_empty });
+    std.io.print("shape size={} align={}\n", .{ @sizeOf(Shape), @alignOf(Shape) });
+}

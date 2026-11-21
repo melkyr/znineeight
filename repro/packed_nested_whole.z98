@@ -1,0 +1,65 @@
+// packed_nested_whole.z98 — standalone reproduction for FX15-F (A-full):
+// whole-value moves of nested packed sub-containers work per leaf.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/pnw repro/packed_nested_whole.z98
+//   cd /tmp/pnw && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): `Outer{ .inner = .{...} }` over-accepted and the
+// emitted C stored the `Inner` carrier struct into a bit-slice expression
+// (gcc: "aggregate value used where an integer was expected"); `o.inner =
+// ...` and `var r: Inner = o.inner` cleanly rejected `error[3000]`.
+//
+// FIX (FX15-F): each whole-value move is one scalar load_bitfield +
+// store_bitfield per leaf with composed offsets, on the literal, assignment,
+// packed-union and read paths alike.
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0.
+//
+//   lit 5 2 1
+//   val 3 1
+//   deep 5 2 2
+//   wide 1 7 9
+//   assign 5 2 1
+//   read 2 7
+//   pu-lit 2 7
+//   pu-read 2 7
+const std = @import("std");
+
+const Inner = packed struct { x: u2, y: u3 };
+const Mid = packed struct { i: Inner, z: u1 };
+const Outer = packed struct { first: u3, inner: Inner, last: u1 };
+const OuterMid = packed struct { first: u3, mid: Mid, last: u2 };
+const Big = packed struct { a: u31, b: u31 };
+const OuterBig = packed struct { first: u2, inner: Big };
+const PUnion = packed union { a: u3, inner: Inner };
+
+pub fn main() i32 {
+    var o: Outer = .{ .first = 5, .inner = .{ .x = 2, .y = 7 }, .last = 1 };
+    std.io.print("lit {} {} {}\n", .{ o.first, o.inner.x, o.last });
+
+    var i: Inner = .{ .x = 3, .y = 1 };
+    var o2: Outer = .{ .first = 2, .inner = i, .last = 1 };
+    std.io.print("val {} {}\n", .{ o2.inner.x, o2.inner.y });
+
+    var om: OuterMid = .{ .first = 5, .mid = .{ .i = .{ .x = 2, .y = 7 }, .z = 1 }, .last = 2 };
+    std.io.print("deep {} {} {}\n", .{ om.first, om.mid.i.x, om.last });
+
+    var ob: OuterBig = .{ .first = 1, .inner = .{ .a = 7, .b = 9 } };
+    std.io.print("wide {} {} {}\n", .{ ob.first, ob.inner.a, ob.inner.b });
+
+    var o3: Outer = undefined;
+    o3.first = 5;
+    o3.inner = .{ .x = 2, .y = 7 };
+    o3.last = 1;
+    std.io.print("assign {} {} {}\n", .{ o3.first, o3.inner.x, o3.last });
+
+    var r: Inner = o3.inner;
+    std.io.print("read {} {}\n", .{ r.x, r.y });
+
+    var u: PUnion = .{ .inner = .{ .x = 2, .y = 7 } };
+    std.io.print("pu-lit {} {}\n", .{ u.inner.x, u.inner.y });
+    var ru: Inner = u.inner;
+    std.io.print("pu-read {} {}\n", .{ ru.x, ru.y });
+    return 0;
+}

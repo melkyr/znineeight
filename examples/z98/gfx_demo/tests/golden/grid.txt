@@ -1,0 +1,20 @@
+ z98 gfx demo | DirectDraw7 + GDI
+ ESC quit | wheel=3 lines | click moves cursor
+
+  std_gfx: cell grid + GDI text + DDraw7 Blt
+  ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  abcdefghijklmnopqrstuvwxyz
+  0123456789 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~
+
+                    X
+   fill-rect exercised
+
+
+  scripted: click, wheel +3, resize, q
+
+
+
+
+
+
+ click=(20,8) clicks=1 wheel=3 frame=29 resize=64x20

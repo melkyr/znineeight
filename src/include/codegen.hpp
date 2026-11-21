@@ -50,6 +50,13 @@ public:
     ~C89Emitter();
 
     /**
+     * @brief Marks identifier names that appear/are-read in a subtree (used by dead-local
+     *        elimination and cross-reference detection). Called by the backend pre-pass and
+     *        per-function before body emission.
+     */
+    void markReadNames(const ASTNode* node, bool write_pos);
+
+    /**
      * @brief Increases the current indentation level.
      */
     void indent();
@@ -363,6 +370,13 @@ public:
     bool requiresParentheses(const ASTNode* node) const;
 
     /**
+     * @brief Returns true if the node is a compound expression (binary/ternary,
+     *        or a cast wrapping one) that must be parenthesized when used as an
+     *        operand of a C shift (<< / >>), which binds tighter than arithmetic.
+     */
+    bool isCompoundShiftOperand(const ASTNode* node) const;
+
+    /**
      * @brief Returns true if the cast from src to dest is a safe widening conversion.
      */
     bool isSafeWidening(Type* src, Type* dest) const;
@@ -622,6 +636,24 @@ private:
     const char* getLoopEndLabel(int id);
     const char* getLoopLabel(int id, const char* suffix);
 
+    bool typePrefixEmitsConst(Type* type);
+    bool isPtrArrayStringInit(Type* type, const ASTNode* init);
+
+    bool isNameRead(const char* name) const;
+    bool isNameAppearing(const char* name) const;
+    bool isFunctionReferenced(const char* zig_name) const;
+    bool isGlobalReferenced(const char* zig_name) const;
+    bool exprHasSideEffects(const ASTNode* node) const;
+
+    bool isSymRead(Symbol* sym) const;
+    bool isSymAppearing(Symbol* sym) const;
+    bool isSymDead(Symbol* sym) const;
+    int symLiveCount(Symbol* sym) const;
+    void computeDeadSyms();
+    static bool symListContains(const DynamicArray<Symbol*>& list, Symbol* sym);
+    bool isVarDeclDead(const ASTVarDeclNode* decl) const;
+    static Symbol* getLValueRootSym(const ASTNode* lvalue);
+
     /**
      * @brief Emits logic to wrap a value into an error union.
      */
@@ -690,6 +722,28 @@ private:
     ArenaAllocator& transient_arena_;
     DynamicArray<GlobalNameEntry> global_names_;
     DynamicArray<const char*> used_names_;
+    DynamicArray<const char*> read_names_;
+    DynamicArray<const char*> appear_names_;
+    DynamicArray<Symbol*> fn_read_syms_;
+    DynamicArray<const char*> fn_read_nonames_;
+    DynamicArray<Symbol*> fn_appear_syms_;
+    DynamicArray<Symbol*> fn_declared_syms_;
+    DynamicArray<Symbol*> dead_syms_;
+    DynamicArray<Symbol*> fn_live_syms_;
+    DynamicArray<int> fn_live_counts_;
+    struct SymEdge {
+        Symbol* lvalue;       /* guard: may be NULL */
+        const char* lvalue_name;
+        Symbol* rhs;          /* read: may be NULL */
+        const char* rhs_name;
+    };
+    DynamicArray<SymEdge> fn_guarded_reads_;
+    Symbol* cur_guard_sym_;
+    const char* cur_guard_name_;
+    bool cur_guard_active_;
+    DynamicArray<const char*> referenced_functions_;
+    DynamicArray<const char*> referenced_globals_;
+    DynamicArray<const char*> unused_param_names_;
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
@@ -708,6 +762,7 @@ private:
     const char* module_name_;
     const char* current_fn_name_;
     bool is_main_function_;
+    Symbol* argv_symbol_;
     char last_char_;
     int for_loop_counter_;
     SourceLocation current_loc_;
@@ -715,6 +770,7 @@ private:
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];
+    bool loop_end_label_used_[1024];
     DynamicArray<bool> loop_has_continue_;
 
     bool allow_aggregate_literal_;

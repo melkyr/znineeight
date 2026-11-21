@@ -1,0 +1,25 @@
+// comptime_intcast_range.z98 — standalone reproduction for the Task 11S (c) fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast --dump-c89 --output-dir /tmp/iccast repro/comptime_intcast_range.z98
+//   echo "dump rc=$?"   # expect 2
+//
+// DEFECT: `comptime_eval.zig`'s `@intCast` arm masked the operand to the target
+// width instead of range-checking it, so `const X = @intCast(u8, 300);` folded
+// to `(unsigned char)(44)` and compiled/ran silently (rc=0) — a silent
+// miscompile. Official Zig and the Z98 spec reject `@intCast(u8, 300)`: 300
+// does not fit u8.
+//
+// FIX (Task 11S): the arm range-checks the folded value against the resolved
+// target integer type via `comptimeValFitsType`; an out-of-range cast emits
+// error[3000] and stops folding, so the compiler exits rc=2 before emission.
+//
+// EXPECTED after the fix: dump rc=2, 0 `.c`, and
+//   error[3000]: @intCast value does not fit the target type
+// In-range and signed-negative comptime casts stay accepted (see
+// `repro/mi_matrix/stdlib_intcast_range_xmod`).
+const X = @intCast(u8, 300);
+
+pub fn main() void {
+    _ = X;
+}

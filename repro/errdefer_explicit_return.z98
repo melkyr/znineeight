@@ -1,0 +1,76 @@
+// errdefer_explicit_return.z98 — standalone reproduction for the Task 10B fix.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   <zig1> -o /tmp/errdefer_repro repro/errdefer_explicit_return.z98
+//   (cd /tmp/errdefer_repro && sh build_target.sh linux /tmp/errdefer_repro/prog)
+//   /tmp/errdefer_repro/prog
+//
+// DEFECT (before the fix): `sf/src/lower.zig` return_stmt lowering called
+//   expandDefers(..., is_error_path=0, ...)
+// unconditionally, so every explicit `return` was treated as a success exit and
+// `errdefer` (kind==1) bodies were skipped. Only `try` propagation passed
+// is_error_path=1 and worked.
+//
+// FIX (Task 10B): the return is classified before defers are expanded —
+// `ret_is_error=1` when the return expression carries a
+// `CoercionKind.wrap_error_err` coercion (error set -> error union, recorded by
+// resolveReturnStmt) or is an `error_literal`; success returns stay on the
+// success path.
+//
+// EXPECTED stdout after the fix (direct-undo / cond-undo / errvar-undo present;
+// success-undo absent because a plain `return;` is a success exit):
+//
+//   direct-undo
+//   direct-caught
+//   cond-undo
+//   cond-caught
+//   try-undo
+//   try-caught
+//   errvar-undo
+//   errvar-caught
+//   done
+const std = @import("std");
+const E = error{Boom};
+
+fn boomOnly() E!void { return error.Boom; }
+
+// (a) explicit error return — must run errdefer.
+fn direct() E!void {
+    errdefer std.io.print("direct-undo\n");
+    return error.Boom;
+}
+
+// (b) conditional explicit error return — must run errdefer on the error arm
+// only; the `return;` success arm must NOT run it.
+fn conditional(x: i32) E!void {
+    errdefer std.io.print("cond-undo\n");
+    if (x == 0) return error.Boom;
+    return;
+}
+
+// (c) `try` propagation — already worked before the fix.
+fn viaTry() E!void {
+    errdefer std.io.print("try-undo\n");
+    try boomOnly();
+}
+
+// (e) explicit error-variable return — must run errdefer.
+fn viaErrVar() E!void {
+    errdefer std.io.print("errvar-undo\n");
+    boomOnly() catch |err| { return err; };
+}
+
+// (d) normal success return — errdefer must NOT run.
+fn success() E!void {
+    errdefer std.io.print("success-undo\n");
+    return;
+}
+
+pub fn main() !void {
+    direct() catch { std.io.print("direct-caught\n"); };
+    conditional(0) catch { std.io.print("cond-caught\n"); };
+    viaTry() catch { std.io.print("try-caught\n"); };
+    viaErrVar() catch { std.io.print("errvar-caught\n"); };
+    success() catch { std.io.print("success-caught\n"); };
+    std.io.print("done\n");
+}

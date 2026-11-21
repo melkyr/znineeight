@@ -1,0 +1,37 @@
+// void_field_ok.z98 — FB2 fix-round-1 positive CONTROL.
+//
+// `struct { v: void, a: i32 }` is legal Z98: a void field is constructible and
+// readable, and a tuple whose elements are the NON-void fields compiles and
+// prints. This pins the fix-round-1 boundary — the narrowed
+// `semanticAnalyzerTupleElemVoidIsUnresolvedRef` rejects only void-typed
+// ELEMENTS; valid void-field struct use is untouched.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/void_field_ok_out
+//   <zig1> -o /tmp/void_field_ok_out repro/void_field_ok.z98
+//   cd /tmp/void_field_ok_out && sh build_target.sh linux void_field_ok
+//   ./void_field_ok
+//
+// EXPECTED (after the fix): rc 0, stdout `ok=7 7` / `gok=9 1`; the Zig-0.15.2
+// twin (std.debug.print) prints the same lines.
+const std = @import("std");
+
+const S = struct { v: void, a: i32 };
+
+fn read(p: S) i32 {
+    return p.a;
+}
+
+var gs: S = undefined;
+
+pub fn main() void {
+    var s: S = undefined;
+    s.a = 7;
+
+    const t = .{ s.a, read(s) };
+    std.io.print("ok={} {}\n", t);
+
+    gs.a = 9;
+    const g = .{ gs.a, 1 };
+    std.io.print("gok={} {}\n", g);
+}

@@ -1,0 +1,5 @@
+range: 128 ok
+determinism: 128 ok
+fbm0: 0.0
+lz4: 16 bytes
+noise_lz4 ok

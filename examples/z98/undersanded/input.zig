@@ -1,0 +1,84 @@
+// input.zig — UNDERSANDED fight-screen key mapping (spec §28).
+//
+// Pure mapping: a key event in, an Action out. No I/O and no game-state
+// mutation, so it is testable headless and replay recording (M3) can consume
+// the same Action stream. The modal keys follow spec §9.3: F and Esc both
+// decline (identical, consume no RNG).
+
+const def = @import("def.zig");
+const io = @import("std_io.zig");
+
+pub const KEY_ESC: u8 = 27;
+pub const VK_ESC: u16 = 0x1B;
+
+pub const Key = struct { ch: u8, code: u16 };
+
+// Pure gameplay key filter shared by stdin and the window loop: line endings
+// and space are ignored, 0/255 are EOF, every other character passes through.
+pub fn filterKey(k: Key) ?Key {
+    if (k.ch == 0 or k.ch == 255) return null;
+    if (k.ch == 10 or k.ch == 13 or k.ch == ' ') return null;
+    return k;
+}
+
+// Console key source shared by the fight and navigation loops. pal_getchar
+// returns -1 at EOF; std_io.readByte reinterprets that as 255. Treat EOF (and
+// NUL) as a clean end of input so a no-input run terminates.
+pub fn readKey() ?Key {
+    while (true) {
+        const b = io.readByte();
+        const k = Key{ .ch = b, .code = 0 };
+        if (filterKey(k)) |f| return f;
+        if (b == 0 or b == 255) return null;
+    }
+    return null;
+}
+
+// Boot first-run keeps Enter (LF/CR): the lore footer is "[Enter] Begin" and
+// readKey intentionally filters line endings for the game loops.
+pub fn readKeyRaw() ?Key {
+    const b = io.readByte();
+    if (b == 0 or b == 255) return null;
+    return Key{ .ch = b, .code = 0 };
+}
+
+fn lower(c: u8) u8 {
+    if (c >= 'A' and c <= 'Z') return c + 32;
+    return c;
+}
+
+fn isChar(k: Key, c: u8) bool {
+    return lower(k.ch) == c;
+}
+
+fn isEsc(k: Key) bool {
+    if (k.ch == KEY_ESC) return true;
+    if (k.code == VK_ESC) return true;
+    if (k.code == KEY_ESC) return true;
+    return false;
+}
+
+fn mapModal(k: Key) ?def.Action {
+    if (isEsc(k)) return def.Action{ .kind = def.ACT_DECLINE, .arg = 0 };
+    if (isChar(k, 'a')) return def.Action{ .kind = def.ACT_ATTEMPT, .arg = 0 };
+    if (isChar(k, 'f')) return def.Action{ .kind = def.ACT_DECLINE, .arg = 0 };
+    return null;
+}
+
+fn mapFight(k: Key) ?def.Action {
+    if (isChar(k, 's') or isChar(k, '1')) return def.Action{ .kind = def.ACT_STRIKE, .arg = 0 };
+    if (isChar(k, 'r') or isChar(k, '2')) return def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 };
+    if (isChar(k, 'e') or isChar(k, '3')) return def.Action{ .kind = def.ACT_EQUIP, .arg = 0 };
+    if (isChar(k, 'f') or isChar(k, '4')) return def.Action{ .kind = def.ACT_FLEE, .arg = 0 };
+    return null;
+}
+
+// `screen` is GameState.screen (def.SCREEN_*). Esc has no fight action
+// (it opens the menu per §28); inside the subdue modal it declines.
+pub fn mapKey(screen: i32, key: Key) ?def.Action {
+    if (screen == def.SCREEN_SUBDUE or screen == def.SCREEN_SUBDUE_POST) {
+        return mapModal(key);
+    }
+    if (screen == def.SCREEN_FIGHT) return mapFight(key);
+    return null;
+}

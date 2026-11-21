@@ -1,0 +1,25 @@
+// repro/try_incompat_reject.z98 — FX12 (Volume II ch12) discovery evidence.
+//
+// Converted from the Task 1 Finding-A probe `/tmp/t1/probes/n_try_incompat.z98`
+// (task-1-report.md §3, A3): an `E1!void` function whose `try` operand's set
+// (`E2`) is not a subset of `E1`. Pre-FX12 Z98 compiled and ran rc 0 (silent
+// rewrap). Zig 0.15.2 rejects with `expected type 'error{A}', found
+// 'error{B}'` + `note: 'error.B' not a member of destination error set`.
+//
+// Contract now: dump rc 2, 0 `.c`, exactly 1 level-0 `error[3075]`
+// (`try error set may not be compatible with the enclosing function's return
+// type`; set-only comparison, no `anyerror`), no signals.
+const E1 = error{A};
+const E2 = error{B};
+
+fn g() E2!void {
+    return error.B;
+}
+
+fn f() E1!void {
+    try g();
+}
+
+pub fn main() void {
+    f() catch { };
+}

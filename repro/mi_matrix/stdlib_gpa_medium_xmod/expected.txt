@@ -1,0 +1,11 @@
+init 1
+alloc 1
+bytes 1
+align 1
+resize 1
+free 1
+reuse 1
+stress 1
+foreign 1
+deinit 1
+gpa medium ok

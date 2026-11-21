@@ -1,0 +1,120 @@
+probe	zig_rc	zig_diag	zig_errors	pre_check_rc	pre_diag	pre_c	pre_dump_rc	cur_check_rc	cur_diag	cur_c	cur_dump_rc
+corpus_adapted/eu_err_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/eunum_err_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/euopt_err_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/euopt_val_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/euoptptr_err_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/opt_null_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/opteu_err_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/opteu_null_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/optnum_null_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/optopt_null_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/optopt_val_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_adapted/optptr_null_switch.zig	0		0	0		5	0	2	error[3000]	0	2
+corpus_raw/eu_err_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eu_err_switch.zig:1:64: error: local variable is never mutated	3	0		5	0	2	error[3000]	0	2
+corpus_raw/eunum_err_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/eunum_err_switch.zig:1:64: error: local variable is never mutated	3	0		5	0	2	error[3000]	0	2
+corpus_raw/euopt_err_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_err_switch.zig:1:64: error: local variable is never mutated	3	0		5	0	2	error[3000]	0	2
+corpus_raw/euopt_val_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euopt_val_switch.zig:1:64: error: local variable is never mutated	3	0		5	0	2	error[3000]	0	2
+corpus_raw/euoptptr_err_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/euoptptr_err_switch.zig:1:110: error: invalid builtin function: '@intToPtr'	1	0		5	0	2	error[3000]	0	2
+corpus_raw/opt_null_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opt_null_switch.zig:1:42: error: local variable is never mutated	2	0		5	0	2	error[3000]	0	2
+corpus_raw/opteu_err_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_err_switch.zig:1:64: error: local variable is never mutated	2	0		5	0	2	error[3000]	0	2
+corpus_raw/opteu_null_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/opteu_null_switch.zig:1:64: error: local variable is never mutated	2	0		5	0	2	error[3000]	0	2
+corpus_raw/optnum_null_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optnum_null_switch.zig:1:42: error: local variable is never mutated	2	0		5	0	2	error[3000]	0	2
+corpus_raw/optopt_null_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_null_switch.zig:1:42: error: local variable is never mutated	2	0		5	0	2	error[3000]	0	2
+corpus_raw/optopt_val_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optopt_val_switch.zig:1:42: error: local variable is never mutated	2	0		5	0	2	error[3000]	0	2
+corpus_raw/optptr_null_switch.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/corpus_raw/optptr_null_switch.zig:1:81: error: invalid builtin function: '@intToPtr'	1	0		5	0	2	error[3000]	0	2
+matrix/array_eu_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/array_euopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/array_f32.zig	0		0	0		5	0	0		5	0
+matrix/array_i32.zig	0		0	0		5	0	0		5	0
+matrix/array_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/array_optopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/array_optptr_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/array_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/callarg_eu_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/callarg_euopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/callarg_f32.zig	0		0	0		5	0	0		5	0
+matrix/callarg_i32.zig	0		0	0		5	0	0		5	0
+matrix/callarg_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/callarg_optopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/callarg_optptr_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/callarg_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/field_eu_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/field_euopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/field_f32.zig	0		0	0		5	0	0		5	0
+matrix/field_i32.zig	0		0	0		5	0	0		5	0
+matrix/field_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/field_optopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/field_optptr_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/field_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/nested_eu_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/nested_euopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/nested_f32.zig	0		0	0		5	0	0		5	0
+matrix/nested_i32.zig	0		0	0		5	0	0		5	0
+matrix/nested_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/nested_optopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/nested_optptr_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/nested_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/ret_anyerror_i32.zig	0		0	2	error[20]	0	2	2	error[20]	0	2
+matrix/ret_eu_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/ret_euopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/ret_f32.zig	0		0	0		5	0	0		5	0
+matrix/ret_i32.zig	0		0	0		5	0	0		5	0
+matrix/ret_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/ret_optopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/ret_optptr_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/ret_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/typed_const_eu_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_const_euopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_const_f32.zig	0		0	0		5	0	0		5	0
+matrix/typed_const_i32.zig	0		0	0		5	0	0		5	0
+matrix/typed_const_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_const_optopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_const_optptr_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_const_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/typed_var_eu_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_var_euopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_var_f32.zig	0		0	0		5	0	0		5	0
+matrix/typed_var_i32.zig	0		0	0		5	0	0		5	0
+matrix/typed_var_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_var_optopt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_var_optptr_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+matrix/typed_var_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_eu_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_euopt_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_f32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_opt_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_optopt_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_optptr_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_const_slice_u8.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_eu_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_euopt_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_f32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_opt_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_optopt_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_optptr_i32.zig	0		0	0		5	0	0		5	0
+matrix/untyped_var_slice_u8.zig	0		0	0		5	0	0		5	0
+neg/neg_mixed_bool_ret.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_bool_ret.zig:2:30: error: expected type 'bool', found 'comptime_int'	1	0		5	0	2	error[3000]	0	2
+neg/neg_mixed_direct.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_direct.zig:2:41: error: expected type 'i32', found 'bool'	1	0		5	0	2	error[3000]	0	2
+neg/neg_mixed_infer.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_infer.zig:2:13: error: incompatible types: 'comptime_int' and 'bool'	1	0		5	0	2	error[3000]	0	2
+neg/neg_mixed_reverse.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_reverse.zig:2:30: error: expected type 'i32', found 'bool'	1	0		5	0	2	error[3000]	0	2
+neg/neg_mixed_use.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/neg/neg_mixed_use.zig:2:15: error: incompatible types: 'comptime_int' and 'bool'	1	0		5	0	2	error[3000]	0	2
+selectors/if_expected_positions/array_opt_i32.zig	0		0	0		5	0	0		5	0
+selectors/if_expected_positions/callarg_opt_i32.zig	0		0	0		5	0	0		5	0
+selectors/if_expected_positions/field_opt_i32.zig	0		0	0		5	0	0		5	0
+selectors/if_expected_positions/nested_opt_i32.zig	0		0	0		5	0	0		5	0
+selectors/if_expected_positions/typed_const_opt_i32.zig	0		0	0		5	0	0		5	0
+selectors/if_expected_positions/typed_var_opt_i32.zig	0		0	0		5	0	0		5	0
+selectors/sel_capture_tu.zig	0		0	0		5	0	0		5	0
+selectors/sel_comptime_mixed_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+selectors/sel_comptime_mixed_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+selectors/sel_comptime_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+selectors/sel_noreturn_i32.zig	0		0	0		5	0	0		5	0
+selectors/sel_runtime_opt_i32.zig	0		0	0		5	0	2	error[3000]	0	2
+selectors/sel_undefined_i32.zig	0		0	0		5	0	0		5	0
+selectors/sel_undefined_opt_i32.zig	0		0	0		5	0	0		5	0
+selectors/stmt_mixed_int_bool.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_bool.zig:2:5: error: incompatible types: 'comptime_int' and 'bool'	1	0		5	0	0		5	0
+selectors/stmt_mixed_int_void.zig	1	/workspace/znineeight/repro/mi_matrix/known_excluded/d15_parity/selectors/stmt_mixed_int_void.zig:3:5: error: incompatible types: 'comptime_int' and 'void'	1	0		5	0	0		5	0
+selectors/stmt_void.zig	0		0	0		5	0	0		5	0

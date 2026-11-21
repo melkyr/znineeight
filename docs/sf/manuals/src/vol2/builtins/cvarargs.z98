@@ -1,0 +1,17 @@
+const std = @import("std");
+
+fn sum(count: i32, ...) i32 {
+    var ap: va_list = undefined;
+    @cVaStart(ap);
+    var total: i32 = 0;
+    var i: i32 = 0;
+    while (i < count) : (i += 1) {
+        total += @cVaArg(ap, i32);
+    }
+    @cVaEnd(ap);
+    return total;
+}
+
+pub fn main() void {
+    std.io.print("sum={}\n", .{sum(3, 10, 20, 12)});
+}

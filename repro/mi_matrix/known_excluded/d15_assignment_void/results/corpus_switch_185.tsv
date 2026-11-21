@@ -1,0 +1,186 @@
+entry	HEAD_rc	HEAD_codes	C_stmt_peer_rc	C_codes	B_assign_void_stmt_peer_rc	B_codes	G_switch_normalize_rc	G_codes	H_normalize_expected_rc	H_codes	classification
+examples/z98/days_in_month	0		0		0		0		0		unchanged accept
+examples/z98/game_of_life	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+examples/z98/json_parser	0		0		0		0		0		unchanged accept
+examples/z98/json_parser_upgraded	0		0		0		0		0		unchanged accept
+examples/z98/lisp_interpreter_adv	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	unchanged reject
+examples/z98/lisp_interpreter_curr	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	unchanged reject
+examples/z98/lisp_interpreter_upgraded	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	unchanged reject
+examples/z98/mud_server	0		0		0		0		0		unchanged accept
+examples/z98/rogue_mud	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+examples/z98/rogue_mud_upgraded	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+examples/z98/z9dbg	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+examples/z98/z9edit	2	error[20],error[3007]	2	error[20],error[3007]	2	error[20],error[3007]	2	error[20],error[3007]	2	error[20],error[3007]	unchanged reject
+examples/z98/z9git	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+examples/z98/z9play	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+examples/z98/z9torr	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/anon_init_if_arm	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/anon_init_var_decl	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/capture_rename	2	error[3057]	2	error[3000],error[3057]	2	error[3057]	2	error[3057]	2	error[3057]	unchanged reject
+repro/comptime_fold_typed_payload	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/analyzer_switch_merge_reject_xmod	2	error[3034]	2	error[3000]	2	error[3034]	2	error[3034]	2	error[3034]	unchanged reject
+repro/mi_matrix/anon_init_orelse_rhs	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/array_tagged_union_read	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/ast_walk_capture_prong_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/ast_walk_subtree_break_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/async_live_local_across_suspend_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/async_state_width_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/bare_enum_literal_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/bareptr_to_slice_ctx_xmod	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	unchanged reject
+repro/mi_matrix/capture_prong_str_literal_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/cond_assign_reject_xmod	2	error[2000]	2	error[2000]	2	error[2000]	2	error[2000]	2	error[2000]	unchanged reject
+repro/mi_matrix/conditional_import_lazy_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/conditional_import_switch_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/diag_control_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_conflation_control_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_enum_ext_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/emission_enum_switch_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/emission_labeled_ctrl_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/emission_mangler_collision_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_orelse_control_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_sibling_payload_nestedarm_xmod	2	error[3057]	2	error[3057]	2	error[3057]	2	error[3057]	2	error[3057]	unchanged reject
+repro/mi_matrix/emission_sibling_payload_scale_xmod	2	error[3057]	2	error[3057]	2	error[3057]	2	error[3057]	2	error[3057]	unchanged reject
+repro/mi_matrix/emission_sibling_payload_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/emission_temp_index_drift_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_tu_switch_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/emission_type_storage_control_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_type_storage_extern_threealias_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_type_storage_extern_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_void_temp_enum_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/emission_zT_undeclared_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/enum_i64_max_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/enum_literal_assign	0		0		0		0		0		unchanged accept
+repro/mi_matrix/enum_u63_max_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/enum_u64_max_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/error_union_capture_reject_xmod	2	error[3058]	2	error[3058]	2	error[3058]	2	error[3058]	2	error[3058]	unchanged reject
+repro/mi_matrix/eu_err_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/eu_val_switch	0		0		0		0		0		unchanged accept
+repro/mi_matrix/eunum_err_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/eunum_val_switch	0		0		0		0		0		unchanged accept
+repro/mi_matrix/euopt_err_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/euopt_val_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/euoptptr_err_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/euoptptr_val_switch	0		0		0		0		0		unchanged accept
+repro/mi_matrix/f32_narrow_reject_xmod	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	unchanged reject
+repro/mi_matrix/fnptr_opt_aggregate_coerce_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/if_expr_str_literal_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/if_unannotated_str_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/if_unannotated_str_xmod_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/local_enum_neg_unsigned_backing_reject_xmod	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	unchanged reject
+repro/mi_matrix/local_enum_pos_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/local_enum_signed_overflow_reject_xmod	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	unchanged reject
+repro/mi_matrix/nested_switch_str_literal_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/noreturn_assign_rhs_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/noreturn_call_arg_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/noreturn_nested_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/noreturn_switch_init_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/opt_null_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/opt_val_switch	0		0		0		0		0		unchanged accept
+repro/mi_matrix/opteu_err_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/opteu_null_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/opteu_val_switch	0		0		0		0		0		unchanged accept
+repro/mi_matrix/optnum_null_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/optnum_val_switch	0		0		0		0		0		unchanged accept
+repro/mi_matrix/optopt_null_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/optopt_val_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/optptr_null_switch	2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	0		expected fix (D15 expected-type-first)
+repro/mi_matrix/optptr_val_switch	0		0		0		0		0		unchanged accept
+repro/mi_matrix/parsergap_switch_comma_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/shadow_reject_xmod	2	error[3057]	2	error[3057]	2	error[3057]	2	error[3057]	2	error[3057]	unchanged reject
+repro/mi_matrix/stdlib_analyzer_labeled_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_analyzer_switch_merge_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/stdlib_bencode_decode_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_defer_switch_block_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_errset_capture_qualified_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_f32_narrow_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_net_async_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_net_nonblocking_stress_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_switch_case_consts_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_switch_enum_range_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_tcpip_dns_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_tcpip_tcp_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/stdlib_tcpip_udp_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_tls12_handshake_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/stdlib_tls13_auth_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/stdlib_tls13_fallback_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/stdlib_tls13_handshake_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/stdlib_tls_alpn_xmod	0		2	error[3000]	2	error[3000]	2	error[3000]	2	error[3000]	REGRESSION (heterogeneous statement switch; fixture migration required)
+repro/mi_matrix/stdlib_try_return_type_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/stdlib_wg_transport_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_bool_neg_reject_xmod	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	unchanged reject
+repro/mi_matrix/switch_bool_paren_neg_reject_xmod	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	unchanged reject
+repro/mi_matrix/switch_bool_paren_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_case_qualifier_reject_xmod	2	error[20],error[3000],error[3071]	2	error[20],error[3000],error[3071]	2	error[20],error[3000],error[3071]	2	error[20],error[3000],error[3071]	2	error[20],error[3000],error[3071]	unchanged reject
+repro/mi_matrix/switch_case_range_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_expr	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_labeled	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/switch_char_mixed_kinds	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_multi	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_nested	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_nodefault	2	error[3068]	2	error[3068]	2	error[3068]	2	error[3068]	2	error[3068]	unchanged reject
+repro/mi_matrix/switch_char_single	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_while	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/switch_char_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_xmod_expr	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_char_xmod_nodefault	2	error[3068]	2	error[3068]	2	error[3068]	2	error[3068]	2	error[3068]	unchanged reject
+repro/mi_matrix/switch_char_xmod_while	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/switch_enum_i40_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_enum_u40_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_enum_u40_wide_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_enum_u40_wide_qualified_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_expr_payload_capture_xmod	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/switch_expr_unreachable_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_i40_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_i63_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_i64_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_mixed_case_argtype	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/mi_matrix/switch_neg_const_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_enum_const_global_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_enum_const_wide_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_enum_min_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_enum_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_enum_range_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_enum_unsigned_backing_reject_xmod	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	unchanged reject
+repro/mi_matrix/switch_neg_i32_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_i64_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_paren_i32_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_paren_range_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_paren_space_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_range_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_neg_unsigned_reject_xmod	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	unchanged reject
+repro/mi_matrix/switch_on_error_anon	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_on_error_named	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_paren_double_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_paren_named_const_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_str_literal_prong_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_str_literal_prong_xmod_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_u32_paren_neg_reject_xmod	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	2	error[3062]	unchanged reject
+repro/mi_matrix/switch_u32_paren_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_u40_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_u64_ok_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_unannotated_diffstr_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_unannotated_diffstr_xmod_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_unannotated_direct_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_unannotated_str_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_unannotated_str_xmod_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/switch_without_else_reject_xmod	2	error[3068]	2	error[3068]	2	error[3068]	2	error[3068]	2	error[3068]	unchanged reject
+repro/mi_matrix/tagged_payload_whole_reassign_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/tagged_tag_member_shadow_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/tagged_tag_sugar_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/tagged_tag_switch_reject_xmod	2	error[3071]	2	error[3071]	2	error[3071]	2	error[3071]	2	error[3071]	unchanged reject
+repro/mi_matrix/try_return_type_reject_xmod	2	error[3075]	2	error[3075]	2	error[3075]	2	error[3075]	2	error[3075]	unchanged reject
+repro/mi_matrix/typealias_agg_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/unannotated_infer_samelength_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/union_keyword_tag_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/voiddecl_switchexpr_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/w3000fp_noreturn_switch_xmod	0		0		0		0		0		unchanged accept
+repro/mi_matrix/widthbits_union_intconst_xmod	0		0		0		0		0		unchanged accept
+repro/nested_switch_return	0		0		0		0		0		unchanged accept
+repro/switch_capture_name_reuse	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/switch_prong_return	0		0		0		0		0		unchanged accept
+repro/tagged_field_path	0		0		0		0		0		unchanged accept
+repro/tagged_union_anon_return	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/tagged_union_payload	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/tagged_union_same_type	0		2	error[3000]	0		0		0		expected fix (statement exemption removal restored)
+repro/tagged_union_slice_payload	0		0		0		0		0		unchanged accept
+repro/tu_void_prong	0		0		0		0		0		unchanged accept

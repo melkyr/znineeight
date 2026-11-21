@@ -1,8 +1,0 @@
-#include "main_batch_bugs.cpp"
-#include "integration/lexer_edge_case_tests.cpp"
-#include "integration/switch_lifter_tests.cpp"
-#include "integration/string_split_tests.cpp"
-#include "integration/for_ptr_array_tests.cpp"
-#include "integration/array_property_tests.cpp"
-#include "test_utils.cpp"
-#include "../src/bootstrap/bootstrap_all.cpp"

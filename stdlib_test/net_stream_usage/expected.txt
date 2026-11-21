@@ -1,0 +1,12 @@
+net_stream_usage
+sync: [alpha]
+sync: [beta]
+async: [one]
+async: [two]
+frame: [hello]
+frame: []
+frame: [hi]
+async-lines: 2
+async-frames: 3
+max-suspends: 3
+net_stream ok

@@ -1,0 +1,221 @@
+const alloc_mod = @import("allocator.zig");
+const Sand = alloc_mod.Sand;
+const interner_mod = @import("string_interner.zig");
+const StringInterner = interner_mod.StringInterner;
+const diag_mod = @import("diagnostics.zig");
+const DiagnosticCollector = diag_mod.DiagnosticCollector;
+const ast_mod = @import("ast.zig");
+const AstKind = ast_mod.AstKind;
+const AstStore = ast_mod.AstStore;
+const mr_mod = @import("module_registry.zig");
+const ModuleRegistry = mr_mod.ModuleRegistry;
+const sym_mod = @import("symbol_table.zig");
+const SymbolRegistry = sym_mod.SymbolRegistry;
+const type_mod = @import("type_registry.zig");
+const TypeRegistry = type_mod.TypeRegistry;
+const resolved_type_table = @import("resolved_type_table.zig");
+const ResolvedTypeTable = resolved_type_table.ResolvedTypeTable;
+const coercion_mod = @import("coercion.zig");
+const CoercionTable = coercion_mod.CoercionTable;
+const sa_mod = @import("semantic_analyzer.zig");
+const type_resolver = @import("type_resolver.zig");
+const hash_mod = @import("util/hash.zig");
+const pal = @import("pal.zig");
+
+pub const FrontResCtx = struct {
+    store: *AstStore,
+    typereg: *TypeRegistry,
+    symbol_reg: *SymbolRegistry,
+    resolved_types: *ResolvedTypeTable,
+    module_reg: *ModuleRegistry,
+    interner: *StringInterner,
+    diag: *DiagnosticCollector,
+    scratch: *Sand,
+    coercion_table: *CoercionTable,
+    enum_value_table: *hash_mod.U32ToU32Map,
+    tuple_index_table: *hash_mod.U32ToU32Map,
+    error_code_registry: *hash_mod.U32ToU32Map,
+    call_arg_types: *hash_mod.U32ToU32Map,
+    call_param_map: *hash_mod.U32ToU32Map,
+    suspending_fns: *hash_mod.U64ToU32Map,
+};
+
+fn resolveTypeExpr(ct: *FrontResCtx, module_id: u32, node_idx: u32, scope: ?*type_resolver.LocalConstScope, source_file_id: u32) type_mod.TypeId {
+    var env = type_resolver.TypeResolveEnv{ .store = ct.store, .typereg = ct.typereg, .symbol_reg = ct.symbol_reg, .interner = ct.interner, .module_id = module_id, .source_file_id = source_file_id, .diag = ct.diag, .local_consts = scope, .local_types = null };
+    return type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
+}
+
+fn countUntypedGlobals(ct: *FrontResCtx) u32 {
+    var cnt: u32 = 0;
+    var ti: usize = 0;
+    while (ti < ct.symbol_reg.tables_len) : (ti += 1) {
+        var table = ct.symbol_reg.tables_items[ti];
+        var si: usize = 0;
+        while (si < table.len) : (si += 1) {
+            var sym = table.items[si];
+            if (sym.type_id != @intCast(u32, 0)) continue;
+            if (sym.kind == sym_mod.SymbolKind.global or sym.kind == sym_mod.SymbolKind.type_alias) {
+                cnt += 1;
+            }
+        }
+    }
+    return cnt;
+}
+
+pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
+    alloc_mod.sandReset(ct.scratch);
+    var bound: u32 = countUntypedGlobals(ct) + @intCast(u32, 1);
+    var iter: u32 = 0;
+    while (iter < bound) : (iter += 1) {
+        var changed: u8 = @intCast(u8, 0);
+        var mods = mr_mod.moduleRegistryGetModules(ct.module_reg);
+        var mi: usize = 0;
+        while (mi < mods.len) : (mi += 1) {
+            alloc_mod.sandReset(ct.scratch);
+            var ast_root = mods[mi].ast_root;
+            if (ast_root == @intCast(u32, 0)) continue;
+            var root = ast_mod.astStoreNodeAt(ct.store, ast_root);
+            var decls_n = ast_mod.astStoreNodeExtraChildCount(ct.store, ast_root);
+            var src_fid = mods[mi].source_file_id;
+            var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.tuple_index_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, ct.module_reg, ct.suspending_fns);
+            var di: usize = 0;
+            while (di < @intCast(usize, decls_n)) : (di += 1) {
+                var decl_idx = ast_mod.astStoreNodeExtraChildAt(ct.store, ast_root, @intCast(u32, di));
+                var decl = ast_mod.astStoreNodeAt(ct.store, decl_idx);
+                if (decl.kind != AstKind.var_decl) continue;
+                if (decl.child_0 != @intCast(u32, 0)) {
+                    var rtype = resolveTypeExpr(ct, mods[mi].id, decl.child_0, null, src_fid);
+                    if (rtype != type_mod.TYPE_UNDEFINED) {
+                        resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl.child_0, rtype);
+                        resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, rtype);
+                    }
+                }
+                if (decl.child_1 != @intCast(u32, 0)) {
+                    var init = ast_mod.astStoreNodeAt(ct.store, decl.child_1);
+                    if (init.kind != AstKind.struct_decl and init.kind != AstKind.union_decl) {
+                        var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decl_idx);
+                        if (init.kind == AstKind.ident_expr) {
+                            if (init_type != type_mod.TYPE_UNDEFINED) {
+                                var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(ct.store, decl_idx));
+                                type_mod.nameCachePut(ct.typereg, ck, init_type);
+                            }
+                            var ref_name = ast_mod.astStoreIdentifier(ct.store, decl.child_1);
+                            var ref_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ref_name);
+                            if (ref_sym) |rs| {
+                                if (rs.kind == sym_mod.SymbolKind.type_alias) {
+                                    var own_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(ct.store, decl_idx));
+                                    if (own_sym) |os| {
+                                        if (os.kind != sym_mod.SymbolKind.type_alias) {
+                                            os.kind = sym_mod.SymbolKind.type_alias;
+                                            changed = @intCast(u8, 1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        var vd_existing = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decl_idx);
+                        if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE) {
+                            if (decl.child_0 == @intCast(u32, 0)) {
+                                // Task 9 fix round 3 (operator ruling Q7): an
+                                // UNANNOTATED binding's type is the re-resolved
+                                // init type. A forward-referenced global's true
+                                // type only becomes known on a later pass, so
+                                // update the decl record (and the symbol below,
+                                // which drives another pass) until the fixpoint
+                                // is stable. An ANNOTATED binding keeps the
+                                // annotation's first-wins record.
+                                var need_set: u8 = @intCast(u8, 1);
+                                if (vd_existing) |vex| { if (vex == init_type) need_set = @intCast(u8, 0); }
+                                if (need_set != @intCast(u8, 0)) {
+                                    resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, init_type);
+                                }
+                            } else if (vd_existing == null) {
+                                resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, init_type);
+                            }
+                        }
+                        if (init_type == type_mod.TYPE_INT_LIT and decl.child_0 != @intCast(u32, 0)) {
+                            var mdt2 = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decl.child_0);
+                            if (mdt2) |mt2| {
+                                if (mt2 != type_mod.TYPE_UNDEFINED) {
+                                    resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl.child_1, mt2);
+                                }
+                            }
+                        }
+                        if (init_type != @intCast(u32, 0) and init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE) {
+                            var name_id: u32 = ast_mod.astStoreNodePayload(ct.store, decl_idx);
+                            var sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, name_id);
+                            if (sym) |s| {
+                                if (decl.child_0 == @intCast(u32, 0)) {
+                                    if (s.type_id != init_type) {
+                                        s.type_id = init_type;
+                                        changed = @intCast(u8, 1);
+                                    }
+                                } else if (s.type_id == @intCast(u32, 0)) {
+                                    s.type_id = init_type;
+                                    changed = @intCast(u8, 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (changed == @intCast(u8, 0)) { break; }
+    }
+    alloc_mod.sandReset(ct.scratch);
+}
+
+pub fn resolveStmtTypes(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u32, source_file_id: u32) void {
+    var scope = type_resolver.localConstScopeInit(ct.scratch);
+    resolveStmtTypesRec(ct, module_id, node_idx, depth, source_file_id, &scope);
+}
+
+fn resolveStmtTypesRec(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u32, source_file_id: u32, scope: *type_resolver.LocalConstScope) void {
+    if (depth > @intCast(u32, 16)) return;
+    var node = ast_mod.astStoreNodeAt(ct.store, node_idx);
+    if (node.kind == AstKind.var_decl) {
+        if (node.child_0 != 0) {
+            var rtype = resolveTypeExpr(ct, module_id, node.child_0, scope, source_file_id);
+            if (rtype != type_mod.TYPE_UNDEFINED) {
+                resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node.child_0, rtype);
+                resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node_idx, rtype);
+            }
+        }
+        // Task 2c-F (variant (e)): record a function-local `const` so a later
+        // array size `[N]` in the same function body can fold through it.
+        if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0) and node.child_1 != 0) {
+            type_resolver.localConstScopePush(scope, ast_mod.astStoreNodePayload(ct.store, node_idx), node_idx);
+        }
+    }
+    if (node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) {
+        if (node.child_0 != 0) {
+            // Task A3-F: never resolve an aggregate literal's own inferred `[_]T`
+            // annotation as a concrete type; it is handled by the array-init path.
+            if (!type_resolver.typeResolverIsInferredLenArray(ct.store, ct.interner, node.child_0)) {
+                var rtype = resolveTypeExpr(ct, module_id, node.child_0, scope, source_file_id);
+                if (rtype != type_mod.TYPE_UNDEFINED) {
+                    resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node.child_0, rtype);
+                }
+            }
+        }
+    }
+    if (node.kind == AstKind.block) {
+        var scope_base = scope.count;
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(ct.store, node_idx);
+        var di: usize = 0;
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            resolveStmtTypesRec(ct, module_id, ast_mod.astStoreNodeExtraChildAt(ct.store, node_idx, @intCast(u32, di)), depth + @intCast(u32, 1), source_file_id, scope);
+        }
+        scope.count = scope_base;
+    }
+    var cd = depth + @intCast(u32, 1);
+    // T4.1 F1 (same mechanism as `resolveTypeExprFull`'s tail fix): walk a
+    // fixed child slot as a node only when `nodeChildIsNode` says it holds one.
+    // The old `!= builtin_call` exclusion covered one kind ad-hoc while
+    // `swt_prong.child_1` (capture name id) and statement-form container
+    // `child_0` (name id) were still consumed as node indices — exactly the
+    // id-order-dependent "name id walked as a node index" class ast.zig warns
+    // about (`nodeChildIsNode`).
+    if (node.child_0 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { resolveStmtTypesRec(ct, module_id, node.child_0, cd, source_file_id, scope); }
+    if (node.child_1 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { resolveStmtTypesRec(ct, module_id, node.child_1, cd, source_file_id, scope); }
+}

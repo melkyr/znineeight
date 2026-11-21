@@ -1,0 +1,84 @@
+// repro/try_enclosing_return_ok.z98 — standalone FX12 (Volume II ch12)
+// positive control.
+//
+// Every legal `try` enclosing-return shape (same set, superset set, anonymous
+// operand/signature, `E!T` <- `E!void`, if/switch values, nested block, local
+// error-union variable, `!void` fall-off, `main() !void`) must stay accepted
+// and runtime-correct: the 3075 enforcement is reject-only.
+//
+// Contract: rc 0, stdout `ok=41 12 11 11 13 33 77` (single line), 3x
+// deterministic; each observation is `@panic`-guarded.
+const std = @import("std");
+
+const E = error{Boom};
+const F = error{Boom, Other};
+
+fn voidOperand() E!void {
+    return;
+}
+
+fn emptyOk() E!i32 {
+    try voidOperand();
+    return 41;
+}
+
+fn anonOk() !i32 {
+    return 11;
+}
+
+fn anonCaller() !i32 {
+    const a = try anonOk();
+    return a + 1;
+}
+
+fn subOperand() E!void {
+    return;
+}
+
+fn supersetCaller() F!void {
+    try subOperand();
+}
+
+fn ifValue(c: bool) !i32 {
+    const x = if (c) try anonOk() else 0;
+    return x;
+}
+
+fn switchValue(c: i32) !i32 {
+    const x = switch (c) {
+        1 => try anonOk(),
+        else => 0,
+    };
+    return x;
+}
+
+fn nestedBlock() !i32 {
+    {
+        const a = try anonOk();
+        return a + 2;
+    }
+}
+
+fn localVarOperand() !i32 {
+    const eu: E!i32 = 33;
+    return try eu;
+}
+
+fn fallOff() !void {
+    try voidOperand();
+}
+
+pub fn main() !void {
+    const v1: i32 = try emptyOk();
+    const v2 = try anonCaller();
+    try supersetCaller();
+    const v3 = try ifValue(true);
+    const v4 = try switchValue(1);
+    const v5 = try nestedBlock();
+    const v6 = try localVarOperand();
+    try fallOff();
+    if (v1 != 41 or v2 != 12 or v3 != 11 or v4 != 11 or v5 != 13 or v6 != 33) {
+        @panic("try positive control failed");
+    }
+    std.io.print("ok={} {} {} {} {} {}\n", .{ v1, v2, v3, v4, v5, v6 });
+}

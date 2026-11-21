@@ -1,0 +1,59 @@
+const std = @import("std");
+
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn allocBytes(arena: *std.arena.Arena, n: usize) std.arena.ArenaError![*]u8 {
+    return std.arena.alloc(arena, n);
+}
+
+fn Point_init(arena: *std.arena.Arena, x: i32, y: i32) std.arena.ArenaError!*Point {
+    const raw = try allocBytes(arena, @sizeOf(Point));
+    const p = @ptrCast(*Point, raw);
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+fn single() !void {
+    var buf: [32]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    std.io.print("cap={} used={}\n", .{ arena.capacity, arena.used });
+
+    const p = try Point_init(&arena, 3, 4);
+    std.io.print("p={} {} used={}\n", .{ p.x, p.y, arena.used });
+
+    std.arena.reset(&arena);
+    std.io.print("used after reset={}\n", .{arena.used});
+
+    const p2 = try Point_init(&arena, 9, 8);
+    std.io.print("p2={} {} reused p.x={}\n", .{ p2.x, p2.y, p.x });
+
+    const big = allocBytes(&arena, 64) catch |err| {
+        std.io.print("caught: {}\n", .{err});
+        return;
+    };
+    std.io.print("unreachable {}\n", .{@intFromPtr(big)});
+}
+
+fn dual() !void {
+    var perm_buf: [128]u8 = undefined;
+    var scratch_buf: [64]u8 = undefined;
+    var perm = std.arena.init(perm_buf[0..]);
+    var scratch = std.arena.init(scratch_buf[0..]);
+
+    const p = try Point_init(&perm, 3, 4);
+    const q = try Point_init(&scratch, 5, 6);
+    std.io.print("perm={} {} scratch={} {}\n", .{ p.x, p.y, q.x, q.y });
+    std.io.print("perm used={} scratch used={}\n", .{ perm.used, scratch.used });
+
+    std.arena.reset(&scratch);
+    std.io.print("scratch used after reset={} perm used={}\n", .{ scratch.used, perm.used });
+}
+
+pub fn main() !void {
+    try single();
+    try dual();
+}

@@ -1,0 +1,47 @@
+// repro/f32_narrow_switch_reject.z98 — standalone FX10 (Volume II D6 extras
+// follow-up) reject: a switch VALUE expression at an f32 site whose prong is
+// not value-aware narrowable.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/f32_narrow_switch_reject_out
+//   <zig1> --dump-c89 --output-dir /tmp/f32_narrow_switch_reject_out repro/f32_narrow_switch_reject.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, exactly 6 level-0
+// `error[3000]` sites (Zig 0.15.2 rejects every one) and no warning:
+//   runtime i32 prong return      (`1 => n`)            source: i32
+//   int-inexact literal prong     (`1 => 16777217`)     source: comptime_int
+//   typed-inexact const prong     (`1 => BadI`)         source: i32
+//   runtime f64 prong return      (`1 => d`)            source: f64
+//   runtime i32 prong declaration (`switch (c) { 1 => n, else => 2.5 }`) source: i32
+//   runtime f64 else after exact first (`1 => C, else => d`) source: f64
+// The FX10 retyping changed only the ACCEPT side; this census pins that the
+// prong classification (and the enclosing site's reject) is not weakened, and
+// the `source:` note is the offending prong's type (FX9 reported the
+// value-blind unified type for two of these).
+const std = @import("std");
+
+const C: i32 = 6;
+const BadI: i32 = 16777217;
+
+fn retRt(c: i32, n: i32) f32 { return switch (c) { 1 => n, else => 2.5 }; }
+fn retInexact(c: i32) f32 { return switch (c) { 1 => 16777217, else => 2.5 }; }
+fn retBadI(c: i32) f32 { return switch (c) { 1 => BadI, else => 2.5 }; }
+fn retRtF64(c: i32, d: f64) f32 { return switch (c) { 1 => d, else => 2.5 }; }
+fn retRtF64Else(c: i32, d: f64) f32 { return switch (c) { 1 => C, else => d }; }
+
+pub fn main() void {
+    var n: i32 = 1;
+    n = n;
+    var d: f64 = 0.1;
+    d = d;
+    var c: i32 = 1;
+    c = c;
+
+    _ = retRt(c, n);
+    _ = retInexact(c);
+    _ = retBadI(c);
+    _ = retRtF64(c, d);
+    const x: f32 = switch (c) { 1 => n, else => 2.5 };
+    _ = x;
+    _ = retRtF64Else(c, d);
+}

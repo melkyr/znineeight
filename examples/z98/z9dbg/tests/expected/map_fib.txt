@@ -1,0 +1,12 @@
+ok - fib symbol count 2
+ok - fib group count 1
+ok - fib line run count 6
+ok - fib cname count 2
+ok - fib lineRowsAt 2 count
+ok - fib lineRowsAt 2 row0
+ok - fib lineRowsAt 2 row1
+ok - fib reverseRowAt 25 src line
+ok - fib symbolAt main name
+ok - fib symbolAt main line
+ok - fib entryStop line
+ok - fib entryStop function

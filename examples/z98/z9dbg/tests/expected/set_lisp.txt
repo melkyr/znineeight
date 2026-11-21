@@ -1,0 +1,27 @@
+Z98 debugger has started...
+Stopped at examples/z98/lisp_interpreter_curr/main.zig:108
+at main
+  106:
+  107:
+> 108:     const perm_buf = @ptrCast([*]u8, &perm_buf_u64)[0..1048576];
+  109:     const temp_buf = @ptrCast([*]u8, &temp_buf_u64)[0..1048576];
+  110:
+(z9dbg) break: set at line 111
+(z9dbg) Stopped at examples/z98/lisp_interpreter_curr/main.zig:111
+at main
+  109:     const temp_buf = @ptrCast([*]u8, &temp_buf_u64)[0..1048576];
+  110:
+> 111:     var perm_sand = sand_mod.sand_init(perm_buf);
+  112:     var temp_sand = sand_mod.sand_init(temp_buf);
+  113:
+(z9dbg) Stopped at examples/z98/lisp_interpreter_curr/main.zig:117
+at main
+  115:
+  116:     // Register builtins
+> 117:     global_env = (env_mod.env_extend("cons", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_cons), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+  118:     global_env = (env_mod.env_extend("car", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_car), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+  119:     global_env = (env_mod.env_extend("cdr", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_cdr), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+(z9dbg) #0 main at examples/z98/lisp_interpreter_curr/main.zig:117
+(z9dbg) dump: wrote @SNAP@
+z9dbg: debuggee exited
+(z9dbg) z9dbg: exiting

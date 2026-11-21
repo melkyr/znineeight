@@ -95,7 +95,7 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
     // 2. Check for internal compiler identifiers (bypass mangling)
     if (isInternalCompilerIdentifier(base_buffer)) {
         // Just truncate and return
-        if (plat_strlen(base_buffer) > 31) base_buffer[31] = '\0';
+        if (plat_strlen(base_buffer) > 63) base_buffer[63] = '\0';
         char* interned = arena_.allocString(base_buffer);
         assigned_names_.append(interned);
         return interned;
@@ -123,13 +123,13 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
         plat_strcpy(mangled_buffer, base_buffer);
     }
 
-    // 3. Truncate to 31 initially
-    if (plat_strlen(mangled_buffer) > 31) {
-        mangled_buffer[31] = '\0';
+    // 3. Truncate to 63 initially
+    if (plat_strlen(mangled_buffer) > 63) {
+        mangled_buffer[63] = '\0';
     }
 
     // 4. Uniquify
-    char final_buffer[32]; // Max 31 chars + null
+    char final_buffer[64]; // Max 63 chars + null
     plat_strcpy(final_buffer, mangled_buffer);
 
     if (isAssigned(final_buffer)) {
@@ -140,8 +140,8 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
             size_t suffix_len = plat_strlen(suffix_str) + 1; // +1 for '_'
 
             size_t base_len = plat_strlen(mangled_buffer);
-            if (base_len + suffix_len > 31) {
-                base_len = 31 - suffix_len;
+            if (base_len + suffix_len > 63) {
+                base_len = 63 - suffix_len;
             }
 
             plat_strncpy(final_buffer, mangled_buffer, base_len);
@@ -162,6 +162,26 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
     char* interned = arena_.allocString(final_buffer);
     assigned_names_.append(interned);
     return interned;
+}
+
+void CVariableAllocator::force_allocate(Symbol* sym, const char* desired) {
+    if (!sym || !desired) return;
+
+    // 1. Check if already cached
+    for (size_t i = 0; i < symbol_cache_.length(); ++i) {
+        if (symbol_cache_[i].sym == sym) {
+            return;
+        }
+    }
+
+    // 2. Add to assigned names and cache
+    char* interned = arena_.allocString(desired);
+    assigned_names_.append(interned);
+
+    SymbolEntry entry;
+    entry.sym = sym;
+    entry.c_name = interned;
+    symbol_cache_.append(entry);
 }
 
 bool CVariableAllocator::isAssigned(const char* name) const {

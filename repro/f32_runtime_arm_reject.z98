@@ -1,0 +1,67 @@
+// repro/f32_runtime_arm_reject.z98 — standalone FX9 reject (Volume II D6
+// extras follow-up): a runtime non-float arm feeding an f32 site through an
+// `if`/`switch` VALUE expression.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/f32_runtime_arm_reject_out
+//   <zig1> --dump-c89 --output-dir /tmp/f32_runtime_arm_reject_out repro/f32_runtime_arm_reject.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, exactly 11 level-0
+// `error[3000]` sites (Zig 0.15.2 rejects every one with `expected type
+// 'f32', found '<arm type>'`) and no warning:
+//   if return with runtime i32 arm      (`return if (c > 0) n else 2.5;`)
+//   switch return with runtime i32 arm  (`switch (c) { 1 => n, else => 2.5 }`)
+//   if return with runtime i64 arm
+//   if return with runtime u32 arm
+//   if return with runtime bool arm
+//   if-initialized f32 declaration
+//   if assigned to an f32 variable
+//   switch-initialized f32 declaration
+//   struct f32 field initialized from the if
+//   tagged-union f32 payload initialized from the if
+//   if passed as an f32 argument
+//
+// DEFECT (before the fix): the if-arm sites were accepted and miscompiled
+// (`r=0` when the runtime arm was taken; the field/arg forms emitted
+// gcc-invalid C or ICEd `error[3043]`) since the seed; the switch form
+// rejected but the arm's type was not pinned by a fixture. See
+// repro/mi_matrix/f32_narrow_reject_xmod for the pinned census and
+// repro/mi_matrix/stdlib_f32_narrow_ok_xmod for the mixed-arm accepts.
+const std = @import("std");
+const S = struct { x: f32 };
+const U = union(enum) { a: f32, empty };
+
+fn take(x: f32) f32 { return x; }
+fn retIf(c: i32, n: i32) f32 { return if (c > 0) n else 2.5; }
+fn retSw(c: i32, n: i32) f32 { return switch (c) { 1 => n, else => 2.5 }; }
+fn retI64(c: i32, n: i64) f32 { return if (c > 0) n else 2.5; }
+fn retU(c: i32, n: u32) f32 { return if (c > 0) n else 2.5; }
+fn retB(c: i32, b: bool) f32 { return if (c > 0) b else 2.5; }
+
+pub fn main() void {
+    var n: i32 = 1;
+    n = n;
+    var c: i32 = 1;
+    c = c;
+    var b: bool = true;
+    b = b;
+    var x: f32 = 0.0;
+
+    _ = retIf(c, n);
+    _ = retSw(c, n);
+    _ = retI64(c, 2);
+    _ = retU(c, 2);
+    _ = retB(c, b);
+
+    var xa: f32 = if (c > 0) n else 2.5;
+    _ = xa;
+    x = if (c > 0) n else 2.5;
+    const xb: f32 = switch (c) { 1 => n, else => 2.5 };
+    _ = xb;
+    var s: S = S{ .x = if (c > 0) n else 2.5 };
+    _ = s;
+    var u: U = U{ .a = if (c > 0) n else 2.5 };
+    _ = u;
+    _ = take(if (c > 0) n else 2.5);
+    _ = x;
+}

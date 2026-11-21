@@ -1,0 +1,48 @@
+// repro/f32_narrow_reject.z98 — standalone FX3 (Volume II D6 extras) reject.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/f32_narrow_reject_out
+//   <zig1> --dump-c89 --output-dir /tmp/f32_narrow_reject_out repro/f32_narrow_reject.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, exactly 8 level-0
+// `error[3000]` sites (Zig 0.15.2 rejects every one) and no warning:
+//   runtime f64 argument            (`take(d);`)
+//   runtime i32 argument            (`take(i);`)
+//   inexact int literal             (`take(16777217);`)
+//   typed inexact f64 const value   (`take(bf);`)
+//   typed inexact i32 const value   (`take(bi);`)
+//   runtime f64 trailing return     (`retD(d)` -> `return d;`)
+//   runtime f64 assignment          (`x = d;`)
+//   runtime f64 tagged-union payload (`U{ .a = d }`)
+//
+// DEFECT (before the fix): the argument shapes rejected but the inexact int
+// (`take(16777217)`) silently rounded, and the runtime-f64 return/assignment/
+// payload shapes were silent (implicit C narrows).
+const std = @import("std");
+
+const bf: f64 = 0.1;
+const bi: i32 = 16777217;
+const U = union(enum) { a: f32, empty };
+
+fn take(x: f32) f32 { return x; }
+fn retD(d: f64) f32 { return d; }
+
+pub fn main() void {
+    var d: f64 = 0.1;
+    d = d;
+    var i: i32 = 1;
+    i = i;
+    var x: f32 = 0.0;
+
+    _ = take(d);
+    _ = take(i);
+    _ = take(16777217);
+    _ = take(bf);
+    _ = take(bi);
+
+    _ = retD(0.1);
+    x = d;
+    var u: U = U{ .a = d };
+    _ = u;
+    _ = x;
+}

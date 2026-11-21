@@ -1,0 +1,20 @@
+// repro/empty_named_struct.z98 — standalone A2-F D2 control (introspection).
+//
+// An empty named struct must measure size 1 / align 1 / bitSize 8 (the Z98
+// min-1 rule). Seed v90 aliases a foreign struct payload and prints 12/4/96
+// (see repro/mi_matrix/empty_named_struct_xmod/main.zig for the full analysis).
+//
+// Seed v90: prints 12\n4\n96 (rc 0).
+// Fixed:    prints 1\n1\n8  (rc 0).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/ens repro/empty_named_struct.z98
+//   cd /tmp/ens && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+const std = @import("std");
+const E = struct {};
+fn pl(n: i32) void { std.io.printInt(n); std.io.print("\n"); }
+pub fn main() void {
+    pl(@intCast(i32, @sizeOf(E)));
+    pl(@intCast(i32, @alignOf(E)));
+    pl(@intCast(i32, @bitSizeOf(E)));
+}

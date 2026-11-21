@@ -1,0 +1,9 @@
+freefall ok
+pinned ok
+stiff1 ok
+stiff05 ok
+chain ok
+noforce ok
+pin ok
+distinct: 8
+physics basic ok

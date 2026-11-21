@@ -1,0 +1,32 @@
+# wg.conf.example — wireguard_demo configuration (Phase 1 M7).
+#
+# Copy to wg.conf and replace every <...> placeholder. Keys accept hex (64
+# chars) or standard base64 (44 chars, padding optional). `key = value` lines;
+# `#`/`;` start a comment when preceded by whitespace. Unknown keys fail as
+# `wg: BadConfig`.
+#
+# The endpoint is the underlay UDP address of the kernel WireGuard peer and is
+# resolved with the host stack at startup. The mud target is on the tunnel:
+# `mud_host` may be an IPv4 literal (direct, no DNS) or a name resolved through
+# the tunnel via `dns_server` (port 53). `mud_ip` forces the direct path.
+
+private_key = <client-interface-private-key-base64-or-hex>
+peer_public_key = <kernel-peer-public-key-base64-or-hex>
+endpoint = 203.0.113.10:51820
+
+# Local tunnel address and prefix. The far side is normally x.x.x.1/24.
+address = 10.7.0.2/24
+# gateway = 10.7.0.1          # optional; only needed off-subnet
+
+# Tunnel DNS (A records only; CNAME chains are unsupported).
+dns_server = 10.7.0.1
+mud_host = mud.test
+# mud_ip = 10.7.0.1           # alternative: skip DNS
+mud_port = 4000
+
+# Optional protocol / driver settings.
+mtu = 1400
+# allowed_ips = 10.7.0.0/24
+# clock_override_unix = 1790000000
+# seed = 0x0123456789abcdef
+# command = look

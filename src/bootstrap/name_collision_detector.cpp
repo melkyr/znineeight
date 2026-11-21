@@ -7,7 +7,7 @@
 
 NameCollisionDetector::NameCollisionDetector(CompilationUnit& unit)
     : unit_(unit), error_handler_(unit.getErrorHandler()),
-      scope_stack_(unit.getArena()), collision_count_(0) {
+      scope_stack_(unit.getTransientArena()), collision_count_(0) {
     enterScope(); // Initial global scope
 }
 
@@ -24,8 +24,8 @@ int NameCollisionDetector::getCollisionCount() const {
 }
 
 void NameCollisionDetector::enterScope() {
-    void* mem = unit_.getArena().alloc(sizeof(ScopeInfo));
-    ScopeInfo* scope = new (mem) ScopeInfo(unit_.getArena());
+    void* mem = unit_.getTransientArena().alloc(sizeof(ScopeInfo));
+    ScopeInfo* scope = new (mem) ScopeInfo(unit_.getTransientArena());
     scope_stack_.append(scope);
 }
 
@@ -201,5 +201,5 @@ void NameCollisionDetector::reportCollision(SourceLocation loc, const char* name
     safe_append(cur, rem, entity_type);
     safe_append(cur, rem, " in the same scope");
 
-    error_handler_.report(ERR_REDEFINITION, loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit_.getArena(), buffer);
+    error_handler_.report(ERR_REDEFINITION, loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit_.getTransientArena(), buffer);
 }

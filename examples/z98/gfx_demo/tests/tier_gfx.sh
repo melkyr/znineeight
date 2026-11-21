@@ -1,0 +1,404 @@
+#!/bin/sh
+# tier_gfx.sh — Phase 2 P4-M1 gate for std_gfx + gfx_demo.
+#
+# POSIX sh. Run from anywhere (paths resolved from this script).
+#
+# (a) Build examples/z98/gfx_demo/main.zig through the no-CRT mingw harness
+#     (scripts/win32_cross/cross_nocrt.sh) with EXTRA_LIBS="-luser32 -lgdi32"
+#     (no extra C file: DDraw is loaded dynamically and the window is polled).
+#     The exe must be PE32 i386, import GDI32/USER32 (never DDRAW or MSVCRT),
+#     and pass the closed-world 9x import gate.
+# (b) Headless deterministic gate: run the real .exe under Wine with
+#     `--smoke 30 --dump-grid` (gfxOpenMemory: no window, no X), then compare
+#     the produced grid.txt byte-for-byte with tests/golden/grid.txt.
+# (c) Bonus evidence (Xvfb + Wine): a real window, flushed READY sentinel,
+#     `import -window root` screenshot. This tier asserts the app exits 0 and
+#     the screenshot is saved and non-blank; it does NOT gate on pixels.
+#     If Xvfb/wine/import/identify are genuinely absent it prints an
+#     operator-hardware line (never a silent skip).
+#
+# Env: ZIG       compiler (default /tmp/p4_t1_build/zig1_5_clean)
+#      OUT       scratch dir (default /tmp/gfx_tier)
+#      WINEPREFIX (default $OUT/wineprefix; isolated from $HOME/.wine)
+#      GFX_UPDATE_GOLDEN=1  copy the generated grid.txt over the golden
+#      GFX_NO_XVFB=1        skip the bonus window tier
+#
+# Exits non-zero on any gate failure.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+GFXDIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$GFXDIR/../../.." && pwd)"
+ENTRY="examples/z98/gfx_demo/main.zig"
+ZIG="${ZIG:-/tmp/p4_t1_build/zig1_5_clean}"
+OUT="${OUT:-/tmp/gfx_tier}"
+GOLDEN="$SCRIPT_DIR/golden/grid.txt"
+CROSS="$ROOT/scripts/win32_cross/cross_nocrt.sh"
+CHECK="$ROOT/scripts/win32_cross/check_win9x_imports.sh"
+EXE="$OUT/gfx_demo.exe"
+WINE_PREFIX="${WINEPREFIX:-$OUT/wineprefix}"
+export WINEPREFIX="$WINE_PREFIX"
+export WINEARCH=win32
+export WINEDEBUG="${WINEDEBUG:--all}"
+
+# Forced-GDI mode: the same tier runs with Z98_GFX_SOFTWARE=1 and asserts the
+# GDI backend marker instead of the DirectDraw open sequence.
+FORCED_GDI=0
+[ "${Z98_GFX_SOFTWARE:-0}" = "1" ] && FORCED_GDI=1
+if [ "$FORCED_GDI" -eq 1 ]; then
+    EXPECT_BACKEND='gfx: backend=gdi'
+    REJECT_BACKEND='gfx: backend=ddraw'
+else
+    EXPECT_BACKEND='gfx: backend=ddraw'
+    REJECT_BACKEND='gfx: backend=gdi'
+fi
+
+PASSES=0
+FAILS=0
+pass_case() { echo "ok   - $1"; PASSES=$((PASSES + 1)); }
+fail_case() { echo "FAIL - $1"; FAILS=$((FAILS + 1)); }
+
+XVFB_PID=""
+WINE_PID=""
+cleanup() {
+    if [ -n "$WINE_PID" ]; then kill "$WINE_PID" 2>/dev/null || true; fi
+    if [ -n "$XVFB_PID" ]; then kill "$XVFB_PID" 2>/dev/null || true; fi
+    wineserver -k >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+if [ ! -x "$ZIG" ]; then
+    echo "FAIL: compiler not found: $ZIG"
+    echo "      build it: bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p4_t1_build"
+    exit 1
+fi
+for tool in i686-w64-mingw32-gcc i686-w64-mingw32-objdump file md5sum wine; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "FAIL: required host tool not found: $tool"
+        exit 1
+    fi
+done
+
+rm -rf "$OUT"
+mkdir -p "$OUT"
+
+cd "$ROOT" || exit 1
+
+# ---- (a) no-CRT build + imports ------------------------------------------
+echo "== (a) no-CRT build + import gate =="
+BUILD_LOG="$OUT/build.log"
+COMPILE_RSS="n/a"
+EXTRA_LIBS="-luser32 -lgdi32" \
+    bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work" "$EXE" >"$BUILD_LOG" 2>&1
+BUILD_RC=$?
+# The 16 MB target is the Z98 compile (dump) of the demo, not the host gcc
+# phase (gcc's own RSS is not the product's compile cost). Measure the dump
+# explicitly; the cross harness repeats it internally for the real build.
+if command -v /usr/bin/time >/dev/null 2>&1; then
+    mkdir -p "$OUT/rss_dump"
+    /usr/bin/time -v -o "$OUT/zig_time.log" \
+        "$ZIG" --dump-c89 --output-dir "$OUT/rss_dump" "$ENTRY" \
+        >"$OUT/zig_dump.log" 2>&1
+    RSS_RC=$?
+    COMPILE_RSS=$(sed -n 's/.*Maximum resident set size (kbytes): //p' "$OUT/zig_time.log" | tail -1)
+    [ -n "$COMPILE_RSS" ] || COMPILE_RSS="n/a"
+    if [ "$RSS_RC" -ne 0 ]; then
+        fail_case "Z98 --dump-c89 RSS probe failed (rc=$RSS_RC; see $OUT/zig_dump.log)"
+    fi
+fi
+tail -3 "$BUILD_LOG" | sed 's/^/       /'
+if [ "$BUILD_RC" -eq 0 ] && [ -f "$EXE" ]; then
+    pass_case "no-CRT build produced gfx_demo.exe"
+else
+    fail_case "no-CRT build failed (rc=$BUILD_RC; see $BUILD_LOG)"
+    echo
+    echo "== tier_gfx summary: $PASSES passed, $FAILS failed =="
+    echo "TIER_GFX FAIL"
+    exit 1
+fi
+if [ "$COMPILE_RSS" = "n/a" ]; then
+    echo "operator-hardware: Z98 compile RSS not measured (/usr/bin/time absent)"
+elif [ "$COMPILE_RSS" -lt 16384 ]; then
+    pass_case "Z98 compile max RSS < 16 MB (${COMPILE_RSS} kB)"
+else
+    fail_case "Z98 compile max RSS >= 16 MB (${COMPILE_RSS} kB)"
+fi
+
+FILEOUT="$(file "$EXE" 2>/dev/null)"
+case "$FILEOUT" in
+    *PE32*Intel\ 80386*) pass_case "file: $FILEOUT" ;;
+    *) fail_case "not a PE32 i386 executable: ${FILEOUT:-<none>}" ;;
+esac
+
+if bash "$CHECK" "$EXE" 9x >"$OUT/imports.log" 2>&1; then
+    pass_case "check_win9x_imports.sh 9x PASS"
+else
+    fail_case "check_win9x_imports.sh 9x FAILED (see $OUT/imports.log)"
+fi
+sed 's/^/       /' "$OUT/imports.log"
+
+DLLS="$(i686-w64-mingw32-objdump -p "$EXE" 2>/dev/null \
+    | sed -n 's/.*DLL Name: //p' | tr -d '\r' | tr '[:lower:]' '[:upper:]' | sort -u)"
+echo "$DLLS" | sed 's/^/       DLL /'
+MISSING_DLL=""
+for d in GDI32.DLL USER32.DLL; do
+    echo "$DLLS" | grep -qx "$d" || MISSING_DLL="$MISSING_DLL $d"
+done
+if [ -z "$MISSING_DLL" ]; then
+    pass_case "DLL imports include GDI32.DLL + USER32.DLL"
+else
+    fail_case "missing DLL import(s):$MISSING_DLL"
+fi
+if echo "$DLLS" | grep -qx 'DDRAW.DLL'; then
+    fail_case "DDRAW.DLL imported (must be loaded dynamically)"
+else
+    pass_case "no DDRAW.DLL import (loaded dynamically)"
+fi
+if echo "$DLLS" | grep -qx 'MSVCRT.DLL'; then
+    fail_case "MSVCRT.DLL imported on the no-CRT profile"
+else
+    pass_case "no MSVCRT.DLL import"
+fi
+
+# ---- (b) headless grid golden + wheel mapping + runtime RSS --------------
+echo "== (b) headless grid golden (gfxOpenMemory) =="
+SELFTEST_LOG="$OUT/selftest.log"
+if timeout 120 wine "$EXE" --selftest >"$SELFTEST_LOG" 2>&1 \
+    && grep -q 'WHEELMAP OK' "$SELFTEST_LOG"; then
+    pass_case "wheel mapping helper 120->3, -240->-6 (real wheelLines)"
+else
+    fail_case "wheel mapping selftest failed (see $SELFTEST_LOG)"
+fi
+sed 's/^/       /' "$SELFTEST_LOG"
+
+# Theme evidence: default white + all three themes in memory mode (no window
+# or atlas; the cell grid is unchanged by a theme change).
+THEME_LOG="$OUT/theme.log"
+if timeout 120 wine "$EXE" --theme-test >"$THEME_LOG" 2>&1 \
+    && grep -qx 'THEME default white' "$THEME_LOG" \
+    && grep -qx 'THEME solarized solarized' "$THEME_LOG" \
+    && grep -qx 'THEME dark dark' "$THEME_LOG" \
+    && grep -qx 'THEME white white' "$THEME_LOG" \
+    && grep -qx 'THEMETEST OK' "$THEME_LOG"; then
+    pass_case "theme default white + solarized/dark/white cycle (memory safe)"
+else
+    fail_case "theme selftest failed (see $THEME_LOG)"
+fi
+sed 's/^/       /' "$THEME_LOG"
+
+GRID_DIR="$OUT/grid"
+mkdir -p "$GRID_DIR"
+RUNTIME_RSS="n/a"
+if command -v /usr/bin/time >/dev/null 2>&1; then
+    ( cd "$GRID_DIR" && /usr/bin/time -v -o "$OUT/runtime_time.log" \
+        timeout 120 wine "$EXE" --smoke 30 --dump-grid ) \
+        >"$OUT/grid_run.log" 2>&1
+    GRID_RC=$?
+    RUNTIME_RSS=$(sed -n 's/.*Maximum resident set size (kbytes): //p' "$OUT/runtime_time.log" | tail -1)
+    [ -n "$RUNTIME_RSS" ] || RUNTIME_RSS="n/a"
+else
+    ( cd "$GRID_DIR" && timeout 120 wine "$EXE" --smoke 30 --dump-grid ) \
+        >"$OUT/grid_run.log" 2>&1
+    GRID_RC=$?
+fi
+if [ "$GRID_RC" -eq 0 ]; then
+    pass_case "headless --smoke 30 --dump-grid exited 0"
+else
+    fail_case "headless --smoke 30 --dump-grid failed (rc=$GRID_RC; see $OUT/grid_run.log)"
+fi
+if [ "$RUNTIME_RSS" = "n/a" ]; then
+    echo "operator-hardware: runtime RSS not measured (/usr/bin/time absent)"
+else
+    pass_case "runtime RSS recorded (Wine-hosted, includes Wine): ${RUNTIME_RSS} kB"
+fi
+sed 's/^/       /' "$OUT/grid_run.log"
+if [ -f "$GRID_DIR/grid.txt" ]; then
+    GRID_MD5="$(md5sum "$GRID_DIR/grid.txt" | cut -d' ' -f1)"
+    pass_case "grid.txt written (md5 $GRID_MD5, $(LC_ALL=C wc -c <"$GRID_DIR/grid.txt" | tr -d ' ') bytes)"
+    if [ ! -f "$GOLDEN" ]; then
+        fail_case "golden missing: $GOLDEN (run once with GFX_UPDATE_GOLDEN=1, inspect, commit)"
+    elif [ "${GFX_UPDATE_GOLDEN:-0}" = "1" ]; then
+        cp "$GRID_DIR/grid.txt" "$GOLDEN"
+        pass_case "golden updated from verified run: $GOLDEN"
+    elif cmp -s "$GRID_DIR/grid.txt" "$GOLDEN"; then
+        pass_case "grid.txt matches golden byte-for-byte"
+    else
+        fail_case "grid.txt differs from golden (got $GRID_MD5)"
+        if command -v diff >/dev/null 2>&1; then
+            diff -u "$GOLDEN" "$GRID_DIR/grid.txt" | sed -n '1,40p' | sed 's/^/       /'
+        fi
+    fi
+else
+    fail_case "grid.txt not produced (see $OUT/grid_run.log)"
+fi
+
+# ---- (c) Xvfb + Wine window/screenshot evidence --------------------------
+echo "== (c) Xvfb + Wine window smoke (bonus, non-pixel) =="
+MISSING_X=""
+for tool in Xvfb xdpyinfo wineboot import identify; do
+    command -v "$tool" >/dev/null 2>&1 || MISSING_X="$MISSING_X $tool"
+done
+if [ "${GFX_NO_XVFB:-0}" = "1" ]; then
+    echo "operator-hardware: window smoke skipped by GFX_NO_XVFB=1"
+elif [ -n "$MISSING_X" ]; then
+    echo "operator-hardware: window smoke not run (missing:$MISSING_X)"
+else
+    # A fresh prefix for the windowed run: the headless pass above created its
+    # prefix with no X server, and a still-live wineserver keeps that
+    # environment (no display driver). Kill it and use a window-only prefix.
+    wineserver -k >/dev/null 2>&1 || true
+    export WINEPREFIX="$OUT/wineprefix_x"
+    SHOT_DIR="$OUT/shot"
+    mkdir -p "$SHOT_DIR"
+    DISPLAY_NUM=":77"
+    export DISPLAY="$DISPLAY_NUM"
+    Xvfb "$DISPLAY_NUM" -screen 0 1024x768x24 -nolisten tcp \
+        >"$SHOT_DIR/xvfb.log" 2>&1 &
+    XVFB_PID=$!
+    i=0
+    while [ "$i" -lt 50 ]; do
+        if xdpyinfo >/dev/null 2>&1; then break; fi
+        sleep 0.1
+        i=$((i + 1))
+    done
+    if ! xdpyinfo >/dev/null 2>&1; then
+        fail_case "Xvfb did not come up on $DISPLAY_NUM"
+    else
+        pass_case "Xvfb up on $DISPLAY_NUM"
+        timeout 180 wineboot -i >"$SHOT_DIR/wineboot.log" 2>&1 || true
+        ( cd "$SHOT_DIR" && timeout 90 wine "$EXE" --smoke 30 ) \
+            >"$SHOT_DIR/app.log" 2>&1 &
+        WINE_PID=$!
+        READY_SEEN=0
+        i=0
+        while [ "$i" -lt 150 ]; do
+            if grep -q '^READY$' "$SHOT_DIR/app.log" 2>/dev/null; then
+                READY_SEEN=1
+                break
+            fi
+            sleep 0.1
+            i=$((i + 1))
+        done
+        if [ "$READY_SEEN" -eq 1 ]; then
+            pass_case "READY sentinel seen"
+        else
+            fail_case "READY sentinel not seen (see $SHOT_DIR/app.log)"
+        fi
+        sleep 0.5
+        if timeout 30 import -window root "$SHOT_DIR/shot.png" >"$SHOT_DIR/import.log" 2>&1 \
+            && [ -s "$SHOT_DIR/shot.png" ]; then
+            STATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
+                "$SHOT_DIR/shot.png" 2>/dev/null)"
+            pass_case "screenshot 1 (560x352 client) saved: $SHOT_DIR/shot.png (mean/stddev/colors: $STATS)"
+        else
+            fail_case "screenshot 1 capture failed (see $SHOT_DIR/import.log)"
+        fi
+        sleep 0.5
+        if timeout 30 import -window root "$SHOT_DIR/shot2.png" >"$SHOT_DIR/import2.log" 2>&1 \
+            && [ -s "$SHOT_DIR/shot2.png" ]; then
+            STATS2="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
+                "$SHOT_DIR/shot2.png" 2>/dev/null)"
+            pass_case "screenshot 2 (800x592 client) saved: $SHOT_DIR/shot2.png (mean/stddev/colors: $STATS2)"
+        else
+            fail_case "screenshot 2 capture failed (see $SHOT_DIR/import2.log)"
+        fi
+        wait "$WINE_PID" 2>/dev/null
+        APP_RC=$?
+        app_rc_file="$SHOT_DIR/app.rc"
+        echo "$APP_RC" >"$app_rc_file"
+        if [ "$APP_RC" -eq 0 ]; then
+            pass_case "windowed --smoke 30 exited 0"
+        else
+            fail_case "windowed --smoke 30 exited $APP_RC (see $SHOT_DIR/app.log)"
+        fi
+        BACKEND_COUNT=$(grep -cF "$EXPECT_BACKEND" "$SHOT_DIR/app.log" 2>/dev/null || true)
+        if [ "$BACKEND_COUNT" = "1" ] \
+            && ! grep -Fq "$REJECT_BACKEND" "$SHOT_DIR/app.log"; then
+            pass_case "backend marker exactly once: $EXPECT_BACKEND"
+        else
+            fail_case "backend marker missing/duplicated/wrong (want $EXPECT_BACKEND, count=$BACKEND_COUNT)"
+        fi
+        if [ "$FORCED_GDI" -eq 1 ]; then
+            if grep -Fq 'DirectDrawCreate' "$SHOT_DIR/app.log"; then
+                fail_case "forced-GDI run still opened DirectDraw"
+            else
+                pass_case "forced-GDI run skipped the DirectDraw open sequence"
+            fi
+        else
+            HR_MISSING=""
+            for pat in \
+                'DirectDrawCreate hr=0x00000000' \
+                'QueryInterface(IID_IDirectDraw7) hr=0x00000000' \
+                'SetCooperativeLevel(DDSCL_NORMAL) hr=0x00000000' \
+                'CreateSurface(primary) hr=0x00000000' \
+                'CreateSurface(offscreen) hr=0x00000000' \
+                'Blt(primary<-offscreen) hr=0x00000000'; do
+                grep -Fq "$pat" "$SHOT_DIR/app.log" || HR_MISSING="$HR_MISSING [$pat]"
+            done
+            if [ -z "$HR_MISSING" ]; then
+                pass_case "DDraw HRESULT log present (create/QI/coop/surfaces/Blt all 0x0)"
+            else
+                fail_case "missing DDraw HRESULT log line(s):$HR_MISSING"
+            fi
+        fi
+        ATLAS_COUNT=$(grep -cF 'glyph-atlas built (95x16 GDI color+mask)' "$SHOT_DIR/app.log" 2>/dev/null || true)
+        if [ "$ATLAS_COUNT" = "1" ] \
+            && grep -Fq 'glyph-atlas present active' "$SHOT_DIR/app.log"; then
+            pass_case "glyph atlas built once at open and used for per-cell present"
+        else
+            fail_case "glyph atlas evidence missing, built more than once, or never used (count=$ATLAS_COUNT)"
+        fi
+        RESIZE_OK=1
+        grep -q '^RESIZE 70x22 px=560x352$' "$SHOT_DIR/app.log" || RESIZE_OK=0
+        grep -q '^RESIZE 100x37 px=800x592$' "$SHOT_DIR/app.log" || RESIZE_OK=0
+        if [ "$RESIZE_OK" -eq 1 ]; then
+            pass_case "real window resizes SEND WM_SIZE -> events 70x22/560x352 and 100x37/800x592"
+        else
+            fail_case "real WM_SIZE resize evidence missing (see $SHOT_DIR/app.log)"
+        fi
+        PRESENT_OK=1
+        grep -Fq 'present 1:1 client=560x352 back=560x352 dest=(' "$SHOT_DIR/app.log" || PRESENT_OK=0
+        grep -Fq 'present 1:1 client=800x592 back=800x592 dest=(' "$SHOT_DIR/app.log" || PRESENT_OK=0
+        if [ "$PRESENT_OK" -eq 1 ]; then
+            pass_case "1:1 client present after both resizes (client==back, screen dest)"
+        else
+            fail_case "1:1 present evidence missing (see $SHOT_DIR/app.log)"
+        fi
+        sed 's/^/       /' "$SHOT_DIR/app.log" | tail -8
+
+        # Real pump: minimize/0x0, restore, close, exit 0 (C1 regression).
+        LIVE_LOG="$SHOT_DIR/live.log"
+        ( cd "$SHOT_DIR" && timeout 90 wine "$EXE" --live-smoke ) >"$LIVE_LOG" 2>&1
+        LIVE_RC=$?
+        LIVE_EVIDENCE=1
+        for pat in 'LIVE minimize' 'LIVE restore' 'LIVE close' 'LIVE OK'; do
+            grep -q "$pat" "$LIVE_LOG" 2>/dev/null || LIVE_EVIDENCE=0
+        done
+        if [ "$LIVE_RC" -eq 0 ] && [ "$LIVE_EVIDENCE" -eq 1 ]; then
+            pass_case "gfx_demo live pump survived minimize/restore/close (exit 0)"
+        else
+            fail_case "gfx_demo live pump failed (rc=$LIVE_RC; see $LIVE_LOG)"
+        fi
+        if grep -Fq "$EXPECT_BACKEND" "$LIVE_LOG" 2>/dev/null; then
+            pass_case "live pump backend marker: $EXPECT_BACKEND"
+        else
+            fail_case "live pump backend marker missing (want $EXPECT_BACKEND)"
+        fi
+        sed 's/^/       /' "$LIVE_LOG" | tail -8
+        WINE_PID=""
+        wineserver -k >/dev/null 2>&1 || true
+    fi
+    kill "$XVFB_PID" 2>/dev/null || true
+    wait "$XVFB_PID" 2>/dev/null || true
+    XVFB_PID=""
+fi
+
+echo
+echo "== tier_gfx summary: $PASSES passed, $FAILS failed =="
+if [ "$FAILS" -ne 0 ]; then
+    echo "TIER_GFX FAIL"
+    exit 1
+fi
+echo "TIER_GFX PASS"
+exit 0

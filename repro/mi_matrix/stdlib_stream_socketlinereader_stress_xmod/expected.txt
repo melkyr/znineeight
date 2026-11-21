@@ -1,0 +1,2 @@
+max-suspends 3
+socketlinereader stress ok

@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# usage:
+#   scripts/seed/build_from_seed.sh <seed> <out_dir>
+#   scripts/seed/build_from_seed.sh --reconstruct-only <seed> <out_dir>
+#
+# Rebuild zig1 from the CURRENT sf/src using a bootstrap seed (Task-1/2 recipe
+# set verbatim; spec: docs/superpowers/specs/2026-09-07-seed-bootstrap-
+# migration-design.md). <seed> is the committed seed archive
+# (release/seed/zig1-seed.tgz) OR an unpacked zig1-seed/ directory (the dir
+# itself, or a dir containing it).
+#
+# Default mode (canonical recipe, repo include path):
+#   seed zig1 --dump-c89 --output-dir <out>/gen sf/src/main.zig
+#     (run from the REPO ROOT with the RELATIVE sf/src/main.zig path — module
+#     basename-hash tokens depend on the resolved source path, so the dump MUST
+#     mirror build_zig1_5.sh exactly to reproduce the fixed point)
+#   cd <out>/gen && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long
+#     -Wno-pointer-sign -Wno-implicit-function-declaration
+#     -I <repo>/sf/src/include -c *.c
+#   gcc -m32 -O0 *.o <repo>/sf/src/include/zig_runtime.c
+#     <repo>/sf/src/include/zig_pal.c <repo>/sf/src/c_exit.c
+#     -o <out>/zig1_5_clean
+#   std lib: 65 std .zig copied into <out>/lib/
+# Two-hop fixed-point closure is verified: <out>/zig1_5_clean (hop1) dumps
+# sf/src/main.zig again -> gcc -> hop2 binary; md5(hop1) must equal
+# md5(hop2) (== recorded fixed point when sf/src matches the seed's era; both
+# md5s are printed). Set FIXED_POINT_MD5=<md5> to additionally gate on a known
+# fixed point.
+#
+# If the seed binary is missing, the seed compiler is first rebuilt from the
+# seed's own C (self-contained fallback: stage the runtime support sources
+# zig_runtime.c + zig_pal.c + zig_nocrt.c + c_exit.c beside gen/*.c, ONE canonical-flag
+# gcc -c over *.c, link *.o — exactly the archive_seed.sh fixed-point check) and
+# that reconstructed compiler is used as the dump engine.
+#
+# --reconstruct-only: gcc-of-C only — rebuild the seed compiler from the seed's
+# own C and write <out>/zig1_5_clean (no sf/src dump; the Task-1/4.2 fallback
+# recipe).
+
+die() { echo "error: $*" >&2; exit 1; }
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+RECONSTRUCT_ONLY=0
+if [ "${1:-}" = "--reconstruct-only" ]; then RECONSTRUCT_ONLY=1; shift; fi
+[ "$#" -eq 2 ] || die "usage: build_from_seed.sh [--reconstruct-only] <seed> <out_dir>"
+SEED_IN="$1"
+OUT="$2"
+
+rm -rf "$OUT"
+mkdir -p "$OUT/gen" "$OUT/lib"
+
+# --- resolve <seed> to a zig1-seed/ dir (tgz unpacked into <out>/_unpack) ---
+# A seed dir is recognized structurally (gen/ present) so the missing-binary
+# gcc-of-C fallback resolves; an executable zig1 is NOT required at this stage.
+seed_dir_ok() {
+    [ -d "$1/gen" ] && ls "$1"/gen/*.c >/dev/null 2>&1 && \
+        { [ -x "$1/zig1" ] || [ -f "$1/runtime/zig_runtime.c" ]; }
+}
+SEED=
+if seed_dir_ok "$SEED_IN"; then
+    SEED="$SEED_IN"
+elif [ -d "$SEED_IN/zig1-seed" ] && seed_dir_ok "$SEED_IN/zig1-seed"; then
+    SEED="$SEED_IN/zig1-seed"
+elif [ -f "$SEED_IN" ]; then
+    mkdir -p "$OUT/_unpack"
+    tar -xzf "$SEED_IN" -C "$OUT/_unpack"
+    if seed_dir_ok "$OUT/_unpack/zig1-seed"; then
+        SEED="$OUT/_unpack/zig1-seed"
+    elif seed_dir_ok "$OUT/_unpack"; then
+        SEED="$OUT/_unpack"
+    fi
+fi
+[ -n "$SEED" ] || die "cannot resolve a seed from '$SEED_IN' (want zig1-seed.tgz, a zig1-seed/ dir, or a dir containing one)"
+[ -d "$SEED/gen" ] || die "seed dir '$SEED' has no gen/"
+
+# --- canonical one-hop: dump current sf/src -> gcc -c -> link ---
+# Task 4: the emitter copies the runtime/platform support sources into the dump
+# dir. When present (hop1-onward, i.e. any dump compiler built from Task-4+
+# source), build self-contained (`-I .`, link only the emitted objects) so the
+# emitted zig_runtime.c/zig_pal.c/c_exit.c are NOT double-linked against the
+# appended repo trio. When absent (the pre-Task-4 committed seed), keep the
+# original repo-include + canonical trio recipe.
+build_hop() {
+    local compiler="$1" dumpdir="$2" binout="$3"
+    mkdir -p "$dumpdir"
+    ( cd "$ROOT" && timeout 120 "$compiler" -ffast --dump-c89 --output-dir "$dumpdir" sf/src/main.zig ) \
+        || die "self-emission dump failed (compiler '$compiler')"
+    if [ -f "$dumpdir/zig_runtime.c" ]; then
+        ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+            -Wno-implicit-function-declaration -I . -c *.c ) \
+            || die "gcc -c failed (self-contained hop dir '$dumpdir')"
+        ( cd "$dumpdir" && gcc -m32 -O0 *.o -o "$binout" ) \
+            || die "gcc link failed (self-contained hop dir '$dumpdir')"
+    else
+        ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+            -Wno-implicit-function-declaration -I "$ROOT/sf/src/include" -c *.c ) \
+            || die "gcc -c failed (hop dir '$dumpdir')"
+        ( cd "$dumpdir" && gcc -m32 -O0 *.o "$ROOT/sf/src/include/zig_runtime.c" \
+            "$ROOT/sf/src/include/zig_pal.c" "$ROOT/sf/src/c_exit.c" -o "$binout" ) \
+            || die "gcc link failed (hop dir '$dumpdir')"
+    fi
+}
+
+# --- self-contained fallback: rebuild the seed compiler from its own C ---
+reconstruct_seed() {
+    local outbin="$1"
+    [ -d "$SEED/runtime" ] || die "seed dir '$SEED' has no runtime/"
+    [ -f "$SEED/runtime/zig_runtime.c" ] || die "seed dir '$SEED' has no runtime/zig_runtime.c"
+    [ -f "$SEED/runtime/zig_pal.c" ] || die "seed dir '$SEED' has no runtime/zig_pal.c"
+    [ -f "$SEED/runtime/zig_nocrt.c" ] || die "seed dir '$SEED' has no runtime/zig_nocrt.c"
+    [ -f "$SEED/c_exit.c" ] || die "seed dir '$SEED' has no top-level c_exit.c"
+    echo "[seed] rebuilding seed compiler from its own C (self-contained, -I <seed>/runtime)"
+    rm -rf "$OUT/rec"
+    mkdir -p "$OUT/rec"
+    cp "$SEED"/gen/*.c "$SEED"/gen/*.h "$OUT/rec/"
+    # Stage the runtime support sources beside the module C so every translation
+    # unit — support included — is compiled by the ONE canonical-flag gcc -c
+    # below and linked as objects. Leaving them on the link line compiles them
+    # without -Wall (different assembler label numbering) and does NOT reproduce
+    # the archived fixed point (SEED_README.txt recipe 2 / flag-set rule).
+    cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED"/runtime/zig_nocrt.c "$SEED/c_exit.c" "$OUT/rec/"
+    ( cd "$OUT/rec" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+        -Wno-implicit-function-declaration -I "$SEED/runtime" -c *.c ) \
+        || die "reconstruct gcc -c failed"
+    ( cd "$OUT/rec" && gcc -m32 -O0 *.o -o "$outbin" ) \
+        || die "reconstruct gcc link failed"
+    echo "[seed] reconstructed binary md5: $(md5sum "$outbin" | cut -d' ' -f1)"
+}
+
+if [ "$RECONSTRUCT_ONLY" = 1 ]; then
+    reconstruct_seed "$OUT/zig1_5_clean"
+    echo "=== [seed] Done: $OUT ==="
+    exit 0
+fi
+
+DUMP_COMPILER="$SEED/zig1"
+if [ ! -x "$DUMP_COMPILER" ]; then
+    echo "[seed] seed binary missing — falling back to gcc-of-C reconstruction"
+    reconstruct_seed "$OUT/zig1_seed_rebuilt"
+    DUMP_COMPILER="$OUT/zig1_seed_rebuilt"
+fi
+
+# std lib for the produced compiler (binary-relative lib/)
+cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_fmt.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_str.zig "$ROOT"/sf/src/std_mem.zig "$ROOT"/sf/src/std_math.zig "$ROOT"/sf/src/std_debug.zig "$ROOT"/sf/src/std_async.zig "$ROOT"/sf/src/std_bits.zig "$ROOT"/sf/src/std_os.zig "$ROOT"/sf/src/std_os_pal.zig "$ROOT"/sf/src/std_time.zig "$ROOT"/sf/src/std_time_pal.zig "$ROOT"/sf/src/std_page.zig "$ROOT"/sf/src/std_page_pal.zig "$ROOT"/sf/src/std_gpa.zig "$ROOT"/sf/src/std_pool.zig "$ROOT"/sf/src/std_buf.zig "$ROOT"/sf/src/std_file.zig "$ROOT"/sf/src/std_file_pal.zig "$ROOT"/sf/src/std_stdin.zig "$ROOT"/sf/src/std_stdin_pal.zig "$ROOT"/sf/src/std_stream.zig "$ROOT"/sf/src/std_crypto.zig "$ROOT"/sf/src/std_cipher.zig "$ROOT"/sf/src/std_ecc.zig "$ROOT"/sf/src/std_parse.zig "$ROOT"/sf/src/std_bencode.zig "$ROOT"/sf/src/std_map.zig "$ROOT"/sf/src/std_sort.zig "$ROOT"/sf/src/std_heap.zig "$ROOT"/sf/src/std_rle.zig "$ROOT"/sf/src/std_base64.zig "$ROOT"/sf/src/std_hex.zig "$ROOT"/sf/src/std_utf8.zig "$ROOT"/sf/src/std_http.zig "$ROOT"/sf/src/std_rand.zig "$ROOT"/sf/src/std_noise.zig "$ROOT"/sf/src/std_lz4.zig "$ROOT"/sf/src/std_zstd.zig "$ROOT"/sf/src/std_deflate.zig "$ROOT"/sf/src/std_num.zig "$ROOT"/sf/src/std_pathfind.zig "$ROOT"/sf/src/std_physics.zig "$ROOT"/sf/src/std_hpa.zig "$ROOT"/sf/src/std_asn1.zig "$ROOT"/sf/src/std_x509.zig "$ROOT"/sf/src/std_tls.zig "$ROOT"/sf/src/std_tls_io.zig "$ROOT"/sf/src/std_hpack.zig "$ROOT"/sf/src/std_http2.zig "$ROOT"/sf/src/std_wireguard.zig "$ROOT"/sf/src/std_tcpip.zig "$ROOT"/sf/src/std_gfx.zig "$ROOT"/sf/src/std_gfx_pal.zig "$ROOT"/sf/src/std_fold.zig "$ROOT"/sf/src/std_fft.zig "$ROOT"/sf/src/std_ddraw.zig "$ROOT"/sf/src/std_ddraw_pal.zig "$ROOT"/sf/src/std_dinput.zig "$ROOT"/sf/src/std_dinput_pal.zig "$ROOT"/sf/src/std_dsound.zig "$ROOT"/sf/src/std_dsound_pal.zig "$OUT/lib/"
+
+build_hop "$DUMP_COMPILER" "$OUT/gen" "$OUT/zig1_5_clean"
+HOP1_MD5=$(md5sum "$OUT/zig1_5_clean" | cut -d' ' -f1)
+echo "[seed] hop1 binary md5: $HOP1_MD5"
+
+build_hop "$OUT/zig1_5_clean" "$OUT/hop2" "$OUT/hop2/zig1_hop2"
+HOP2_MD5=$(md5sum "$OUT/hop2/zig1_hop2" | cut -d' ' -f1)
+echo "[seed] hop2 binary md5: $HOP2_MD5"
+
+CLOSURE_MD5="$HOP2_MD5"
+if [ "$HOP1_MD5" = "$HOP2_MD5" ]; then
+    echo "[seed] two-hop closure OK: hop1 == hop2 == $HOP1_MD5"
+else
+    # Moving point: the committed seed's dump predates the current sf/src, so
+    # hop1 differs; convergence is hop2 == hop3 (hop2 already self-contained).
+    build_hop "$OUT/hop2/zig1_hop2" "$OUT/hop3" "$OUT/hop3/zig1_hop3"
+    HOP3_MD5=$(md5sum "$OUT/hop3/zig1_hop3" | cut -d' ' -f1)
+    echo "[seed] hop3 binary md5: $HOP3_MD5"
+    if [ "$HOP2_MD5" = "$HOP3_MD5" ]; then
+        echo "[seed] three-hop closure OK (moving point): hop2 == hop3 == $HOP2_MD5"
+    else
+        die "three-hop closure FAILED: hop2 '$HOP2_MD5' != hop3 '$HOP3_MD5'"
+    fi
+fi
+if [ -n "${FIXED_POINT_MD5:-}" ]; then
+    [ "$CLOSURE_MD5" = "$FIXED_POINT_MD5" ] \
+        && echo "[seed] recorded fixed point OK: $CLOSURE_MD5" \
+        || die "fixed-point mismatch: got '$CLOSURE_MD5', want '$FIXED_POINT_MD5'"
+fi
+
+echo "=== [seed] Done: $OUT ==="

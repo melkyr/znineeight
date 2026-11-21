@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
         test_PointerArithmetic_AlignOfISize,
         test_BuiltinOffsetOf_StructBasic,
         test_BuiltinOffsetOf_StructPadding,
-        test_BuiltinOffsetOf_Union,
+        test_BuiltinOffsetOf_Union_Reject,
         test_BuiltinOffsetOf_NonAggregate_Error,
         test_BuiltinOffsetOf_FieldNotFound_Error,
         test_BuiltinOffsetOf_IncompleteType_Error

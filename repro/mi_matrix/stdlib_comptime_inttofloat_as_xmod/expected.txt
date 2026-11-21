@@ -1,0 +1,5 @@
+u64-as-ok
+i64-neg-ok
+lit-ok
+f32-ok
+done

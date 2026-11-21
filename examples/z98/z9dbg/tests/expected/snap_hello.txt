@@ -1,0 +1,15 @@
+break main.zig:1 -> break: set at line 1
+break main.zig:2 -> break: no executable code at line 2
+break main.zig:4 -> break: no executable code at line 4
+break main.zig:7 -> break: no executable code at line 7
+break main.zig:11 -> break: no executable code at line 11
+break main.zig:15 -> break: moved to line 16
+break main.zig:17 -> break: no executable code at line 17
+break main.zig:13 -> break: moved to line 14
+break main.zig:8 -> break: moved to line 9
+break main.zig:9 -> break: already set at line 9
+break main.zig:9 -> break: already set at line 9
+break main.zig:0 -> break: no executable code at line 0
+break main.zig:99 -> break: no executable code at line 99
+break fixtures/hello/main.zig:16 -> break: already set at line 16
+break missing.zig:9 -> break: no executable code at line 9

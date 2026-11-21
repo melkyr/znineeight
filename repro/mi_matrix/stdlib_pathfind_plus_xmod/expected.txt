@@ -1,0 +1,3 @@
+tiny ok
+special ok
+pathfind plus ok

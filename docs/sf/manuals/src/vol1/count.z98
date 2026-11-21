@@ -1,0 +1,35 @@
+const std = @import("std");
+
+pub fn main() void {
+    var countdown: i32 = 3;
+    while (countdown > 0) {
+        std.io.print("countdown {}\n", .{countdown});
+        countdown = countdown - 1;
+    }
+    std.io.print("liftoff\n", .{});
+
+    var total: usize = 0;
+    for (0..10) |n| {
+        total = total + n;
+    }
+    std.io.print("sum of 0..10 is {}\n", .{total});
+
+    var odds: usize = 0;
+    for (0..10) |n| {
+        if (n % 2 == 0) {
+            continue;
+        }
+        odds = odds + n;
+    }
+    std.io.print("sum of odd numbers in 0..10 is {}\n", .{odds});
+
+    var stop: i32 = 0;
+    while (true) {
+        stop = stop + 1;
+        if (stop == 4) {
+            break;
+        }
+        std.io.print("checking {}\n", .{stop});
+    }
+    std.io.print("stopped at {}\n", .{stop});
+}

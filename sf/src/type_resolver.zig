@@ -1,0 +1,2754 @@
+const Sand = @import("allocator.zig").Sand;
+const alloc_mod = @import("allocator.zig");
+const pal_mod = @import("pal.zig");
+const TypeRegistry = @import("type_registry.zig").TypeRegistry;
+const TypeKind = @import("type_registry.zig").TypeKind;
+const TypeId = @import("type_registry.zig").TypeId;
+const DiagnosticCollector = @import("diagnostics.zig").DiagnosticCollector;
+const diag_mod = @import("diagnostics.zig");
+const sym_reg = @import("symbol_registrator.zig");
+const DepEdge = sym_reg.DepEdge;
+const AstStore = @import("ast.zig").AstStore;
+const AstKind = @import("ast.zig").AstKind;
+const type_mod = @import("type_registry.zig");
+const itoa_mod = @import("util/itoa.zig");
+const interner_mod = @import("string_interner.zig");
+const StringInterner = interner_mod.StringInterner;
+const sym_mod = @import("symbol_table.zig");
+const SymbolRegistry = sym_mod.SymbolRegistry;
+const ast_mod = @import("ast.zig");
+const mr_mod = @import("module_registry.zig");
+const rtt_mod = @import("resolved_type_table.zig");
+const hash_mod = @import("util/hash.zig");
+// Task 5: the exact `ComptimeInt` core lives in `comptime_eval.zig`, which
+// already imports this module for `resolveTypeExprFull`/`LocalConstScope`.
+// The mutual import is deliberate (Task 1 §9.1, probe-verified compilable):
+// the array-size/enum evaluators share the one exact arithmetic core.
+const comptime_eval = @import("comptime_eval.zig");
+
+pub const MODULE_ID_NONE: u32 = @intCast(u32, 0xFFFFFFFF);
+
+// Maximum number of parameters a function type may carry. Module scope (next to
+// the other file-wide consts) so `resolveFnSignatures`' parameter buffer size
+// and its overflow guard share this one source of truth. Exceeding it is a hard
+// `@panic` in `resolveFnSignatures`, never a silent truncation.
+const MAX_FN_PARAMS: usize = 64;
+
+// Task B2 final fix wave: maximum number of fields a function-local/inline
+// struct or union may carry. `registerContainerType`'s field scratch buffers
+// are fixed at this size; exceeding it is a clean `error[3000]`, never a
+// silent truncation (which emitted a truncated C struct and miscompiled field
+// access beyond the cap). Module-level aggregates are unaffected (registered by
+// `symbol_registrator`, which has no such buffer).
+const MAX_CONTAINER_FIELDS: usize = 32;
+
+pub const TypeResolveEnv = struct {
+
+    store: *AstStore,
+    typereg: *TypeRegistry,
+    symbol_reg: *SymbolRegistry,
+    interner: *StringInterner,
+    module_id: u32,
+    // Task 2c-F fix round 1: the source file of the module currently being
+    // resolved, so the array-size hard error carries a real filename/line. The
+    // module-iterating passes set this per module; passes with `diag = null`
+    // leave it 0.
+    source_file_id: u32,
+    // Task 2c-F: optional hard-error sink for the array-size fallback. Only
+    // passes with a live DiagnosticCollector set this (front_resolution, sema,
+    // typeResolverResolveNames); lower/symbol_registrator/comptime_eval pass
+    // null so they never emit.
+    diag: ?*DiagnosticCollector,
+    // Task 2c-F: the enclosing function's local-const scope (variant (e)),
+    // consulted by `evalConstU32Full`'s ident_expr arm before the module symbol
+    // tables. null outside a function body.
+    local_consts: ?*LocalConstScope,
+    // Task B2: the enclosing function's local-type scope (name -> TypeId),
+    // consulted by `resolveTypeExprFull`'s ident_expr arm before the module
+    // symbol tables so a function-local named type works inside a compound type
+    // expression (`E!T`, `*E`, `[N]E`, `?E`). null outside a function body.
+    local_types: ?*LocalTypeScope,
+};
+
+// Task B2: a name -> TypeId scope for function-local named types (the four
+// container decls bound by a local `const`). A local type is a statement
+// (parsed as a `var_decl`), so it is invisible to `symbolLookupAllModules`;
+// this scope lets `resolveTypeExprFull` resolve it inside a compound type
+// expression. Lookups scan newest -> oldest, so inner declarations shadow
+// outer ones (mirrors `LocalConstScope`).
+pub const LocalTypeScope = struct {
+    names: [*]u32,
+    types: [*]u32,
+    count: usize,
+    cap: usize,
+    alloc: *Sand,
+};
+
+pub fn localTypeScopeInit(alloc: *Sand) LocalTypeScope {
+    return LocalTypeScope{
+        .names = undefined,
+        .types = undefined,
+        .count = @intCast(usize, 0),
+        .cap = @intCast(usize, 0),
+        .alloc = alloc,
+    };
+}
+
+// D1-5/D5-1: shared grow + lookup bodies for the twin `LocalTypeScope` /
+// `LocalConstScope` name scopes. Both are a parallel pair of u32 arrays
+// scanned newest-first; only the field names differ.
+fn nameScopeGrowPair(alloc: *Sand, names: *[*]u32, values: *[*]u32, count: usize, cap: *usize, min_cap: usize) void {
+    var nc: usize = if (cap.* < min_cap) min_cap else cap.* * 2;
+    var raw_n = alloc_mod.sandAlloc(alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    var raw_v = alloc_mod.sandAlloc(alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    var nn = @ptrCast([*]u32, raw_n);
+    var nv = @ptrCast([*]u32, raw_v);
+    var i: usize = 0;
+    while (i < count) : (i += 1) { nn[i] = names.*[i]; nv[i] = values.*[i]; }
+    names.* = nn;
+    values.* = nv;
+    cap.* = nc;
+}
+
+fn nameScopeLookup(names: [*]u32, values: [*]u32, count: usize, name_id: u32) ?u32 {
+    var i: usize = count;
+    while (i > @intCast(usize, 0)) {
+        i -= @intCast(usize, 1);
+        if (names[i] == name_id) return values[i];
+    }
+    return null;
+}
+
+pub fn localTypeScopePush(scope: *LocalTypeScope, name_id: u32, type_id: u32) void {
+    if (scope.count >= scope.cap) {
+        nameScopeGrowPair(scope.alloc, &scope.names, &scope.types, scope.count, &scope.cap, @intCast(usize, 8));
+    }
+    scope.names[scope.count] = name_id;
+    scope.types[scope.count] = type_id;
+    scope.count += @intCast(usize, 1);
+}
+
+pub fn localTypeScopeLookup(scope: *LocalTypeScope, name_id: u32) ?u32 {
+    return nameScopeLookup(scope.names, scope.types, scope.count, name_id);
+}
+
+// Task 2c-F: a name -> var_decl-node scope for function-local `const`s. A local
+// const is a statement (parsed as a `var_decl`), so it is invisible to
+// `symbolLookupAllModules`; this scope lets the array-size evaluator recurse
+// into its initializer. Lookups scan newest -> oldest, so inner declarations
+// shadow outer ones.
+pub const LocalConstScope = struct {
+    names: [*]u32,
+    nodes: [*]u32,
+    count: usize,
+    cap: usize,
+    alloc: *Sand,
+};
+
+pub fn localConstScopeInit(alloc: *Sand) LocalConstScope {
+    return LocalConstScope{
+        .names = undefined,
+        .nodes = undefined,
+        .count = @intCast(usize, 0),
+        .cap = @intCast(usize, 0),
+        .alloc = alloc,
+    };
+}
+
+pub fn localConstScopePush(scope: *LocalConstScope, name_id: u32, decl_node: u32) void {
+    if (scope.count >= scope.cap) {
+        nameScopeGrowPair(scope.alloc, &scope.names, &scope.nodes, scope.count, &scope.cap, @intCast(usize, 8));
+    }
+    scope.names[scope.count] = name_id;
+    scope.nodes[scope.count] = decl_node;
+    scope.count += @intCast(usize, 1);
+}
+
+pub fn localConstScopeLookup(scope: *LocalConstScope, name_id: u32) ?u32 {
+    return nameScopeLookup(scope.names, scope.nodes, scope.count, name_id);
+}
+
+// P4 fix round 2: the completed emission classification state (spec §4 "Type
+// classification" row as amended 2026-10-12) — owned by `CompilerContext`,
+// maps on the permanent arena; the emitter holds `classif: *EmissionClassification`
+// and READS only. Filled by `classifyTypeEmissionGroups` (resolution-time) and
+// completed by `classifyTypeEmissionFinalize` + `collectNeededTuples` at the
+// backend-neutral `phase_EmissionClassification` boundary.
+pub const EmissionClassification = struct {
+    shared_set: hash_mod.U32ToU32Map,
+    pointer_only_map: hash_mod.U32ToU32Map,
+    needs_def_map: hash_mod.U32ToU32Map,
+    needed_tuple_set: hash_mod.U32ToU32Map,
+};
+
+pub const TypeResolver = struct {
+    registry: *TypeRegistry,
+    depend_items: [*]DepEdge,
+    depend_len: usize,
+    depend_cap: usize,
+    in_degree_items: [*]u32,
+    in_degree_cap: usize,
+    sorted_items: [*]u32,
+    sorted_len: usize,
+    worklist_items: [*]u32,
+    worklist_len: usize,
+    worklist_cap: usize,
+    diag: *DiagnosticCollector,
+    alloc: *Sand,
+};
+
+// D5-1: the one in-place-or-reallocate grow body shared by the u32 worklist and
+// the DepEdge dependency table (element size 4 vs 8, min cap 64 vs 8). `cap`
+// (element count), not bytes, is the growth unit; the fallback copies the live
+// bytes exactly as the old typed copy loops did.
+fn rawArrayEnsureCapacity(alloc: *Sand, items: *[*]u8, len: usize, cap: *usize, elem_size: usize, min_cap: usize) void {
+    if (len < cap.*) return;
+    var nc: usize = if (cap.* < min_cap) min_cap else cap.* * 2;
+    if (cap.* > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(alloc, items.*, cap.* * elem_size, nc * elem_size, @intCast(usize, 4));
+        if (grown != null) { cap.* = nc; return; }
+    }
+    var raw = alloc_mod.sandAlloc(alloc, nc * elem_size, @intCast(usize, 4)) catch unreachable;
+    var ei: usize = 0;
+    while (ei < len * elem_size) : (ei += 1) { raw[ei] = items.*[ei]; }
+    items.* = raw;
+    cap.* = nc;
+}
+
+fn dependEnsureCapacity(self: *TypeResolver) void {
+    var p: [*]u8 = @ptrCast([*]u8, self.depend_items);
+    rawArrayEnsureCapacity(self.alloc, &p, self.depend_len, &self.depend_cap, @intCast(usize, 8), @intCast(usize, 8));
+    self.depend_items = @ptrCast([*]DepEdge, p);
+}
+
+pub fn typeResolverAddEdge(self: *TypeResolver, from: u32, to: u32) void {
+    dependEnsureCapacity(self);
+    self.depend_items[self.depend_len] = DepEdge{ .from = from, .to = to };
+    self.depend_len += 1;
+}
+
+fn worklistEnsureCapacity(self: *TypeResolver) void {
+    var p: [*]u8 = @ptrCast([*]u8, self.worklist_items);
+    rawArrayEnsureCapacity(self.alloc, &p, self.worklist_len, &self.worklist_cap, @intCast(usize, 4), @intCast(usize, 64));
+    self.worklist_items = @ptrCast([*]u32, p);
+}
+
+fn worklistPush(self: *TypeResolver, id: u32) void {
+    worklistEnsureCapacity(self);
+    self.worklist_items[self.worklist_len] = id;
+    self.worklist_len += 1;
+}
+
+fn worklistPop(self: *TypeResolver) ?u32 {
+    if (self.worklist_len == 0) return null;
+    self.worklist_len -= 1;
+    return self.worklist_items[self.worklist_len];
+}
+
+fn inDegreeEnsureCapacity(self: *TypeResolver, capacity: usize) void {
+    if (capacity <= self.in_degree_cap) return;
+    var nc = capacity;
+    if (nc < 64) nc = 64;
+    var raw = alloc_mod.sandAlloc(self.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    self.in_degree_items = @ptrCast([*]u32, raw);
+    self.in_degree_cap = nc;
+}
+
+fn alignUp(v: u32, a: u32) u32 {
+    return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
+}
+
+// D5-2: the repeated "itoa into a stack buffer, then markerWrite the digits"
+// idiom, reduced to its one fact (decimal u32 digits, no prefix, no newline).
+// Callers that want a prefix + trailing newline use `pal.markerWriteInt`.
+fn markerU32(value: u32) void {
+    var b: [12]u8 = undefined;
+    var l = itoa_mod.itoa(value, b[0..]);
+    var s: usize = @intCast(usize, 11) - @intCast(usize, l);
+    pal_mod.markerWrite(b[s..@intCast(usize, 11)]);
+}
+
+// Task 11H (Option B, AMENDMENT 10): the ONE shared, order-independent layout
+// math. `layoutCompute` is the verbatim former body of
+// `typeResolverResolveLayout`; it does NOT touch `state` and must be called only
+// once every direct dependency is complete (`state == 2`). The normal
+// topological pass and the on-demand array-size fold both reach the layout math
+// through `layoutEnsure`, so there is exactly one layout implementation and one
+// dependency walk (no duplicated math that could silently diverge).
+fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
+    var idx = @intCast(usize, tid);
+    var ty = registry.types_items[idx];
+    if (ty.kind == TypeKind.struct_type) {
+        if ((ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+            type_mod.typeRegistryComputePackedLayout(registry, tid);
+        } else {
+            var sp = registry.st_items[@intCast(usize, ty.payload_idx)];
+            var fstart: usize = @intCast(usize, sp.fields_start);
+            var fcount: usize = @intCast(usize, sp.fields_count);
+            var offset: u32 = 0;
+            var max_align: u32 = 1;
+            var fi: usize = 0;
+            while (fi < fcount) : (fi += 1) {
+                var fe = registry.fe_items[fstart + fi];
+                var ft = registry.types_items[@intCast(usize, fe.type_id)];
+                if (ft.kind == TypeKind.void_type) {
+                    fe.offset = offset;
+                    registry.fe_items[fstart + fi] = fe;
+                } else {
+                    offset = alignUp(offset, ft.alignment);
+                    fe.offset = offset;
+                    registry.fe_items[fstart + fi] = fe;
+                    offset += ft.size;
+                    if (ft.alignment > max_align) max_align = ft.alignment;
+                }
+            }
+            ty.size = alignUp(offset, max_align);
+            ty.alignment = @intCast(u16, max_align);
+            if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u16, 1); }
+            registry.types_items[idx] = ty;
+        }
+    } else if (ty.kind == TypeKind.enum_type) {
+        var ep = registry.en_items[@intCast(usize, ty.payload_idx)];
+        var bt = registry.types_items[@intCast(usize, ep.backing_type)];
+        ty.size = bt.size;
+        ty.alignment = @intCast(u16, bt.alignment);
+        registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.union_type) {
+        var up = registry.un_items[@intCast(usize, ty.payload_idx)];
+        var fstart: usize = @intCast(usize, up.fields_start);
+        var fcount: usize = @intCast(usize, up.fields_count);
+        var max_sz: u32 = 0;
+        var max_align: u32 = 1;
+        var fi: usize = 0;
+        while (fi < fcount) : (fi += 1) {
+            var fe = registry.fe_items[fstart + fi];
+            var ft = registry.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind != TypeKind.void_type) {
+                if (ft.size > max_sz) max_sz = ft.size;
+                if (ft.alignment > max_align) max_align = ft.alignment;
+            }
+        }
+        ty.size = alignUp(max_sz, max_align);
+        ty.alignment = @intCast(u16, max_align);
+        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u16, 1); }
+        registry.types_items[idx] = ty;
+     } else if (ty.kind == TypeKind.packed_union_type) {
+        type_mod.typeRegistryComputePackedUnionLayout(registry, tid);
+     } else if (ty.kind == TypeKind.tagged_union_type) {
+         var tp = registry.tu_items[@intCast(usize, ty.payload_idx)];
+         var tag_ty = registry.types_items[@intCast(usize, tp.tag_type)];
+         var fstart: usize = @intCast(usize, tp.fields_start);
+         var fcount: usize = @intCast(usize, tp.fields_count);
+         var max_ps: u32 = 0;
+         var max_pa: u32 = 1;
+         var fi: usize = 0;
+         while (fi < fcount) : (fi += 1) {
+             var fe = registry.fe_items[fstart + fi];
+             var fer_nm: []const u8 = "FER:n"; pal_mod.markerWriteInt(fer_nm, @intCast(u32, fstart + fi));
+             var fer_tm: []const u8 = "FER:t"; pal_mod.markerWriteInt(fer_tm, fe.type_id);
+            var ft = registry.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind != TypeKind.void_type) {
+                if (ft.size > max_ps) max_ps = ft.size;
+                if (ft.alignment > max_pa) max_pa = ft.alignment;
+            }
+        }
+        var overall_align: u32 = if (@intCast(u32, tag_ty.alignment) > max_pa) @intCast(u32, tag_ty.alignment) else max_pa;
+        var total = tag_ty.size;
+        total = alignUp(total, max_pa);
+        total += alignUp(max_ps, max_pa);
+        ty.size = alignUp(total, overall_align);
+        ty.alignment = @intCast(u16, overall_align);
+        registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.optional_type) {
+        var op = registry.opt_items[@intCast(usize, ty.payload_idx)];
+        var pt = registry.types_items[@intCast(usize, op.payload)];
+        var pay_align: u32 = if (@intCast(u32, pt.alignment) > @intCast(u32, 4)) @intCast(u32, pt.alignment) else @intCast(u32, 4);
+        ty.size = alignUp(alignUp(pt.size, @intCast(u32, 4)) + @intCast(u32, 4), pay_align);
+        ty.alignment = @intCast(u16, pay_align);
+        registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var ep = registry.eu_items[@intCast(usize, ty.payload_idx)];
+        var pt = registry.types_items[@intCast(usize, ep.payload)];
+        var union_sz = if (pt.size > @intCast(u32, 4)) pt.size else @intCast(u32, 4);
+        var union_align: u32 = if (@intCast(u32, pt.alignment) > @intCast(u32, 4)) @intCast(u32, pt.alignment) else @intCast(u32, 4);
+        var total = alignUp(union_sz, union_align);
+        total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
+        ty.size = alignUp(total, union_align);
+        ty.alignment = @intCast(u16, union_align);
+        registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.array_type) {
+        var ap = registry.array_items[@intCast(usize, ty.payload_idx)];
+        var et = registry.types_items[@intCast(usize, ap.elem)];
+        ty.size = et.size * ap.length;
+        ty.alignment = @intCast(u16, et.alignment);
+        registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.tuple_type) {
+        var tp = registry.tup_items[@intCast(usize, ty.payload_idx)];
+        var estr: usize = @intCast(usize, tp.elems_start);
+        var ecount: usize = @intCast(usize, tp.elems_count);
+        var offset: u32 = 0;
+        var max_align: u32 = 1;
+        var ei: usize = 0;
+        while (ei < ecount) : (ei += 1) {
+            var elem_tid = registry.xt_items[estr + ei];
+            var et = registry.types_items[@intCast(usize, elem_tid)];
+            offset = alignUp(offset, et.alignment);
+            offset += et.size;
+            if (et.alignment > max_align) max_align = et.alignment;
+        }
+        ty.size = alignUp(offset, max_align);
+        ty.alignment = @intCast(u16, max_align);
+        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u16, 1); }
+        registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.error_set_type) {
+        ty.size = @intCast(u32, 4);
+        ty.alignment = @intCast(u16, 4);
+        registry.types_items[idx] = ty;
+    }
+}
+
+// Task 11H: a direct dependency is usable for an on-demand layout only when it
+// is a real, complete type. `0` and `TYPE_UNDEFINED` are never types;
+// `TYPE_VOID` (id 1) is the symbol-registration placeholder for a field whose
+// type was not resolved (`symbol_registrator.zig:111`), so it must be deferred
+// — treating it as a real zero-size void field is what produced the silent
+// wrong `[1]` for a forward-referenced aggregate.
+fn layoutDepOk(registry: *TypeRegistry, dep: u32, depth: u32) bool {
+    if (dep == @intCast(u32, 0)) return false;
+    if (dep == type_mod.TYPE_UNDEFINED) return false;
+    if (dep == type_mod.TYPE_VOID) return false;
+    return layoutEnsure(registry, dep, depth);
+}
+
+fn layoutFieldDepsOk(registry: *TypeRegistry, fstart: u32, fcount: u16, depth: u32) bool {
+    var fi: usize = 0;
+    while (fi < @intCast(usize, fcount)) : (fi += 1) {
+        if (!layoutDepOk(registry, registry.fe_items[@intCast(usize, fstart) + fi].type_id, depth)) return false;
+    }
+    return true;
+}
+
+// Task 11H: make `tid` complete on demand, order-independently. Returns true
+// only when `tid` is (or was made) `state == 2`. Never reads `size`/`alignment`
+// of an incomplete dependency: every direct dependency is walked first and the
+// layout math runs only when all of them are complete. A depth cap (mirrors
+// `resolveTypeExprFull`'s 16) turns a cyclic/mutual graph into a safe `false`
+// (the array-size fold then leaves `ERR_3050`).
+pub fn layoutEnsure(registry: *TypeRegistry, tid: u32, depth: u32) bool {
+    if (tid == @intCast(u32, 0)) return false;
+    if (@intCast(usize, tid) >= registry.types_len) return false;
+    var ty = registry.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return true;
+    if (depth > @intCast(u32, 16)) return false;
+    var deps_ok: bool = true;
+    var handled: bool = true;
+    if (ty.kind == TypeKind.struct_type) {
+        var sp = registry.st_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutFieldDepsOk(registry, sp.fields_start, sp.fields_count, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.enum_type) {
+        var ep = registry.en_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, ep.backing_type, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.union_type) {
+        var up = registry.un_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutFieldDepsOk(registry, up.fields_start, up.fields_count, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.packed_union_type) {
+        var pup = registry.un_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutFieldDepsOk(registry, pup.fields_start, pup.fields_count, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = registry.tu_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, tp.tag_type, depth + @intCast(u32, 1));
+        if (deps_ok) {
+            deps_ok = layoutFieldDepsOk(registry, tp.fields_start, tp.fields_count, depth + @intCast(u32, 1));
+        }
+    } else if (ty.kind == TypeKind.array_type) {
+        var ap = registry.array_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, ap.elem, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.tuple_type) {
+        var tup = registry.tup_items[@intCast(usize, ty.payload_idx)];
+        var ei: usize = 0;
+        while (ei < @intCast(usize, tup.elems_count)) : (ei += 1) {
+            if (!layoutDepOk(registry, registry.xt_items[@intCast(usize, tup.elems_start) + ei], depth + @intCast(u32, 1))) {
+                deps_ok = false;
+            }
+        }
+    } else if (ty.kind == TypeKind.optional_type) {
+        var op = registry.opt_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, op.payload, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var eup = registry.eu_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, eup.payload, depth + @intCast(u32, 1));
+    } else {
+        handled = false;
+    }
+    if (!handled) return false;
+    if (!deps_ok) return false;
+    layoutCompute(registry, tid);
+    registry.types_items[@intCast(usize, tid)].state = @intCast(u8, 2);
+    return true;
+}
+
+// Task 11H: the normal topological pass entry point. Dependencies of a popped
+// (acyclic) type are complete by construction, so `layoutEnsure` normally
+// computes and marks `state == 2`. When the walk declines — a legitimate
+// zero-size `void` field, a depth cap, or a kind with no layout math — fall
+// back to the verbatim math, preserving the historical normal-pass behavior.
+// The on-demand array-size fold never takes this fallback.
+fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
+    if (!layoutEnsure(self.registry, tid, @intCast(u32, 0))) {
+        layoutCompute(self.registry, tid);
+    }
+}
+
+pub fn typeResolverInit(registry: *TypeRegistry, diag: *DiagnosticCollector, alloc: *Sand) TypeResolver {
+    return TypeResolver{
+        .registry = registry,
+        .depend_items = undefined,
+        .depend_len = @intCast(usize, 0),
+        .depend_cap = @intCast(usize, 0),
+        .in_degree_items = undefined,
+        .in_degree_cap = @intCast(usize, 0),
+        .sorted_items = undefined,
+        .sorted_len = @intCast(usize, 0),
+        .worklist_items = undefined,
+        .worklist_len = @intCast(usize, 0),
+        .worklist_cap = @intCast(usize, 0),
+        .diag = diag,
+        .alloc = alloc,
+    };
+}
+
+pub fn typeResolverBuild(self: *TypeResolver, g: *sym_reg.DepGraph) void {
+    var i: usize = 0;
+    while (i < g.len) {
+        typeResolverAddEdge(self, g.items[i].from, g.items[i].to);
+        i += 1;
+    }
+    var type_count = self.registry.types_len;
+    inDegreeEnsureCapacity(self, type_count);
+    var raw_sorted = alloc_mod.sandAlloc(self.alloc, type_count * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    self.sorted_items = @ptrCast([*]u32, raw_sorted);
+    var zi: usize = 0;
+    while (zi < type_count) {
+        self.in_degree_items[zi] = @intCast(u32, 0);
+        zi += 1;
+    }
+    var ei: usize = 0;
+    while (ei < self.depend_len) {
+        var target = self.depend_items[ei].to;
+        if (@intCast(usize, target) < type_count) {
+            self.in_degree_items[@intCast(usize, target)] += 1;
+        }
+        ei += 1;
+    }
+}
+
+pub fn typeResolverResolve(self: *TypeResolver) void {
+    var type_count = self.registry.types_len;
+    if (type_count == 0) return;
+
+    var ti: usize = 0;
+    while (ti < type_count) {
+        if (self.in_degree_items[ti] == 0) {
+            worklistPush(self, @intCast(u32, ti));
+        }
+        ti += 1;
+    }
+
+    while (self.worklist_len > 0) {
+        var tid_val = worklistPop(self);
+        if (tid_val) |tid| {
+            self.sorted_items[self.sorted_len] = tid;
+            self.sorted_len += @intCast(usize, 1);
+            typeResolverResolveLayout(self, tid);
+            self.registry.types_items[@intCast(usize, tid)].state = @intCast(u8, 2);
+            var ei: usize = 0;
+            while (ei < self.depend_len) {
+                if (self.depend_items[ei].from == tid) {
+                    var dep = self.depend_items[ei].to;
+                    var dep_idx = @intCast(usize, dep);
+                    if (dep_idx < type_count) {
+                        if (self.in_degree_items[dep_idx] > 0) {
+                            self.in_degree_items[dep_idx] -= 1;
+                            if (self.in_degree_items[dep_idx] == 0) {
+                                worklistPush(self, dep);
+                            }
+                        }
+                    }
+                }
+                ei += 1;
+            }
+        }
+    }
+
+    var ci: usize = 0;
+    while (ci < type_count) : (ci += 1) {
+        var ty = self.registry.types_items[ci];
+        if (ty.state != @intCast(u8, 2) and self.in_degree_items[ci] > 0) {
+            var msg: []const u8 = "circular type dependency detected (type refers to itself)";
+            diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3005_CIRCULAR_TYPE_DEPENDENCY)), @intCast(u32, 0),
+                @intCast(u32, 0), @intCast(u32, 0), msg);
+            ty.kind = TypeKind.void_type;
+            ty.size = @intCast(u32, 0);
+            ty.alignment = @intCast(u16, 1);
+            ty.state = @intCast(u8, 2);
+            self.registry.types_items[ci] = ty;
+        }
+    }
+}
+
+// D1-2: the six kinds shared by every aggregate-layout category below. The two
+// classification predicates deliberately differ (do not blind-merge): only
+// `fieldEmbedsByValue` treats `enum`/`error_set` as by-value aggregates; only
+// `requiresFullDef` adds `optional`/`error_union`. They feed
+// `classifyTypeEmissionGroups` (the P4 single emission classification —
+// pointer-only / needs-definition / shared-header groups) and
+// are NOT the ordering relation — typedef ordering derives from
+// `type_registry.typeRefs`/`typeNeedsFullDef` (P2). The former third sibling
+// `layoutFieldNeedsEdge` + `layoutAddTypeEdge`/`layoutAddFieldEdges` were the
+// divergent resolver edge predicates and are deleted with it.
+fn kindIsAggregateCore(kind: TypeKind) bool {
+    return kind == TypeKind.struct_type or kind == TypeKind.tagged_union_type or
+        kind == TypeKind.union_type or kind == TypeKind.packed_union_type or
+        kind == TypeKind.array_type or kind == TypeKind.tuple_type;
+}
+
+fn fieldEmbedsByValue(kind: TypeKind) bool {
+    return kindIsAggregateCore(kind) or kind == TypeKind.enum_type or   // ADD — inline typedef integer alias
+        kind == TypeKind.error_set_type;                                // ADD — inline typedef integer alias
+}
+
+fn requiresFullDef(kind: TypeKind) bool {
+    return kindIsAggregateCore(kind) or kind == TypeKind.optional_type or
+        kind == TypeKind.error_union_type;
+}
+
+// P2 (emitter sanitization, D8): the resolver dependency graph derives from the
+// single type-reference relation (`type_registry.typeRefs` / `typeNeedsFullDef`)
+// — the same edges the emitter's typedef ordering uses (one source, D8 closed
+// by construction). For every type each ordering ref `R` of `ti` contributes
+// the historical `from=R, to=ti` edge (the ref resolves / lays out before its
+// referrer). The former kind-switch + `layoutFieldNeedsEdge`/`layoutAddTypeEdge`
+// helpers are deleted; `fn_type` return/param refs and `packed_union` are now
+// covered like every other kind.
+pub fn typeResolverBuildDependencyGraph(self: *TypeResolver) void {
+    var tl = self.registry.types_len;
+    if (tl == @intCast(usize, 0)) return;
+    var raw = alloc_mod.sandAlloc(self.alloc, tl * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    var buf: [*]u32 = @ptrCast([*]u32, raw);
+    var ti: usize = 0;
+    while (ti < tl) : (ti += 1) {
+        var n = type_mod.typeRefs(self.registry, @intCast(u32, ti), buf);
+        var k: u32 = @intCast(u32, 0);
+        while (k < n) : (k += 1) {
+            typeResolverAddEdge(self, buf[@intCast(usize, k)], @intCast(u32, ti));
+        }
+    }
+}
+
+pub fn classifyTypeEmissionGroups(self: *TypeResolver, classif: *EmissionClassification, perm_alloc: *Sand) void {
+    var tl: usize = self.registry.types_len;
+
+    var po_raw = alloc_mod.sandAlloc(perm_alloc, 1 * tl, 1) catch unreachable;
+    var pointer_only: [*]u8 = @ptrCast([*]u8, po_raw);
+
+    var wp_edge_cap: usize = tl * 4;
+    var wp_to_raw = alloc_mod.sandAlloc(perm_alloc, 4 * wp_edge_cap, 4) catch unreachable;
+    var wp_to: [*]u32 = @ptrCast([*]u32, wp_to_raw);
+    var wp_next_raw = alloc_mod.sandAlloc(perm_alloc, 4 * wp_edge_cap, 4) catch unreachable;
+    var wp_next: [*]u32 = @ptrCast([*]u32, wp_next_raw);
+    var wp_head_raw = alloc_mod.sandAlloc(perm_alloc, 4 * tl, 4) catch unreachable;
+    var wp_head: [*]u32 = @ptrCast([*]u32, wp_head_raw);
+    var whi: usize = 0;
+    while (whi < tl) : (whi += 1) { wp_head[whi] = @intCast(u32, 4294967295); }
+    var wp_count: u32 = @intCast(u32, 0);
+
+    var wl_raw = alloc_mod.sandAlloc(perm_alloc, 4 * tl, 4) catch unreachable;
+    var worklist: [*]u32 = @ptrCast([*]u32, wl_raw);
+    var wl_head: u32 = @intCast(u32, 0);
+    var wl_tail: u32 = @intCast(u32, 0);
+
+    var ti: usize = 0;
+    while (ti < tl) : (ti += 1) {
+        var ty = self.registry.types_items[ti];
+        var is_po: u8 = @intCast(u8, 1);
+
+        if (ty.kind == TypeKind.struct_type) {
+            var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
+            var fi: usize = 0;
+            while (fi < @intCast(usize, sp.fields_count) and is_po != 0) : (fi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, sp.fields_start) + fi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.tagged_union_type) {
+            var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
+            var fi: usize = 0;
+            while (fi < @intCast(usize, tp.fields_count) and is_po != 0) : (fi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, tp.fields_start) + fi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.union_type) {
+            var up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+            var fi: usize = 0;
+            while (fi < @intCast(usize, up.fields_count) and is_po != 0) : (fi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, up.fields_start) + fi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.packed_union_type) {
+            var p_up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+            var pfi: usize = 0;
+            while (pfi < @intCast(usize, p_up.fields_count) and is_po != 0) : (pfi += 1) {
+                var ft_id = self.registry.fe_items[@intCast(usize, p_up.fields_start) + pfi].type_id;
+                var ft = self.registry.types_items[@intCast(usize, ft_id)];
+                if (fieldEmbedsByValue(ft.kind)) {
+                    is_po = @intCast(u8, 0);
+                } else if (ft.kind == TypeKind.optional_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                } else if (ft.kind == TypeKind.error_union_type) {
+                    growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                    wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                    wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, ft_id)];
+                    wp_head[@intCast(usize, ft_id)] = wp_count;
+                    wp_count += @intCast(u32, 1);
+                }
+            }
+        } else if (ty.kind == TypeKind.array_type) {
+            var et = self.registry.array_items[@intCast(usize, ty.payload_idx)].elem;
+            var et_ty = self.registry.types_items[@intCast(usize, et)];
+            if (fieldEmbedsByValue(et_ty.kind)) {
+                is_po = @intCast(u8, 0);
+            } else if (et_ty.kind == TypeKind.optional_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, et)];
+                wp_head[@intCast(usize, et)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            } else if (et_ty.kind == TypeKind.error_union_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, et)];
+                wp_head[@intCast(usize, et)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            }
+        } else if (ty.kind == TypeKind.error_union_type) {
+            var eup = self.registry.eu_items[@intCast(usize, ty.payload_idx)].payload;
+            var eup_ty = self.registry.types_items[@intCast(usize, eup)];
+            if (fieldEmbedsByValue(eup_ty.kind)) {
+                is_po = @intCast(u8, 0);
+            } else if (eup_ty.kind == TypeKind.optional_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, eup)];
+                wp_head[@intCast(usize, eup)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            } else if (eup_ty.kind == TypeKind.error_union_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, eup)];
+                wp_head[@intCast(usize, eup)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            }
+        } else if (ty.kind == TypeKind.optional_type) {
+            var op_p = self.registry.opt_items[@intCast(usize, ty.payload_idx)].payload;
+            var op_ty = self.registry.types_items[@intCast(usize, op_p)];
+            if (requiresFullDef(op_ty.kind)) {
+                is_po = @intCast(u8, 0);
+            } else if (op_ty.kind == TypeKind.optional_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, op_p)];
+                wp_head[@intCast(usize, op_p)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            } else if (op_ty.kind == TypeKind.error_union_type) {
+                growWpEdges(perm_alloc, &wp_to, &wp_next, &wp_edge_cap, wp_count);
+                wp_to[@intCast(usize, wp_count)] = @intCast(u32, ti);
+                wp_next[@intCast(usize, wp_count)] = wp_head[@intCast(usize, op_p)];
+                wp_head[@intCast(usize, op_p)] = wp_count;
+                wp_count += @intCast(u32, 1);
+            }
+        }
+
+        pointer_only[ti] = is_po;
+        if (is_po == @intCast(u8, 0)) {
+            worklist[@intCast(usize, wl_tail)] = @intCast(u32, ti);
+            wl_tail += @intCast(u32, 1);
+        }
+    }
+
+    while (wl_head < wl_tail) {
+        var cur = worklist[@intCast(usize, wl_head)];
+        wl_head += @intCast(u32, 1);
+        var e: u32 = wp_head[@intCast(usize, cur)];
+        while (e != @intCast(u32, 4294967295)) {
+            var parent_tid = wp_to[@intCast(usize, e)];
+            if (pointer_only[@intCast(usize, parent_tid)] != @intCast(u8, 0)) {
+                pointer_only[@intCast(usize, parent_tid)] = @intCast(u8, 0);
+                worklist[@intCast(usize, wl_tail)] = parent_tid;
+                wl_tail += @intCast(u32, 1);
+            }
+            e = wp_next[@intCast(usize, e)];
+        }
+    }
+
+    // P4 (single classification pass): the three emission groups as maps —
+    // pointer-only (E1), needs-definition (E8/E9/E11 via
+    // `classificationNeedsDef`) and shared-header (E2/E3'/E5/E6 seeds). The
+    // boundary completion (E4 + full-registry walk; `classifyTypeEmissionFinalize`,
+    // at `phase_EmissionClassification`) completes both rule sets where the data
+    // exists; the E7 closure runs here and again at the boundary (one helper,
+    // monotone).
+    var po_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
+    var nd_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
+    var sh_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
+    var plen: u32 = @intCast(u32, 0);
+    ti = 0;
+    while (ti < tl) : (ti += 1) {
+        var ty = self.registry.types_items[ti];
+        if (pointer_only[ti] != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&po_map, @intCast(u32, ti), @intCast(u32, 1));
+            plen += @intCast(u32, 1);
+        }
+        if (classificationNeedsDef(ty)) {
+            hash_mod.u32ToU32MapPut(&nd_map, @intCast(u32, ti), @intCast(u32, 1));
+        }
+        var is_synthetic: u8 = @intCast(u8, 0);
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (classificationIsSyntheticEmittable(ty.kind)) is_synthetic = @intCast(u8, 1);
+        }
+        var is_clsv: u8 = @intCast(u8, 0);
+        if (pointer_only[ti] == @intCast(u8, 0)) is_clsv = @intCast(u8, 1);
+        var is_carrier64: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.f64_type) is_carrier64 = @intCast(u8, 1);
+        var is_fn_named: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.fn_type and ty.name_id != @intCast(u32, 0)) is_fn_named = @intCast(u8, 1);
+        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_carrier64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&sh_map, @intCast(u32, ti), @intCast(u32, 1));
+        }
+    }
+    classificationSharedClosure(self.registry, &sh_map, &po_map);
+
+    var cls_m: []const u8 = "CLS:c"; pal_mod.markerWrite(cls_m); markerU32(plen); var cls_nl: []const u8 = "\n"; pal_mod.markerWrite(cls_nl);
+    ti = 0;
+    while (ti < tl) : (ti += 1) {
+        if (pointer_only[ti] != @intCast(u8, 0)) {
+            var pfx: []const u8 = "CLS:p"; pal_mod.markerWrite(pfx);
+        } else {
+            var pfx: []const u8 = "CLS:v"; pal_mod.markerWrite(pfx);
+        }
+        markerU32(@intCast(u32, ti));
+        var ck: []const u8 = "k";
+        pal_mod.markerWrite(ck);
+        markerU32(@intCast(u32, @enumToInt(self.registry.types_items[ti].kind)));
+        var cnl: []const u8 = "\n"; pal_mod.markerWrite(cnl);
+    }
+
+    classif.pointer_only_map = po_map;
+    classif.needs_def_map = nd_map;
+    classif.shared_set = sh_map;
+}
+
+// P4 (emitter sanitization, single classification pass): the eight
+// synthetic-emittable kinds — the kinds that may be emitted unnamed (a
+// synthetic C name is minted for them). Shared by the needs-definition rule
+// (`classificationNeedsDef`) and the shared-header synthetic seed
+// (`classifyTypeEmissionGroups`); the same list lived twice in the deleted
+// emitter `computeSharedSet`/`shouldSkipTypeEmission`.
+fn classificationIsSyntheticEmittable(kind: TypeKind) bool {
+    return kind == TypeKind.slice_type or
+        kind == TypeKind.optional_type or
+        kind == TypeKind.error_union_type or
+        kind == TypeKind.error_set_type or
+        kind == TypeKind.tagged_union_type or
+        kind == TypeKind.union_type or
+        kind == TypeKind.array_type or
+        kind == TypeKind.fn_type;
+}
+
+// P4: the needs-definition group (spec §4 "Type classification" row) — types
+// whose typedef must be emitted. Verbatim relocation of the deleted emitter
+// `shouldSkipTypeEmission` skip decision (the E8/E9/E11 rows of the P4
+// equivalence map) as its positive complement. The deleted function's
+// `skip_arb` arm (E10) is intentionally absent: it was unreachable-equivalent
+// — named arb_int/arb_uint never join the shared set (no seed covers the arb
+// kinds; the closure promotes only aggregate kinds) and are filtered by the
+// require_shared/po filters before any skip check, and the single-file path
+// ran with skip_arb=0 (emit). See the P4 report O1.
+fn classificationNeedsDef(ty: type_mod.Type) bool {
+    if (ty.kind == TypeKind.void_type) return false;
+    if (ty.kind == TypeKind.bool_type) return false;
+    if (ty.kind == TypeKind.noreturn_type) return false;
+    if (ty.kind == TypeKind.null_type) return false;
+    if (ty.kind == TypeKind.undefined_type) return false;
+    if (ty.kind == TypeKind.integer_literal_type) return false;
+    if (ty.kind == TypeKind.type_type) return false;
+    if (ty.kind == TypeKind.module_type) return false;
+    if (ty.name_id == @intCast(u32, 0)) {
+        if (!classificationIsSyntheticEmittable(ty.kind)) return false;
+    }
+    return true;
+}
+
+// P4: the shared-header closure (E7) — promote pointer-only named aggregates
+// referenced (by the P2 type-reference relation) from a shared member.
+// Verbatim map-based relocation of the deleted emitter `computeSharedSet`
+// closure; used by BOTH classification steps (step 1 seeds, step 2's
+// needed-tuple seed).
+fn classificationSharedClosure(reg: *TypeRegistry, shared: *hash_mod.U32ToU32Map, po: *hash_mod.U32ToU32Map) void {
+    var changed: u32 = @intCast(u32, 1);
+    while (changed != @intCast(u32, 0)) {
+        changed = @intCast(u32, 0);
+        var ti2: u32 = @intCast(u32, 0);
+        while (@intCast(usize, ti2) < reg.types_len) : (ti2 += 1) {
+            var ty2 = reg.types_items[@intCast(usize, ti2)];
+            if (ty2.name_id == @intCast(u32, 0)) continue;
+            if (hash_mod.u32ToU32MapGet(shared, ti2) != null) continue;
+            if (ty2.kind != TypeKind.struct_type and
+                ty2.kind != TypeKind.tagged_union_type and
+                ty2.kind != TypeKind.union_type and
+                ty2.kind != TypeKind.packed_union_type and
+                ty2.kind != TypeKind.enum_type and
+                ty2.kind != TypeKind.error_set_type) continue;
+            if (hash_mod.u32ToU32MapGet(po, ti2) == null) continue;
+            var sj: u32 = @intCast(u32, 0);
+            while (@intCast(usize, sj) < reg.types_len) : (sj += 1) {
+                if (hash_mod.u32ToU32MapGet(shared, sj) == null) continue;
+                if (type_mod.typeRefsContains(reg, sj, ti2)) {
+                    hash_mod.u32ToU32MapPut(shared, ti2, @intCast(u32, 1));
+                    changed = @intCast(u32, 1);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// P4 fix round 2: collect every tuple type that holds a runtime value (a
+// hoisted temp or a global); tuple typedefs are emitted only for these.
+// Registry-only print-args tuples must not produce C (the 4-MD5 single-file
+// dumps are pinned). Moved verbatim from `c89_emit.zig` — it is a pure
+// registry walk (Decision-vs-spelling: the decision belongs to the
+// classification boundary, not the emitter).
+pub fn collectNeededTuples(reg: *TypeRegistry, set: *hash_mod.U32ToU32Map, tid: u32) void {
+    if (@intCast(usize, tid) >= reg.types_len) return;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.tuple_type) return;
+    if (hash_mod.u32ToU32MapGet(set, tid) != null) return;
+    hash_mod.u32ToU32MapPut(set, tid, @intCast(u32, 1));
+    var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
+        var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
+        if (@intCast(usize, et) < reg.types_len) {
+            if (reg.types_items[@intCast(usize, et)].kind == TypeKind.tuple_type) collectNeededTuples(reg, set, et);
+        }
+    }
+}
+
+// P4 fix round 2: the boundary COMPLETION step of the classification — called
+// by `phase_EmissionClassification` (backend-neutral, between `phase_LIRLowering`
+// and `phase_C89Emission`), NEVER by the emitter (Decision-vs-spelling rule:
+// a helper invoked at emit time whose output selects between semantics is
+// forbidden). At the boundary all inputs exist: the full registry (types
+// registered after the resolution-time step are included — `front_resolution`/
+// sema/lowering call `typeRegistryGetOrCreate*`) and `needed_tuple_set` (the E4
+// seed, LIR-derived, collected by `collectNeededTuples` at the same boundary).
+// Re-applies the SAME rule helpers (idempotent) over the full registry:
+// needs-definition, shared seeds (is_clsv = po MAP MEMBERSHIP — the E1/E2
+// snapshot semantics: a type absent from `po` counts as value-embedding), the
+// needed-tuple shared seed, and the shared closure. One copy of each rule.
+// The former emit-time invocation (the P4 in-flight late-type patch) is
+// deleted; this walk replaces it and completes `classifyTypeEmissionGroups`.
+pub fn classifyTypeEmissionFinalize(reg: *TypeRegistry, classif: *EmissionClassification) void {
+    var shared = &classif.shared_set;
+    var po = &classif.pointer_only_map;
+    var nd = &classif.needs_def_map;
+    var needed = &classif.needed_tuple_set;
+    var ti: u32 = @intCast(u32, 0);
+    while (@intCast(usize, ti) < reg.types_len) : (ti += 1) {
+        var ty = reg.types_items[@intCast(usize, ti)];
+        if (classificationNeedsDef(ty)) {
+            hash_mod.u32ToU32MapPut(nd, ti, @intCast(u32, 1));
+        }
+        var is_synthetic: u8 = @intCast(u8, 0);
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (classificationIsSyntheticEmittable(ty.kind)) is_synthetic = @intCast(u8, 1);
+            if (ty.kind == TypeKind.tuple_type and hash_mod.u32ToU32MapGet(needed, ti) != null) {
+                is_synthetic = @intCast(u8, 1);
+            }
+        }
+        var is_clsv: u8 = @intCast(u8, 0);
+        if (hash_mod.u32ToU32MapGet(po, ti) == null) is_clsv = @intCast(u8, 1);
+        var is_carrier64: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.f64_type) is_carrier64 = @intCast(u8, 1);
+        var is_fn_named: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.fn_type and ty.name_id != @intCast(u32, 0)) is_fn_named = @intCast(u8, 1);
+        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_carrier64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(shared, ti, @intCast(u32, 1));
+        }
+    }
+    classificationSharedClosure(reg, shared, po);
+}
+
+fn growWpEdges(perm_a: *Sand, wp_to_ptr: *[*]u32, wp_next_ptr: *[*]u32, cap_ptr: *usize, count: u32) void {
+    if (@intCast(usize, count) < cap_ptr.*) return;
+    nameScopeGrowPair(perm_a, wp_to_ptr, wp_next_ptr, @intCast(usize, count), cap_ptr, @intCast(usize, 0));
+}
+
+
+// Task 2b-F (#1): resolve the module a field-access base expression denotes,
+// walking a module-alias chain (`mid` -> `mid.leaf` -> ...). A base is a module
+// reference when it is a `SymbolKind.module` symbol (a direct `@import` alias)
+// or when its resolved type is `module_type` (a nested module alias). Returns
+// the module id, or 0 when the expression is not a module reference. Mirrors
+// the module lookup in `resolveTypeExprFull`'s field_access arm.
+fn evalConstModuleOfExpr(env: *TypeResolveEnv, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        if (env.module_id != MODULE_ID_NONE) {
+            if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, env.module_id, name_id)) |s| {
+                if (s.kind == sym_mod.SymbolKind.module) return s.module_id;
+                if (s.type_id != @intCast(u32, 0) and @intCast(usize, s.type_id) < env.typereg.types_len) {
+                    var sty = env.typereg.types_items[@intCast(usize, s.type_id)];
+                    if (sty.kind == type_mod.TypeKind.module_type) return sty.module_id;
+                }
+            }
+        }
+        var si: usize = 0;
+        while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
+            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, si), name_id);
+            if (sym) |s2| {
+                if (s2.kind == sym_mod.SymbolKind.module) return s2.module_id;
+                if (s2.type_id != @intCast(u32, 0) and @intCast(usize, s2.type_id) < env.typereg.types_len) {
+                    var sty2 = env.typereg.types_items[@intCast(usize, s2.type_id)];
+                    if (sty2.kind == type_mod.TypeKind.module_type) return sty2.module_id;
+                }
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    if (node.kind == AstKind.field_access) {
+        var base_mod = evalConstModuleOfExpr(env, node.child_0);
+        if (base_mod == @intCast(u32, 0)) return @intCast(u32, 0);
+        var field_name_id = ast_mod.astStoreNodePayload(env.store, node_idx);
+        if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, base_mod, field_name_id)) |msym| {
+            if (msym.kind == sym_mod.SymbolKind.module) return msym.module_id;
+            if (msym.type_id != @intCast(u32, 0) and @intCast(usize, msym.type_id) < env.typereg.types_len) {
+                var mty = env.typereg.types_items[@intCast(usize, msym.type_id)];
+                if (mty.kind == type_mod.TypeKind.module_type) return mty.module_id;
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    return @intCast(u32, 0);
+}
+
+// Task 11F: true for the primitive/alias type kinds whose `@sizeOf`/`@alignOf`/
+// `@bitSizeOf` are safe to fold during array-size resolution. The aggregate
+// kinds are deliberately EXCLUDED: struct/aggregate introspection in an
+// array-size position is deferred to Task 11G/11H, and the `state == 2` gate
+// alone does not make those folds safe at every resolution point (a field type
+// resolved by `resolveAggregateFieldTypesAll` can precede layout).
+fn evalConstScalarKind(kind: TypeKind) bool {
+    if (kind == TypeKind.struct_type) return false;
+    if (kind == TypeKind.union_type) return false;
+    if (kind == TypeKind.tagged_union_type) return false;
+    if (kind == TypeKind.packed_union_type) return false;
+    if (kind == TypeKind.tuple_type) return false;
+    if (kind == TypeKind.array_type) return false;
+    if (kind == TypeKind.slice_type) return false;
+    if (kind == TypeKind.optional_type) return false;
+    if (kind == TypeKind.error_union_type) return false;
+    if (kind == TypeKind.fn_type) return false;
+    if (kind == TypeKind.module_type) return false;
+    if (kind == TypeKind.type_type) return false;
+    if (kind == TypeKind.unresolved_name) return false;
+    if (kind == TypeKind.none_sentinel) return false;
+    return true;
+}
+
+// Task 5 (Task 1 §6.5): the exact internal fold shared by both public
+// type-resolver evaluators. It replaces the old 64-bit wrapping u32/i64
+// evaluators: every value is a Task-2 `ComptimeInt` (256-bit cap, exact or
+// unfoldable) and the public callers apply their own materialisation rule at
+// exit. The arm set is the UNION of the old twins: int/char literals, parens,
+// `negate`, the ten integer binops, ident chains (function-local const scope
+// first, then the module symbol tables), field-access module consts, and the
+// integer-valued builtins (`@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/
+// `@bitOffsetOf`/`@intCast`/`@as`). `null` means unfoldable: an unsupported
+// shape, the depth/cycle cap (16), division/mod by zero, a cap overflow, or a
+// non-integer / non-fitting `@intCast`/`@as` target. `~`, floats, bools,
+// function calls, and enum-member references deliberately stay unfoldable in
+// this evaluator (the old enum arm set; the caller's ERR_3055 path).
+fn evalConstIntFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?comptime_eval.ComptimeInt {
+    if (depth > @intCast(u32, 16)) return null;
+    if (node_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
+        return comptime_eval.ciFromU64(ast_mod.astStoreIntValue(env.store, node_idx));
+    }
+    if (node.kind == AstKind.negate) {
+        if (node.child_0 != @intCast(u32, 0)) {
+            var inner = evalConstIntFull(env, node.child_0, depth + @intCast(u32, 1));
+            if (inner) |iv| {
+                var nv = comptime_eval.ciZeroInt();
+                _ = comptime_eval.ciNeg(iv, &nv);
+                return nv;
+            }
+        }
+        return null;
+    }
+    if (node.kind == AstKind.paren_expr) {
+        return evalConstIntFull(env, node.child_0, depth + @intCast(u32, 1));
+    }
+    if (node.kind == AstKind.add or node.kind == AstKind.sub or
+        node.kind == AstKind.mul or node.kind == AstKind.div or node.kind == AstKind.mod_op or
+        node.kind == AstKind.bit_and or node.kind == AstKind.bit_or or node.kind == AstKind.bit_xor or
+        node.kind == AstKind.shl or node.kind == AstKind.shr) {
+        var l_opt = evalConstIntFull(env, node.child_0, depth + @intCast(u32, 1));
+        var r_opt = evalConstIntFull(env, node.child_1, depth + @intCast(u32, 1));
+        if (l_opt) |lv| {
+            if (r_opt) |rv| {
+                var res = comptime_eval.ciZeroInt();
+                if (node.kind == AstKind.add) { if (!comptime_eval.ciAdd(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.sub) { if (!comptime_eval.ciSub(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.mul) { if (!comptime_eval.ciMul(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.div) {
+                    var rem = comptime_eval.ciZeroInt();
+                    if (!comptime_eval.ciDivMod(lv, rv, &res, &rem)) return null;
+                    return res;
+                }
+                if (node.kind == AstKind.mod_op) {
+                    var q = comptime_eval.ciZeroInt();
+                    if (!comptime_eval.ciDivMod(lv, rv, &q, &res)) return null;
+                    return res;
+                }
+                if (node.kind == AstKind.bit_and) { if (!comptime_eval.ciBitAnd(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.bit_or) { if (!comptime_eval.ciBitOr(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.bit_xor) { if (!comptime_eval.ciBitXor(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.shl) { if (!comptime_eval.ciShl(lv, rv, &res)) return null; return res; }
+                if (!comptime_eval.ciShr(lv, rv, &res)) return null;
+                return res;
+            }
+        }
+        return null;
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        // The function-local const scope first (the old U32 evaluator's
+        // variant (e)); a local const shadows a module symbol of the same name.
+        if (env.local_consts) |lcs| {
+            if (localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                var l_decl = ast_mod.astStoreNodeAt(env.store, l_decl_node);
+                if (l_decl.child_1 != @intCast(u32, 0)) {
+                    return evalConstIntFull(env, l_decl.child_1, depth + @intCast(u32, 1));
+                }
+            }
+        }
+        var c_sym = symbolLookupAllModules(env, name_id);
+        if (c_sym) |cs| {
+            if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
+                if (c_decl.child_1 != @intCast(u32, 0)) {
+                    return evalConstIntFull(env, c_decl.child_1, depth + @intCast(u32, 1));
+                }
+            }
+        }
+        return null;
+    }
+    // A module-const reference through a field access (`mid.N`).
+    if (node.kind == AstKind.field_access) {
+        var fa_mod_id = evalConstModuleOfExpr(env, node.child_0);
+        if (fa_mod_id != @intCast(u32, 0)) {
+            var fa_field_id = ast_mod.astStoreNodePayload(env.store, node_idx);
+            if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fa_mod_id, fa_field_id)) |fa_sym| {
+                if (!typeResolverCheckMemberVisibility(env, node_idx, fa_field_id, fa_sym)) return null;
+                if ((fa_sym.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var fa_decl = ast_mod.astStoreNodeAt(env.store, fa_sym.decl_node);
+                    if (fa_decl.child_1 != @intCast(u32, 0)) {
+                        return evalConstIntFull(env, fa_decl.child_1, depth + @intCast(u32, 1));
+                    }
+                }
+            }
+        }
+        return null;
+    }
+    if (node.kind == AstKind.builtin_call) {
+        var s_size: []const u8 = "@sizeOf";
+        var size_id = interner_mod.stringInternerIntern(env.interner, s_size);
+        var s_align: []const u8 = "@alignOf";
+        var align_id = interner_mod.stringInternerIntern(env.interner, s_align);
+        var s_bitsz: []const u8 = "@bitSizeOf";
+        var bitsz_id = interner_mod.stringInternerIntern(env.interner, s_bitsz);
+        var s_intc: []const u8 = "@intCast";
+        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
+        var s_as: []const u8 = "@as";
+        var as_id = interner_mod.stringInternerIntern(env.interner, s_as);
+        var s_off: []const u8 = "@offsetOf";
+        var off_id = interner_mod.stringInternerIntern(env.interner, s_off);
+        var s_bitoff: []const u8 = "@bitOffsetOf";
+        var bitoff_id = interner_mod.stringInternerIntern(env.interner, s_bitoff);
+        var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+        if (node.child_0 == intc_id or node.child_0 == as_id) {
+            if (bc_n >= @intCast(u32, 2)) {
+                // The target must be an integer type and the folded value must
+                // fit it (`@as(f32,3)` / `@as(u8,300)` are not valid enum
+                // values). No diagnostic here: the enum caller's ERR_3055 path
+                // owns its reject, and the array-size wrapper emits the
+                // preserved error[3000] for a failing `@intCast`.
+                var ct_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (ct_tid != type_mod.TYPE_UNDEFINED) {
+                    var cv_opt = evalConstIntFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                    if (cv_opt) |cv| {
+                        if (comptime_eval.comptimeIntFitsType(env.typereg, cv, ct_tid)) return cv;
+                    }
+                }
+            }
+            return null;
+        }
+        if (node.child_0 == size_id or node.child_0 == align_id or node.child_0 == bitsz_id) {
+            if (bc_n >= @intCast(u32, 1)) {
+                var bt_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (bt_tid != type_mod.TYPE_UNDEFINED) {
+                    var bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
+                    // A named aggregate in an initializer position is made
+                    // complete on demand through the shared `layoutEnsure`,
+                    // exactly as the pre-Task-5 enum evaluator did. The
+                    // `state == 2` gate is MANDATORY: reading size/alignment
+                    // before layout yields a silently wrong value.
+                    if (bt_ty.state != @intCast(u8, 2) and bt_ty.kind == TypeKind.struct_type) {
+                        _ = layoutEnsure(env.typereg, bt_tid, @intCast(u32, 0));
+                        bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
+                    }
+                    var bt_foldable = evalConstScalarKind(bt_ty.kind);
+                    if (bt_ty.kind == TypeKind.struct_type) { bt_foldable = true; }
+                    if (bt_ty.state == @intCast(u8, 2) and bt_foldable) {
+                        if (node.child_0 == size_id) { return comptime_eval.ciFromU64(@intCast(u64, bt_ty.size)); }
+                        if (node.child_0 == align_id) { return comptime_eval.ciFromU64(@intCast(u64, bt_ty.alignment)); }
+                        var bt_bits: u32 = bt_ty.size * @intCast(u32, 8);
+                        if (type_mod.typeRegistryIsInteger(env.typereg, bt_tid)) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, bt_tid));
+                        }
+                        if (bt_ty.kind == TypeKind.enum_type) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, type_mod.typeRegistryEnumBackingType(env.typereg, bt_tid)));
+                        }
+                        if (bt_ty.kind == TypeKind.bool_type) { bt_bits = @intCast(u32, 1); }
+                        if (bt_ty.kind == TypeKind.struct_type and (bt_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryGetPackedTotalBits(env.typereg, bt_tid));
+                        }
+                        return comptime_eval.ciFromU64(@intCast(u64, bt_bits));
+                    }
+                }
+            }
+            return null;
+        }
+        if (node.child_0 == off_id or node.child_0 == bitoff_id) {
+            if (bc_n >= @intCast(u32, 2)) {
+                var ot_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (ot_tid != type_mod.TYPE_UNDEFINED) {
+                    var ot_ty = env.typereg.types_items[@intCast(usize, ot_tid)];
+                    if (ot_ty.state == @intCast(u8, 2) and ot_ty.kind == TypeKind.struct_type) {
+                        var fields: []type_mod.FieldEntry = undefined;
+                        type_mod.typeRegistryGetStructFields(env.typereg, ot_tid, &fields);
+                        var packed_fields: []type_mod.PackedBitField = undefined;
+                        var has_pk = type_mod.typeRegistryGetPackedBitFields(env.typereg, ot_tid, &packed_fields);
+                        var fname_node = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
+                        if (fname_node.kind == AstKind.string_literal) {
+                            var sv_idx = ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
+                            var want_id = env.store.string_values.items[@intCast(usize, sv_idx)];
+                            var fi: usize = 0;
+                            while (fi < fields.len) : (fi += 1) {
+                                if (fields[fi].name_id == want_id) {
+                                    var bo: u64 = @intCast(u64, fields[fi].offset);
+                                    if (has_pk) {
+                                        var pk_bo: u64 = @intCast(u64, 0);
+                                        if (fi < packed_fields.len) { pk_bo = @intCast(u64, packed_fields[fi].bit_offset); }
+                                        if (node.child_0 == bitoff_id) { bo = pk_bo; } else { bo = pk_bo / @intCast(u64, 8); }
+                                    } else {
+                                        if (node.child_0 == bitoff_id) { bo = bo * @intCast(u64, 8); }
+                                    }
+                                    return comptime_eval.ciFromU64(bo);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+        return null;
+    }
+    return null;
+}
+
+// `0..0xFFFFFFFE` as a u32 array size; everything else is the unfoldable
+// sentinel (negative, over-u32, or the `0xFFFFFFFF` sentinel collision).
+fn evalConstIntToSize(v: comptime_eval.ComptimeInt) u32 {
+    if (v.neg) return @intCast(u32, 0xFFFFFFFF);
+    var lim = comptime_eval.ciFromU64(@intCast(u64, 4294967294));
+    if (comptime_eval.ciCmp(v, lim) > 0) return @intCast(u32, 0xFFFFFFFF);
+    return @intCast(u32, comptime_eval.ciToU64(v));
+}
+
+// Task 5 (Task 1 §6.5): exact array-size fold. `0xFFFFFFFF` stays the
+// unfoldable sentinel and the depth cap (16) is kept; a concrete size must be
+// in `0..0xFFFFFFFE` (a value of exactly 4294967295 collides with the sentinel
+// and stays rejected — pre-existing). The `@intCast` arm keeps its
+// `error[3000]` diagnostic (Task 1 §5.5) with the exact fit primitive; every
+// other shape goes through `evalConstIntFull`. The former u32-wrapping
+// add/sub/mul arms are gone (Task 4): a negative or over-u32 size is
+// unfoldable, so `[0 - 1]u8` reaches the caller's error[3050].
+pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
+    // Cycle guard, mirroring `resolveTypeExprFull`'s depth cap (16) so a const
+    // cycle in array-size position (`const A = A + 1`, or `const A = B; const
+    // B = A`) terminates as an unfoldable value — a clean hard error via the
+    // array-size fallback — never unbounded recursion / ICE.
+    if (depth > @intCast(u32, 16)) return @intCast(u32, 0xFFFFFFFF);
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.builtin_call) {
+        var s_intc: []const u8 = "@intCast";
+        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
+        if (node.child_0 == intc_id) {
+            var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            if (bc_n >= @intCast(u32, 2)) {
+                // Task 11S (a): resolve the target and range-check the folded
+                // operand against it; `@intCast(u8, 300)` is invalid Zig and
+                // must not fold 300 as the dimension. The operand folds
+                // EXACTLY through the shared evaluator so a function-local
+                // `const N = 7` still resolves.
+                var ic_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                var ic_v = evalConstIntFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                if (ic_tid != type_mod.TYPE_UNDEFINED) {
+                    if (ic_v) |iv| {
+                        if (!comptime_eval.comptimeIntFitsType(env.typereg, iv, ic_tid)) {
+                            if (env.diag) |dg| {
+                                if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                                    var ic_msg: []const u8 = "@intCast value does not fit the target type";
+                                    _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                        @intCast(u16, 3000),
+                                        env.source_file_id, node.span_start,
+                                        node.span_start + @intCast(u32, node.span_len), ic_msg);
+                                }
+                            }
+                            return @intCast(u32, 0xFFFFFFFF);
+                        }
+                        return evalConstIntToSize(iv);
+                    }
+                }
+            }
+            return @intCast(u32, 0xFFFFFFFF);
+        }
+    }
+    var v = evalConstIntFull(env, node_idx, depth) orelse return @intCast(u32, 0xFFFFFFFF);
+    return evalConstIntToSize(v);
+}
+
+
+// Task 5 (Task 1 §6.5): exact const-initializer fold materialised as the
+// 64-bit two's-complement pattern for signed consumers (slice bounds, switch
+// constants). Enum members use `evalConstEnumRawU64` so the full u64 range is
+// preserved. The exact value must fit `[i64 min, u64 max]`; outside that window
+// it is unfoldable and the two's-complement low 64 bits are returned.
+pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
+    var v = evalConstIntFull(env, node_idx, depth) orelse return null;
+    if (!comptime_eval.comptimeIntFits64(v)) return null;
+    return @bitCast(i64, comptime_eval.ciToU64(v));
+}
+
+// Raw 64-bit enum-member fold: the exact value must fit `[i64 min, u64 max]`
+// and its low 64 bits are stored (signed values keep their two's-complement
+// pattern). This carries the full `enum(u64)` discriminant range.
+pub fn evalConstEnumRawU64(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?u64 {
+    var v = evalConstIntFull(env, node_idx, depth) orelse return null;
+    if (!comptime_eval.comptimeIntFits64(v)) return null;
+    return comptime_eval.ciToU64(v);
+}
+
+// True when the EXACT initializer value is genuinely negative (nonzero). Used
+// by the unsigned backing-fit validators to keep `error[3062]` for a negative
+// literal while accepting positive values above i64 max.
+pub fn evalConstEnumSourceIsNegative(env: *TypeResolveEnv, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var v = evalConstIntFull(env, node_idx, @intCast(u32, 0)) orelse return false;
+    return v.neg and !comptime_eval.ciIsZero(v);
+}
+
+
+fn symbolLookupAllModules(env: *TypeResolveEnv, name_id: u32) ?*sym_mod.Symbol {
+    var si: usize = 0;
+    while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
+        var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, si), name_id);
+        if (sym != null) return sym;
+    }
+    return null;
+}
+
+// D1-3: the symbol-table type-id lookup fact (the first symbol in a module with
+// a non-zero `type_id`) and its all-module first-match scan, shared by
+// `resolveTypeExprFull`'s current-module and all-module symbol arms.
+fn symbolTypeIdOfModule(env: *TypeResolveEnv, module_id: u32, name_id: u32) u32 {
+    if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, module_id, name_id)) |s| {
+        if (s.type_id != @intCast(u32, 0)) return s.type_id;
+    }
+    return @intCast(u32, 0);
+}
+
+fn symbolLookupTypeAllModules(env: *TypeResolveEnv, name_id: u32) u32 {
+    var si: usize = 0;
+    while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
+        var t = symbolTypeIdOfModule(env, @intCast(u32, si), name_id);
+        if (t != @intCast(u32, 0)) return t;
+    }
+    return @intCast(u32, 0);
+}
+// Task 11J: the ONE shared enum-member walk (AMENDMENT 10: no duplicated
+// fold/cascade logic). Computes every member value with a fresh `auto_val`
+// cascade, exactly mirroring Zig's ordinal rule: `value = auto_val` unless an
+// explicit initializer folds, then `auto_val = value + 1`. Used at symbol
+// registration (append=true, strict=false), by the post-layout re-evaluation
+// pass (append=false, strict=true), and as a check-only validation for
+// function-local enums (check_only=true, which writes no registry storage).
+// In strict mode an unfoldable explicit initializer (`out_fail_kind = 1`) or a
+// duplicate tag value (`out_fail_kind = 2`) fails the walk; the caller emits
+// ERR_3055.
+pub fn enumMembersResolve(
+    env: *TypeResolveEnv,
+    enum_node: u32,
+    append: bool,
+    mstart: u32,
+    strict: bool,
+    check_only: bool,
+    out_count: *u32,
+    out_fail_node: *u32,
+    out_fail_kind: *u32,
+) bool {
+    // check_only (function-local enums, whose type is not registered) keeps the
+    // previously computed member values here instead of in `em_items`.
+    var seen: [256]u64 = undefined;
+    var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, enum_node);
+    var auto_val: u64 = @intCast(u64, 0);
+    var k: u32 = 0;
+    var i: usize = 0;
+    while (i < children_n) : (i += 1) {
+        var mnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i)));
+        if (mnode.kind != AstKind.field_decl) continue;
+        var mval: u64 = auto_val;
+        if (mnode.child_1 != @intCast(u32, 0)) {
+            var ev_opt = evalConstEnumRawU64(env, mnode.child_1, @intCast(u32, 0));
+            if (ev_opt) |ev| {
+                mval = ev;
+            } else if (strict) {
+                out_fail_node.* = mnode.child_1;
+                out_fail_kind.* = @intCast(u32, 1);
+                out_count.* = k;
+                return false;
+            }
+        }
+        if (strict) {
+            var dj_lim: u32 = k;
+            if (check_only and dj_lim > @intCast(u32, 256)) dj_lim = @intCast(u32, 256);
+            var dj: u32 = 0;
+            while (dj < dj_lim) : (dj += 1) {
+                var prev: u64 = undefined;
+                if (check_only) {
+                    prev = seen[@intCast(usize, dj)];
+                } else {
+                    prev = env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, dj)].value;
+                }
+                if (prev == mval) {
+                    out_fail_node.* = ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i));
+                    out_fail_kind.* = @intCast(u32, 2);
+                    out_count.* = k;
+                    return false;
+                }
+            }
+        }
+        if (check_only) {
+            if (k < @intCast(u32, 256)) { seen[@intCast(usize, k)] = mval; }
+        } else if (append) {
+            type_mod.emAppend(env.typereg, type_mod.EnumMember{
+                .name_id = ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i))),
+                .value = mval,
+            });
+        } else {
+            env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, k)].value = mval;
+        }
+        k += 1;
+        // Raw 64-bit successor. Two's-complement +1 matches signed ordinals;
+        // backing-width/signedness overflow is owned by the validators.
+        auto_val = mval +% @intCast(u64, 1);
+    }
+    out_count.* = k;
+    return true;
+}
+
+// D3-4: the ONE ERR_3055 report for a failed shared enum-member walk, shared by
+// the post-layout re-evaluation pass and the local/inline enum validation.
+fn reportEnumWalkFailure(diag: *DiagnosticCollector, store: *AstStore, source_file_id: u32, fail_node: u32, fail_kind: u32) void {
+    var fn_ = ast_mod.astStoreNodeAt(store, fail_node);
+    var sp = fn_.span_start;
+    var ep = sp + @intCast(u32, fn_.span_len);
+    var msg: []const u8 = "enum member value is not a comptime-known integer expression";
+    if (fail_kind == @intCast(u32, 2)) { msg = "duplicate enum tag value (tag values must be unique)"; }
+    _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3055_ENUM_VALUE_NOT_CONSTANT)),
+        source_file_id, sp, ep, msg);
+}
+
+// Task 11J: post-layout enum re-evaluation (Option B, P1). Runs at the end of
+// `phase_TypeResolution`, after `typeResolverResolve` has laid out every type
+// and before `phase_FrontResolution`/`phase_SemanticAnalysis`, so every
+// consumer of `em_items[].value` sees the corrected value. Re-walks each module
+// enum decl with a fresh `auto_val` cascade (the shared walk) and overwrites
+// the stored member values in place; an unfoldable explicit initializer or a
+// duplicate tag becomes a clean ERR_3055 (rc=2, 0 `.c`), never a silent value.
+pub fn enumReevaluateAll(
+    store: *AstStore,
+    typereg: *TypeRegistry,
+    symbol_reg: *SymbolRegistry,
+    interner: *StringInterner,
+    module_reg: *mr_mod.ModuleRegistry,
+    diag: *DiagnosticCollector,
+) void {
+    var mods = mr_mod.moduleRegistryGetModules(module_reg);
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var ast_root = mods[mi].ast_root;
+        if (ast_root == @intCast(u32, 0)) continue;
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(store, ast_root);
+        var di: usize = 0;
+        while (di < decls_n) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, ast_root, @intCast(u32, di));
+            var dnode = ast_mod.astStoreNodeAt(store, decl_idx);
+            var enum_node: u32 = @intCast(u32, 0);
+            var enum_name_id: u32 = @intCast(u32, 0);
+            if (dnode.kind == AstKind.enum_decl and dnode.child_1 != @intCast(u32, 0)) {
+                enum_node = decl_idx;
+                enum_name_id = dnode.child_0;
+            } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+                var inn = ast_mod.astStoreNodeAt(store, dnode.child_1);
+                if (inn.kind == AstKind.enum_decl) {
+                    enum_node = dnode.child_1;
+                    enum_name_id = ast_mod.astStoreNodePayload(store, decl_idx);
+                }
+            }
+            if (enum_node == @intCast(u32, 0)) continue;
+            var key: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, enum_name_id);
+            var tid_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
+            if (type_mod.nameCacheGet(typereg, key)) |t| { tid_box[0] = t; } else { continue; }
+            var tid = tid_box[0];
+            if (@intCast(usize, tid) >= typereg.types_len) continue;
+            var ety = typereg.types_items[@intCast(usize, tid)];
+            if (ety.kind != TypeKind.enum_type) continue;
+            var ep = typereg.en_items[@intCast(usize, ety.payload_idx)];
+            var env = TypeResolveEnv{
+                .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner,
+                .module_id = mods[mi].id, .source_file_id = mods[mi].source_file_id,
+                .diag = diag, .local_consts = null, .local_types = null,
+            };
+            var count: u32 = 0;
+            var fail_node: u32 = 0;
+            var fail_kind: u32 = 0;
+            if (!enumMembersResolve(&env, enum_node, false, ep.members_start, true, false, &count, &fail_node, &fail_kind)) {
+                reportEnumWalkFailure(diag, store, mods[mi].source_file_id, fail_node, fail_kind);
+            }
+        }
+    }
+}
+
+// Task B2: intern the synthesized name `anon_<node_idx>` shared by every
+// anonymous / function-local container type. A unique node-indexed name avoids
+// the `(module_id, name_id)` collision two same-named locals would otherwise
+// hit in `typeRegistryRegisterNamedType`; module 0 matches the pre-existing
+// inline-struct arm so its emitted C stays byte-identical.
+fn containerAnonNameId(env: *TypeResolveEnv, node_idx: u32) u32 {
+    var idb: [12]u8 = undefined;
+    var idl = itoa_mod.itoa(node_idx, idb[0..]);
+    var ids: usize = @intCast(usize, 11) - @intCast(usize, idl);
+    var nm: [24]u8 = undefined;
+    nm[0] = @intCast(u8, 97); nm[1] = @intCast(u8, 110); nm[2] = @intCast(u8, 111); nm[3] = @intCast(u8, 110); nm[4] = @intCast(u8, 95);
+    var di: usize = 0;
+    while (di < @intCast(usize, idl)) : (di += 1) { nm[@intCast(usize, 5) + di] = idb[ids + di]; }
+    var namelen: usize = @intCast(usize, 5) + @intCast(usize, idl);
+    return interner_mod.stringInternerIntern(env.interner, nm[0..namelen]);
+}
+
+// Task B2: the four container decls that bind a first-class `type` value.
+pub fn isContainerDeclKind(kind: AstKind) bool {
+    return kind == AstKind.struct_decl or kind == AstKind.enum_decl or kind == AstKind.union_decl or kind == AstKind.error_set_decl;
+}
+
+// Task B2 final fix wave: the compound type-expression node kinds (`*E`,
+// `[*]E`, `[N]E`, `[]E`, `?E`, `E!T`, `fn(...) T`). A local binding whose
+// initializer is one of these names a `type` value; Z98 does not model
+// function-local `type` values, so the semantic analyzer clean-rejects it
+// (mirrors the bare local-alias reject) rather than leak `TYPE_TYPE` into
+// lowering and emit uncompilable C.
+pub fn isCompoundTypeExprKind(kind: AstKind) bool {
+    return kind == AstKind.ptr_type or kind == AstKind.many_ptr_type or
+        kind == AstKind.array_type or kind == AstKind.slice_type or
+        kind == AstKind.optional_type or kind == AstKind.error_union_type or
+        kind == AstKind.fn_type;
+}
+
+// Task B2 final fix wave: count the `field_decl` children of a struct/union
+// node. Used only to enforce `MAX_CONTAINER_FIELDS` before registering, so the
+// fixed-size scratch buffers in `registerContainerType` can never truncate.
+fn containerFieldCount(env: *TypeResolveEnv, node_idx: u32) usize {
+    var count: usize = 0;
+    var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+    var i: usize = 0;
+    while (i < @intCast(usize, children_n)) : (i += 1) {
+        var child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, i));
+        if (ast_mod.astStoreNodeAt(env.store, child).kind == AstKind.field_decl) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+// FB (D4): a tuple element of array type has no C assignment for the
+// field-wise copy (`emitFieldAssign` can only byte-copy a same-typed array
+// field), so the operator ruled a clean reject rather than per-element loops.
+// Emits level-0 error[3000] once per marking node when a diag is live; callers
+// still append the element so the registry shape stays consistent.
+pub fn tupleElemArrayUnsupported(env: *TypeResolveEnv, elem_tid: u32, mark_node: u32) bool {
+    if (elem_tid == type_mod.TYPE_UNDEFINED or elem_tid == type_mod.TYPE_VOID) return false;
+    if (@intCast(usize, elem_tid) >= env.typereg.types_len) return false;
+    if (env.typereg.types_items[@intCast(usize, elem_tid)].kind != type_mod.TypeKind.array_type) return false;
+    if (env.diag) |diag| {
+        if (diag_mod.diagnosticCollectorMarkNodeOnce(diag, mark_node)) {
+            var node = ast_mod.astStoreNodeAt(env.store, mark_node);
+            var msg: []const u8 = "tuple types with array elements are not supported";
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+        }
+    }
+    return true;
+}
+
+fn localEnumBackingTypeLabel(env: *TypeResolveEnv, bt: u32) []const u8 {
+    if (@intCast(usize, bt) < env.typereg.types_len) {
+        var bty = env.typereg.types_items[@intCast(usize, bt)];
+        if (bty.name_id != @intCast(u32, 0)) {
+            return interner_mod.stringInternerGet(env.interner, bty.name_id);
+        }
+    }
+    var fallback: []const u8 = "?";
+    return fallback;
+}
+
+// F2 fix round 1: the local/inline enum path had no backing-fit check, so
+// `enum(u8) { A = -1 }` and `enum(i8) { A = 300 }` were accepted. Mirror the
+// module gate's fit rules: unsigned accepts 0..2^N-1, signed accepts
+// -2^(N-1)..2^(N-1)-1, and a negative value on an unsigned backing uses the
+// F1-pinned `error[3062]` wording.
+fn validateLocalEnumBackingFit(env: *TypeResolveEnv, enum_node: u32, diag: *DiagnosticCollector) void {
+    var enum_n = ast_mod.astStoreNodeAt(env.store, enum_node);
+    var bt: u32 = type_mod.TYPE_U32;
+    if (enum_n.child_0 != @intCast(u32, 0)) {
+        var rbt = resolveTypeExprFull(env, enum_n.child_0, @intCast(u32, 0));
+        if (rbt == type_mod.TYPE_UNDEFINED or rbt == type_mod.TYPE_VOID) return;
+        bt = rbt;
+    }
+    var is_unsigned = type_mod.typeRegistryIsUnsigned(env.typereg, bt);
+    var is_signed = type_mod.typeRegistryIsInteger(env.typereg, bt) and type_mod.typeRegistryIntIsSigned(env.typereg, bt);
+    if (!is_unsigned and !is_signed) return;
+    var nbits: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, bt));
+    var max_u: u64 = @intCast(u64, 0xFFFFFFFFFFFFFFFF);
+    if (nbits < @intCast(u32, 64)) {
+        max_u = (@intCast(u64, 1) << @intCast(u64, nbits)) - @intCast(u64, 1);
+    }
+    var max_s: i64 = @intCast(i64, 0x7FFFFFFFFFFFFFFF);
+    var min_s: i64 = @bitCast(i64, @intCast(u64, 0x8000000000000000));
+    if (nbits < @intCast(u32, 64)) {
+        var half_u: u64 = @intCast(u64, 1) << @intCast(u64, nbits - @intCast(u32, 1));
+        var half: i64 = @intCast(i64, half_u);
+        max_s = half - @intCast(i64, 1);
+        min_s = -half;
+    }
+    var auto_val: u64 = @intCast(u64, 0);
+    var prev_u: u64 = @intCast(u64, 0);
+    var prev_s: i64 = @intCast(i64, 0);
+    var have_prev: bool = false;
+    var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, enum_node);
+    var i: usize = 0;
+    while (i < @intCast(usize, children_n)) : (i += @intCast(usize, 1)) {
+        var mnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i)));
+        if (mnode.kind != AstKind.field_decl) continue;
+        var at_max: bool = false;
+        if (is_signed) { at_max = prev_s == max_s; } else { at_max = prev_u == max_u; }
+        if (have_prev and mnode.child_1 == @intCast(u32, 0) and at_max) {
+            var osp = mnode.span_start;
+            var oep = osp + @intCast(u32, mnode.span_len);
+            var ov_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            if (is_signed) {
+                var sov: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
+                ov_msg = sov;
+            }
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, osp, oep, ov_msg);
+            return;
+        }
+        var mval: u64 = auto_val;
+        if (mnode.child_1 != @intCast(u32, 0)) {
+            if (evalConstEnumRawU64(env, mnode.child_1, @intCast(u32, 0))) |ev| { mval = ev; } else { return; }
+        }
+        if (is_signed) {
+            var ms: i64 = @bitCast(i64, mval);
+            if (ms > max_s or ms < min_s) {
+                var msp = mnode.span_start;
+                var mep = msp + @intCast(u32, mnode.span_len);
+                var mv_msg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
+                _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, msp, mep, mv_msg);
+                return;
+            }
+        } else if (mnode.child_1 != @intCast(u32, 0) and evalConstEnumSourceIsNegative(env, mnode.child_1)) {
+            var msp = mnode.span_start;
+            var mep = msp + @intCast(u32, mnode.span_len);
+            var num_buf: [24]u8 = undefined;
+            var mag: u64 = @intCast(u64, 0) -% mval;
+            var dl = itoa_mod.itoa64(mag, num_buf[1..]);
+            var ds: usize = @intCast(usize, num_buf.len) - @intCast(usize, dl) - @intCast(usize, 1);
+            num_buf[ds - @intCast(usize, 1)] = @intCast(u8, 45);
+            var num_text = num_buf[ds - @intCast(usize, 1) .. @intCast(usize, num_buf.len) - @intCast(usize, 1)];
+            var ty_text = localEnumBackingTypeLabel(env, bt);
+            var p0: []const u8 = "type '";
+            var p1: []const u8 = "' cannot represent integer value '";
+            var p2: []const u8 = "'";
+            var parts: [5][]const u8 = [5][]const u8{ p0, ty_text, p1, num_text, p2 };
+            var neg_msg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &parts[0], @intCast(u32, 5));
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), env.source_file_id, msp, mep, neg_msg);
+            return;
+        } else if (mval > max_u) {
+            var msp = mnode.span_start;
+            var mep = msp + @intCast(u32, mnode.span_len);
+            var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, msp, mep, mv_msg);
+            return;
+        }
+        prev_u = mval;
+        prev_s = @bitCast(i64, mval);
+        have_prev = true;
+        auto_val = mval +% @intCast(u64, 1);
+    }
+}
+
+// Task B2 fix round 1: strict validation of a local/inline enum declaration.
+// Runs the ONE shared member walk (`enumMembersResolve`) in check-only strict
+// mode so a duplicate tag value or an unfoldable initializer is a clean
+// ERR_3055, exactly as for a module enum. Shared by `registerContainerType`
+// (inline enums in ANY type position) and the semantic analyzer's
+// `semanticAnalyzerCheckLocalEnum` (the binding / expression forms), so the two
+// can never diverge. A null `env.diag` pass is a no-op.
+pub fn validateLocalEnum(env: *TypeResolveEnv, enum_node: u32) void {
+    if (enum_node == @intCast(u32, 0)) return;
+    var diag = env.diag orelse return;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(diag, enum_node)) return;
+    var count: u32 = 0;
+    var fail_node: u32 = 0;
+    var fail_kind: u32 = 0;
+    if (!enumMembersResolve(env, enum_node, false, @intCast(u32, 0), true, true, &count, &fail_node, &fail_kind)) {
+        reportEnumWalkFailure(diag, env.store, env.source_file_id, fail_node, fail_kind);
+        return;
+    }
+    validateLocalEnumBackingFit(env, enum_node, diag);
+}
+
+// Task B2: register one container type (struct/enum/union/error-set) under its
+// synthesized `anon_<node_idx>` name and populate its payload, returning the
+// TypeId. Struct/union field types are resolved directly here (the module-only
+// `resolveAggregateFieldTypesAll` pass never visits function-local/inline
+// aggregates, and `populateTypePayload` leaves their fields `VOID`); enum and
+// error-set payloads have no such post-pass dependency and reuse the shared
+// registrator logic. Idempotent across passes via the name cache.
+pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind, depth: u32) type_mod.TypeId {
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    // Task B2 fix round 1: validate an inline enum BEFORE the name-cache
+    // short-circuit, so an enum first seen in a diag-less pass is still
+    // validated when a later diag-carrying pass resolves it.
+    if (kind == AstKind.enum_decl) {
+        validateLocalEnum(env, node_idx);
+    }
+    var name_id = containerAnonNameId(env, node_idx);
+    var existing = type_mod.nameCacheGet(env.typereg, @intCast(u64, name_id));
+    if (existing) |e| return e;
+    // Task B2 final fix wave: reject an aggregate with more fields than the
+    // fixed-size scratch buffers below can hold, rather than silently
+    // truncating it (which emitted a truncated C struct and miscompiled field
+    // access beyond the cap). Never registered, so a later diag-carrying pass
+    // re-checks and emits.
+    if (kind == AstKind.struct_decl or kind == AstKind.union_decl) {
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0) and containerFieldCount(env, node_idx) > MAX_CONTAINER_FIELDS) {
+            if (env.diag) |diag| {
+                var fc_msg: []const u8 = "aggregate type has more than 32 fields, which is not supported";
+                _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), fc_msg);
+            }
+            return type_mod.TYPE_UNDEFINED;
+        }
+    }
+    var type_kind: type_mod.TypeKind = switch (kind) {
+        AstKind.struct_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x20)) != 0) type_mod.TypeKind.tuple_type else type_mod.TypeKind.struct_type,
+        AstKind.enum_decl => type_mod.TypeKind.enum_type,
+        AstKind.union_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x10)) != 0) type_mod.TypeKind.packed_union_type else if ((@intCast(u16, node.flags) & 1) != 0) type_mod.TypeKind.tagged_union_type else type_mod.TypeKind.union_type,
+        AstKind.error_set_decl => type_mod.TypeKind.error_set_type,
+        else => type_mod.TypeKind.void_type,
+    };
+    var tid = type_mod.typeRegistryRegisterNamedType(env.typereg, @intCast(u32, 0), name_id, type_kind);
+    if ((kind == AstKind.struct_decl or kind == AstKind.union_decl) and (@intCast(u16, node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
+        type_mod.typeRegistrySetPacked(env.typereg, tid);
+    }
+    if (kind == AstKind.struct_decl and (@intCast(u16, node.flags) & @intCast(u16, 0x20)) != 0) {
+        // FB (D4): inline tuple type (`fn f() struct { i32, i32 }`). Elements
+        // are resolved here exactly like the struct branch below (the module
+        // pass never visits inline types).
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var tup_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            var tup_ety: [MAX_CONTAINER_FIELDS]u32 = undefined;
+            var tup_enode: [MAX_CONTAINER_FIELDS]u32 = undefined;
+            var tup_ec: usize = 0;
+            var tup_i: usize = 0;
+            while (tup_i < @intCast(usize, tup_children_n) and tup_ec < MAX_CONTAINER_FIELDS) : (tup_i += 1) {
+                var tup_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, tup_i));
+                var tup_fd = ast_mod.astStoreNodeAt(env.store, tup_child);
+                if (tup_fd.kind == AstKind.field_decl) {
+                    tup_ety[tup_ec] = resolveTypeExprFull(env, tup_fd.child_0, depth + @intCast(u32, 1));
+                    tup_enode[tup_ec] = tup_child;
+                    tup_ec += 1;
+                }
+            }
+            if (tup_ec > @intCast(usize, 0)) {
+                var tup_estart: u32 = @intCast(u32, env.typereg.xt_len);
+                var tup_j: usize = 0;
+                while (tup_j < tup_ec) : (tup_j += 1) {
+                    _ = tupleElemArrayUnsupported(env, tup_ety[tup_j], tup_enode[tup_j]);
+                    type_mod.xtAppend(env.typereg, tup_ety[tup_j]);
+                }
+                type_mod.tupAppend(env.typereg, type_mod.TuplePayload{
+                    .elems_start = @intCast(u32, tup_estart),
+                    .elems_count = @intCast(u16, tup_ec),
+                });
+                var tup_tidx: u32 = @intCast(u32, env.typereg.tup_len - @intCast(usize, 1));
+                var tup_ty = env.typereg.types_items[@intCast(usize, tid)];
+                tup_ty.payload_idx = tup_tidx;
+                env.typereg.types_items[@intCast(usize, tid)] = tup_ty;
+            }
+        }
+    } else if (kind == AstKind.struct_decl) {
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var sd_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            var sd_fty: [MAX_CONTAINER_FIELDS]u32 = undefined;
+            var sd_fnm: [MAX_CONTAINER_FIELDS]u32 = undefined;
+            var sd_fc: usize = 0;
+            var sd_i: usize = 0;
+            while (sd_i < @intCast(usize, sd_children_n) and sd_fc < MAX_CONTAINER_FIELDS) : (sd_i += 1) {
+                var sd_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, sd_i));
+                var sd_fd = ast_mod.astStoreNodeAt(env.store, sd_child);
+                if (sd_fd.kind == AstKind.field_decl) {
+                    sd_fty[sd_fc] = resolveTypeExprFull(env, sd_fd.child_0, depth + @intCast(u32, 1));
+                    sd_fnm[sd_fc] = ast_mod.astStoreNodePayload(env.store, sd_child);
+                    sd_fc += 1;
+                }
+            }
+            if (sd_fc > @intCast(usize, 0)) {
+                var sd_fstart: u32 = @intCast(u32, env.typereg.fe_len);
+                var sd_j: usize = 0;
+                while (sd_j < sd_fc) : (sd_j += 1) {
+                    type_mod.feAppend(env.typereg, type_mod.FieldEntry{
+                        .name_id = sd_fnm[sd_j],
+                        .type_id = sd_fty[sd_j],
+                        .offset = @intCast(u32, 0),
+                    });
+                }
+                type_mod.stAppend(env.typereg, type_mod.StructPayload{
+                    .fields_start = @intCast(u32, sd_fstart),
+                    .fields_count = @intCast(u16, sd_fc),
+                });
+                var sd_st_idx: u32 = @intCast(u32, env.typereg.st_len - @intCast(usize, 1));
+                var sd_ty = env.typereg.types_items[@intCast(usize, tid)];
+                sd_ty.payload_idx = sd_st_idx;
+                env.typereg.types_items[@intCast(usize, tid)] = sd_ty;
+            }
+        }
+    } else if (kind == AstKind.union_decl) {
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var un_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            if (un_children_n != 0) {
+                var un_fty: [MAX_CONTAINER_FIELDS]u32 = undefined;
+                var un_fnm: [MAX_CONTAINER_FIELDS]u32 = undefined;
+                var un_fc: usize = 0;
+
+                var un_i: usize = 0;
+                while (un_i < @intCast(usize, un_children_n) and un_fc < MAX_CONTAINER_FIELDS) : (un_i += 1) {
+                    var un_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, un_i));
+                    var un_fd = ast_mod.astStoreNodeAt(env.store, un_child);
+                    if (un_fd.kind == AstKind.field_decl) {
+                        un_fty[un_fc] = resolveTypeExprFull(env, un_fd.child_0, depth + @intCast(u32, 1));
+                        un_fnm[un_fc] = ast_mod.astStoreNodePayload(env.store, un_child);
+                        un_fc += 1;
+                    }
+                }
+                // Task B2 fix round 1: capture `fields_start` AFTER the resolve
+                // loop — resolving a nested aggregate field appends its own `fe`
+                // entries, so capturing before would point the union payload into
+                // the nested type's fields (mirrors the struct branch).
+                var un_fstart: u32 = @intCast(u32, env.typereg.fe_len);
+                var un_j: usize = 0;
+                while (un_j < un_fc) : (un_j += 1) {
+                    type_mod.feAppend(env.typereg, type_mod.FieldEntry{
+                        .name_id = un_fnm[un_j],
+                        .type_id = un_fty[un_j],
+                        .offset = @intCast(u32, 0),
+                    });
+                }
+                if ((@intCast(u16, node.flags) & 1) != 0) {
+                    type_mod.tuAppend(env.typereg, type_mod.TaggedUnionPayload{
+                        .tag_type = type_mod.TYPE_U32,
+                        .fields_start = @intCast(u32, un_fstart),
+                        .fields_count = @intCast(u16, un_fc),
+                    });
+                    var un_tu_idx: u32 = @intCast(u32, env.typereg.tu_len - @intCast(usize, 1));
+                    var un_tu_ty = env.typereg.types_items[@intCast(usize, tid)];
+                    un_tu_ty.payload_idx = un_tu_idx;
+                    env.typereg.types_items[@intCast(usize, tid)] = un_tu_ty;
+                } else {
+                    type_mod.unAppend(env.typereg, type_mod.UnionPayload{
+                        .fields_start = @intCast(u32, un_fstart),
+                        .fields_count = @intCast(u16, un_fc),
+                        .tag_type = type_mod.TYPE_VOID,
+                    });
+                    var un_un_idx: u32 = @intCast(u32, env.typereg.un_len - @intCast(usize, 1));
+                    var un_un_ty = env.typereg.types_items[@intCast(usize, tid)];
+                    un_un_ty.payload_idx = un_un_idx;
+                    env.typereg.types_items[@intCast(usize, tid)] = un_un_ty;
+                }
+            }
+        }
+    } else {
+        sym_reg.populateTypePayload(env.typereg, env.store, kind, node_idx, tid, env.symbol_reg);
+    }
+    return tid;
+}
+
+// Task 15 (S3): the same cross-module `pub` rule as
+// `semanticAnalyzerCheckMemberVisibility`, enforced in type positions
+// (`var x: mod.HiddenAlias`, `mod.Hidden{...}`) and in the const-fold
+// field-access arm of `evalConstIntFull` (array sizes via `evalConstU32Full`,
+// enum member values via `evalConstI64Full` — `[mod.Hidden]u8`,
+// `enum(u8) { A = mod.Hidden }`). Only passes with a live DiagnosticCollector
+// emit; passes with `diag = null` (lower, symbol_registrator, comptime_eval)
+// resolve already-accepted programs, so a missing collector is not an escape
+// hatch for user code. Returns false after emitting; the callers map the type
+// expression to TYPE_UNDEFINED / decline the fold.
+fn typeResolverCheckMemberVisibility(env: *TypeResolveEnv, node_idx: u32, name_id: u32, sym: *sym_mod.Symbol) bool {
+    if (sym.module_id == env.module_id) return true;
+    if (sym_mod.symbolIsPublic(sym)) return true;
+    if (env.diag) |dc| {
+        if (diag_mod.diagnosticCollectorMarkNodeOnce(dc, node_idx)) {
+            var tv1: []const u8 = "'";
+            var tv2: []const u8 = "' is not marked 'pub'";
+            var tvnm = interner_mod.stringInternerGet(env.interner, name_id);
+            var tvparts: [3][]const u8 = [3][]const u8{ tv1, tvnm, tv2 };
+            var tvmsg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &tvparts[0], @intCast(u32, 3));
+            var tvnode = ast_mod.astStoreNodeAt(env.store, node_idx);
+            var tv_di = diag_mod.diagnosticCollectorAdd(dc, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), env.source_file_id, tvnode.span_start, tvnode.span_start + @intCast(u32, tvnode.span_len), tvmsg);
+            // Task 18 fix round: Zig notes the non-pub declaration's own
+            // location (possibly in another source file — `Symbol.file_id`).
+            if (sym.decl_node != @intCast(u32, 0)) {
+                var tv_decl = ast_mod.astStoreNodeAt(env.store, sym.decl_node);
+                var tv_note: []const u8 = "declared here";
+                diag_mod.diagnosticCollectorAddRelatedSpan(dc, tv_di, sym.file_id, tv_decl.span_start, tv_decl.span_start + @intCast(u32, tv_decl.span_len), tv_note);
+            }
+        }
+    }
+    return false;
+}
+
+// Task A3-F (Amendment A3): an `array_type` node whose size child is the
+// inferred-length `_` ident. Such a type is legal ONLY as the outer annotation
+// of an array literal (`[_]T{...}` / `[N]T = [_]T{...}`); everywhere a concrete
+// type is required it must clean-reject (`error[3000] unable to infer array
+// size`, Zig 0.15.2 oracle text).
+pub fn typeResolverIsInferredLenArray(store: *AstStore, interner: *StringInterner, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var nd = ast_mod.astStoreNodeAt(store, node_idx);
+    if (nd.kind != AstKind.array_type) return false;
+    if (nd.child_1 == @intCast(u32, 0)) return false;
+    var sz = ast_mod.astStoreNodeAt(store, nd.child_1);
+    if (sz.kind != AstKind.ident_expr) return false;
+    var nm = ast_mod.astStoreIdentifier(store, nd.child_1);
+    var tx = interner_mod.stringInternerGet(interner, nm);
+    return tx.len == @intCast(usize, 1) and tx[0] == @intCast(u8, '_');
+}
+
+pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type_mod.TypeId {
+    if (depth > @intCast(u32, 16)) return type_mod.TYPE_UNDEFINED;
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    var rtd_nm: []const u8 = "RTD:n"; pal_mod.markerWriteInt(rtd_nm, node_idx); var rtd_km: []const u8 = "RTD:k"; pal_mod.markerWriteInt(rtd_km, @intCast(u32, @enumToInt(node.kind)));
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        var opm4_m: []const u8 = "OPTVOID:id"; pal_mod.markerWriteInt(opm4_m, name_id);
+        // Task B2: a function-local named type shadows module-level names inside
+        // the enclosing function body. Consulted before every module table so a
+        // local type used in a compound type expression resolves to its tid.
+        if (env.local_types) |lts| {
+            if (localTypeScopeLookup(lts, name_id)) |lt| return lt;
+        }
+        var text = interner_mod.stringInternerGet(env.interner, name_id);
+        var canonical_id = interner_mod.stringInternerIntern(env.interner, text);
+        if (env.module_id != MODULE_ID_NONE) {
+            var ck_cur: u64 = @intCast(u64, env.module_id) * @intCast(u64, 4294967296) + @intCast(u64, canonical_id);
+            var tc_cur = type_mod.nameCacheGet(env.typereg, ck_cur);
+            if (tc_cur) |t| return t;
+            var sym_cur_tid = symbolTypeIdOfModule(env, env.module_id, name_id);
+            if (sym_cur_tid != @intCast(u32, 0)) return sym_cur_tid;
+        }
+        var tid = type_mod.nameCacheGet(env.typereg, @intCast(u64, canonical_id));
+        var opnc_m: []const u8 = "OPTVOID:nc"; pal_mod.markerWriteInt(opnc_m, canonical_id);
+        if (tid) |t| return t;
+        var nf: []const u8 = "NF"; pal_mod.markerWrite(nf);
+        var mi: usize = 0;
+        while (mi < @intCast(usize, env.symbol_reg.tables_len)) : (mi += 1) {
+            var ck: u64 = @intCast(u64, mi) * @intCast(u64, 4294967296) + @intCast(u64, canonical_id);
+            var tc = type_mod.nameCacheGet(env.typereg, ck);
+            if (tc) |t| return t;
+        }
+        var n2: []const u8 = "N2"; pal_mod.markerWrite(n2);
+        var all_tid = symbolLookupTypeAllModules(env, name_id);
+        if (all_tid != @intCast(u32, 0)) {
+            var ops_m: []const u8 = "OPTVOID:ids"; pal_mod.markerWriteInt(ops_m, all_tid);
+            return all_tid;
+        }
+        var opm4f_m: []const u8 = "OPTVOID:idF"; pal_mod.markerWriteInt(opm4f_m, name_id);
+        var arbu: bool = false;
+        var arbw = type_mod.parseArbIntWidth(text, &arbu);
+        if (arbw != @intCast(u32, 0)) {
+            return type_mod.typeRegistryGetOrCreateArbInt(env.typereg, text);
+        }
+        return type_mod.TYPE_UNDEFINED;
+    }
+    if (node.kind == AstKind.struct_decl or node.kind == AstKind.enum_decl or node.kind == AstKind.union_decl) {
+        return registerContainerType(env, node_idx, node.kind, depth);
+    }
+    if (node.kind == AstKind.field_access) {
+        var fah_matched: u8 = @intCast(u8, 0);
+        var base_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+        if (base_type == type_mod.TYPE_UNDEFINED) {
+            var base_node = ast_mod.astStoreNodeAt(env.store, node.child_0);
+            if (base_node.kind == AstKind.ident_expr) {
+                var base_name_id = ast_mod.astStoreIdentifier(env.store, node.child_0);
+                var smi: usize = 0;
+                while (smi < @intCast(usize, env.symbol_reg.tables_len)) : (smi += 1) {
+                    var base_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, smi), base_name_id);
+                    if (base_sym) |bs| {
+                        if (bs.kind == sym_mod.SymbolKind.module) {
+                            var mod_id = bs.module_id;
+                            var payload_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, ast_mod.astStoreNodePayload(env.store, node_idx));
+                            if (payload_sym) |ps| {
+                                if (!typeResolverCheckMemberVisibility(env, node_idx, ast_mod.astStoreNodePayload(env.store, node_idx), ps)) return type_mod.TYPE_UNDEFINED;
+                                if (ps.type_id != @intCast(u32, 0)) {
+                                    fah_matched = @intCast(u8, 1);
+                                    var fam: []const u8 = "FAH:r"; pal_mod.markerWriteInt(fam, ps.type_id);
+                                    return ps.type_id;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            var fam_m: []const u8 = "FAH:m"; pal_mod.markerWriteInt(fam_m, node.child_0);
+            return type_mod.TYPE_UNDEFINED;
+        }
+        var base_ty = env.typereg.types_items[@intCast(usize, base_type)];
+        if (base_ty.kind == type_mod.TypeKind.module_type) {
+            var mod_id = base_ty.module_id;
+            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, ast_mod.astStoreNodePayload(env.store, node_idx));
+            if (sym) |s| {
+                if (!typeResolverCheckMemberVisibility(env, node_idx, ast_mod.astStoreNodePayload(env.store, node_idx), s)) return type_mod.TYPE_UNDEFINED;
+                if (s.type_id != @intCast(u32, 0)) {
+                    fah_matched = @intCast(u8, 1);
+                    var fam: []const u8 = "FAH:r"; pal_mod.markerWriteInt(fam, s.type_id);
+                    return s.type_id;
+                }
+            }
+        }
+        if (fah_matched == @intCast(u8, 0)) {
+            var fnm: []const u8 = "FAH:N"; pal_mod.markerWriteInt(fnm, node_idx);
+        }
+    }
+    if (node.kind == AstKind.error_set_decl) {
+        var esd_start_box: [1]u32 = [1]u32{ @intCast(u32, env.typereg.xn_len) };
+        var esd_count_box: [1]u16 = [1]u16{ @intCast(u16, 0) };
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var esd_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            esd_count_box[0] = @intCast(u16, esd_children_n);
+            var esd_i: usize = 0;
+            while (esd_i < @intCast(usize, esd_children_n)) : (esd_i += 1) {
+                type_mod.xnAppend(env.typereg, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, esd_i)));
+            }
+        }
+        return type_mod.typeRegistryGetOrCreateErrorSet(env.typereg, esd_start_box[0], esd_count_box[0]);
+    }
+    if (node.kind == AstKind.error_union_type) {
+        var eu_payload_type = resolveTypeExprFull(env, node.child_1, depth + @intCast(u32, 1));
+        if (eu_payload_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+        var eu_es_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
+        if (node.child_0 != 0) {
+            var eu_resolved_es = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+            if (eu_resolved_es == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+            eu_es_box[0] = eu_resolved_es;
+        } else {
+            eu_es_box[0] = @intCast(u32, 0);
+        }
+        return type_mod.typeRegistryGetOrCreateErrorUnion(env.typereg, eu_payload_type, eu_es_box[0]);
+    }
+    if (node.kind == AstKind.fn_type) {
+        var fnt_ret_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
+        fnt_ret_box[0] = type_mod.TYPE_VOID;
+        if (node.child_0 != 0) {
+            fnt_ret_box[0] = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+            var opm2_m: []const u8 = "OPTVOID:fntR"; pal_mod.markerWriteInt(opm2_m, fnt_ret_box[0]);
+            if (fnt_ret_box[0] == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+        }
+        var fnt_ptypes: [16]u32 = undefined;
+        var fnt_pc: usize = @intCast(usize, 0);
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var fnt_extra_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            var fnt_i: usize = @intCast(usize, 0);
+            while (fnt_i < @intCast(usize, fnt_extra_n) and fnt_pc < @intCast(usize, 16)) : (fnt_i += @intCast(usize, 1)) {
+                var fnt_pt = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, fnt_i)), depth + @intCast(u32, 1));
+                if (fnt_pt == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+                fnt_ptypes[fnt_pc] = fnt_pt;
+                fnt_pc += @intCast(usize, 1);
+            }
+        }
+        var fnt_conv: u8 = @intCast(u8, 0);
+        if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) fnt_conv = @intCast(u8, 1);
+        var fnt_nb: [96]u8 = undefined;
+        var fnt_np: usize = @intCast(usize, 0);
+        var fnt_pre: []const u8 = "fnt_";
+        if (fnt_conv == @intCast(u8, 1)) fnt_pre = "fnts_";
+        var fnt_pri: usize = @intCast(usize, 0);
+        while (fnt_pri < fnt_pre.len and fnt_np < @intCast(usize, 95)) : (fnt_pri += @intCast(usize, 1)) {
+            fnt_nb[fnt_np] = fnt_pre[fnt_pri];
+            fnt_np += @intCast(usize, 1);
+        }
+        var fnt_rb: [12]u8 = undefined;
+        var fnt_rl = itoa_mod.itoa(fnt_ret_box[0], fnt_rb[0..]);
+        var fnt_rs: usize = @intCast(usize, 11) - @intCast(usize, fnt_rl);
+        while (fnt_rs < @intCast(usize, 11) and fnt_np < @intCast(usize, 95)) : (fnt_rs += @intCast(usize, 1)) {
+            fnt_nb[fnt_np] = fnt_rb[fnt_rs];
+            fnt_np += @intCast(usize, 1);
+        }
+        var fnt_k: usize = @intCast(usize, 0);
+        while (fnt_k < fnt_pc and fnt_np < @intCast(usize, 95)) : (fnt_k += @intCast(usize, 1)) {
+            if (fnt_np < @intCast(usize, 95)) {
+                fnt_nb[fnt_np] = @intCast(u8, 95);
+                fnt_np += @intCast(usize, 1);
+            }
+            var fnt_pb: [12]u8 = undefined;
+            var fnt_pl = itoa_mod.itoa(fnt_ptypes[fnt_k], fnt_pb[0..]);
+            var fnt_ps: usize = @intCast(usize, 11) - @intCast(usize, fnt_pl);
+            while (fnt_ps < @intCast(usize, 11) and fnt_np < @intCast(usize, 95)) : (fnt_ps += @intCast(usize, 1)) {
+                fnt_nb[fnt_np] = fnt_pb[fnt_ps];
+                fnt_np += @intCast(usize, 1);
+            }
+        }
+        var fnt_name_id = interner_mod.stringInternerIntern(env.interner, fnt_nb[0..fnt_np]);
+        var fnt_pstart: u32 = @intCast(u32, env.typereg.xt_len);
+        var fnt_a: usize = @intCast(usize, 0);
+        while (fnt_a < fnt_pc) : (fnt_a += @intCast(usize, 1)) {
+            type_mod.xtAppend(env.typereg, fnt_ptypes[fnt_a]);
+        }
+        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), @intCast(u32, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0], fnt_conv);
+        var opm3_m: []const u8 = "OPTVOID:fntT"; pal_mod.markerWriteInt(opm3_m, fnt_tid);
+        type_mod.typeRegistryMarkFnPtrUsed(env.typereg, fnt_tid);
+        return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);
+    }
+    // T4.1 F1 root fix: never walk a fixed child slot as a node unless
+    // `nodeChildIsNode` says it holds one (ast.zig — "a name id walked as a
+    // node index is fatal"). `builtin_call.child_0` is the builtin's interned
+    // NAME ID (ast.zig:386/:976); the old unguarded recursion consumed that id
+    // as a node index, so the compile aliased whatever node sat at the id's
+    // index — interner ids are insertion-ordered, so any extra early intern
+    // shifted the alias and flipped `stdlib_crypto_modpow_xmod` OK→GREEN
+    // (measured: `@intCast` id 84 aliased an innocent node, id 85 aliased the
+    // entry file's `[_]u8` array_type → error[3000] "unable to infer array
+    // size"; see task-4.1-report.md §Investigate).
+    if (node.child_0 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) {
+        // Task A3-F: an aggregate literal's own `[_]T` annotation is not a
+        // concrete type; do not recurse into it as if the init node were a type.
+        if ((node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) and typeResolverIsInferredLenArray(env.store, env.interner, node.child_0)) {
+            return type_mod.TYPE_UNDEFINED;
+        }
+        var child_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
+        if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
+        if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type) {
+            var ptm: []const u8 = "PTR:i"; pal_mod.markerWrite(ptm); markerU32(node_idx);
+            var ptkm: []const u8 = "k"; pal_mod.markerWrite(ptkm); markerU32(@intCast(u32, @enumToInt(node.kind)));
+            var ptcm: []const u8 = "c"; pal_mod.markerWrite(ptcm); markerU32(child_type);
+            var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+            var is_volatile: bool = (node.flags & @intCast(u8, 2)) != @intCast(u8, 0);
+            if (node.kind == AstKind.ptr_type) {
+                var ptr_tid = type_mod.typeRegistryGetOrCreatePtrQ(env.typereg, child_type, is_const, is_volatile);
+                var ppm: []const u8 = "P"; pal_mod.markerWrite(ppm); markerU32(ptr_tid);
+                var pnl: []const u8 = "\n"; pal_mod.markerWrite(pnl);
+                return ptr_tid;
+            } else {
+                var ptr_tid2 = type_mod.typeRegistryGetOrCreateManyPtrQ(env.typereg, child_type, is_const, is_volatile);
+                var ppm2: []const u8 = "M"; pal_mod.markerWrite(ppm2); markerU32(ptr_tid2);
+                var pnl2: []const u8 = "\n"; pal_mod.markerWrite(pnl2);
+                return ptr_tid2;
+            }
+        }
+        if (node.kind == AstKind.slice_type) {
+            var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+            var sl_tid = type_mod.typeRegistryGetOrCreateSlice(env.typereg, child_type, is_const);
+            var sm: []const u8 = "SL:e"; pal_mod.markerWrite(sm); markerU32(child_type);
+            var s2: []const u8 = "s"; pal_mod.markerWrite(s2); markerU32(sl_tid);
+            var s3: []const u8 = "\n"; pal_mod.markerWrite(s3);
+            return sl_tid;
+        }
+        if (node.kind == AstKind.optional_type) {
+            var optvd_m: []const u8 = "OPTVOID:opt"; pal_mod.markerWriteInt(optvd_m, child_type);
+            var optvd_tid = type_mod.typeRegistryGetOrCreateOptional(env.typereg, child_type);
+            var optvd_rm: []const u8 = "OPTVOID:optR"; pal_mod.markerWriteInt(optvd_rm, optvd_tid);
+            return optvd_tid;
+        }
+        if (node.kind == AstKind.array_type) {
+            var t0m: []const u8 = "T0"; pal_mod.markerWrite(t0m);
+            var t1m: []const u8 = "T1e"; pal_mod.markerWrite(t1m); markerU32(child_type);
+            if (node.child_1 != 0) {
+                var sz_node = ast_mod.astStoreNodeAt(env.store, node.child_1);
+                var arr_len: u32 = @intCast(u32, 0);
+                var arr_resolved: bool = false;
+                // Task 4 (Task 1 §6.5/§9.3): the size fold is exact for
+                // 0..0xFFFFFFFE; 0xFFFFFFFF is the unfoldable sentinel. The
+                // former inline u32-wrapping add/sub/mul arms are gone, so
+                // `[0 - 1]u8` is rejected via error[3050] (Zig: type 'usize'
+                // cannot represent integer value '-1').
+                var alf = evalConstU32Full(env, node.child_1, @intCast(u32, 0));
+                if (alf != @intCast(u32, 0xFFFFFFFF)) {
+                    arr_len = alf;
+                    arr_resolved = true;
+                }
+                var t2m: []const u8 = "T2L"; pal_mod.markerWrite(t2m); markerU32(arr_len);
+                if (arr_resolved) {
+                    var at = type_mod.typeRegistryGetOrCreateArray(env.typereg, child_type, arr_len);
+                    var t3m: []const u8 = "T3a"; pal_mod.markerWrite(t3m); markerU32(at);
+                    if (at != type_mod.TYPE_UNDEFINED) { var am: []const u8 = "A"; pal_mod.markerWrite(am); }
+                    else { var am: []const u8 = "a"; pal_mod.markerWrite(am); }
+                    return at;
+                }
+                // Task 2c-F / Task A3-F: the size expression could not be
+                // const-folded. Emit a hard error (deduped per node) instead of
+                // silently returning TYPE_UNDEFINED and letting invalid C be
+                // emitted downstream. The inferred-length `_` reaching this arm
+                // means the type was used where a concrete type is required
+                // (the allowed literal/initializer annotation sites are guarded
+                // before recursion), so reject it exactly as Zig 0.15.2 does.
+                var sz_is_inferred: bool = false;
+                if (sz_node.kind == AstKind.ident_expr) {
+                    var sz_name = ast_mod.astStoreIdentifier(env.store, node.child_1);
+                    var sz_text = interner_mod.stringInternerGet(env.interner, sz_name);
+                    if (sz_text.len == @intCast(usize, 1) and sz_text[0] == @intCast(u8, '_')) { sz_is_inferred = true; }
+                }
+                if (sz_is_inferred) {
+                    if (env.diag) |dg| {
+                        if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                            var ail_msg: []const u8 = "unable to infer array size";
+                            _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                @intCast(u16, 3000),
+                                env.source_file_id, sz_node.span_start,
+                                sz_node.span_start + @intCast(u32, sz_node.span_len), ail_msg);
+                        }
+                    }
+                } else {
+                    if (env.diag) |dg| {
+                        if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                            var asn_msg: []const u8 = "array size is not a constant expression";
+                            _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3050_ARRAY_SIZE_NOT_CONSTANT)),
+                                env.source_file_id, sz_node.span_start,
+                                sz_node.span_start + @intCast(u32, sz_node.span_len), asn_msg);
+                        }
+                    }
+                }
+            }
+            return type_mod.TYPE_UNDEFINED;
+        }
+    }
+    var und_nm2: []const u8 = "UND:n"; pal_mod.markerWriteInt(und_nm2, node_idx);
+    var und_km: []const u8 = "UND:k"; pal_mod.markerWriteInt(und_km, @intCast(u32, @enumToInt(node.kind)));
+    return type_mod.TYPE_UNDEFINED;
+}
+
+pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_idx: u32) void {
+    env.module_id = mod_id;
+    var decl = ast_mod.astStoreNodeAt(env.store, decl_idx);
+    var init = ast_mod.astStoreNodeAt(env.store, decl.child_1);
+    var spid = type_mod.nameCacheGet(env.typereg, (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, ast_mod.astStoreNodePayload(env.store, decl_idx)));
+    if (spid) |stid| {
+        var sty = env.typereg.types_items[@intCast(usize, stid)];
+        var fchildren_n = ast_mod.astStoreNodeExtraChildCount(env.store, decl.child_1);
+        var fi2: usize = 0;
+        if (sty.kind == type_mod.TypeKind.struct_type) {
+            var sp = env.typereg.st_items[@intCast(usize, sty.payload_idx)];
+            while (fi2 < @intCast(usize, sp.fields_count)) : (fi2 += 1) {
+                var fchild = ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2));
+                var fd = ast_mod.astStoreNodeAt(env.store, fchild);
+                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                    var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
+                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn); markerU32(ast_mod.astStoreNodePayload(env.store, fchild));
+                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn); markerU32(ft);
+                    if (ft != type_mod.TYPE_UNDEFINED) {
+                        env.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
+                        var fsw_nm: []const u8 = "FSW:n"; pal_mod.markerWriteInt(fsw_nm, @intCast(u32, @intCast(usize, sp.fields_start) + fi2));
+                        var fsw_tm: []const u8 = "FSW:t"; pal_mod.markerWriteInt(fsw_tm, ft);
+                    }
+                }
+            }
+        } else if (sty.kind == type_mod.TypeKind.tuple_type) {
+            // FB (D4): fill the tuple's `xt_items` slots in declaration order.
+            var tp_t = env.typereg.tup_items[@intCast(usize, sty.payload_idx)];
+            while (fi2 < @intCast(usize, tp_t.elems_count)) : (fi2 += 1) {
+                var tfchild = ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2));
+                var tfd = ast_mod.astStoreNodeAt(env.store, tfchild);
+                if (tfd.kind == AstKind.field_decl and tfd.child_0 != 0) {
+                    var tft = resolveTypeExprFull(env, tfd.child_0, @intCast(u32, 0));
+                    if (tft != type_mod.TYPE_UNDEFINED) {
+                        _ = tupleElemArrayUnsupported(env, tft, tfchild);
+                        env.typereg.xt_items[@intCast(usize, tp_t.elems_start) + fi2] = tft;
+                    }
+                }
+            }
+        } else if (sty.kind == type_mod.TypeKind.tagged_union_type) {
+            var tp = env.typereg.tu_items[@intCast(usize, sty.payload_idx)];
+            var tui_fsm: []const u8 = "TUI:fs"; pal_mod.markerWriteInt(tui_fsm, @intCast(u32, tp.fields_start));
+            var tui_fcm: []const u8 = "TUI:fc"; pal_mod.markerWriteInt(tui_fcm, @intCast(u32, tp.fields_count));
+            while (fi2 < @intCast(usize, tp.fields_count)) : (fi2 += 1) {
+                var fd = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2)));
+                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                    var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
+                    var dft_nm: []const u8 = "DFT:n"; pal_mod.markerWriteInt(dft_nm, @intCast(u32, fi2));
+                    var dft_tm: []const u8 = "DFT:t"; pal_mod.markerWriteInt(dft_tm, ft);
+                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn); markerU32(ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2))));
+                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn); markerU32(ft);
+                    var dtwr_m: []const u8 = "DTWR\n"; pal_mod.markerWrite(dtwr_m);
+                    if (ft != type_mod.TYPE_UNDEFINED) {
+                        env.typereg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id = ft;
+                        var ftw_nm: []const u8 = "FTW:n"; pal_mod.markerWriteInt(ftw_nm, @intCast(u32, @intCast(usize, tp.fields_start) + fi2));
+                        var ftw_tm: []const u8 = "FTW:t"; pal_mod.markerWriteInt(ftw_tm, ft);
+                    } else {
+                        var dtsk_m: []const u8 = "DTSK\n"; pal_mod.markerWrite(dtsk_m);
+                    }
+                }
+            }
+        } else if (sty.kind == type_mod.TypeKind.union_type or sty.kind == type_mod.TypeKind.packed_union_type) {
+            var up = env.typereg.un_items[@intCast(usize, sty.payload_idx)];
+            while (fi2 < @intCast(usize, up.fields_count)) : (fi2 += 1) {
+                var fd = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2)));
+                if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
+                    var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
+                    if (ft != type_mod.TYPE_UNDEFINED) {
+                        env.typereg.fe_items[@intCast(usize, up.fields_start) + fi2].type_id = ft;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn varDeclInitNeedsNameCache(init_kind: AstKind) bool {
+    if (init_kind == AstKind.struct_decl) return false;
+    if (init_kind == AstKind.union_decl) return false;
+    if (init_kind == AstKind.enum_decl) return false;
+    if (init_kind == AstKind.error_set_decl) return false;
+    if (init_kind == AstKind.ident_expr) return false;
+    if (init_kind == AstKind.import_expr) return false;
+    if (init_kind == AstKind.fn_decl) return false;
+    return true;
+}
+
+
+fn resolveNamedTypeExpressions(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry) void {
+    var ci: usize = 0;
+    while (ci < mods.len) : (ci += 1) {
+        var cr = mods[ci].ast_root;
+        if (cr == @intCast(u32, 0)) continue;
+        env.module_id = mods[ci].id;
+        env.source_file_id = mods[ci].source_file_id;
+        var crn = ast_mod.astStoreNodeAt(env.store, cr);
+        var cd_n = ast_mod.astStoreNodeExtraChildCount(env.store, cr);
+        var cdi: usize = 0;
+        while (cdi < @intCast(usize, cd_n)) : (cdi += 1) {
+            var cd_i = ast_mod.astStoreNodeExtraChildAt(env.store, cr, @intCast(u32, cdi));
+            var cdcl = ast_mod.astStoreNodeAt(env.store, cd_i);
+            if (cdcl.kind == AstKind.var_decl and cdcl.child_1 != @intCast(u32, 0)) {
+                var cdinit = ast_mod.astStoreNodeAt(env.store, cdcl.child_1);
+                if (varDeclInitNeedsNameCache(cdinit.kind)) {
+                    var cdtype = resolveTypeExprFull(env, cdcl.child_1, @intCast(u32, 0));
+                    if (cdtype != type_mod.TYPE_UNDEFINED) {
+                        var ck: u64 = @intCast(u64, mods[ci].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(env.store, cd_i));
+                        type_mod.nameCachePut(env.typereg, ck, cdtype);
+                        var cdsym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[ci].id, ast_mod.astStoreNodePayload(env.store, cd_i));
+                        if (cdsym) |sp| { sp.type_id = cdtype; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn resolveImportFieldAlias(env: *TypeResolveEnv, module_reg: *mr_mod.ModuleRegistry,
+    importer_mod_id: u32, target_mod_id: u32, field_name_id: u32, depth: u32) u32 {
+    if (depth > @intCast(u32, 8)) return type_mod.TYPE_UNDEFINED;
+    var fs = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, target_mod_id, field_name_id);
+    if (fs) |fss| {
+        if (fss.type_id != @intCast(u32, 0)) return fss.type_id;
+        var fd = ast_mod.astStoreNodeAt(env.store, fss.decl_node);
+        if (fd.kind != AstKind.var_decl) return type_mod.TYPE_UNDEFINED;
+        var fi = ast_mod.astStoreNodeAt(env.store, fd.child_1);
+        if (fi.kind != AstKind.field_access) return type_mod.TYPE_UNDEFINED;
+        var fb = ast_mod.astStoreNodeAt(env.store, fi.child_0);
+        if (fb.kind != AstKind.import_expr) return type_mod.TYPE_UNDEFINED;
+        var t2 = mr_mod.moduleRegistryPathToIdGet(module_reg, ast_mod.astStoreNodePayload(env.store, fi.child_0));
+        if (t2) |m2| return resolveImportFieldAlias(env, module_reg, importer_mod_id, m2, ast_mod.astStoreNodePayload(env.store, fd.child_1), depth + @intCast(u32, 1));
+    }
+    return type_mod.TYPE_UNDEFINED;
+}
+
+fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, module_reg: *mr_mod.ModuleRegistry) void {
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var root = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        var rnode = ast_mod.astStoreNodeAt(env.store, root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(env.store, root);
+        var di: usize = 0;
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(env.store, root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(env.store, decl_idx);
+            if (decl.kind != AstKind.var_decl) { continue; }
+            if (decl.child_1 == @intCast(u32, 0)) { continue; }
+            var init = ast_mod.astStoreNodeAt(env.store, decl.child_1);
+            if (init.kind != AstKind.field_access) { continue; }
+            var base = ast_mod.astStoreNodeAt(env.store, init.child_0);
+            if (base.kind != AstKind.import_expr) { continue; }
+            var target = mr_mod.moduleRegistryPathToIdGet(module_reg, ast_mod.astStoreNodePayload(env.store, init.child_0));
+            if (target) |mtid| {
+                var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, ast_mod.astStoreNodePayload(env.store, decl.child_1), @intCast(u32, 0));
+                if (resolved != type_mod.TYPE_UNDEFINED) {
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(env.store, decl_idx));
+                    if (sym) |sp| {
+                        sp.type_id = resolved;
+                    }
+                    var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(env.store, decl_idx));
+                    type_mod.nameCachePut(env.typereg, ck, resolved);
+                }
+            }
+
+        }
+    }
+}
+
+fn resolveAggregateFieldTypesAll(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry) void {
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var root = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        env.source_file_id = mods[mi].source_file_id;
+        var rnode = ast_mod.astStoreNodeAt(env.store, root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(env.store, root);
+        var di: usize = 0;
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(env.store, root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(env.store, decl_idx);
+            if (decl.kind == AstKind.var_decl and decl.child_1 != 0) {
+                var init = ast_mod.astStoreNodeAt(env.store, decl.child_1);
+                if (init.kind == AstKind.struct_decl or init.kind == AstKind.union_decl) {
+                    resolveDeclAggregateFieldTypes(env, mods[mi].id, decl_idx);
+                }
+            }
+        }
+    }
+}
+
+// FX13-F: an unresolvable name in a function-signature type position used to
+// degrade silently (parameter -> C `int`, return -> `void`). Walk the
+// already-unresolved type expression to its unresolved leaves and emit the
+// variable-declaration path's level-0 `error[20]` (`ERR_3001`, exact text
+// "identifier '<x>' is not declared or imported in this module") once per
+// leaf node (`diagnosticCollectorMarkNodeOnce`). `noreturn` is the one
+// operator-ruled residual: no registry name exists and 546 rc0 programs rely
+// on the degradation, so key the exemption on the ident text at the
+// unresolved leaf and never register it (FX13-I §4 option A). Wrapper /
+// fn-pointer / error-union / `mod.member` leaves are all walked; error-set
+// member names, container-literal field types and non-module field bases are
+// deliberately out of scope (FX13-I §7). Depth-capped like
+// `resolveTypeExprFull` so the walk cannot recurse past the resolver's bound.
+// D3-4: the shared ERR_3001 "identifier '<x>' is not declared or imported"
+// report used by both the ident and module-member unresolved leaves.
+fn reportUndefinedSymbol(diag: *DiagnosticCollector, interner: *StringInterner, source_file_id: u32, span_start: u32, span_len: u32, name_id: u32) void {
+    var ui1: []const u8 = "identifier '";
+    var ui2: []const u8 = "' is not declared or imported in this module";
+    var uitext = interner_mod.stringInternerGet(interner, name_id);
+    var uiparts: [3][]const u8 = [3][]const u8{ ui1, uitext, ui2 };
+    var uimsg = diag_mod.diagnosticBuilderMakeMsg(interner, &uiparts[0], @intCast(u32, 3));
+    _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), source_file_id, span_start, span_start + span_len, uimsg);
+}
+
+pub fn typeResolverDiagnoseSignatureType(env: *TypeResolveEnv, node_idx: u32, depth: u32) void {
+    if (node_idx == @intCast(u32, 0)) return;
+    if (depth > @intCast(u32, 16)) return;
+    var diag = env.diag orelse return;
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.ident_expr) {
+        if (resolveTypeExprFull(env, node_idx, @intCast(u32, 0)) != type_mod.TYPE_UNDEFINED) return;
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        var nr_text: []const u8 = "noreturn";
+        var nr_id = interner_mod.stringInternerIntern(env.interner, nr_text);
+        if (name_id == nr_id) return;
+        // A1-F: the `anytype` marker is emitted as an `ident_expr` sentinel by
+        // the parser (S1) so the analyzer's ERR_2012 check can fire. Exempt it
+        // from this unknown-name walk exactly like `noreturn` so the reject is
+        // reported once as `error[16]` and not as a competing `error[20]`.
+        var at_text: []const u8 = "anytype";
+        var at_id = interner_mod.stringInternerIntern(env.interner, at_text);
+        if (name_id == at_id) return;
+        if (!diag_mod.diagnosticCollectorMarkNodeOnce(diag, node_idx)) return;
+        reportUndefinedSymbol(diag, env.interner, env.source_file_id, node.span_start, @intCast(u32, node.span_len), name_id);
+        return;
+    }
+    if (node.kind == AstKind.field_access) {
+        var fd_base = node.child_0;
+        var fd_bt = resolveTypeExprFull(env, fd_base, @intCast(u32, 0));
+        var fd_is_mod: bool = false;
+        var fd_mod_id: u32 = @intCast(u32, 0);
+        if (fd_bt != type_mod.TYPE_UNDEFINED) {
+            if (@intCast(usize, fd_bt) < env.typereg.types_len) {
+                var fd_ty = env.typereg.types_items[@intCast(usize, fd_bt)];
+                if (fd_ty.kind == type_mod.TypeKind.module_type) {
+                    fd_is_mod = true;
+                    fd_mod_id = fd_ty.module_id;
+                }
+            }
+        } else {
+            // Mirror `resolveTypeExprFull`'s fallback: a module-alias ident
+            // whose module TypeId is not cached still names a module.
+            var fd_bn = ast_mod.astStoreNodeAt(env.store, fd_base);
+            if (fd_bn.kind == AstKind.ident_expr) {
+                var fd_bname = ast_mod.astStoreIdentifier(env.store, fd_base);
+                var fd_mi: usize = 0;
+                while (fd_mi < @intCast(usize, env.symbol_reg.tables_len)) : (fd_mi += 1) {
+                    var fd_bs = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, fd_mi), fd_bname);
+                    if (fd_bs) |fb| {
+                        if (fb.kind == sym_mod.SymbolKind.module) {
+                            fd_is_mod = true;
+                            fd_mod_id = fb.module_id;
+                        }
+                    }
+                }
+            }
+        }
+        if (fd_is_mod) {
+            var fd_member = ast_mod.astStoreNodePayload(env.store, node_idx);
+            var fd_ms = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fd_mod_id, fd_member);
+            if (fd_ms == null) {
+                if (diag_mod.diagnosticCollectorMarkNodeOnce(diag, node_idx)) {
+                    reportUndefinedSymbol(diag, env.interner, env.source_file_id, node.span_start, @intCast(u32, node.span_len), fd_member);
+                }
+            }
+            return;
+        }
+        if (fd_bt == type_mod.TYPE_UNDEFINED) {
+            typeResolverDiagnoseSignatureType(env, fd_base, depth + @intCast(u32, 1));
+        }
+        return;
+    }
+    if (node.kind == AstKind.error_union_type) {
+        if (node.child_0 != 0) { typeResolverDiagnoseSignatureType(env, node.child_0, depth + @intCast(u32, 1)); }
+        if (node.child_1 != 0) { typeResolverDiagnoseSignatureType(env, node.child_1, depth + @intCast(u32, 1)); }
+        return;
+    }
+    if (node.kind == AstKind.fn_type) {
+        if (node.child_0 != 0) { typeResolverDiagnoseSignatureType(env, node.child_0, depth + @intCast(u32, 1)); }
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var ft_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            var ft_i: usize = 0;
+            while (ft_i < @intCast(usize, ft_n)) : (ft_i += 1) {
+                var ft_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, ft_i));
+                if (ft_child != 0) { typeResolverDiagnoseSignatureType(env, ft_child, depth + @intCast(u32, 1)); }
+            }
+        }
+        return;
+    }
+    if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type or
+        node.kind == AstKind.slice_type or node.kind == AstKind.optional_type or
+        node.kind == AstKind.array_type) {
+        if (node.child_0 != 0) { typeResolverDiagnoseSignatureType(env, node.child_0, depth + @intCast(u32, 1)); }
+        return;
+    }
+}
+
+fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolved_types: *rtt_mod.ResolvedTypeTable) void {
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var root = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        env.module_id = mods[mi].id;
+        env.source_file_id = mods[mi].source_file_id;
+        var rnode = ast_mod.astStoreNodeAt(env.store, root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(env.store, root);
+        var di: usize = 0;
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(env.store, root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(env.store, decl_idx);
+            if (decl.kind == AstKind.fn_decl) {
+                var proto = env.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, decl_idx))];
+                {
+                    var sym_check = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, proto.name_id);
+                    if (sym_check) |sc| {
+                        if (sc.type_id != @intCast(u32, 0)) continue;
+                    }
+                }
+                var rt_box: [1]u32 = [1]u32{type_mod.TYPE_VOID};
+                if (proto.return_type_node != 0) {
+                    var rtype = resolveTypeExprFull(env, proto.return_type_node, @intCast(u32, 0));
+                    if (rtype != type_mod.TYPE_UNDEFINED) {
+                        rt_box[0] = rtype;
+                        rtt_mod.resolvedTypeTableSet(resolved_types, proto.return_type_node, rtype);
+                    } else {
+                        typeResolverDiagnoseSignatureType(env, proto.return_type_node, @intCast(u32, 0));
+                    }
+                }
+                var is_ext: u8 = @intCast(u8, 0);
+                if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
+                var is_variadic: u8 = @intCast(u8, 0);
+                if ((decl.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { is_variadic = @intCast(u8, 1); }
+                var ptypes_buf: [MAX_FN_PARAMS]u32 = undefined;
+                var ptypes_n: usize = @intCast(usize, 0);
+                // Loud guard: never silently truncate a function's parameter
+                // list. `typeRegistryGetOrCreateFn` below still receives the
+                // true `proto.params_count`, so a truncated buffer would build a
+                // wrong function type.
+                if (@intCast(usize, proto.params_count) > MAX_FN_PARAMS) {
+                    @panic("async/type_resolver: function parameter count exceeds MAX_FN_PARAMS (64)");
+                }
+                if (proto.params_count > @intCast(u16, 0)) {
+                    var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
+                    var pnodes_n = ast_mod.astStoreGetExtraChildCount(env.store, p_payload);
+                    var pi: usize = 0;
+                    while (pi < @intCast(usize, pnodes_n)) : (pi += 1) {
+                        var pnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreGetExtraChildAt(env.store, p_payload, @intCast(u32, pi)));
+                        if (pnode.child_0 != 0) {
+                            var ptype = resolveTypeExprFull(env, pnode.child_0, @intCast(u32, 0));
+                            // Belt-and-braces: unreachable given the pre-loop
+                            // guard, but an overflow here would still yield a
+                            // wrong function type, so fail loud.
+                            if (ptypes_n >= MAX_FN_PARAMS) {
+                                @panic("async/type_resolver: function parameter count exceeds MAX_FN_PARAMS (64)");
+                            }
+                            ptypes_buf[ptypes_n] = ptype;
+                            ptypes_n += @intCast(usize, 1);
+                            if (ptype != type_mod.TYPE_UNDEFINED) {
+                                rtt_mod.resolvedTypeTableSet(resolved_types, pnode.child_0, ptype);
+                            } else {
+                                typeResolverDiagnoseSignatureType(env, pnode.child_0, @intCast(u32, 0));
+                            }
+                        }
+                    }
+                }
+                var fn_start: u32 = @intCast(u32, env.typereg.xt_len);
+                var pf: usize = @intCast(usize, 0);
+                while (pf < ptypes_n) : (pf += 1) {
+                    type_mod.xtAppend(env.typereg, ptypes_buf[pf]);
+                }
+                var tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, proto.name_id, mods[mi].id, is_ext, is_variadic, fn_start, proto.params_count, rt_box[0], proto.call_conv);
+                rtt_mod.resolvedTypeTableSet(resolved_types, decl_idx, tid);
+                var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, proto.name_id);
+                if (sym) |sp| {
+                    sp.type_id = tid;
+                }
+            } else if (decl.kind == AstKind.var_decl and decl.child_0 != 0) {
+                var vtype = resolveTypeExprFull(env, decl.child_0, @intCast(u32, 0));
+                if (vtype != type_mod.TYPE_UNDEFINED) {
+                    rtt_mod.resolvedTypeTableSet(resolved_types, decl.child_0, vtype);
+                    rtt_mod.resolvedTypeTableSet(resolved_types, decl_idx, vtype);
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(env.store, decl_idx));
+                    if (sym) |sp| {
+                        sp.type_id = vtype;
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn typeResolverResolveNames(
+    store: *AstStore,
+    typereg: *TypeRegistry,
+    symbol_reg: *SymbolRegistry,
+    interner: *StringInterner,
+    resolved_types: *rtt_mod.ResolvedTypeTable,
+    module_reg: *mr_mod.ModuleRegistry,
+    diag: *DiagnosticCollector,
+    perm_alloc: *Sand
+) void {
+    var mods = mr_mod.moduleRegistryGetModules(module_reg);
+    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner, .module_id = MODULE_ID_NONE, .source_file_id = @intCast(u32, 0), .diag = diag, .local_consts = null, .local_types = null };
+    _ = perm_alloc;
+    resolveNamedTypeExpressions(&env, mods);
+    resolveImportFieldAliases(&env, mods, module_reg);
+    resolveAggregateFieldTypesAll(&env, mods);
+    resolveFnSignatures(&env, mods, resolved_types);
+}

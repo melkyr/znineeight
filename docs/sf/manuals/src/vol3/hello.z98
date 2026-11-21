@@ -1,0 +1,10 @@
+const std = @import("std");
+
+// The same source builds for the Linux host and for the 32-bit Windows 9x
+// target. Nothing here is conditional: -osw chooses the emitted build scripts,
+// not the source, and the program prints the same text on both machines.
+pub fn main() void {
+    std.io.print("Hello from Z98!\n");
+    std.io.print("this is Volume III, chapter 8\n");
+    std.io.print("built for the 1998 machine\n");
+}

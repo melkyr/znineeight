@@ -1,0 +1,201 @@
+@cInclude("windows.h");
+
+const std = @import("std");
+
+// dbg-mini: the smallest complete Win32 debugger. It launches a copy of the
+// command interpreter under DEBUG_ONLY_THIS_PROCESS, waits for debug events,
+// reads the target's thread context and image header, writes an INT3 (0xCC)
+// over the entry point, waits for the breakpoint, restores the original byte,
+// and follows the target to its exit event. Everything here is a Win32 API
+// call reached through the extern rules of chapter 11.
+//
+// The DebugEvent record is the first part of the Win32 DEBUG_EVENT structure:
+// the event code and process/thread ids, then the union that begins with the
+// CREATE_PROCESS_DEBUG_INFO handles. Z98 has no @cImport, so the fields the
+// program reads are laid out as an ordinary Z98 struct in the header's order.
+const DebugEvent = struct {
+    code: u32,
+    pid: u32,
+    tid: u32,
+    hFile: *void,
+    hProcess: *void,
+    hThread: *void,
+    baseOfImage: *void,
+};
+
+// The _MEMORY_BASIC_INFORMATION workaround: Z98 has no @cImport, so the
+// structure VirtualQuery fills is declared here field for field. On the 32-bit
+// target a pointer and a SIZE_T are four bytes, so this is the header's 28
+// bytes exactly (windows.h still supplies its own copy to the C compiler; we
+// only need a place to receive the data).
+const MemoryBasicInformation = struct {
+    baseAddress: *void,
+    allocationBase: *void,
+    allocationProtect: u32,
+    regionSize: usize,
+    state: u32,
+    protect: u32,
+    typ: u32,
+};
+
+extern "stdcall" fn GetEnvironmentVariableA(name: [*]const u8, buf: [*]u8, size: u32) u32;
+extern "stdcall" fn CreateProcessA(a: *void, cmd: [*]u8, pa: *void, ta: *void, inherit: i32, flags: u32, env: *void, cwd: *void, si: *void, pi: *void) i32;
+extern "stdcall" fn WaitForDebugEvent(ev: *void, ms: u32) i32;
+extern "stdcall" fn ContinueDebugEvent(pid: u32, tid: u32, status: u32) i32;
+extern "stdcall" fn GetThreadContext(hThread: *void, ctx: *void) i32;
+extern "stdcall" fn ReadProcessMemory(hProcess: *void, base: *const void, buf: *void, size: u32, read: *u32) i32;
+extern "stdcall" fn WriteProcessMemory(hProcess: *void, base: *void, buf: *const void, size: u32, written: *u32) i32;
+extern "stdcall" fn VirtualQuery(addr: *const void, mbi: *void, size: u32) u32;
+
+// DEBUG_ONLY_THIS_PROCESS: attach to the new process (and no children of it).
+const DEBUG_ONLY_THIS_PROCESS: u32 = 0x00000002;
+// ContinueDebugEvent status words.
+const DBG_CONTINUE: u32 = 0x00010002;
+// The event codes the loop cares about.
+const CREATE_PROCESS_DEBUG_EVENT: u32 = 3;
+const EXCEPTION_DEBUG_EVENT: u32 = 1;
+const EXIT_PROCESS_DEBUG_EVENT: u32 = 5;
+// EXCEPTION_BREAKPOINT, and the 0xCC byte the x86 INT3 instruction is.
+const EXCEPTION_BREAKPOINT: usize = 0x80000003;
+const INT3: u8 = 0xCC;
+// CONTEXT_FULL: the context flags GetThreadContext requires before the call.
+const CONTEXT_FULL: u32 = 0x00010007;
+
+// Little-endian assembly of four bytes read out of the target's memory.
+fn le32(b: []const u8) usize {
+    var v: usize = @intCast(usize, b[0]);
+    v = v | (@intCast(usize, b[1]) << 8);
+    v = v | (@intCast(usize, b[2]) << 16);
+    v = v | (@intCast(usize, b[3]) << 24);
+    return v;
+}
+
+// Read one 32-bit word out of the target at addr + off.
+fn readU32(h: *void, addr: usize, off: usize) usize {
+    var b: [4]u8 = undefined;
+    var nr: u32 = 0;
+    _ = ReadProcessMemory(h, @intToPtr(*const void, addr + off), @ptrCast(*void, &b), @intCast(u32, 4), &nr);
+    return le32(b[0..4]);
+}
+
+// Build the command line from COMSPEC so the same sample names the right
+// interpreter on a Windows 98 machine (command.com) and on this host (cmd.exe).
+fn buildCmdLine(out: []u8) void {
+    var name: []const u8 = "COMSPEC";
+    var env: [260]u8 = undefined;
+    var i: usize = 0;
+    while (i < 260) : (i += 1) { env[i] = 0; }
+    const n = GetEnvironmentVariableA(name.ptr, &env, @intCast(u32, 260));
+    var m: usize = 0;
+    while (m < n and m < 260 and m < out.len - 1) : (m += 1) { out[m] = env[m]; }
+    var suffix: []const u8 = " /c exit";
+    var s: usize = 0;
+    while (s < suffix.len and m + s < out.len - 1) : (s += 1) { out[m + s] = suffix[s]; }
+    out[m + s] = 0;
+}
+
+pub fn main() void {
+    var cmdline: [300]u8 = undefined;
+    var i: usize = 0;
+    while (i < 300) : (i += 1) { cmdline[i] = 0; }
+    buildCmdLine(cmdline[0..300]);
+
+    // STARTUPINFO and PROCESS_INFORMATION are opaque byte buffers: we only
+    // need them zeroed so the API fills in the defaults.
+    var si: [128]u8 = undefined;
+    i = 0;
+    while (i < 128) : (i += 1) { si[i] = 0; }
+    var pi: [32]u8 = undefined;
+    i = 0;
+    while (i < 32) : (i += 1) { pi[i] = 0; }
+
+    const ok = CreateProcessA(@intToPtr(*void, 0), &cmdline, @intToPtr(*void, 0), @intToPtr(*void, 0), 0, DEBUG_ONLY_THIS_PROCESS, @intToPtr(*void, 0), @intToPtr(*void, 0), @ptrCast(*void, &si), @ptrCast(*void, &pi));
+    if (ok == 0) {
+        std.io.print("dbg-mini: CreateProcessA failed\n", .{});
+        return;
+    }
+    std.io.print("dbg-mini: target created under DEBUG_ONLY_THIS_PROCESS\n", .{});
+
+    var ev: [512]u8 = undefined;
+    var patched: bool = false;
+    var entryAddr: usize = 0;
+    var origByte: u8 = 0;
+    var target: *void = @intToPtr(*void, 0);
+    var n: i32 = 0;
+    while (n < 100) : (n += 1) {
+        i = 0;
+        while (i < 512) : (i += 1) { ev[i] = 0; }
+        const w = WaitForDebugEvent(@ptrCast(*void, &ev), @intCast(u32, 3000));
+        if (w == 0) {
+            std.io.print("dbg-mini: WaitForDebugEvent timed out\n", .{});
+            break;
+        }
+        const hdr = @ptrCast(*DebugEvent, &ev);
+        const code: u32 = hdr.code;
+        const pidv: u32 = hdr.pid;
+        const tidv: u32 = hdr.tid;
+
+        if (code == CREATE_PROCESS_DEBUG_EVENT and !patched) {
+            patched = true;
+            target = hdr.hProcess;
+            const base: usize = @intFromPtr(hdr.baseOfImage);
+
+            // The PE header holds e_lfanew at 0x3C and the entry-point RVA at
+            // optional-header offset 0x10 (e_lfanew + 0x28 overall).
+            const elfanew = readU32(target, base, 60);
+            const entryRva = readU32(target, base + elfanew, 40);
+            entryAddr = base + entryRva;
+
+            // GetThreadContext requires Context.ContextFlags to be set first.
+            var ctx: [1024]u8 = undefined;
+            i = 0;
+            while (i < 1024) : (i += 1) { ctx[i] = 0; }
+            const flags = @ptrCast(*u32, &ctx);
+            flags.* = CONTEXT_FULL;
+            const gc = GetThreadContext(hdr.hThread, @ptrCast(*void, &ctx));
+            std.io.print("dbg-mini: GetThreadContext = {}\n", .{gc});
+
+            // VirtualQuery is where _MEMORY_BASIC_INFORMATION lands; the struct
+            // above is the workaround for having no @cImport.
+            var mbi = MemoryBasicInformation{ .baseAddress = @intToPtr(*void, 0), .allocationBase = @intToPtr(*void, 0), .allocationProtect = 0, .regionSize = 0, .state = 0, .protect = 0, .typ = 0 };
+            _ = VirtualQuery(hdr.baseOfImage, @ptrCast(*void, &mbi), @intCast(u32, 28));
+            std.io.print("dbg-mini: VirtualQuery region = {}\n", .{mbi.regionSize});
+
+            // Save the original entry byte, then overwrite it with INT3.
+            var one: [1]u8 = undefined;
+            var nr: u32 = 0;
+            _ = ReadProcessMemory(target, @intToPtr(*const void, entryAddr), @ptrCast(*void, &one), @intCast(u32, 1), &nr);
+            origByte = one[0];
+            var cc: [1]u8 = undefined;
+            cc[0] = INT3;
+            var nw: u32 = 0;
+            _ = WriteProcessMemory(target, @intToPtr(*void, entryAddr), @ptrCast(*const void, &cc), @intCast(u32, 1), &nw);
+            _ = ReadProcessMemory(target, @intToPtr(*const void, entryAddr), @ptrCast(*void, &one), @intCast(u32, 1), &nr);
+            std.io.print("dbg-mini: INT3 patch = {}\n", .{@as(u32, one[0])});
+        }
+
+        if (code == EXCEPTION_DEBUG_EVENT and patched) {
+            // The exception record begins the union: ExceptionCode at offset 12
+            // and ExceptionAddress at offset 24. Only our own breakpoint, at the
+            // entry address, is acted on.
+            const ecode = le32(ev[12..16]);
+            const eaddr = le32(ev[24..28]);
+            if (ecode == EXCEPTION_BREAKPOINT and eaddr == entryAddr) {
+                std.io.print("dbg-mini: breakpoint hit at the entry point\n", .{});
+                var one: [1]u8 = undefined;
+                one[0] = origByte;
+                var nw: u32 = 0;
+                const r = WriteProcessMemory(target, @intToPtr(*void, entryAddr), @ptrCast(*const void, &one), @intCast(u32, 1), &nw);
+                std.io.print("dbg-mini: original byte restored = {}\n", .{r});
+            }
+        }
+
+        if (code == EXIT_PROCESS_DEBUG_EVENT) {
+            _ = ContinueDebugEvent(pidv, tidv, DBG_CONTINUE);
+            std.io.print("dbg-mini: target exited\n", .{});
+            break;
+        }
+        _ = ContinueDebugEvent(pidv, tidv, DBG_CONTINUE);
+    }
+    std.io.print("dbg-mini: done\n", .{});
+}
