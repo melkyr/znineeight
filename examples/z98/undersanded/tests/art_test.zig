@@ -136,7 +136,7 @@ fn goldenFight(g: *def.GameState) void {
 var empty_px: [1]u8 = [1]u8{0};
 
 fn assetView(g: *const def.GameState) art.ArtAssets {
-    var view = art.ArtAssets{ .bg = null, .sprite = null };
+    var view = art.emptyAssets();
     const a = assets.current() orelse return view;
     view.bg = assets.ensureBackgroundZone(g.exp.zone);
     if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
@@ -820,7 +820,7 @@ fn tAssetsMissingFallback() bool {
 
     var g: def.GameState = undefined;
     goldenFight(&g);
-    const none = art.ArtAssets{ .bg = null, .sprite = null };
+    const none = art.emptyAssets();
     art.resetFrame();
     const h1 = fnv(renderIntoView(&g, "", true, none));
     art.resetFrame();

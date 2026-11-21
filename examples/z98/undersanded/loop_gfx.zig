@@ -136,16 +136,24 @@ fn artMode(g: *def.GameState, p: ?*px.Gfx) bool {
     return false;
 }
 
-// Decoded art pointers for the current fight. A failed/missing asset load
-// leaves both null, so render_art uses its deterministic placeholder.
+// Decoded art pointers for the current screen. A failed/missing asset load
+// leaves them null, so render_art uses its deterministic placeholder.
 fn artView(g: *def.GameState) art.ArtAssets {
-    var view = art.ArtAssets{ .bg = null, .sprite = null };
+    var view = art.emptyAssets();
     const a = assets.current() orelse return view;
     view.bg = assets.ensureBackgroundZone(g.exp.zone);
     if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
         const d = creatures.defAt(g.fight.def_index);
-        view.sprite = assets.spriteForDef(a, d.id);
+        if ((d.flags & def.F_BOSS) != 0) {
+            view.sprite = assets.bossVariant(a, g.fight.boss_variant);
+        } else {
+            view.sprite = assets.spriteForDef(a, d.id);
+        }
     }
+
+    view.boat = assets.boatSprite(a);
+    view.paints = assets.boatPaints(a);
+    view.overlays = assets.overlays(a);
     return view;
 }
 

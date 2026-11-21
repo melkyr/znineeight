@@ -16,6 +16,7 @@ const tables = @import("tables_t1.zig");
 const items = @import("items.zig");
 const render_text = @import("render_text.zig");
 const score = @import("score.zig");
+const boat = @import("boat.zig");
 
 pub const COLS: usize = render_text.COLS;
 pub const ROWS: usize = render_text.ROWS;
@@ -1041,6 +1042,46 @@ pub fn renderCredits(sc: *Screen) void {
         _ = put(sc, x, 10 + @intCast(i32, i), line);
     }
     _ = put(sc, 0, ROWS - 1, "[?] Help");
+}
+
+fn putCosmeticName(sc: *Screen, x: i32, y: i32, index: i32) i32 {
+    if (index < 0 or index >= def.MAX_COSMETICS) return put(sc, x, y, "none");
+    const rows = tables.cosmetics();
+    if (@intCast(usize, index) >= rows.len) return put(sc, x, y, "none");
+    return put(sc, x, y, rows[@intCast(usize, index)].name);
+}
+
+// Boat summary used by `--dump-grid --screen boat`; the decorated pixel boat
+// itself is drawn by render_art in art mode (and inside the Field Record).
+pub fn renderBoat(w: *const def.World, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  BOAT");
+    _ = put(sc, 71, 0, "[?] Help");
+
+    var x = put(sc, 0, 2, "Paint: ");
+    _ = put(sc, x, 2, boat.paintName(boat.paintIndex(w)));
+
+    x = put(sc, 0, 3, "Figurehead: ");
+    x = putCosmeticName(sc, x, 3, boat.figureheadIndex(w));
+
+    x = put(sc, 0, 4, "Flag: ");
+    x = putCosmeticName(sc, x, 4, boat.flagIndex(w));
+
+    x = put(sc, 0, 5, "Decal: ");
+    _ = putCosmeticName(sc, x, 5, boat.decalIndex(w));
+
+    x = put(sc, 0, 7, "Boat: Hull ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_HULL]);
+    x = put(sc, x, 7, " Speed ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_SPEED]);
+    x = put(sc, x, 7, " Cargo ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_CARGO]);
+    x = put(sc, x, 7, " Oxygen ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_OXYGEN]);
+    x = put(sc, x, 7, " Precision ");
+    _ = putInt(sc, x, 7, w.boat[world.BOAT_PRECISION]);
+
+    _ = put(sc, 0, 9, "Highest owned cosmetic per slot is shown in art mode.");
 }
 
 // ---- First run / menu / save error (§20, §32, §33) ------------------------

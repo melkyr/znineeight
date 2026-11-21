@@ -18,6 +18,7 @@ const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const render_text = @import("render_text.zig");
 const score = @import("score.zig");
+const boat = @import("boat.zig");
 const font = @import("font8x16.zig");
 const tween = @import("tween.zig");
 const px = @import("std_gfx_px_core.zig");
@@ -85,7 +86,22 @@ pub const Rect = struct { x: i32, y: i32, w: i32, h: i32 };
 pub const ArtAssets = struct {
     bg: ?*const px.Sprite,
     sprite: ?*const px.Sprite,
+    boat: ?*const px.Sprite,
+    // Array pointers keep the hot struct free of optional-element codegen;
+    // assets.zig owns the three paint sprites and nine overlay rows.
+    paints: ?*const [3]px.Sprite,
+    overlays: ?*const [9]px.Sprite,
 };
+
+pub fn emptyAssets() ArtAssets {
+    return ArtAssets{
+        .bg = null,
+        .sprite = null,
+        .boat = null,
+        .paints = null,
+        .overlays = null,
+    };
+}
 
 pub const Widget = struct {
     x: i32, y: i32, w: i32, h: i32,
@@ -784,11 +800,61 @@ fn drawTextScreen(sf: *px.Surface, sc: *const render_text.Screen) void {
         false, C_TEXT, C_BG);
 }
 
-fn drawScore(sf: *px.Surface, s: *const def.GameState) void {
+// §30/P31: base -> paint (clipped to the hull rect) -> decal -> figurehead ->
+// flag. The base blit already leaves outside-hull pixels intact; the paint
+// pass is a second blit of the same indexed pixels with the hull LUT, clipped
+// so the bow, stern, cabin, outline and portholes outside the bbox stay base.
+pub fn drawBoat(sf: *px.Surface, w: *const def.World, view: ArtAssets,
+    ox: i32, oy: i32) void {
+    const base = view.boat orelse return;
+    px.pxCoreBlit(sf, ox, oy, base);
+
+    const paint = boat.paintIndex(w);
+    if (paint >= 0 and paint < 3) {
+        if (view.paints) |paints| {
+            const pidx: usize = @intCast(usize, paint);
+            px.pxCoreBlitPart(sf, ox + boat.HULL_X, oy + boat.HULL_Y,
+                &paints[pidx], boat.HULL_X, boat.HULL_Y, boat.HULL_W,
+                boat.HULL_H);
+        }
+    }
+
+    var i: usize = 0;
+    while (i < boat.OVERLAY_DRAW_ORDER.len) : (i += 1) {
+        const slot = boat.OVERLAY_DRAW_ORDER[i];
+        const cosmetic = boat.selectedCosmetic(w, slot);
+        if (cosmetic < boat.COSMETIC_OVERLAY_FIRST
+            or cosmetic > boat.COSMETIC_OVERLAY_LAST) continue;
+        const local: usize = @intCast(usize,
+            cosmetic - boat.COSMETIC_OVERLAY_FIRST);
+        if (view.overlays) |overlays| {
+            px.pxCoreBlit(sf, ox + boat.anchorX(slot),
+                oy + boat.anchorY(slot), &overlays[local]);
+        }
+    }
+}
+
+pub fn drawBoatScreen(sf: *px.Surface, w: *const def.World, view: ArtAssets) void {
+    px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
+    drawBoat(sf, w, view, (def.SCREEN_W - boat.BOAT_W) / 2, 80);
+}
+
+fn drawScore(sf: *px.Surface, s: *const def.GameState, view: ArtAssets) void {
     var sc: render_text.Screen = undefined;
     var p = score.scoreSnapshot(&s.world);
     render.renderScore(&p, &sc);
     drawTextScreen(sf, &sc);
+
+    // The Field Record panel's right column is free below the Variants rows;
+    // draw the decorated boat there without moving the pinned terminal copy.
+    if (view.boat != null) {
+        const bx = 432;
+        const by = 20;
+        fillRect(sf, bx - 4, by - 4, boat.BOAT_W + 8, boat.BOAT_H + 8, C_PANEL);
+        drawDottedRect(sf, bx - 4, by - 4, boat.BOAT_W + 8, boat.BOAT_H + 8,
+            C_BORDER);
+        drawBoat(sf, &s.world, view, bx, by);
+    }
 }
 
 fn drawCredits(sf: *px.Surface) void {
@@ -839,7 +905,7 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
 
     if (s.screen == def.NAV_SCORE or s.screen == def.NAV_CREDITS) {
         if (s.screen == def.NAV_SCORE) {
-            drawScore(sf, s);
+            drawScore(sf, s, view);
         } else {
             drawCredits(sf);
         }

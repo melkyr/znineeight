@@ -246,6 +246,8 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
     } else if (eq(screen_id, "score")) {
         var p = score.scoreSnapshot(&s.world);
         render.renderScore(&p, &sc);
+    } else if (eq(screen_id, "boat")) {
+        render.renderBoat(&s.world, &sc);
     } else if (eq(screen_id, "credits")) {
         render.renderCredits(&sc);
     } else {
