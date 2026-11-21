@@ -731,7 +731,7 @@ fn drawSubdueIntro(sf: *px.Surface, s: *const def.GameState, view: ArtAssets) vo
     }
     var x = render_text.put(&sc, 0, 1, "SUBDUED ");
     _ = render_text.put(&sc, x, 1, render.creatureName(&d));
-    _ = render_text.put(&sc, 0, 2, "[C]Continue");
+    _ = render_text.put(&sc, 0, 2, "[C]ontinue");
     drawScreenBlock(sf, &sc, panel, true, C_TEXT, C_PANEL);
 }
 

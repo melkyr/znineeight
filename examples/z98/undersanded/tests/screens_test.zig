@@ -230,7 +230,7 @@ fn tSubdueIntroCopy() bool {
     const text = undtool.dumpFixedScreen("subdue", buf[0..]) orelse return false;
     if (!contains(text, "SUBDUED Mystic Eel")) return false;
     if (!contains(text, "Secured: Shell Chip x3, Gland Sac x1")) return false;
-    if (!contains(text, "[C]Continue")) return false;
+    if (!contains(text, "[C]ontinue")) return false;
     if (contains(text, "UNDERSANDED  NODE")) return false;
     if (contains(text, "[H]unt [R]est [S]urface")) return false;
     if (contains(text, "[1] Release")) return false;

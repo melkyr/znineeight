@@ -775,7 +775,7 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
             } else {
                 _ = put(sc, 0, 2, "Secured: nothing");
             }
-            _ = put(sc, 0, 4, "[C]Continue");
+            _ = put(sc, 0, 4, "[C]ontinue");
             return;
         }
 
