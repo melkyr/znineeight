@@ -2284,3 +2284,80 @@ field/version, or fight-resolution change; `canSave` semantics stay as M7.
 
 **Deferred (not M10.1).** Full art polish; Esc menu (M12); boss journal wiring
 (M11); `legend.1/2`, `zone.4..8`, and `error.*` (M13/M16).
+
+### M11 amendment review (M10.1 Task 10)
+
+Reviewed `2026-11-12-undersanded-m11-boss-score-plan.md` at `f805d8ba`
+against the landed M10.1 tree and spec §7.1/§15/§19/§30. Verdict:
+**amendment required** for integration and file-list text; **no boss or score
+design change** is needed. The M10 review's amendments still stand; this review
+adds the M10.1-specific items below.
+
+**1. New status/event and help plumbing (M11 amendment).** M10.1 added
+`def.NAV_SUBDUE_INTRO=24` (`def.zig:269`), so the next free nav id is **25**.
+M11's score/credits screens must allocate ids >=25 and join the
+`nav.navRunGfx` screen allow-list (`nav.zig:929-935`), `loop_gfx.artMode`
+(`loop_gfx.zig:130-136`) and the screen routing. `NAV_SUBDUE_INTRO` is a
+non-boss path (`subdue_chance=-1`); boss kills still use the shared post-fight
+path. `GameState.last_event/last_event_def/last_event_value` are transient
+(`def.zig:193-196`); `EV_NONE=0` through `EV_BOSS_LOCKED=16`
+(`def.zig:285-303`); `navConsumeEvent` (`nav.zig:149`) fills `NavState.field_msg`
+and `navResultLine` (`nav.zig:868`) prints it in terminal plus window row 29
+(`loop_gfx.zig:75`, `81-93`); art uses `drawNotice` (`render_art.zig:682`).
+`EV_SUBDUE` deliberately emits no status because the intro owns it. M11 must
+set `EV_KILL`/`EV_OVERKILL` or deliberately transition to the score screen,
+reuse `EV_BOSS_LOCKED` for the six-species gate (exact copy is already in the
+M10.1 NOTES), and make boss phase/variant/respawn changes visible under §7.1
+rather than silently changing state. The current help page map
+(`journal.helpPageNumber`, `journal.zig:154-168`) covers pages 1-9 but has no
+score/boat screen: M11 must add score/boat (page 8, "Cosmetics & Score"),
+choose a credits page, and give every new screen `[?] Help`. Do not let the art
+status row erase a live fight log; decide whether the boss-kill status survives
+into the score transition or is intentionally replaced.
+
+**2. `assets.zig` accessors and M11 file-list additions.** The public surface
+is only `spriteForDef`, `ensureBackgroundZone`, `backgroundLoaded`, `current`,
+`available` (`assets.zig:84-97,269-290,433-440`). `spriteForDef(17)` always
+returns base/Armor; boss V rows are symbolic (`var_def_ids=-1`), and there is
+no accessor for the nine `fig_*`/`flag_*`/`dec_*` overlays or `boat00`. M11
+Task 4 needs boss-variant and overlay/boat sprites, so add `assets.zig`
+accessors (for example by A index/name plus boss variant id) and extend
+`render_art.ArtAssets` beyond `bg`/`sprite`; `ArtAssets` is built in
+`loop_gfx.artView` (`loop_gfx.zig:140-149`). The M11 File Structure must add at
+least `assets.zig`, `loop_gfx.zig`, `nav.zig`, `journal.zig`, `expedition.zig`
+(boss route/flow), `undtool.zig` (a `--screen score|boat` dump path; today
+`dumpFixedScreen` knows only dock/map/node/subdue/settle/lore/menu/help/journal,
+`undtool.zig:195-245`), and `def.zig` if new nav ids/events are added. The
+already-listed `boss.zig`/`score.zig`/`render_*`/tests/goldens remain.
+
+**3. Boat hull bbox and paint LUT to pin.** Re-affirm the M10 review: the
+authored `boat00` outer hull body bbox is **x=30, y=42, w=153, h=67**
+(inclusive). Only hull ramp-0 shades **5/10/15** change; outline shade 0 and
+the porthole ramp 1 stay. The base SVG uses ramp-0 shade 5 `#2A3A4A`, shade 10
+`#5A6A7A`, and shade 15 `#9AAABA`. **Abyss Teal** is a ramp-0 to ramp-1 swap at
+those same shades (ramp 1 `#0E5A72`/`#1E9AB8`/`#5FD4EC`). **Foam White** and
+**Leviathan Black** are ramp-0 light/dark shade remaps, not plain ramp swaps.
+The spec only says "Paint = ramp swap on the hull region", so M11 must pin and
+record the **exact three-shade LUT** (which base shade maps to which target
+shade) before Task 4, then re-blit clipped to this rect with
+`pxCoreBlitPart`/`gfxPxBlitPart`. Do not derive it at runtime.
+
+**4. `journalOnBossKill` wiring (M11 amendment).** `journalOnBossKill` exists
+(`journal.zig:80-88`) but has **no production caller**; `journalOnFightEnd`
+explicitly returns for the boss (`journal.zig:69-78`), and only the test calls
+the boss hook (`tests/journal_test.zig:149-155`). The boss is load-order index
+18, so the hook unlocks `journal.19` (`journal.zig:137`). M11 must call it
+exactly on the boss **kill** path (not overkill, flee, ascent or subdue), before
+or with the score snapshot, and add a production-path test. The M10.1 deferred
+list still records boss journal wiring as M11.
+
+**5. Other stale M11 text found.** M11 Task 0 says to add the five boss Phase-2
+flavor lines and twelve cosmetic descriptions as `[text]` copy, but
+`data_schema.textKeyKnown` (`data_schema.zig:331-353`) only accepts
+`manual.1..9`, `journal.1..19`, `legend.1..2`, `zone.1..9`, and `error.1..6`.
+M11 must add a key vocabulary for those 17 lines and update `data.z98`, the
+`data_load_test` text count of 34 (`tests/data_load_test.zig:235`), and
+`defs_golden.txt`. The plan's "`boss00` sprite × 5 ramp recolors" wording is
+still the base/Armor row plus four V rows (prior review). Also `World.runReset`
+exists (`world.zig:199-204`) but is **not called from the Derelict kill yet**;
+M11 Task 0 must actually wire it, as the prior review already recorded.
