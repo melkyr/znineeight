@@ -343,6 +343,7 @@ pub fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureD
 
     _ = put(sc, 2, 10, "[A] Attempt   [F] Fight on / decline");
     _ = put(sc, 2, 11, "[Esc] Decline");
+    _ = put(sc, 2, 13, "[?] Help");
 }
 
 pub fn toolName(id: i32) []const u8 {

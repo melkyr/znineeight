@@ -212,6 +212,13 @@ fn tFooterHelpEveryScreen() bool {
     render.renderFrame(&g, &d, &sc);
     if (!hasText(&sc, buf[0..], "[?] Help")) return false;
 
+    g.screen = def.SCREEN_SUBDUE;
+    render.renderFrame(&g, &d, &sc);
+    if (!hasText(&sc, buf[0..], "[?] Help")) return false;
+    g.screen = def.SCREEN_SUBDUE_POST;
+    render.renderFrame(&g, &d, &sc);
+    if (!hasText(&sc, buf[0..], "[?] Help")) return false;
+
     render.renderLore("The Undersanded.", &sc);
     if (!hasText(&sc, buf[0..], "[?] Help")) return false;
     render.renderMenu(&sc);
@@ -244,12 +251,14 @@ fn tJournalHintDockField() bool {
     render.renderNode(&v, &sc);
     if (!hasText(&sc, buf[0..], "[J]ournal")) return false;
 
+    // Settle must not advertise J: the pending guard consumes it as a no-op.
     g.screen = def.NAV_SETTLE;
     g.fight.def_index = 0;
     g.fight.outcome = def.OUT_SUBDUE;
     nav.prepareNode(&g, &v);
     render.renderNode(&v, &sc);
-    return hasText(&sc, buf[0..], "[J]ournal");
+    if (hasText(&sc, buf[0..], "[J]ournal")) return false;
+    return hasText(&sc, buf[0..], "[?] Help");
 }
 
 fn tToolEffectCopy() bool {
@@ -284,7 +293,7 @@ fn tAxisEffectCopy() bool {
         and contains(text, "player Speed 12")
         and contains(text, "Cargo +1 part per drop")
         and contains(text, "4 fights per expedition")
-        and contains(text, "overkill margin 15%");
+        and contains(text, "Effect: overkill margin 15%; fragile tools from T2");
 }
 
 fn tCosmeticLockCopy() bool {

@@ -367,9 +367,9 @@ fn axisEffect(axis: i32, tier: i32) []const u8 {
             return "6 fights per expedition";
         },
         4 => {
-            if (tier <= 1) return "overkill margin 15%; fragile tools";
-            if (tier == 2) return "overkill margin 20%; fragile tools";
-            return "overkill margin 25%; fragile tools";
+            if (tier <= 1) return "overkill margin 15%; fragile tools from T2";
+            if (tier == 2) return "overkill margin 20%; fragile tools active";
+            return "overkill margin 25%; fragile tools active";
         },
         else => return "unknown effect",
     }
@@ -888,7 +888,7 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
         x = put(sc, 0, 8, "[2] Sell - parts kept; +");
         x = putInt(sc, x, 8, cdef.sale);
         _ = put(sc, x, 8, " coins");
-        _ = put(sc, 0, 10, "[?] Help  [J]ournal");
+        _ = put(sc, 0, 10, "[?] Help");
         return;
     }
 

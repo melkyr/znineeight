@@ -514,7 +514,8 @@ fn navStepInner(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         return setScreen(g, deriveScreen(g));
     }
 
-    // `J` opens the Journal everywhere but mid-fight (including settle/submenus).
+    // `J` opens the Journal everywhere but mid-fight. A pending settlement is
+    // handled above and consumes J with every other non-1/2 key.
     if (isChar(key, 'j') and g.screen != def.NAV_JOURNAL) {
         st.journal_sel = 0;
         return setScreen(g, def.NAV_JOURNAL);
