@@ -256,7 +256,7 @@ Every field action leaves a one-line result; no screen change is unexplained. Th
 
 **Silent state is forbidden.** Release/Sell effects, wariness, grudge, rare chance, lockout, Heavy travel, sale price, rough-sleep condition, respawn availability, and phase/cycle must have a visible surface (status line, node/map line, help copy, or fight log). Heavy is included in the map's displayed travel cost.
 
-**Help and hints.** Every screen footer shows `[?] Help`; dock/field screens show `[J]ournal` when a save is active. `?` opens the manual page for the screen. Pages are 1–9 (page 9 is Journal & Speed). Page map: DOCK 1 · MAP 5 · NODE 5 · FIGHT/SUBDUE/SUBDUE_POST 2 · SUBDUE_INTRO/SETTLE 3 · REFINE/UPGRADE 4 · CRAFT/TOOLS 6 · JOURNAL 9 · BUY 8 · LORE/MENU/SAVE_ERR 1. `manual.3` covers Release/Sell; `manual.5` covers rough sleep and phases; `manual.6` describes each tool; `manual.7` covers the boss gate; `manual.9` covers the Journal and Speed reveal.
+**Help and hints.** Every screen footer shows `[?] Help`; dock/field screens show `[J]ournal` when a save is active. `?` opens the manual page for the screen. Pages are 1–9 (page 9 is Journal & Speed). Page map: DOCK 1 · MAP 5 · NODE 5 · FIGHT/SUBDUE/SUBDUE_POST 2 · SUBDUE_INTRO/SETTLE 3 · REFINE/UPGRADE 4 · CRAFT/TOOLS 6 · JOURNAL 9 · BUY/SCORE/BOAT/CREDITS 8 · LORE/MENU/SAVE_ERR 1. `manual.3` covers Release/Sell; `manual.5` covers rough sleep and phases; `manual.6` describes each tool; `manual.7` covers the boss gate; `manual.9` covers the Journal and Speed reveal.
 
 The Esc menu remains M12; M10.1 leaves dock Esc=Save / q=Quit unchanged.
 
@@ -755,7 +755,7 @@ Machine. **No Resolve.** Restrain disabled with the journal line: *"The machine 
 | 2 | 200 → 100 | 10 | **Cannon Volley 15 every 2 rounds** (replaces standard) + axis variant |
 | 3 | 100 → 0 | 12 | 15/round |
 
-Steel Plate Tool halves Cannon Volley. Overkill → 40-cycle respawn (kill → 20).
+Steel Plate Tool halves Cannon Volley. **Boss defeat** for credits, score, Field Record, `journal.19`, `runReset`, and `boss_kills` means **Kill or Overkill**; Overkill still uses the 40-cycle respawn, Kill 20.
 
 **Phase 2 adapts to your dominant boat axis.** Tiebreak: Hull > Precision > Cargo > Oxygen > Speed. All-zero → The Armor.
 
@@ -763,11 +763,11 @@ Steel Plate Tool halves Cannon Volley. Overkill → 40-cycle respawn (kill → 2
 | :--- | :--- | :--- |
 | Hull | **The Armor** | Strike 50% unless Steel Plate Tool |
 | Precision | **The Sliver** | full damage odd rounds, 25% even rounds |
-| Cargo | **The Hoard** | jettisons 1 secured part every 3 rounds |
+| Cargo | **The Hoard** | jettisons the first non-empty non-keystone hold slot every 3 rounds |
 | Oxygen | **The Drown** | after round 10, flood damage +5 Hull per round beyond 10 |
 | Speed | **The Blur** | acts first always; double-strike every 3rd round |
 
-One silhouette, five palette-ramp recolors, five scripts. **This is the replay incentive** — the 5 Phase-2 variants are the multi-boss experience of the whole game.
+One silhouette; the Armor identity is the base ramp and the other four identities are palette-ramp recolors. **This is the replay incentive** — the 5 Phase-2 variants are the multi-boss experience of the whole game.
 
 Boss gate: **6 distinct non-boss creatures seen**. Node telegraphs *"Hull 150+ recommended."*
 
@@ -852,7 +852,7 @@ The full game adds T2–T4 sources for every material (M13 re-derives this table
 
 **Legends page:** Named creatures as *unconfirmed sightings — investigate if you can.* **2 entries in T1** (Mileel, Tunisteel); T2–T4 named creatures add entries at M13. No locations, no stats, no tips.
 
-**Journal:** reactive, never proactive. **19 entries in T1** (18 non-boss + 1 boss, incl. 2 flex), full game = one per creature (≈49–55). One paragraph each, first-person, past tense, observational. **Non-boss entry is written when the first fight with that creature ends (any outcome, including Hull-0 ascent, player flee and creature flee).** Boss entry unlocks only after the first kill. Entries are keyed `journal.<def_index + 1>` in load order (boss = `journal.19` at index 18). Unlocks live in `World.journal_mask` (persisted); a separate **`journal_viewed`** mask (persisted, additive optional save key) drives the "New entry" indicator until the entry is opened. `J` opens the Journal screen; no popups.
+**Journal:** reactive, never proactive. **19 entries in T1** (18 non-boss + 1 boss, incl. 2 flex), full game = one per creature (≈49–55). One paragraph each, first-person, past tense, observational. **Non-boss entry is written when the first fight with that creature ends (any outcome, including Hull-0 ascent, player flee and creature flee).** Boss entry unlocks after the first defeat (Kill or Overkill). Entries are keyed `journal.<def_index + 1>` in load order (boss = `journal.19` at index 18). Unlocks live in `World.journal_mask` (persisted); a separate **`journal_viewed`** mask (persisted, additive optional save key) drives the "New entry" indicator until the entry is opened. `J` opens the Journal screen; no popups.
 
 **Zone flavor:** one paragraph per zone, keyed `zone.<zone_index + 1>` (Z1..Z8 = 1..8, D = 9); rendered on the node screen for the current zone. T1 authors Z1–Z3 and D (4); Z4–Z8 at M13.
 
@@ -865,15 +865,15 @@ The full game adds T2–T4 sources for every material (M13 re-derives this table
 
 ## 19. Scoring and the End
 
-Boss killed → credits → score screen → **the game continues**.
+Boss defeated (Kill or Overkill) → credits → score screen → **the game continues**, returning to the dock with normal D-route travel.
 
 Three panels:
 
 | Panel | Behavior |
 | :--- | :--- |
-| **Field Record** | Written **once** on the first Derelict kill. Never overwritten. |
+| **Field Record** | Written **once** on the first Derelict defeat (Kill or Overkill). Never overwritten. |
 | **Variants Seen** | 5-bit mask. **Bit set when Phase 2 is entered** — survives a later ascent. Shown as `3 / 5`, unseen grayed. |
-| **Last Run** | Overwritten each engagement: cycles, Phase 2 identity, outcome, actions, Hull spent. Plus lifetime boss kills. |
+| **Last Run** | Overwritten each engagement: cycles, Phase 2 identity, outcome, actions (`FightState.actions`, combat actions), Hull spent. Plus lifetime boss kills. |
 
 Field Record fields: cycles elapsed · time in the field · creatures seen /N · rares seen /N · bosses killed /1 · final boss Phase 2 · subdued/killed/overkilled · expertise per material · money earned · cosmetics /12 · **the boat, rendered in full, decorated**. (time in the field = `World.field_phases`, total phases played; excluded from byte-identity goldens)
 
@@ -1410,7 +1410,7 @@ ASCII text, one statement per line. The scanner enforces this grammar; any viola
 - **`[cosmetics]`:** `name,price,unlock`; exactly 12 rows in item order (bit index 0..11); `unlock` is a condition id 1..4 (Z1/Z2/Z3/Derelict); `price > 0`.
 - **`[encounter]`:** `zone,phase,def_index,weight`; `zone` = index 0..11, `phase` = 0 Day / 1 Night, `def_index` = **load-order** index (not `CreatureDef.id`); `weight > 0`; weights per zone/phase sum to 100 (an empty zone/phase is allowed).
 - **`[zones]`:** `id,cost,boss`; `id` = zone index 0..11; `cost` ≥ 0; `boss` 0/1.
-- **`[text]`:** multi-line prose. `key=` starts an entry; it continues until the next `key=` or `[section]`. A continuation line begins with exactly one space, which is stripped; a continuation line consisting of exactly that one space is a **retained blank line** (paragraph break). Inside an entry the comment/blank rules do **not** apply — a line beginning with `#` after the leading space is prose. Keys live in the fixed vocabulary `manual.1..9`, `journal.1..19`, `legend.1..2`, `zone.1..9` (zone index + 1: Z1..Z8 = 1..8, D = 9), `error.1..6` (reserved; M7 owns the fatal/save copy as code constants, no reader today); caps `MAX_TEXT_KEYS` / `MAX_TEXT_BYTES`.
+- **`[text]`:** multi-line prose. `key=` starts an entry; it continues until the next `key=` or `[section]`. A continuation line begins with exactly one space, which is stripped; a continuation line consisting of exactly that one space is a **retained blank line** (paragraph break). Inside an entry the comment/blank rules do **not** apply — a line beginning with `#` after the leading space is prose. Keys live in the fixed vocabulary `manual.1..9`, `journal.1..19`, `legend.1..2`, `zone.1..9` (zone index + 1: Z1..Z8 = 1..8, D = 9), `boss.1..5` (Phase-2 flavor lines), `cosmetic.1..12` (cosmetic descriptions), `error.1..6` (reserved; M7 owns the fatal/save copy as code constants, no reader today); caps `MAX_TEXT_KEYS` / `MAX_TEXT_BYTES`.
 - **Storage:** the file buffer and all string bytes live in the permanent arena for the process lifetime; loaded slices point into it (never into a temporary read buffer). `[text]` is file-only: `data.z98` ships with the game, so the compiled-in fallback is tables-only (`text_count = 0`) and exists for dev tools/tests, not as a content substitute.
 
 Loader errors use the §33 copy: missing → "Content file missing. Reinstall from CD."; malformed → "Content file is damaged at line N. Reinstall from CD."
@@ -1699,6 +1699,10 @@ Use a **period bitmap font** (8×16 VGA ROM, public domain). Pixel-exact, era-co
 
 One 200×150 SVG base (`boat00`). Paint = ramp swap on the hull region (zero new pixels). Figurehead / Flag / Decal = 64×64 overlays at fixed anchors (24,40) / (150,18) / (96,96). Blit order: base → paint ramp → decal → figurehead → flag. The three porthole circles are the only non-polygon primitives — if a rasterizer softens circles, replace with 16/12/8-sided polygons.
 
+**Paint contract (M11):** the authored hull bbox is `x=30,y=42,w=153,h=67` (inclusive); paint is clipped to that rect. Only ramp-0 hull shades 5/10/15 change; outline shade 0 and porthole ramp 1 stay; ramp-0 pixels outside the bbox stay base. `boat00.zsp` header ramp is 1, so the hull swap uses `from_ramp=0`/a custom hull LUT explicitly. Shade LUTs: **Abyss Teal** 0→1 at the same shades; **Foam White** 5/10/15→10/15/15; **Leviathan Black** 5/10/15→0/5/10.
+
+**Cosmetic slots:** indices 0/1/2 are the three paints; 3/4/5 map to `fig_merm`/`fig_angl`/`fig_krak`; 6/7/8 to `flag_pen`/`flag_ref`/`flag_trn`; 9/10/11 to `dec_barn`/`dec_sqid`/`dec_boss`. The **highest owned index per slot** is shown; there is no equip UI.
+
 ### Asset manifest (full game)
 
 | Asset | 8.3 name(s) | Notes |
@@ -1910,7 +1914,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | **M9** | Pixel tier | `std_gfx_px` split into pure native core + thin `std_gfx_pal`-backed wrapper (fixed 640×480 window), typed Lock/Unlock/BltFast, 16bpp 565 SYSTEMMEMORY offscreen, 8×16 font atlas, bars + dotted red zone, dirty rects, surface-lost recovery, art fight (modal/help/tool status/hidden SPD), playable `under.exe` loop (cell screens + art fight + <16bpp fallback), `--perf`; **quality cut** (single-source ids/owners/primitives, generated fallback, render/fight/data/save splits, view decoupling) | Fight renders in art mode; dock→fight→dock playable in `under.exe`; terminal `--dump-grid` + z9edit goldens byte-identical; quality cut green with all goldens unchanged |
 | **M10** | Asset pipeline + art | Palette lock, transitory SVG→`.ZSP` conversion (uncommitted, P19), committed Z98 `--validate-assets`, 11 creature A sprites (boss re-authored 96×96 ramp 10), 6 non-flex + 2 flex recolors, 4 boss V rows, 5 demo backgrounds, boat asset, 9 overlays; art fight wired to sprites + resident zone background (boat/score stay M11) | Demo asset budget met (indexed ≤1.35 MB, indexed+LUT ≤2 MB, backgrounds ≤120 KB each, RLE ≤400 KB); all 11 bases reviewed side-by-side as one set; art golden re-pinned once |
 | **M10.1** | Settlement + field feedback UX | One-action field status line (terminal + window), `NAV_SUBDUE_INTRO` + `[C]`, settlement copy/keys 1/2, fight-outcome and refusal feedback, condition/wariness/grudge/rare/lockout/Heavy/sale visibility, help pages 1–9 + `[?]`/`[J]` hints, lore wrap, Fresh-erase confirm | Every field transition answers “what happened / what next”; no silent state change; no irreversible one-key mis-press; TIER_M10 stays green; new UX tier passes; console boot explicitly test-only |
-| **M11** | Boss + score screen — **DEMO GATE** | The Derelict §15 (3 phases), 5 Phase-2 adaptive variants, credits, 3-panel score screen, cosmetics render on boat | Full boss loop completable; all 5 variants triggerable from a save; Field Record written once; demo shippable |
+| **M11** | Boss + score screen — **DEMO GATE** | The Derelict §15 (3 phases), 5 Phase-2 adaptive variants, **Kill or Overkill defeat bookkeeping**, credits, 3-panel score screen, boat paint/clip + highest-owned cosmetics, score/credits screens under the M10.1 status/help contract | Full boss loop completable; all 5 variants triggerable from a save; Field Record written once; both defeat outcomes bookkeep; demo shippable |
 | **M12** | Audio + options | Ambient + 4 cues (§31), options (volume, keys, save slot, colour-blind), pause-on-focus + audio Stop | Alt-tab pauses and silences; options persist; audio plays with no callback thread |
 | **M13** | T2–T4 content | 30–36 creature rows (exact count fixed by the Task-0 ledger; §21 taxonomy, rares unique per band), Z4–Z8 encounter tables, named keystones, journal/manual additions, economy re-derive | Full roster loads; per-tier sims pass (≤12/12/14/15 action gates); **boss-feasibility sim: ≥50% at Hull 150+Plate, ≥90% at max Hull**; material sources complete |
 | **M14** | T2–T4 assets | Recolors for new families, 5 new zone backgrounds, any new overlays | Full-game asset budget met (on-demand bg loading verified); style set holds |
@@ -1985,6 +1989,8 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P28 | **M9 quality-cut rulings (user-authorized):** the final two M9 tasks remove extension-risk debt before M10/M13: (1) **smell removal** — ids (`NAV_*`/`SCREEN_*`/`MSG_*`/`OUT_*`/`TOOL_*`/`UNLOCK_*`/`NO_FIGHT`) live only in `def.zig`; `items.zig` owns tool/material ownership/kind, `paths.join` and `text_scan.zig` own path/text primitives; dead/alias layers removed; `tests/quality_smells.sh` greps + LOC checks run in the tier. (2) **structural refactor** — compiled content fallback is generated from `data.z98` via `undtool --emit-fallback` with a byte-equal diff gate (M13 authors once); `render_text`/`fight_rules`/`fight_tools`/`data_scan`/`data_load`/`save_scan`/`save_io` splits; renderers stop importing dock/economy/save_ux/journal/data and consume a prepared view struct. Both tasks are golden-identical (any golden drift is a STOP); test-harness consolidation and PAL de-duplication stay deferred. |
 | P29 | **M10 preflight rulings (user-authorized):** (1) palette anchors are at shade indices **0/5/10/15**, linear 8-bit interpolation with integer round-to-nearest, RGB565 round-to-nearest; index 255 is the key and ramp 15 has 15 usable shades (`15/15` recolor uses `base[254]`). (2) `boss00` is re-authored at **96×96** with header ramp **10** (Armor); `id=17` maps to `A boss00` with no V row, plus four V rows `10→2/4/13/5`. (3) exact manifest ledger is 26 A files + 12 V rows + `F font8x16`; `A` is the only indexed-byte source, `V` adds a 512-byte LUT. (4) M10 wires creature sprites + one resident zone background into the art fight and re-pins the art golden once; boat render/overlays/score stay M11. (5) Decoder precedes validator (`zspCanonicalEncode`/`zspRecolorLut` in `zsp.zig`); validator re-encodes and byte-compares, checks embedded palette equality, exact A/V/F ledger and per-asset allowed ramps. |
 | P30 | **M10.1 UX rulings (user-authorized):** (1) one M10.1 milestone covers all UX tasks; (2) `undtool.exe` may skip boot (test-only; `under.exe` is the real game), recorded not fixed; (3) subdue success always shows `NAV_SUBDUE_INTRO` and `[C]ontinue`; settlement keys are **1/2**, never R/S; (4) one-action status line in terminal and window row 29, exact copy in §7.1; (5) help pages 1–9 with the §7.1 page map, `[?]` on every screen, `[J]ournal` on dock/field; (6) lore wraps, save-error `[F]resh` confirms erase; (7) silent mechanics get visible feedback (rough sleep, wariness, grudge, rare chance, lockout, Heavy, sale, respawn, phase); (8) art subdue intro is a modal over the last fight frame; (9) tool/upgrade/cosmetic effects get in-game copy; (10) art polish, Esc menu (M12), boss journal wiring (M11), `legend.1/2` and `zone.4..8` (M13/M16) stay deferred. |
+
+| P31 | **M11 preflight rulings (user-authorized):** (1) **Boss defeat = Kill or Overkill** for credits, score, Field Record first-defeat, `journal.19`, `runReset`, and `boss_kills`; Overkill respawn stays 40 (Kill 20). (2) **Boat paint** shifts one shade and clips to bbox `x=30,y=42,w=153,h=67`: Abyss Teal ramp 0→1 at the same shades; Foam White 5/10/15→10/15/15; Leviathan Black 5/10/15→0/5/10; outline shade 0 and porthole ramp 1 stay; outside-bbox ramp-0 pixels stay base; `boat00.zsp` header ramp is 1 so the hull `from_ramp=0`/custom LUT is pinned explicitly. (3) **Cosmetics** map by index order: 3/4/5→figureheads, 6/7/8→flags, 9/10/11→decals; the highest owned index per slot shows; no equip UI. (4) **Hoard** jettisons the first non-empty non-keystone hold slot every 3 rounds. Also: boss defeat → credits → score → dock with normal D-route return travel; text keys `boss.1..5` / `cosmetic.1..12`; `LastRun.actions` = `FightState.actions` (combat actions). |
 
 ### Game design
 

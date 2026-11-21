@@ -2381,3 +2381,17 @@ row plus four V rows (prior review). Also `World.runReset` exists
 (`world.zig:199-204`) but is **not called from the Derelict kill yet**; that
 wiring belongs to M11's boss-kill integration, not Task 0 preflight, as the
 prior review already recorded.
+
+## M11 preflight (P31 rulings applied)
+
+M11 plan/spec/NOTES amended from the M10.1 tree; **no M11 code executed**.
+
+**Defeat.** Boss defeat means **Kill or Overkill** for credits, score, Field Record first-defeat, `journal.19`, `runReset`, and `boss_kills`. Overkill respawn stays 40 (Kill 20). Defeat returns to the dock with normal D-route travel after credits → score.
+
+**Boat paint.** Hull bbox `x=30,y=42,w=153,h=67`; only ramp-0 shades 5/10/15 change; outline 0 and porthole ramp 1 stay; outside-bbox base. `boat00.zsp` header ramp is 1, so hull `from_ramp=0`/custom LUT is pinned. Abyss Teal 0→1 at same shades; Foam White 5/10/15→10/15/15; Leviathan Black 5/10/15→0/5/10. Do not derive at runtime.
+
+**Cosmetics.** Index order 0/1/2 paints; 3/4/5 → `fig_merm`/`fig_angl`/`fig_krak`; 6/7/8 → `flag_pen`/`flag_ref`/`flag_trn`; 9/10/11 → `dec_barn`/`dec_sqid`/`dec_boss`. Highest owned index per slot shows; no equip UI.
+
+**Hoard.** Jettison the first non-empty non-keystone hold slot every 3 rounds.
+
+**Plan/spec changes.** M11 File Structure expanded; M10.1 status/help contract and both nav allow-lists (`nav.navRun`, `loop_gfx.navRunGfx`) are binding; nav ids >=25; nest `TIER_M10.1`; Task 0 pins score/credits layout + `boss.1..5`/`cosmetic.1..12` text keys + `data_load_test` count 34→51; Task 2 verifies landed gate/telegraph/zone D/cost 5/20-40 respawn rather than reimplementing; Task 1/3 wire `journalOnBossKill`+`runReset`+counters; Task 4 owns boat/overlay accessors, paint LUT/clip, highest-owned cosmetics, credits; Task 5 includes Task 4 and nests M10.1; `LastRun.actions` = `FightState.actions`.
