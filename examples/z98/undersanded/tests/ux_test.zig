@@ -17,6 +17,7 @@ const expedition = @import("../expedition.zig");
 const creatures = @import("../creatures_t1.zig");
 const world = @import("../world.zig");
 const text_scan = @import("../text_scan.zig");
+const render_text = @import("../render_text.zig");
 const std_mem = @import("std_mem.zig");
 
 var fails: usize = 0;
@@ -44,6 +45,47 @@ fn fieldMsgZeroed(st: *const nav.NavState) bool {
     return true;
 }
 
+const Snap = struct {
+    phases: i32, cycle: i32, phase: i32, fight_rng: u32, world_rng: u32,
+    hp: i32, res: i32, hull: i32, world_hull: i32, money: i32, hold: i32,
+};
+
+fn snap(g: *const def.GameState) Snap {
+    return Snap{ .phases = g.world.field_phases, .cycle = g.world.cycle,
+        .phase = g.world.phase, .fight_rng = g.fight.rng_state,
+        .world_rng = g.world.rng_state, .hp = g.fight.hp, .res = g.fight.res,
+        .hull = g.fight.hull, .world_hull = g.world.hull,
+        .money = g.world.money, .hold = g.exp.hold[1] };
+}
+
+fn snapSame(g: *const def.GameState, s: Snap) bool {
+    return g.world.field_phases == s.phases and g.world.cycle == s.cycle
+        and g.world.phase == s.phase and g.fight.rng_state == s.fight_rng
+        and g.world.rng_state == s.world_rng and g.fight.hp == s.hp
+        and g.fight.res == s.res and g.fight.hull == s.hull
+        and g.world.hull == s.world_hull and g.world.money == s.money
+        and g.exp.hold[1] == s.hold;
+}
+
+fn logHas(g: *const def.GameState, id: i32) bool {
+    var i: i32 = 0;
+    while (i < g.log_n) : (i += 1) {
+        if (g.log[@intCast(usize, i)].msg_id == id) return true;
+    }
+    return false;
+}
+
+fn logText(g: *const def.GameState, id: i32, want: []const u8) bool {
+    var i: i32 = 0;
+    while (i < g.log_n) : (i += 1) {
+        if (g.log[@intCast(usize, i)].msg_id != id) continue;
+        var d = creatures.defAt(g.fight.def_index);
+        var buf: [128]u8 = undefined;
+        return lineIs(render_text.msgLine(g.log[@intCast(usize, i)], &d, buf[0..]), want);
+    }
+    return false;
+}
+
 fn tInitStateZeroesEveryField() bool {
     var st = nav.initState();
     if (st.armed != 0) return false;
@@ -68,18 +110,14 @@ fn tFieldMsgClearedOnNextKey() bool {
     game.newGame(&g);
     g.screen = def.NAV_DOCK;
     var st = nav.initState();
-
     nav.navSetFieldMsg(&st, "Killed Mystic Eel.");
     if (st.field_msg_len == 0) return false;
-
     _ = nav.navStep(&g, &st, key('x'));
     if (st.field_msg_len != 0) return false;
     if (!fieldMsgZeroed(&st)) return false;
-
     var out: [8]u8 = undefined;
     const line = nav.navResultLine(&g, &st, out[0..]);
     if (line.len != 0) return false;
-
     var after = nav.initState();
     after.last = 0;
     nav.navSetFieldMsg(&after, "one action");
@@ -128,15 +166,7 @@ fn tFieldMsgDoesNotChangePhaseOrRng() bool {
     g.world.phase = 1;
     g.fight.rng_state = 0x12345678;
     g.world.rng_state = 0x9abcdef0;
-
-    const phases = g.world.field_phases;
-    const cycle = g.world.cycle;
-    const phase = g.world.phase;
-    const fight_rng = g.fight.rng_state;
-    const world_rng = g.world.rng_state;
-    const hp = g.fight.hp;
-    const res = g.fight.res;
-    const hull = g.fight.hull;
+    const before = snap(&g);
 
     var st = nav.initState();
     nav.navSetFieldMsg(&st, "Rested at the node: +30 Hull.");
@@ -144,16 +174,7 @@ fn tFieldMsgDoesNotChangePhaseOrRng() bool {
     var out: [16]u8 = undefined;
     _ = nav.navResultLine(&g, &st, out[0..]);
     nav.navClearFieldMsg(&st);
-
-    if (g.world.field_phases != phases) return false;
-    if (g.world.cycle != cycle) return false;
-    if (g.world.phase != phase) return false;
-    if (g.fight.rng_state != fight_rng) return false;
-    if (g.world.rng_state != world_rng) return false;
-    if (g.fight.hp != hp) return false;
-    if (g.fight.res != res) return false;
-    if (g.fight.hull != hull) return false;
-    return true;
+    return snapSame(&g, before);
 }
 
 fn pendingState(screen: i32) def.GameState {
@@ -258,40 +279,17 @@ fn tSubdueIntroNoRngNoPhase() bool {
     g.fight.res = 9;
     g.fight.hull = 80;
     g.exp.hold[1] = 3;
-
-    const phases = g.world.field_phases;
-    const cycle = g.world.cycle;
-    const phase = g.world.phase;
-    const world_rng = g.world.rng_state;
-    const fight_rng = g.fight.rng_state;
-    const hp = g.fight.hp;
-    const res = g.fight.res;
-    const hull = g.fight.hull;
-    const hold = g.exp.hold[1];
+    const before = snap(&g);
 
     if (!introKeyNoop(&g, &st, '1')) return false;
     if (!introKeyNoop(&g, &st, '2')) return false;
     if (!introKeyNoop(&g, &st, 'r')) return false;
     if (!introKeyNoop(&g, &st, 's')) return false;
     if (!introKeyNoop(&g, &st, 'j')) return false;
-
-    if (g.world.field_phases != phases) return false;
-    if (g.world.cycle != cycle) return false;
-    if (g.world.phase != phase) return false;
-    if (g.world.rng_state != world_rng) return false;
-    if (g.fight.rng_state != fight_rng) return false;
-    if (g.fight.hp != hp) return false;
-    if (g.fight.res != res) return false;
-    if (g.fight.hull != hull) return false;
-    if (g.exp.hold[1] != hold) return false;
+    if (!snapSame(&g, before)) return false;
 
     if (nav.navStep(&g, &st, key('c')) != def.NAV_SETTLE) return false;
-    if (g.world.field_phases != phases) return false;
-    if (g.world.cycle != cycle) return false;
-    if (g.world.phase != phase) return false;
-    if (g.world.rng_state != world_rng) return false;
-    if (g.fight.rng_state != fight_rng) return false;
-    return true;
+    return snapSame(&g, before);
 }
 
 fn lineIs(got: []const u8, want: []const u8) bool {
@@ -443,14 +441,7 @@ fn tEventDoesNotChangePhaseOrRng() bool {
     g.fight.rng_state = 0x12345678;
     g.world.hull = 55;
     g.world.money = 12;
-
-    const phases = g.world.field_phases;
-    const cycle = g.world.cycle;
-    const phase = g.world.phase;
-    const world_rng = g.world.rng_state;
-    const fight_rng = g.fight.rng_state;
-    const hull = g.world.hull;
-    const money = g.world.money;
+    const before = snap(&g);
 
     g.screen = def.NAV_NODE;
     g.last_event = def.EV_REST_DOCK;
@@ -458,15 +449,9 @@ fn tEventDoesNotChangePhaseOrRng() bool {
     g.last_event_value = 40;
     if (nav.navStep(&g, &st, key('x')) != def.NAV_NODE) return false;
 
-    if (g.world.field_phases != phases) return false;
-    if (g.world.cycle != cycle) return false;
-    if (g.world.phase != phase) return false;
-    if (g.world.rng_state != world_rng) return false;
-    if (g.fight.rng_state != fight_rng) return false;
-    if (g.world.hull != hull) return false;
-    if (g.world.money != money) return false;
     if (g.last_event != def.EV_NONE) return false;
-    return lineIs(fieldLine(&st), "Rested at dock: +40 Hull.");
+    return snapSame(&g, before)
+        and lineIs(fieldLine(&st), "Rested at dock: +40 Hull.");
 }
 
 fn tKillOverkillFleeAscentSurviveScreenChange() bool {
@@ -552,6 +537,30 @@ fn tReleaseSellResultLine() bool {
     if (s.last_event != def.EV_NONE) return false;
     return lineIs(fieldLine(&sst), "Sold Mystic Eel for 20 coins - parts kept.");
 }
+fn tWaryLog() bool {
+    var g = newDock();
+    _ = expedition.depart(&g, 1);
+    const gw = &g.world;
+    gw.wary_mask[0] = 0xFFFFFFFF;
+    gw.wary_mask[1] = 0xFFFFFFFF;
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+    return expedition.isInFight(&g) and logHas(&g, def.MSG_WARY)
+        and logText(&g, def.MSG_WARY, "This one remembers: +15 Resolve.");
+}
+
+fn tGrudgeLog() bool {
+    var r = newDock();
+    world.markTaken(&r.world, 0, 0, def.OUT_OVERKILL);
+    game.startFight(&r, 10);
+    if (!logHas(&r, def.MSG_GRUDGE)
+        or !logText(&r, def.MSG_GRUDGE,
+            "It remembers the last run: +30 Resolve.")) return false;
+    var a = newDock();
+    world.markTaken(&a.world, 0, 2, def.OUT_OVERKILL);
+    game.startFight(&a, 11);
+    return logHas(&a, def.MSG_GRUDGE) and logText(&a, def.MSG_GRUDGE,
+        "It remembers the last run: +30% armor.");
+}
 
 pub fn main() void {
     report("init_state_zeroes_every_field", tInitStateZeroesEveryField());
@@ -583,6 +592,8 @@ pub fn main() void {
     report("kill_overkill_flee_ascent_survive_screen_change",
         tKillOverkillFleeAscentSurviveScreenChange());
     report("release_sell_result_line", tReleaseSellResultLine());
+    report("wary_log_at_fight_start", tWaryLog());
+    report("grudge_log_at_fight_start", tGrudgeLog());
 
     if (fails != 0) os.exit(1);
     io.write("ux_test PASS\n");

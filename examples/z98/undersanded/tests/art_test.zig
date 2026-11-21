@@ -368,6 +368,22 @@ fn tSpeedReveal() bool {
     return w.a == -1;
 }
 
+fn tStatsCondition() bool {
+    var g: def.GameState = undefined;
+    baseFight(&g);
+    g.fight.cond = def.COND_EXPOSED;
+    const w = findWidget(&g, art.W_STATS, -1);
+    if (w.sprite != def.COND_EXPOSED) return false;
+    if (!eq(render.conditionName(w.sprite), "Exposed")) return false;
+
+    art.resetFrame();
+    const shown = fnv(renderInto(&g, "", true));
+    g.fight.cond = def.COND_NONE;
+    art.resetFrame();
+    const plain = fnv(renderInto(&g, "", true));
+    return shown != plain;
+}
+
 fn tToolStatusWidth() bool {
     var g: def.GameState = undefined;
     baseFight(&g);
@@ -525,9 +541,9 @@ fn tTweenEqualSamples() bool {
 }
 
 fn tMsgLineParity() bool {
-    const ids = [23]i32{
+    const ids = [25]i32{
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
     };
     var d = creatures.defAt(0);
     var i: usize = 0;
@@ -785,6 +801,7 @@ pub fn main() void {
     report("bar_red_zone_dotted_border", tBarRedZoneBorder());
     report("shake_on_subdue_fail", tShakeOnSubdueFail());
     report("speed_hidden_journal_sonar", tSpeedReveal());
+    report("stats_condition_visible", tStatsCondition());
     report("tool_status_69_cols_80_safe", tToolStatusWidth());
     report("layout_bands_buttons", tLayoutButtons());
     report("dirty_coalesce_order_overflow", tDirtyCoalesce());

@@ -342,6 +342,8 @@ pub const MSG_DECOY: i32 = 20;
 pub const MSG_PHASE: i32 = 21;
 pub const MSG_LURE: i32 = 22;
 pub const MSG_SONAR: i32 = 23;
+pub const MSG_WARY: i32 = 24;
+pub const MSG_GRUDGE: i32 = 25;
 
 // Content boot error copy (spec §25.10, §33).
 pub const MSG_MISSING: []const u8 = "Content file missing. Reinstall from CD.";
@@ -386,6 +388,14 @@ pub const MESSAGES = [_]MsgRow{
     MsgRow{
         .id = 23,
         .text = "Sonar: speed and next action revealed.",
+    },
+    MsgRow{
+        .id = MSG_WARY,
+        .text = "This one remembers: +15 Resolve.",
+    },
+    MsgRow{
+        .id = MSG_GRUDGE,
+        .text = "It remembers the last run: +30 Resolve.",
     },
 };
 

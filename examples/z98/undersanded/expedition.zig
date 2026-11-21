@@ -72,16 +72,30 @@ fn zoneCost(zone: i32) i32 {
     return tables.zoneCost(zone);
 }
 
-// Travel phases each way. Heavy (Hull T3 or Cargo T3) adds +1 on zones whose
-// cost is already >= 3 (§6/§11).
-pub fn travelPhases(g: *def.GameState, zone: i32) i32 {
+// Heavy is active at Hull T3 or Cargo T3 (§6/§11). The renderer uses this for
+// its `Heavy +1` map note; the cost itself always comes from one helper.
+pub fn heavyActive(g: *const def.GameState) bool {
+    return g.world.boat[world.BOAT_HULL] == HEAVY_TIER
+        or g.world.boat[world.BOAT_CARGO] == HEAVY_TIER;
+}
+
+// Travel phases each way. Heavy adds +1 on zones whose cost is already >= 3
+// (§6/§11). This is the single public cost formula for travel and the map.
+pub fn travelCostForZone(g: *const def.GameState, zone: i32) i32 {
     var cost = zoneCost(zone);
-    if (cost >= HEAVY_MIN_COST) {
-        if (g.world.boat[world.BOAT_HULL] == HEAVY_TIER or g.world.boat[world.BOAT_CARGO] == HEAVY_TIER) {
-            cost += HEAVY_BONUS;
-        }
+    if (cost >= HEAVY_MIN_COST and heavyActive(g)) {
+        cost += HEAVY_BONUS;
     }
     return cost;
+}
+
+pub fn travelPhases(g: *def.GameState, zone: i32) i32 {
+    return travelCostForZone(g, zone);
+}
+
+// Available species in the current node's phase pool, without drawing RNG.
+pub fn poolCount(g: *const def.GameState) i32 {
+    return encounter.availableCount(&g.world, g.exp.zone);
 }
 
 // ---- Rest -----------------------------------------------------------------
@@ -426,6 +440,9 @@ fn hunt(g: *def.GameState) void {
     const wary = world.consumeWariness(&g.world, idx);
     g.fight.max_res += wary;
     g.fight.res += wary;
+    if (wary > 0) {
+        fight.log(g, def.LOG_NORMAL, def.MSG_WARY, wary, 0);
+    }
 
     // §10 grudge: run-scoped family overkill raises this fight's stats.
     fight.applyGrudge(g, &cdef, g.world.family_overkill_mask);

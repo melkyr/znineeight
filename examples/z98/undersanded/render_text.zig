@@ -7,6 +7,7 @@
 const def = @import("def.zig");
 const fight = @import("fight.zig");
 const items = @import("items.zig");
+const creatures = @import("creatures_t1.zig");
 
 pub const COLS: usize = 80;
 pub const ROWS: usize = 30;
@@ -108,6 +109,24 @@ pub fn speedRevealed(s: *const def.GameState) bool {
 
 pub fn creatureName(d: *const def.CreatureDef) []const u8 {
     return d.name[0..@intCast(usize, d.name_len)];
+}
+
+pub fn conditionName(cond: i32) []const u8 {
+    switch (cond) {
+        def.COND_DROWSY => return "Drowsy",
+        def.COND_SHAKY => return "Shaky",
+        def.COND_EXPOSED => return "Exposed",
+        else => return "none",
+    }
+}
+
+pub fn conditionEffect(cond: i32) []const u8 {
+    switch (cond) {
+        def.COND_DROWSY => return "Strike -20%",
+        def.COND_SHAKY => return "overkill margin halved",
+        def.COND_EXPOSED => return "incoming damage +25%",
+        else => return "none",
+    }
 }
 
 pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
@@ -230,6 +249,16 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
                 }
             } else {
                 p = copyInto(out, p, ".");
+            }
+        },
+        def.MSG_WARY => {
+            p = copyInto(out, p, "This one remembers: +15 Resolve.");
+        },
+        def.MSG_GRUDGE => {
+            if (e.a == creatures.GRUDGE_ARMOR) {
+                p = copyInto(out, p, "It remembers the last run: +30% armor.");
+            } else {
+                p = copyInto(out, p, "It remembers the last run: +30 Resolve.");
             }
         },
         else => {

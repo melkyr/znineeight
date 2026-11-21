@@ -206,7 +206,9 @@ fn tBossGate() bool {
     if (!render.bossGateOpen(&g)) return false;
 
     var sc: render.Screen = undefined;
-    render.renderMap(&g, &sc);
+    var v: render.View = undefined;
+    nav.prepareMap(&g, &v);
+    render.renderMap(&v, &sc);
     var buf: [8192]u8 = undefined;
     const text = render.dump(&sc, buf[0..]);
     if (contains(text, "locked")) return false;
@@ -265,6 +267,110 @@ fn tGolden(screen_id: []const u8, path: []const u8) bool {
     var buf: [8192]u8 = undefined;
     const text = undtool.dumpFixedScreen(screen_id, buf[0..]) orelse return false;
     return goldenEq(path, text);
+}
+
+fn tConditionVisible() bool {
+    var g = newGame();
+    game.startFight(&g, 0);
+    var d = creatures.defAt(0);
+    var sc: render.Screen = undefined;
+    var buf: [8192]u8 = undefined;
+
+    g.fight.cond = def.COND_SHAKY;
+    render.renderFrame(&g, &d, &sc);
+    var text = render.dump(&sc, buf[0..]);
+    if (!contains(text, "COND Shaky")) return false;
+
+    g.fight.cond = def.COND_NONE;
+    render.renderFrame(&g, &d, &sc);
+    text = render.dump(&sc, buf[0..]);
+    return contains(text, "COND none") and !contains(text, "COND Shaky");
+}
+
+fn nodeText(g: *def.GameState, text: []u8) []const u8 {
+    var v: render.View = undefined;
+    var sc: render.Screen = undefined;
+    nav.prepareNode(g, &v);
+    render.renderNode(&v, &sc);
+    return render.dump(&sc, text);
+}
+
+fn tNodeRareLockoutPool() bool {
+    var g = newGame();
+    g.exp.active = 1;
+    g.exp.zone = 1;
+    var buf: [8192]u8 = undefined;
+
+    var text = nodeText(&g, buf[0..]);
+    if (!contains(text, "Cycle 0 - Day")) return false;
+    if (!contains(text, "Rare chance: 15%")) return false;
+    if (!contains(text, "Pool: 10  Fights left 3")) return false;
+
+    const gw = &g.world;
+    gw.ready[def.MAX_CREATURES + 11] = 1;
+    text = nodeText(&g, buf[0..]);
+    if (!contains(text, "Pool: 9  Fights left 3")) return false;
+
+    gw.lockout_until[1] = 3;
+    text = nodeText(&g, buf[0..]);
+    return contains(text, "Rare chance 0% (locked 3 cycles)");
+}
+
+fn tMapHeavyCycle() bool {
+    var g = newGame();
+    g.world.cycle = 2;
+    g.world.phase = 1;
+    const gw = &g.world;
+    gw.boat[world.BOAT_HULL] = 3;
+    if (expedition.travelCostForZone(&g, 2) != 4) return false;
+    if (expedition.travelCostForZone(&g, 1) != 2) return false;
+
+    var sc: render.Screen = undefined;
+    var buf: [8192]u8 = undefined;
+    var v: render.View = undefined;
+    nav.prepareMap(&g, &v);
+    render.renderMap(&v, &sc);
+    var text = render.dump(&sc, buf[0..]);
+    if (!contains(text, "Cycle 2 - Night")) return false;
+    if (!contains(text, "Heavy +1")) return false;
+    if (!contains(text, "Z3  Trench-Edge         4   open")) return false;
+
+    var h = newGame();
+    nav.prepareMap(&h, &v);
+    render.renderMap(&v, &sc);
+    text = render.dump(&sc, buf[0..]);
+    if (contains(text, "Heavy +1")) return false;
+    return contains(text, "Z3  Trench-Edge         3   open");
+}
+
+fn tRenderNoMutation() bool {
+    var g = newGame();
+    g.world.cycle = 5;
+    g.world.phase = 1;
+    g.world.rng_state = 0x12345678;
+    g.world.money = 7;
+    g.exp.active = 1;
+    g.exp.zone = 1;
+    g.exp.fight_index = 1;
+    g.fight.def_index = 0;
+    g.fight.outcome = def.OUT_ONGOING;
+    g.fight.rng_state = 0x9abcdef0;
+    const cycle = g.world.cycle;
+    const phase = g.world.phase;
+    const wrng = g.world.rng_state;
+    const frng = g.fight.rng_state;
+
+    var buf: [8192]u8 = undefined;
+    _ = nodeText(&g, buf[0..]);
+    var sc: render.Screen = undefined;
+    var v: render.View = undefined;
+    nav.prepareMap(&g, &v);
+    render.renderMap(&v, &sc);
+    nav.prepareDock(&g, &v);
+    render.renderDock(&v, &sc);
+
+    return g.world.cycle == cycle and g.world.phase == phase
+        and g.world.rng_state == wrng and g.fight.rng_state == frng;
 }
 
 // ---- Release / sell -------------------------------------------------------
@@ -376,6 +482,10 @@ pub fn main() void {
     report("dock_golden_exact", tGolden("dock", DOCK_GOLDEN));
     report("map_golden_exact", tGolden("map", MAP_GOLDEN));
     report("node_golden_exact", tGolden("node", NODE_GOLDEN));
+    report("condition_visible_in_terminal_stats", tConditionVisible());
+    report("node_rare_lockout_pool", tNodeRareLockoutPool());
+    report("map_heavy_cost_cycle", tMapHeavyCycle());
+    report("render_no_rng_no_phase", tRenderNoMutation());
     report("subdue_golden_exact", tGolden("subdue", SUBDUE_GOLDEN));
     report("settle_golden_exact", tGolden("settle", SETTLE_GOLDEN));
     report("release_keeps_parts_bonus_wary_renews", tRelease());

@@ -598,6 +598,10 @@ fn drawStats(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
     } else {
         p = catText(buf[0..], p, "??");
     }
+    if (w.sprite != def.COND_NONE) {
+        p = catText(buf[0..], p, "  COND ");
+        p = catText(buf[0..], p, render.conditionName(w.sprite));
+    }
     drawText(sf, w.x + 4, w.y + 4, buf[0..p], C_TEXT, C_PANEL);
 }
 

@@ -103,21 +103,17 @@ pub fn navSetFieldMsgInt(st: *NavState, prefix: []const u8, value: i32,
 }
 
 fn eventCondName(cond: i32) []const u8 {
-    switch (cond) {
-        def.COND_DROWSY => return "Drowsy",
-        def.COND_SHAKY => return "Shaky",
-        def.COND_EXPOSED => return "Exposed",
-        else => return "rough",
+    if (cond == def.COND_DROWSY or cond == def.COND_SHAKY or cond == def.COND_EXPOSED) {
+        return render_text.conditionName(cond);
     }
+    return "rough";
 }
 
 fn eventCondEffect(cond: i32) []const u8 {
-    switch (cond) {
-        def.COND_DROWSY => return "Strike -20%",
-        def.COND_SHAKY => return "overkill margin halved",
-        def.COND_EXPOSED => return "incoming damage +25%",
-        else => return "the sleep takes its toll",
+    if (cond == def.COND_DROWSY or cond == def.COND_SHAKY or cond == def.COND_EXPOSED) {
+        return render_text.conditionEffect(cond);
     }
+    return "the sleep takes its toll";
 }
 
 // Consume one transient §7.1 field event into the one-action status line.
@@ -563,7 +559,13 @@ fn initView(g: *const def.GameState, screen: i32, out: *render.View) void {
     out.journal_text_found = false;
     out.zone_flavour = "";
     out.zone_flavour_found = false;
+    out.heavy_active = false;
+    out.node_pool = 0;
     var i: usize = 0;
+    while (i < def.MAX_ZONES) : (i += 1) {
+        out.zone_cost[i] = 0;
+    }
+    i = 0;
     while (i < def.MAX_PARTS) : (i += 1) {
         out.refine_parts[i] = 0;
         out.refine_per_part[i] = 0;
@@ -660,8 +662,18 @@ pub fn prepareJournal(g: *const def.GameState, sel: i32, out: *render.View) void
     }
 }
 
+pub fn prepareMap(g: *const def.GameState, out: *render.View) void {
+    initView(g, def.NAV_MAP, out);
+    out.heavy_active = expedition.heavyActive(g);
+    var i: usize = 0;
+    while (i < def.MAX_ZONES) : (i += 1) {
+        out.zone_cost[i] = expedition.travelCostForZone(g, @intCast(i32, i));
+    }
+}
+
 pub fn prepareNode(g: *const def.GameState, out: *render.View) void {
     initView(g, g.screen, out);
+    out.node_pool = expedition.poolCount(g);
     var zkey: [24]u8 = undefined;
     const ztext = render_text.keyIntInto("zone.", g.exp.zone + 1, zkey[0..]);
     if (data.textFind(ztext)) |flavour| {
@@ -680,7 +692,11 @@ pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) vo
         var d = creatures.defAt(g.fight.def_index);
         render.renderFrame(g, &d, sc);
     } else switch (g.screen) {
-        def.NAV_MAP => render.renderMap(g, sc),
+        def.NAV_MAP => {
+            var v: render.View = undefined;
+            prepareMap(g, &v);
+            render.renderMap(&v, sc);
+        },
         def.NAV_NODE, def.NAV_SETTLE, def.NAV_SUBDUE_INTRO => {
             var v: render.View = undefined;
             prepareNode(g, &v);

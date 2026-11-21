@@ -47,6 +47,9 @@ pub const View = struct {
     journal_text_found: bool,
     zone_flavour: []const u8,
     zone_flavour_found: bool,
+    zone_cost: [def.MAX_ZONES]i32,
+    heavy_active: bool,
+    node_pool: i32,
 };
 
 pub const COSMETIC_LOCKED: i32 = 0;
@@ -83,6 +86,22 @@ fn copyInto(out: []u8, start: usize, s: []const u8) usize {
 
 pub fn speedRevealed(s: *const def.GameState) bool {
     return render_text.speedRevealed(s);
+}
+
+pub fn conditionName(cond: i32) []const u8 {
+    return render_text.conditionName(cond);
+}
+
+fn phaseDayNight(phase: i32) []const u8 {
+    if (phase == world.PHASE_NIGHT) return "Night";
+    return "Day";
+}
+
+fn putCycleLine(sc: *Screen, s: *const def.GameState, y: i32) void {
+    var x = put(sc, 0, y, "Cycle ");
+    x = putInt(sc, x, y, s.world.cycle);
+    x = put(sc, x, y, " - ");
+    _ = put(sc, x, y, phaseDayNight(s.world.phase));
 }
 
 
@@ -185,6 +204,9 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
     } else {
         _ = put(sc, x, 1, "??");
     }
+
+    x = put(sc, 0, 2, "COND ");
+    _ = put(sc, x, 2, conditionName(s.fight.cond));
 
     putBar(sc, 3, "HP     ", s.fight.hp, s.fight.max_hp);
     putBar(sc, 4, "RESOLVE", s.fight.res, s.fight.max_res);
@@ -367,6 +389,7 @@ pub fn renderDock(v: *const View, sc: *Screen) void {
     const s = v.g;
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  DOCK");
+    putCycleLine(sc, s, 1);
 
     var x = put(sc, 0, 2, "Hull ");
     x = putInt(sc, x, 2, s.world.hull);
@@ -562,12 +585,13 @@ pub fn renderTools(s: *const def.GameState, sc: *Screen) void {
 }
 
 
-fn renderMapRow(s: *const def.GameState, sc: *Screen, zone: i32, y: i32) void {
+fn renderMapRow(v: *const View, sc: *Screen, zone: i32, y: i32) void {
+    const s = v.g;
     var x = put(sc, 0, y, zoneTag(zone));
     x = padTo(sc, x, y, 4);
     x = put(sc, x, y, zoneName(zone));
     x = padTo(sc, x, y, 24);
-    x = putInt(sc, x, y, tables.zoneCost(zone));
+    x = putInt(sc, x, y, v.zone_cost[@intCast(usize, zone)]);
     x = padTo(sc, x, y, 28);
 
     var open = true;
@@ -582,15 +606,17 @@ fn renderMapRow(s: *const def.GameState, sc: *Screen, zone: i32, y: i32) void {
     }
 }
 
-pub fn renderMap(s: *const def.GameState, sc: *Screen) void {
+pub fn renderMap(v: *const View, sc: *Screen) void {
+    const s = v.g;
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  MAP");
-    _ = put(sc, 0, 1, "Zone ladder (travel phases each way):");
+    putCycleLine(sc, s, 1);
+    _ = put(sc, 0, 2, "Zone ladder (travel phases each way):");
 
     var zone: i32 = 0;
     var y: i32 = 3;
     while (zone <= BOSS_ZONE) : (zone += 1) {
-        renderMapRow(s, sc, zone, y);
+        renderMapRow(v, sc, zone, y);
         y += 1;
     }
 
@@ -598,6 +624,9 @@ pub fn renderMap(s: *const def.GameState, sc: *Screen) void {
     x = putInt(sc, x, 13, seenNonBossCount(s));
     x = put(sc, x, 13, "/");
     _ = putInt(sc, x, 13, BOSS_SEEN_GATE);
+    if (v.heavy_active) {
+        _ = put(sc, 0, 14, "Heavy +1 (Hull/Cargo T3) on cost 3+ zones.");
+    }
 
     _ = put(sc, 0, 15, "[1-8] Z1-Z8  [9] Boss  [Esc] Back");
 }
@@ -796,9 +825,24 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
     }
 
     _ = put(sc, 0, 0, "UNDERSANDED  NODE");
+    putCycleLine(sc, s, 1);
     _ = put(sc, 0, 2, zoneName(s.exp.zone));
 
-    var x = put(sc, 0, 4, "Fights left ");
+    const locked = world.lockoutRemaining(&s.world, s.exp.zone);
+    var x: i32 = 0;
+    if (locked > 0) {
+        x = put(sc, 0, 3, "Rare chance 0% (locked ");
+        x = putInt(sc, x, 3, locked);
+        _ = put(sc, x, 3, " cycles)");
+    } else {
+        x = put(sc, 0, 3, "Rare chance: ");
+        x = putInt(sc, x, 3, world.rareChance(&s.world, s.exp.zone));
+        _ = put(sc, x, 3, "%");
+    }
+
+    x = put(sc, 0, 4, "Pool: ");
+    x = putInt(sc, x, 4, v.node_pool);
+    x = put(sc, x, 4, "  Fights left ");
     _ = putInt(sc, x, 4, fightsLeft(s));
 
     x = put(sc, 0, 5, "Hull ");

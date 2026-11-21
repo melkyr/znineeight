@@ -243,15 +243,21 @@ pub fn applyGrudge(s: *def.GameState, cdef: *const def.CreatureDef, mask: u32) v
     const bit: u32 = @intCast(u32, 1) << @intCast(u32, cdef.grudge_family);
     if ((mask & bit) == 0) return;
 
+    var applied = false;
     switch (cdef.grudge_kind) {
         creatures.GRUDGE_RES => {
             s.fight.res += cdef.grudge_value;
             s.fight.max_res += cdef.grudge_value;
+            applied = true;
         },
         creatures.GRUDGE_ARMOR => {
             s.fight.flags = s.fight.flags | def.F_GRUDGE_ARMOR;
+            applied = true;
         },
         else => {},
+    }
+    if (applied) {
+        log(s, def.LOG_NORMAL, def.MSG_GRUDGE, cdef.grudge_kind, 0);
     }
 }
 

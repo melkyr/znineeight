@@ -206,7 +206,9 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
         nav.prepareDock(&s, &v);
         render.renderDock(&v, &sc);
     } else if (eq(screen_id, "map")) {
-        render.renderMap(&s, &sc);
+        var v: render.View = undefined;
+        nav.prepareMap(&s, &v);
+        render.renderMap(&v, &sc);
     } else if (eq(screen_id, "node")) {
         var v: render.View = undefined;
         nav.prepareNode(&s, &v);
