@@ -2209,7 +2209,7 @@ its sale price; normal renewal. Parts are kept either way; zones with no rares
 | Event | Copy |
 | :--- | :--- |
 | Depart | `Departed to <zone> - travel <t> out, <t> back (+1 depart action).` |
-| Hunt kill | `Killed <name> - Secured: <parts>.` |
+| Hunt kill | `Killed <name>.` (node `Secured:` line carries the parts) |
 | Hunt overkill | `Overkilled <name> - the rarest line is ruined.` |
 | Creature flee | `The creature fled - no loot; it renews.` |
 | Player flee | `You fled - no loot; returned to dock.` |
@@ -2297,7 +2297,7 @@ adds the M10.1-specific items below.
 `def.NAV_SUBDUE_INTRO=24` (`def.zig:269`), so the next free nav id is **25**.
 M11's score/credits screens must allocate ids >=25 and join **both** M10.1 NAV
 allow-lists: `nav.navRun` (`nav.zig:929-935`) and `loop_gfx.navRunGfx`
-(`loop_gfx.zig:232-238`). (`nav.navRunGfx` does not exist.) Also update
+(`loop_gfx.zig:233-239`). (`nav.navRunGfx` does not exist.) Also update
 `loop_gfx.artMode` (`loop_gfx.zig:130-136`) and the screen routing.
 `NAV_SUBDUE_INTRO` is a non-boss path (`subdue_chance=-1`); boss kills still use
 the shared post-fight path. `GameState.last_event/last_event_def/last_event_value`
@@ -2352,7 +2352,7 @@ whether those bow/stern/cabin regions also repaint.
 
 **4. `journalOnBossKill` wiring (M11 amendment).** `journalOnBossKill` exists
 (`journal.zig:80-88`) but has **no production caller**; `journalOnFightEnd`
-explicitly returns for the boss (`journal.zig:69-78`), and only the test calls
+explicitly returns for the boss (`journal.zig:72-78`), and only the test calls
 the boss hook (`tests/journal_test.zig:149-155`). The boss is load-order index
 18, so the hook unlocks `journal.19` (`journal.zig:137`). M11 must call it
 exactly on the boss **kill** path (not overkill, flee, ascent or subdue), before

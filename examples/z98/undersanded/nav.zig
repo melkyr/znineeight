@@ -350,9 +350,11 @@ fn dockStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
 
 // Refine sub-menu: common parts execute on one press; Glow Polyp (6) and Glass
 // Pane (7) arm a rare-batch preview and execute on the same key again. Any
-// other key cancels the arm; Esc backs out to the dock (R11/P22.9).
+// other key cancels the arm; Esc reports the same cancel copy and backs out to
+// the dock (R11/P22.9).
 fn refineStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     if (isEsc(key)) {
+        if (st.armed != 0) navSetDockMsg(st, "Rare batch cancelled.");
         st.armed = 0;
         return setScreen(g, def.NAV_DOCK);
     }

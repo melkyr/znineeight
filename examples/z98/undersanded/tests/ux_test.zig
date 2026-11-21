@@ -559,7 +559,7 @@ fn tGrudgeLog() bool {
     world.markTaken(&a.world, 0, 2, def.OUT_OVERKILL);
     game.startFight(&a, 11);
     return logHas(&a, def.MSG_GRUDGE) and logText(&a, def.MSG_GRUDGE,
-        "It remembers the last run: +30% armor.");
+        "It remembers the last run: armor drops to 30%.");
 }
 
 pub fn main() void {

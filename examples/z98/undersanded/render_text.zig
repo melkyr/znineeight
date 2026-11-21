@@ -299,7 +299,7 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
         },
         def.MSG_GRUDGE => {
             if (e.a == creatures.GRUDGE_ARMOR) {
-                p = copyInto(out, p, "It remembers the last run: +30% armor.");
+                p = copyInto(out, p, "It remembers the last run: armor drops to 30%.");
             } else {
                 p = copyInto(out, p, "It remembers the last run: +30 Resolve.");
             }

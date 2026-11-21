@@ -299,6 +299,32 @@ fn tRareCancelKeys() bool {
     return true;
 }
 
+// (h2) Esc out of an armed rare batch reports the cancel copy, backs out to
+// the dock, and clears the line on the next key.
+fn tRareCancelEsc() bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    var st = newNav();
+    setHold(&g, 6, 3);
+
+    if (nav.navStep(&g, &st, key('r')) != def.NAV_REFINE) return false;
+    if (nav.navStep(&g, &st, key('6')) != def.NAV_REFINE) return false;
+    if (st.armed != 6) return false;
+
+    if (nav.navStep(&g, &st, escKey()) != def.NAV_DOCK) return false;
+    if (st.armed != 0) return false;
+    if (g.exp.hold[6] != 3) return false;
+    if (g.world.field_phases != 0) return false;
+    var out: [96]u8 = undefined;
+    const line = nav.navResultLine(&g, &st, out[0..]);
+    if (!textEq(line, "Rare batch cancelled.")) return false;
+
+    // The next key clears the one-action line.
+    if (nav.navStep(&g, &st, key('d')) != def.NAV_MAP) return false;
+    const cleared = nav.navResultLine(&g, &st, out[0..]);
+    return cleared.len == 0;
+}
+
 // (i) Successful dock actions name the amount/effect instead of `Done.`
 fn tDockRefineResult() bool {
     var g: def.GameState = undefined;
@@ -453,6 +479,7 @@ pub fn main() void {
     report("dock_menu_keys_and_esc", tDockMenuKeys());
     report("rare_batch_two_press_confirm", tRareConfirmKeys());
     report("rare_batch_other_key_cancels", tRareCancelKeys());
+    report("rare_batch_esc_cancels_and_clears", tRareCancelEsc());
     report("dock_refine_result_names_amount", tDockRefineResult());
     report("dock_refine_zero_yield_explanation", tDockRefineZeroYieldExplanation());
     report("dock_upgrade_result_names_axis_tier", tDockUpgradeResult());

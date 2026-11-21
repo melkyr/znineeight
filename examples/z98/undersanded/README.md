@@ -68,7 +68,8 @@ and the same navigation keys:
 | Dock/map/node/journal/help | 80×30 cells | same as console play |
 | Fight | 640×480 art frame | `S`/`R`/`E`/`F` (or click the four buttons), `?` help |
 
-The one-action status line renders on cell row 29 in both cell and art modes.
+The one-action status line renders on cell row 29 for cell-screen views; live
+art notices go through `render_art.drawNotice` in the 640×480 fight log.
 The pixel tier is attached once after content boot (`gfxPxAttach`). If attach
 fails (including a depth below 16bpp) the session stays in all-cell mode and the
 reason is logged once to `errors.log`; an art frame that loses its surface is
