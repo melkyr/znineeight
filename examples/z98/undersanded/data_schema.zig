@@ -349,6 +349,14 @@ pub fn textKeyKnown(k: []const u8) bool {
         const n = scan.parseI32(k[6..]) orelse return false;
         return n >= 1 and n <= 6;
     }
+    if (k.len > 5 and scan.eql(k[0..5], "boss.")) {
+        const n = scan.parseI32(k[5..]) orelse return false;
+        return n >= 1 and n <= 5;
+    }
+    if (k.len > 9 and scan.eql(k[0..9], "cosmetic.")) {
+        const n = scan.parseI32(k[9..]) orelse return false;
+        return n >= 1 and n <= 12;
+    }
     return false;
 }
 

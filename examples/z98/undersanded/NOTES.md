@@ -2395,3 +2395,51 @@ M11 plan/spec/NOTES amended from the M10.1 tree; **no M11 code executed**.
 **Hoard.** Jettison the first non-empty non-keystone hold slot every 3 rounds.
 
 **Plan/spec changes.** M11 File Structure expanded; M10.1 status/help contract and both nav allow-lists (`nav.navRun`, `loop_gfx.navRunGfx`) are binding; nav ids >=25; nest `TIER_M10.1`; Task 0 pins score/credits layout + `boss.1..5`/`cosmetic.1..12` text keys + `data_load_test` count 34→51; Task 2 verifies landed gate/telegraph/zone D/cost 5/20-40 respawn rather than reimplementing; Task 1/3 wire `journalOnBossKill`+`runReset`+counters; Task 4 owns boat/overlay accessors, paint LUT/clip, highest-owned cosmetics, credits; Task 5 includes Task 4 and nests M10.1; `LastRun.actions` = `FightState.actions`.
+
+**Score screen layout (pinned, terminal 80×30; art mode uses the same labels).**
+Every screen keeps the `[?] Help` footer; score/boat/credits all map to `manual.8` (no new page). The three panel titles are exactly `FIELD RECORD`, `VARIANTS SEEN`, `LAST RUN`. Field Record rows, in order: cycles, field time (`World.field_phases`, phases), species seen, rares seen, bosses killed, final Phase 2 identity, subdued/killed/overkilled, expertise per material, money earned, cosmetics, boat tiers. Variants Seen prints `n / 5` and the five identity rows grayed when unseen. Last Run prints cycles, Phase 2 identity, outcome, actions (`FightState.actions`), Hull spent, and lifetime boss kills.
+
+```
+UNDERSANDED  SCORE                                                  [?] Help
+FIELD RECORD                          VARIANTS SEEN
+Cycles: <n>                           Variants: <n> / 5
+Field time: <n> phases                [x] The Armor
+Species seen: <n>/<N>                 [ ] The Sliver
+Rares seen: <n>/<N>                   [ ] The Hoard
+Bosses killed: <n>/1                  [ ] The Drown
+Final Phase 2: <identity>             [ ] The Blur
+Subdued/Killed/Overkilled: <a>/<b>/<c>
+Expertise: <e0> <e1> ... <e9>
+Money earned: <n>
+Cosmetics: <n>/12
+Boat: Hull <n> Speed <n> Cargo <n> Oxygen <n> Precision <n>
+
+LAST RUN
+Cycles: <n>
+Phase 2: <identity>
+Outcome: <Kill|Overkill|Fled|Ascent|Lost>
+Actions: <n>
+Hull spent: <n>
+Boss kills: <n>
+
+Thank you for playing. The ocean is still there.
+```
+
+The Field Record title and closing line are the two §40 authoring lines: title `FIELD RECORD`, closing line exactly `Thank you for playing. The ocean is still there.` (code constants in `score.zig`, not `data.z98`). The boat is rendered in full (base → paint → decal → figurehead → flag) in the Field Record panel in art mode; terminal prints the boat-tier line above.
+
+**Credits screen (pinned).** Exact copy, one line per row, centered; `[C]ontinue` (only `C`/`c`) advances to the score screen. No nav/help state is lost: the boss-kill status is deliberately replaced by this transition.
+
+```
+UNDERSANDED
+A Z98 demo.
+Design, code, art, and data by the Undersanded team.
+[C]ontinue
+```
+
+**Identity labels (pinned).** Phase-2 identity order is spec §15 table order: `The Armor`, `The Sliver`, `The Hoard`, `The Drown`, `The Blur`. `boss.1..5` map in that same order; the 5-bit Variants Seen mask uses the same bit order (Armor=bit 0 … Blur=bit 4). Last Run outcome labels: `Kill`, `Overkill`, `Fled`, `Ascent`, `Lost` (boss defeat is only Kill or Overkill).
+
+**Text vocabulary (pinned; authored in Task 0).** `boss.1..5` are the Phase-2 flavor lines in identity order above; `cosmetic.1..12` are one line per `[cosmetics]` row in item order (1 Foam White, 2 Abyss Teal, 3 Leviathan Black, 4 Gull Skull, 5 Lantern Jaw, 6 Derelict Cog, 7 Patched Pennant, 8 Reef Signal, 9 Trench Mark, 10 Barnacle Stamp, 11 Glass Squid, 12 Boss Sigil). `data_schema.textKeyKnown` accepts `boss.1..5` and `cosmetic.1..12`; `data.z98` ships all 17 rows; `tests/data_load_test.zig` text count is **51** (34→51). `defs_golden.txt` **does** contain text rows (`[text-keys]`), so it is re-pinned with the same 17 keys in the same order (after `journal.19`). `defs_boss_golden.txt` is a single boss row and needs no change.
+
+**Content/existing-state confirmation.** `data.z98` id17 (`The Derelict`) already has `subdue_chance=-1`, HP 300, Speed 7, Attack 10, `respawn_kill=20`/`respawn_over=40`. `World` already carries `field_record_written`, `field_record`, `last_run`, `score_subdued`/`score_killed`/`score_overkilled`, `score_money_earned`, `boss_variants_seen`, `boss_kills`. `World.runReset` exists (`world.zig`) but has **no production caller**; wiring it (with `journalOnBossKill` and the score counters) belongs to Tasks 1/3, not this preflight.
+
+**Baseline (before Task 0 edits, from this worktree).** `TIER_M10.1 PASS 133 passed / 0 failed`, nested `TIER_M10 PASS 71 passed / 0 failed`. Post-edit data/content drivers and `TIER_M10.1` are rerun and recorded in the Task 0 report.
