@@ -34,6 +34,11 @@ Both flags are exclusive: combining them with each other or with any tool flag
 mode is selected at build/link time (Ruling A), because Z98 has no
 program-level `-D` build option.
 
+`undtool.exe` (and native `undtool.nix --play`) starts directly at the dock and
+skips the lore/menu boot. This boot skip is **test-only**: `under.exe` is the
+real game and always runs the shared boot flow. Record it as a test affordance;
+do not add console boot.
+
 ## Console play (dock, map, node)
 
 | Screen | Keys |

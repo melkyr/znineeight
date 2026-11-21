@@ -51,8 +51,9 @@ pub const NavState = struct {
     help_page: i32,
     tip: i32,
     journal_sel: i32,
-    // Boot-only: 0 none, 1 awaiting the New Game Y/N answer. navStep never
-    // reads it, so console nav behaviour is unchanged.
+    // Boot-only: 0 none, 1 awaiting the New Game Y/N answer, 2 awaiting the
+    // save-error [F]resh erase Y/N answer. navStep never reads it, so console
+    // nav behaviour is unchanged.
     boot_pending: i32,
     // M10.1 one-action field status line (UI-only, spec §7.1).
     field_msg: [96]u8,
@@ -881,9 +882,9 @@ pub fn bootDraw(g: *def.GameState, st: *const NavState, screen: i32,
     }
 }
 
-// Pure one-key boot step. `msg` receives the New Game confirmation to show
-// BEFORE the next key is read; st.boot_pending remembers that the next key is
-// the Y/N answer (no draw/prompt in between, matching the original stdout).
+// Pure one-key boot step. `msg` receives a New Game or Fresh erase confirmation
+// to show BEFORE the next key is read; st.boot_pending remembers which Y/N
+// answer is pending (no draw/prompt in between, matching the original stdout).
 pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
     screen: i32, key: input.Key, msg: []u8) BootOut {
     var out = BootOut{
@@ -894,7 +895,20 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
     };
 
     if (st.boot_pending != 0) {
+        const pending = st.boot_pending;
         st.boot_pending = 0;
+        // 1: New Game confirm. 2: save-error [F]resh erase confirm. Only Y
+        // performs an erase, so neither path can lose a save with one key.
+        if (pending == 2) {
+            if (confirmAction(key) == BOOT_ACT_YES) {
+                save_ux.eraseSlot(dir, save_ux.readSaveSlot(dir));
+                out.screen = def.NAV_LORE;
+                return out;
+            }
+            out.screen = def.NAV_SAVE_ERR;
+            return out;
+        }
+        if (pending != 1) return out;
         if (confirmAction(key) != BOOT_ACT_YES) return out;
         game.newGame(g);
         const slot = save_ux.readSaveSlot(dir);
@@ -972,8 +986,10 @@ pub fn bootKey(g: *def.GameState, st: *NavState, dir: []const u8,
         }
         const act = errorAction(key);
         if (act == BOOT_ACT_FRESH) {
-            save_ux.eraseSlot(dir, save_ux.readSaveSlot(dir));
-            out.screen = def.NAV_LORE;
+            st.boot_pending = 2;
+            var at: usize = 0;
+            text_scan.appendText(msg, &at, save_ux.FRESH_CONFIRM);
+            out.msg_len = at;
             return out;
         }
         if (act == BOOT_ACT_BACKUP) {

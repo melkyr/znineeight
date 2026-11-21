@@ -405,7 +405,15 @@ pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
 }
 
 pub fn putTextBlock(sc: *Screen, y0: i32, text: []const u8, y_limit: i32) void {
-    const width: usize = 78;
+    putTextBlockWidth(sc, y0, text, y_limit, 78);
+}
+
+// Shared paragraph-aware wrapper: authored '\n' breaks, '\n\n' keeps a
+// paragraph gap, and long lines wrap at a space (or hard-split a token) within
+// max_width columns. Callers that need the full 80-column frame pass COLS.
+pub fn putTextBlockWidth(sc: *Screen, y0: i32, text: []const u8, y_limit: i32, max_width: usize) void {
+    var width = max_width;
+    if (width == 0 or width > COLS) width = COLS;
     var i: usize = 0;
     var y = y0;
     while (i < text.len and y < y_limit) {

@@ -14,6 +14,7 @@ const text_scan = @import("text_scan.zig");
 
 pub const QUIT_PROMPT: []const u8 = "Save before quitting? [Y] [N] [Cancel]";
 pub const NEW_GAME_CONFIRM: []const u8 = "Erase this save? [Y] [N]";
+pub const FRESH_CONFIRM: []const u8 = "Erase this save? [Y] [N]";
 pub const SAVE_ERROR_KEYS: []const u8 = "[F]resh  [B]ackup slot  [Q]uit";
 pub const SAVE_OK: []const u8 = "Saved.";
 pub const SAVE_FAILED: []const u8 = "Save failed.";
@@ -168,8 +169,9 @@ pub fn loadSlot(g: *def.GameState, dir: []const u8, slot: i32) persist.SaveErr!v
     g.screen = FIRST_RUN_DONE_SCREEN;
 }
 
-// Bad-save [F]resh: erase only the active slot file, then the §20 flow decides
-// whether a save exists (it never autosaves over the other slot).
+// Bad-save [F]resh: after the [Y] confirm, erase only the active slot file;
+// the §20 flow then decides whether a save exists (it never autosaves over the
+// other slot).
 pub fn eraseSlot(dir: []const u8, slot: i32) void {
     var path_buf: [4096]u8 = undefined;
     const path = saveSlotPath(dir, slot, path_buf[0..]) orelse return;

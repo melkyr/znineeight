@@ -262,8 +262,9 @@ fn expectedLore(out: []u8) []const u8 {
     appendLine(out, &at, "");
     appendLine(out, &at, "First line.");
     appendLine(out, &at, "");
+    appendLine(out, &at, "");
     appendLine(out, &at, "Second paragraph.");
-    var y: usize = 5;
+    var y: usize = 6;
     while (y < 29) : (y += 1) {
         appendLine(out, &at, "");
     }
@@ -404,6 +405,19 @@ fn tLoreDeterministic() bool {
     if (!contains(a, "Alpha")) return false;
     if (!contains(a, "Beta")) return false;
     if (!contains(a, "Gamma")) return false;
+    return true;
+}
+
+fn tLoreWrapNoClip() bool {
+    const text = "Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu ENDMARK\n\nSecond paragraph survives as its own block AFTERMARK.";
+    var sc: render.Screen = undefined;
+    render.renderLore(text, &sc);
+    var out: [8192]u8 = undefined;
+    const text_out = render.dump(&sc, out[0..]);
+    if (!contains(text_out, "Alpha bravo")) return false;
+    if (!contains(text_out, "ENDMARK")) return false;
+    if (!contains(text_out, "Second paragraph")) return false;
+    if (!contains(text_out, "AFTERMARK")) return false;
     return true;
 }
 
@@ -741,6 +755,49 @@ fn tBootBackupSlot() bool {
     return true;
 }
 
+fn tBootFreshConfirmCancelErase() bool {
+    var b0: [256]u8 = undefined;
+    const save0 = filePath("save0.dat", b0[0..]);
+    removeIfExists(save0);
+
+    var seed: def.GameState = undefined;
+    seedState(&seed);
+    seed.world.cycle = 33;
+    persist.saveWrite(save0, &seed.world, &seed.exp) catch return false;
+
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    var st = nav.initState();
+    st.save_err_kind = save_ux.ERR_KIND_BAD_VERSION;
+    var msg: [256]u8 = undefined;
+
+    const ask = nav.bootKey(&g, &st, prefix, def.NAV_SAVE_ERR, key('f'), msg[0..]);
+    if (st.boot_pending != 2) return false;
+    if (ask.screen != def.NAV_SAVE_ERR or ask.done or ask.quit) return false;
+    if (!eq(msg[0..ask.msg_len], save_ux.FRESH_CONFIRM)) return false;
+    if (!file_mod.exists(save0)) return false;
+
+    const cancel = nav.bootKey(&g, &st, prefix, def.NAV_SAVE_ERR, key('n'), msg[0..]);
+    if (st.boot_pending != 0) return false;
+    if (cancel.screen != def.NAV_SAVE_ERR or cancel.done or cancel.quit) return false;
+    if (!file_mod.exists(save0)) return false;
+
+    const ask2 = nav.bootKey(&g, &st, prefix, def.NAV_SAVE_ERR, key('f'), msg[0..]);
+    if (st.boot_pending != 2 or ask2.msg_len == 0) return false;
+    const other = nav.bootKey(&g, &st, prefix, def.NAV_SAVE_ERR, key('x'), msg[0..]);
+    if (st.boot_pending != 0) return false;
+    if (other.screen != def.NAV_SAVE_ERR or other.done) return false;
+    if (!file_mod.exists(save0)) return false;
+
+    const ask3 = nav.bootKey(&g, &st, prefix, def.NAV_SAVE_ERR, key('f'), msg[0..]);
+    if (st.boot_pending != 2 or ask3.msg_len == 0) return false;
+    const erase = nav.bootKey(&g, &st, prefix, def.NAV_SAVE_ERR, key('y'), msg[0..]);
+    if (st.boot_pending != 0) return false;
+    if (erase.screen != def.NAV_LORE or erase.done or erase.quit) return false;
+    if (file_mod.exists(save0)) return false;
+    return true;
+}
+
 pub fn main() void {
     initPrefix();
     _ = ensureDir(prefix);
@@ -754,6 +811,7 @@ pub fn main() void {
     report("manual_fallback_line", tManualFallback());
     report("node_save_load_round_trip", tNodeRoundTrip());
     report("lore_render_deterministic", tLoreDeterministic());
+    report("lore_wrap_no_clip", tLoreWrapNoClip());
     report("menu_screen", tMenuScreen());
     report("dock_save_esc_success", tDockSaveEsc());
     report("dock_save_blocked_reason", tDockSaveBlocked());
@@ -765,6 +823,7 @@ pub fn main() void {
     report("boot_new_game_confirm", tBootNewGameConfirm());
     report("boot_bad_version_fresh", tBootBadVersionFresh());
     report("boot_backup_slot", tBootBackupSlot());
+    report("boot_fresh_confirm_cancel_erase", tBootFreshConfirmCancelErase());
 
     cleanAll();
     removeDir(prefix);

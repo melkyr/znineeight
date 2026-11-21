@@ -933,38 +933,13 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
 
 // ---- First run / menu / save error (§20, §32, §33) ------------------------
 
-// manual.1 is literal text: '\n' is one line break, '\n\n' is a paragraph
-// break (one blank row). Never re-wrap; a long line clips at the 80-column
-// frame edge.
+// manual.1 is literal text: '\n' is a line break and '\n\n' a paragraph
+// break. Long lines wrap at 80 columns through the shared text-block helper
+// so no authored prose is clipped.
 pub fn renderLore(text: []const u8, sc: *Screen) void {
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  LORE");
-
-    var i: usize = 0;
-    var x: i32 = 0;
-    var y: i32 = 2;
-    while (i < text.len and y < ROWS - 2) {
-        const c = text[i];
-        if (c == '\r') {
-            i += 1;
-            continue;
-        }
-        if (c == '\n') {
-            if (i + 1 < text.len and text[i + 1] == '\n') {
-                y += 2;
-                i += 2;
-            } else {
-                y += 1;
-                i += 1;
-            }
-            x = 0;
-            continue;
-        }
-        if (x < COLS) putChar(sc, x, y, c);
-        x += 1;
-        i += 1;
-    }
-
+    render_text.putTextBlockWidth(sc, 2, text, ROWS - 2, COLS);
     _ = put(sc, 0, ROWS - 1, "[Enter] Begin  [?] Help");
 }
 

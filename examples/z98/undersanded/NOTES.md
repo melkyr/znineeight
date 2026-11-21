@@ -2251,6 +2251,12 @@ paragraph breaks; `dump_grid_lore.golden` is re-pinned. Save-error `[F]resh`
 asks `Erase this save? [Y] [N]`; only `Y` erases, `N` returns (new
 `boot_pending=2`). This is an explicit confirm, not a one-key erase.
 
+**Console boot skip is test-only.** `undtool.exe` and native `undtool.nix
+--play` start at the dock; they do not run the lore/menu/save-error boot. This
+is a test affordance, not the shipped experience: `under.exe` is the real game
+and always runs the shared boot machine. No console boot is implemented in
+M10.1; record only.
+
 **Goldens expected to change (intentional only).**
 
 - New: `tests/fixtures/dump_grid_subdue.golden`,
