@@ -757,6 +757,44 @@ pub fn renderHelp(text: []const u8, sc: *Screen) void {
 pub fn renderNode(v: *const View, sc: *Screen) void {
     const s = v.g;
     clear(sc);
+
+    var sbuf: [128]u8 = undefined;
+    const secured = securedLine(s, sbuf[0..]);
+
+    // A pending Subdue owns the screen: the intro is Continue-only and the
+    // settle screen is the irreversible 1/2 choice (spec §7.1/§9.7).
+    if (s.fight.outcome == def.OUT_SUBDUE and s.fight.def_index != def.NO_FIGHT) {
+        var cdef = creatures.defAt(s.fight.def_index);
+        const name = creatureName(&cdef);
+        var x: i32 = 0;
+        if (s.screen == def.NAV_SUBDUE_INTRO) {
+            x = put(sc, 0, 0, "SUBDUED ");
+            _ = put(sc, x, 0, name);
+            if (secured.len > 0) {
+                _ = put(sc, 0, 2, secured);
+            } else {
+                _ = put(sc, 0, 2, "Secured: nothing");
+            }
+            _ = put(sc, 0, 4, "[C]Continue");
+            return;
+        }
+
+        _ = put(sc, 0, 0, "UNDERSANDED  SETTLE");
+        x = put(sc, 0, 2, "Subdued ");
+        _ = put(sc, x, 2, name);
+        if (secured.len > 0) {
+            _ = put(sc, 0, 4, secured);
+        } else {
+            _ = put(sc, 0, 4, "Secured: nothing");
+        }
+        _ = put(sc, 0, 6, "[1] Release - parts kept; rare chance +8 where rares exist (cap +40);");
+        _ = put(sc, 0, 7, "returns +15 Resolve");
+        x = put(sc, 0, 8, "[2] Sell - parts kept; +");
+        x = putInt(sc, x, 8, cdef.sale);
+        _ = put(sc, x, 8, " coins");
+        return;
+    }
+
     _ = put(sc, 0, 0, "UNDERSANDED  NODE");
     _ = put(sc, 0, 2, zoneName(s.exp.zone));
 
@@ -768,17 +806,11 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
     x = put(sc, x, 5, "/");
     _ = putInt(sc, x, 5, world.hullMax(&s.world));
 
-    var sbuf: [128]u8 = undefined;
-    const secured = securedLine(s, sbuf[0..]);
     if (secured.len > 0) {
         _ = put(sc, 0, 6, secured);
     }
 
-    if (s.fight.outcome == def.OUT_SUBDUE and s.fight.def_index != def.NO_FIGHT) {
-        _ = put(sc, 0, 7, "[R]elease  [S]ell");
-    } else {
-        _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
-    }
+    _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
     _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");
 
     if (v.zone_flavour_found) {

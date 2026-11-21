@@ -240,6 +240,7 @@ fn postFight(g: *def.GameState) bool {
         addLoot(g, &subdef, outcome);
         logSecured(g, idx, outcome);
         g.world.hull = g.fight.hull;
+        g.screen = def.NAV_SUBDUE_INTRO;
         return false;
     }
 

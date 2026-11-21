@@ -250,6 +250,7 @@ pub const NAV_MENU: i32 = 20;
 pub const NAV_SAVE_ERR: i32 = 21;
 pub const NAV_JOURNAL: i32 = 22;
 pub const NAV_HELP: i32 = 23;
+pub const NAV_SUBDUE_INTRO: i32 = 24;
 pub const NAV_QUIT: i32 = -1;
 
 pub const NAV_RESULT_NONE: i32 = -100;

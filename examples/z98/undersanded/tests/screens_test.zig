@@ -21,10 +21,13 @@ const expedition = @import("../expedition.zig");
 const render = @import("../render_term.zig");
 const nav = @import("../nav.zig");
 const undtool = @import("../undtool.zig");
+const text_scan = @import("../text_scan.zig");
 
 const DOCK_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_dock.golden";
 const MAP_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_map.golden";
 const NODE_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_node.golden";
+const SUBDUE_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_subdue.golden";
+const SETTLE_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_settle.golden";
 
 var fails: usize = 0;
 
@@ -222,6 +225,42 @@ fn tNodeLines() bool {
     return true;
 }
 
+fn tSubdueIntroCopy() bool {
+    var buf: [8192]u8 = undefined;
+    const text = undtool.dumpFixedScreen("subdue", buf[0..]) orelse return false;
+    if (!contains(text, "SUBDUED Mystic Eel")) return false;
+    if (!contains(text, "Secured: Shell Chip x3, Gland Sac x1")) return false;
+    if (!contains(text, "[C]Continue")) return false;
+    if (contains(text, "UNDERSANDED  NODE")) return false;
+    if (contains(text, "[H]unt [R]est [S]urface")) return false;
+    if (contains(text, "[1] Release")) return false;
+    return true;
+}
+
+fn tSettleCopy() bool {
+    var buf: [8192]u8 = undefined;
+    const text = undtool.dumpFixedScreen("settle", buf[0..]) orelse return false;
+    if (!contains(text, "UNDERSANDED  SETTLE")) return false;
+    if (contains(text, "UNDERSANDED  NODE")) return false;
+    if (!contains(text, "Subdued Mystic Eel")) return false;
+    if (!contains(text, "Secured: Shell Chip x3, Gland Sac x1")) return false;
+    if (!contains(text, "[1] Release - parts kept; rare chance +8 where rares exist (cap +40);")) return false;
+    if (!contains(text, "returns +15 Resolve")) return false;
+
+    const sale = creatures.defAt(0).sale;
+    var sline: [64]u8 = undefined;
+    var at: usize = 0;
+    text_scan.appendText(sline[0..], &at, "[2] Sell - parts kept; +");
+    text_scan.appendInt(sline[0..], &at, @intCast(i64, sale));
+    text_scan.appendText(sline[0..], &at, " coins");
+    if (!contains(text, sline[0..at])) return false;
+
+    if (contains(text, "[R]elease")) return false;
+    if (contains(text, "[S]ell")) return false;
+    if (contains(text, "Hint: Rest")) return false;
+    return true;
+}
+
 fn tGolden(screen_id: []const u8, path: []const u8) bool {
     var buf: [8192]u8 = undefined;
     const text = undtool.dumpFixedScreen(screen_id, buf[0..]) orelse return false;
@@ -332,9 +371,13 @@ pub fn main() void {
     report("map_screen_ladder_locked_boss", tMapLines());
     report("map_boss_gate_six_distinct_nonboss", tBossGate());
     report("node_screen_key_lines", tNodeLines());
+    report("subdue_intro_copy", tSubdueIntroCopy());
+    report("settle_copy_names_creature_and_effects", tSettleCopy());
     report("dock_golden_exact", tGolden("dock", DOCK_GOLDEN));
     report("map_golden_exact", tGolden("map", MAP_GOLDEN));
     report("node_golden_exact", tGolden("node", NODE_GOLDEN));
+    report("subdue_golden_exact", tGolden("subdue", SUBDUE_GOLDEN));
+    report("settle_golden_exact", tGolden("settle", SETTLE_GOLDEN));
     report("release_keeps_parts_bonus_wary_renews", tRelease());
     report("sell_keeps_parts_money_renews", tSell());
     report("resolve_guards_outcome_and_active", tResolveGuards());

@@ -13,6 +13,9 @@ const def = @import("../def.zig");
 const game = @import("../game.zig");
 const nav = @import("../nav.zig");
 const input = @import("../input.zig");
+const expedition = @import("../expedition.zig");
+const creatures = @import("../creatures_t1.zig");
+const world = @import("../world.zig");
 
 var fails: usize = 0;
 
@@ -151,11 +154,153 @@ fn tFieldMsgDoesNotChangePhaseOrRng() bool {
     return true;
 }
 
+fn pendingState(screen: i32) def.GameState {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    g.exp.active = 1;
+    g.exp.zone = 1;
+    g.fight.def_index = 0;
+    g.fight.outcome = def.OUT_SUBDUE;
+    g.fight.hull = 80;
+    g.world.hull = 80;
+    g.screen = screen;
+    return g;
+}
+
+fn introKeyNoop(g: *def.GameState, st: *nav.NavState, c: u8) bool {
+    const out = nav.navStep(g, st, key(c));
+    if (out != def.NAV_SUBDUE_INTRO) return false;
+    if (g.screen != def.NAV_SUBDUE_INTRO) return false;
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    if (g.fight.def_index != 0) return false;
+    return true;
+}
+
+fn tSubdueIntroBeforeSettle() bool {
+    var g = pendingState(def.NAV_SUBDUE_INTRO);
+    var st = nav.initState();
+
+    if (!introKeyNoop(&g, &st, '1')) return false;
+    if (!introKeyNoop(&g, &st, '2')) return false;
+    if (!introKeyNoop(&g, &st, 'r')) return false;
+    if (!introKeyNoop(&g, &st, 'R')) return false;
+    if (!introKeyNoop(&g, &st, 's')) return false;
+    if (!introKeyNoop(&g, &st, 'S')) return false;
+    if (!introKeyNoop(&g, &st, 'x')) return false;
+
+    if (nav.navStep(&g, &st, key('c')) != def.NAV_SETTLE) return false;
+    if (g.screen != def.NAV_SETTLE) return false;
+    if (g.fight.outcome != def.OUT_SUBDUE) return false;
+    if (g.fight.def_index != 0) return false;
+
+    var upper = pendingState(def.NAV_SUBDUE_INTRO);
+    var ust = nav.initState();
+    if (nav.navStep(&upper, &ust, key('C')) != def.NAV_SETTLE) return false;
+    return true;
+}
+
+fn tSettleIgnoresRandS() bool {
+    var g = pendingState(def.NAV_SETTLE);
+    var st = nav.initState();
+    const money = g.world.money;
+    const bonus = g.world.release_bonus[1];
+    const phases = g.world.field_phases;
+
+    const keys = [6]u8{ 'r', 'R', 's', 'S', 'e', 'x' };
+    var i: usize = 0;
+    while (i < keys.len) : (i += 1) {
+        if (nav.navStep(&g, &st, key(keys[i])) != def.NAV_SETTLE) return false;
+        if (g.screen != def.NAV_SETTLE) return false;
+        if (!(g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index == 0)) return false;
+        if (g.world.money != money) return false;
+        if (g.world.release_bonus[1] != bonus) return false;
+        if (g.world.field_phases != phases) return false;
+    }
+    return true;
+}
+
+fn tSettle1Releases2Sells() bool {
+    const idx: i32 = 0;
+    const zone: i32 = 1;
+    const ri: usize = @intCast(usize, zone) * def.MAX_CREATURES
+        + @intCast(usize, idx);
+
+    var r = pendingState(def.NAV_SETTLE);
+    var rst = nav.initState();
+    const r_money = r.world.money;
+    if (nav.navStep(&r, &rst, key('1')) != def.NAV_NODE) return false;
+    if (r.fight.outcome == def.OUT_SUBDUE and r.fight.def_index != def.NO_FIGHT) return false;
+    if (r.world.release_bonus[zone] != world.RELEASE_BONUS_STEP) return false;
+    if (r.world.money != r_money) return false;
+    if (r.world.ready[ri] == 0) return false;
+
+    var s = pendingState(def.NAV_SETTLE);
+    var sst = nav.initState();
+    const sale = creatures.defAt(idx).sale;
+    if (nav.navStep(&s, &sst, key('2')) != def.NAV_NODE) return false;
+    if (s.fight.outcome == def.OUT_SUBDUE and s.fight.def_index != def.NO_FIGHT) return false;
+    if (s.world.money != sale) return false;
+    if (s.world.release_bonus[zone] != 0) return false;
+    return true;
+}
+
+fn tSubdueIntroNoRngNoPhase() bool {
+    var g = pendingState(def.NAV_SUBDUE_INTRO);
+    var st = nav.initState();
+    g.world.field_phases = 7;
+    g.world.cycle = 3;
+    g.world.phase = 1;
+    g.world.rng_state = 0x9abcdef0;
+    g.fight.rng_state = 0x12345678;
+    g.fight.hp = 42;
+    g.fight.res = 9;
+    g.fight.hull = 80;
+    g.exp.hold[1] = 3;
+
+    const phases = g.world.field_phases;
+    const cycle = g.world.cycle;
+    const phase = g.world.phase;
+    const world_rng = g.world.rng_state;
+    const fight_rng = g.fight.rng_state;
+    const hp = g.fight.hp;
+    const res = g.fight.res;
+    const hull = g.fight.hull;
+    const hold = g.exp.hold[1];
+
+    if (!introKeyNoop(&g, &st, '1')) return false;
+    if (!introKeyNoop(&g, &st, '2')) return false;
+    if (!introKeyNoop(&g, &st, 'r')) return false;
+    if (!introKeyNoop(&g, &st, 's')) return false;
+    if (!introKeyNoop(&g, &st, 'j')) return false;
+
+    if (g.world.field_phases != phases) return false;
+    if (g.world.cycle != cycle) return false;
+    if (g.world.phase != phase) return false;
+    if (g.world.rng_state != world_rng) return false;
+    if (g.fight.rng_state != fight_rng) return false;
+    if (g.fight.hp != hp) return false;
+    if (g.fight.res != res) return false;
+    if (g.fight.hull != hull) return false;
+    if (g.exp.hold[1] != hold) return false;
+
+    if (nav.navStep(&g, &st, key('c')) != def.NAV_SETTLE) return false;
+    if (g.world.field_phases != phases) return false;
+    if (g.world.cycle != cycle) return false;
+    if (g.world.phase != phase) return false;
+    if (g.world.rng_state != world_rng) return false;
+    if (g.fight.rng_state != fight_rng) return false;
+    return true;
+}
+
 pub fn main() void {
     report("init_state_zeroes_every_field", tInitStateZeroesEveryField());
     report("field_msg_cleared_on_next_key", tFieldMsgClearedOnNextKey());
     report("nav_result_line_prefers_field_msg", tNavResultLinePrefersFieldMsg());
     report("field_msg_does_not_change_phase_or_rng", tFieldMsgDoesNotChangePhaseOrRng());
+    report("subdue_intro_before_settle", tSubdueIntroBeforeSettle());
+    report("settle_ignores_r_and_s", tSettleIgnoresRandS());
+    report("settle_1_releases_2_sells", tSettle1Releases2Sells());
+    report("subdue_intro_no_rng_no_phase", tSubdueIntroNoRngNoPhase());
 
     if (fails != 0) os.exit(1);
     io.write("ux_test PASS\n");

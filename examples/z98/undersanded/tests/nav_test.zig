@@ -100,12 +100,20 @@ fn tPolicySubdueReleaseSurface() bool {
     }
     if (expedition.isInFight(&g)) return false;
     if (!pending(&g)) return false;
-    if (g.screen != def.NAV_SETTLE) return false;
+    if (g.screen != def.NAV_SUBDUE_INTRO) return false;
     if (g.exp.hold_n <= 0) return false;
     if (!holdNonZero(&g.exp.hold)) return false;
 
+    // Intro is Continue-only: R/S and the settle digits are no-ops.
+    if (nav.navStep(&g, &st, key('r')) != def.NAV_SUBDUE_INTRO) return false;
+    if (nav.navStep(&g, &st, key('s')) != def.NAV_SUBDUE_INTRO) return false;
+    if (nav.navStep(&g, &st, key('1')) != def.NAV_SUBDUE_INTRO) return false;
+    if (nav.navStep(&g, &st, key('2')) != def.NAV_SUBDUE_INTRO) return false;
+    if (!pending(&g)) return false;
+    if (nav.navStep(&g, &st, key('c')) != def.NAV_SETTLE) return false;
+
     const money = g.world.money;
-    if (nav.navStep(&g, &st, key('r')) != def.NAV_NODE) return false;
+    if (nav.navStep(&g, &st, key('1')) != def.NAV_NODE) return false;
     if (pending(&g)) return false;
     if (g.exp.active != 1) return false;
     if (g.world.money != money) return false;
@@ -166,7 +174,11 @@ fn tHullZeroAscentReturnsDock() bool {
         if (expedition.isInFight(&g)) {
             _ = nav.navStep(&g, &st, key('r'));
         } else if (pending(&g)) {
-            _ = nav.navStep(&g, &st, key('r'));
+            if (g.screen == def.NAV_SUBDUE_INTRO) {
+                _ = nav.navStep(&g, &st, key('c'));
+            } else {
+                _ = nav.navStep(&g, &st, key('1'));
+            }
         } else {
             _ = nav.navStep(&g, &st, key('h'));
         }

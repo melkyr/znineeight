@@ -705,6 +705,36 @@ fn drawModal(sf: *px.Surface, s: *const def.GameState) void {
     drawScreenBlock(sf, &sc, panel, true, C_TEXT, C_PANEL);
 }
 
+// M10.1 subdue intro: the last fight frame stays visible under one modal
+// (spec §7.1/§27). Deterministic; no RNG or phase change.
+fn drawSubdueIntro(sf: *px.Surface, s: *const def.GameState, view: ArtAssets) void {
+    px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
+    drawBackground(sf, view);
+    var ws: [MAX_WIDGETS]Widget = undefined;
+    const n = layoutFight(s, &ws);
+    var i: i32 = 0;
+    while (i < n) : (i += 1) {
+        drawWidget(sf, &ws[@intCast(usize, i)], s, view);
+    }
+
+    const panel = Rect{ .x = 80, .y = 160, .w = 480, .h = 144 };
+    fillRect(sf, panel.x, panel.y, panel.w, panel.h, C_PANEL);
+    drawDottedRect(sf, panel.x, panel.y, panel.w, panel.h, C_BORDER);
+
+    var sc: render_text.Screen = undefined;
+    render.clear(&sc);
+    var d: def.CreatureDef = undefined;
+    if (defValid(s)) {
+        d = creatures.defAt(s.fight.def_index);
+    } else {
+        d = creatures.defAt(0);
+    }
+    var x = render_text.put(&sc, 0, 1, "SUBDUED ");
+    _ = render_text.put(&sc, x, 1, render.creatureName(&d));
+    _ = render_text.put(&sc, 0, 2, "[C]Continue");
+    drawScreenBlock(sf, &sc, panel, true, C_TEXT, C_PANEL);
+}
+
 fn drawHelp(sf: *px.Surface, help_text: []const u8) void {
     px.pxCoreFill(sf, 0, 0, def.SCREEN_W, def.SCREEN_H, C_BG);
     var sc: render_text.Screen = undefined;
@@ -727,6 +757,7 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
     help_text: []const u8, full: bool, view: ArtAssets) void {
     const modal = s.screen == def.SCREEN_SUBDUE
         or s.screen == def.SCREEN_SUBDUE_POST;
+    const intro = s.screen == def.NAV_SUBDUE_INTRO;
     const help = help_text.len > 0;
 
     if (help) {
@@ -736,6 +767,18 @@ pub fn renderScreen(sf: *px.Surface, s: *const def.GameState,
         g_screen = s.screen;
         g_def = s.fight.def_index;
         g_help = true;
+        g_prev_shake_dx = g_shake_dx;
+        g_prev_shake_dy = g_shake_dy;
+        return;
+    }
+
+    if (intro) {
+        drawSubdueIntro(sf, s, view);
+        markFull();
+        g_have = true;
+        g_screen = s.screen;
+        g_def = s.fight.def_index;
+        g_help = false;
         g_prev_shake_dx = g_shake_dx;
         g_prev_shake_dy = g_shake_dy;
         return;

@@ -166,9 +166,13 @@ fn isPending(g: *const def.GameState) bool {
     return g.fight.outcome == def.OUT_SUBDUE and g.fight.def_index != def.NO_FIGHT;
 }
 
-// Pending choice -> settle, otherwise an active expedition -> node, else dock.
+// Pending choice -> preserve the intro until C, otherwise settle; an active
+// expedition -> node, else dock.
 fn deriveScreen(g: *const def.GameState) i32 {
-    if (isPending(g)) return def.NAV_SETTLE;
+    if (isPending(g)) {
+        if (g.screen == def.NAV_SUBDUE_INTRO) return def.NAV_SUBDUE_INTRO;
+        return def.NAV_SETTLE;
+    }
     if (g.exp.active != 0) return def.NAV_NODE;
     return def.NAV_DOCK;
 }
@@ -179,9 +183,11 @@ fn setScreen(g: *def.GameState, screen: i32) i32 {
 }
 
 // A field action may start a fight; keep def.SCREEN_* in that case so
-// the next key still maps through input.mapKey.
+// the next key still maps through input.mapKey. A subdue intro is a field
+// screen too: postFight owns it and this must not overwrite it.
 fn screenAfterField(g: *def.GameState) i32 {
     if (expedition.isInFight(g)) return g.screen;
+    if (isPending(g) and g.screen == def.NAV_SUBDUE_INTRO) return g.screen;
     return deriveScreen(g);
 }
 
@@ -368,21 +374,27 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         return setScreen(g, screenAfterField(g));
     }
 
+    // (2) A pending Subdue choice must be settled before anything else. The
+    // intro screen accepts only C/c; settle accepts only 1/2. R/S and every
+    // other key are no-ops so an irreversible choice is never one key away.
+    if (isPending(g)) {
+        if (g.screen == def.NAV_SUBDUE_INTRO) {
+            if (isChar(key, 'c')) return setScreen(g, def.NAV_SETTLE);
+            return setScreen(g, def.NAV_SUBDUE_INTRO);
+        }
+        if (g.screen != def.NAV_SETTLE) return setScreen(g, def.NAV_SETTLE);
+        if (key.ch == '1') {
+            expedition.resolveSubdueChoice(g, expedition.SUB_RELEASE);
+        } else if (key.ch == '2') {
+            expedition.resolveSubdueChoice(g, expedition.SUB_SELL);
+        }
+        return setScreen(g, deriveScreen(g));
+    }
+
     // `J` opens the Journal everywhere but mid-fight (including settle/submenus).
     if (isChar(key, 'j') and g.screen != def.NAV_JOURNAL) {
         st.journal_sel = 0;
         return setScreen(g, def.NAV_JOURNAL);
-    }
-
-    // (2) A pending Subdue choice must be settled before anything else.
-    if (isPending(g)) {
-        if (g.screen != def.NAV_SETTLE) return setScreen(g, def.NAV_SETTLE);
-        if (isChar(key, 'r')) {
-            expedition.resolveSubdueChoice(g, expedition.SUB_RELEASE);
-        } else if (isChar(key, 's')) {
-            expedition.resolveSubdueChoice(g, expedition.SUB_SELL);
-        }
-        return setScreen(g, deriveScreen(g));
     }
 
     // (3) Field and dock sub-menu screens. An uninitialised screen id is
@@ -535,7 +547,7 @@ pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) vo
         render.renderFrame(g, &d, sc);
     } else switch (g.screen) {
         def.NAV_MAP => render.renderMap(g, sc),
-        def.NAV_NODE, def.NAV_SETTLE => {
+        def.NAV_NODE, def.NAV_SETTLE, def.NAV_SUBDUE_INTRO => {
             var v: render.View = undefined;
             prepareNode(g, &v);
             render.renderNode(&v, sc);
@@ -650,6 +662,7 @@ pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
 // Interactive console loop: render, prompt, read one key, step. EOF exits.
 pub fn navRun(g: *def.GameState) void {
     if (g.screen != def.NAV_MAP and g.screen != def.NAV_NODE and g.screen != def.NAV_SETTLE
+        and g.screen != def.NAV_SUBDUE_INTRO
         and g.screen != def.NAV_REFINE and g.screen != def.NAV_UPGRADE
         and g.screen != def.NAV_CRAFT and g.screen != def.NAV_BUY and g.screen != def.NAV_TOOLS
         and g.screen != def.NAV_LORE and g.screen != def.NAV_MENU and g.screen != def.NAV_SAVE_ERR

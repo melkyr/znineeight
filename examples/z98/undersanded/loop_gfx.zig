@@ -130,6 +130,7 @@ fn readWindowKey(g: *gfx.Gfx, fight_art: bool) ?input.Key {
 fn artMode(g: *def.GameState, p: ?*px.Gfx) bool {
     if (p == null) return false;
     if (expedition.isInFight(g)) return true;
+    if (g.screen == def.NAV_SUBDUE_INTRO) return true;
     if (g.screen == def.SCREEN_SUBDUE or g.screen == def.SCREEN_SUBDUE_POST) return true;
     return false;
 }
@@ -234,6 +235,7 @@ pub fn bootGfx(win: *gfx.Gfx, gs: *def.GameState, dir: []const u8,
 pub fn navRunGfx(g: *def.GameState, px0: ?*px.Gfx, perf_on: bool) void {
     const win = g_win orelse return;
     if (g.screen != def.NAV_MAP and g.screen != def.NAV_NODE and g.screen != def.NAV_SETTLE
+        and g.screen != def.NAV_SUBDUE_INTRO
         and g.screen != def.NAV_REFINE and g.screen != def.NAV_UPGRADE
         and g.screen != def.NAV_CRAFT and g.screen != def.NAV_BUY and g.screen != def.NAV_TOOLS
         and g.screen != def.NAV_LORE and g.screen != def.NAV_MENU and g.screen != def.NAV_SAVE_ERR

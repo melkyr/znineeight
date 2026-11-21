@@ -211,6 +211,23 @@ pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
         var v: render.View = undefined;
         nav.prepareNode(&s, &v);
         render.renderNode(&v, &sc);
+    } else if (eq(screen_id, "subdue") or eq(screen_id, "settle")) {
+        // Synthetic pending Subdue: loot/log/hull already resolved, as after
+        // postFight. `subdue` is the Continue-only intro; `settle` is 1/2.
+        if (eq(screen_id, "subdue")) {
+            s.screen = def.NAV_SUBDUE_INTRO;
+        } else {
+            s.screen = def.NAV_SETTLE;
+        }
+        s.exp.active = 1;
+        s.exp.zone = 1;
+        s.fight.def_index = 0;
+        s.fight.outcome = def.OUT_SUBDUE;
+        s.fight.hull = s.world.hull;
+        fight.log(&s, def.CLS_SECURED, def.MSG_SECURED, 0, def.OUT_SUBDUE);
+        var v: render.View = undefined;
+        nav.prepareNode(&s, &v);
+        render.renderNode(&v, &sc);
     } else if (eq(screen_id, "lore")) {
         render.renderLore(save_ux.manualPageOne(), &sc);
     } else if (eq(screen_id, "menu")) {

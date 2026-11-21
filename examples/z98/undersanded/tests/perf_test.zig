@@ -210,10 +210,13 @@ fn tWalk() bool {
         }
     }
     if (expedition.isInFight(&g)) return false;
-    if (g.screen != def.NAV_SETTLE) return false;
-    if (!renderOk(&g, &st, "UNDERSANDED  NODE")) return false;
+    if (g.screen != def.NAV_SUBDUE_INTRO) return false;
+    if (!renderOk(&g, &st, "SUBDUED")) return false;
 
-    if (nav.navStep(&g, &st, key('r')) != def.NAV_NODE) return false;
+    if (nav.navStep(&g, &st, key('c')) != def.NAV_SETTLE) return false;
+    if (!renderOk(&g, &st, "UNDERSANDED  SETTLE")) return false;
+
+    if (nav.navStep(&g, &st, key('1')) != def.NAV_NODE) return false;
     if (!renderOk(&g, &st, "UNDERSANDED  NODE")) return false;
 
     if (nav.navStep(&g, &st, key('s')) != def.NAV_DOCK) return false;
