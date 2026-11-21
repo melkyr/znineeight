@@ -216,6 +216,50 @@ Secured: Shell Chip ×3, Gland Sac ×1
 
 At dock, parts refine into materials. **Tools cost parts. Upgrades cost materials.** Named keystones are used as-is.
 
+### 7.1 Settlement and field feedback UX (M10.1)
+
+Every field action leaves a one-line result; no screen change is unexplained. The status line is identical in terminal and window: terminal prints it after the frame; window renders it on cell row 29. It lives for one action and is cleared at the start of the next key, including no-ops.
+
+**Subdue flow.**
+1. `NAV_SUBDUE_INTRO` — art: modal over the last fight frame; cell: full screen:
+   `SUBDUED <name>` / `Secured: <parts>` / `[C]ontinue`.
+   Only `C`/`c` advances. `1`/`2`/`R`/`S` and other keys do nothing.
+2. `NAV_SETTLE` — header `UNDERSANDED  SETTLE`:
+   `Subdued <name>` / `Secured: <parts>`
+   `[1] Release - parts kept; rare chance +8 where rares exist (cap +40); returns +15 Resolve`
+   `[2] Sell - parts kept; +<sale> coins`
+   Keys are **1/2**, never `R`/`S`: node `R`=Rest and `S`=Surface must not collide with an irreversible choice. No stale Rest hint.
+3. After the choice, one status line:
+   `Released <name> - parts kept; +15 Resolve next time.`
+   `Sold <name> for <sale> coins - parts kept.`
+
+**Field status copy.** The line names the event and the resource change:
+
+| Event | Copy |
+| :--- | :--- |
+| Depart | `Departed to <zone> - travel <t> out, <t> back (+1 depart action).` |
+| Hunt kill | `Killed <name> - Secured: <parts>.` |
+| Hunt overkill | `Overkilled <name> - the rarest line is ruined.` |
+| Creature flee | `The creature fled - no loot; it renews.` |
+| Player flee | `You fled - no loot; returned to dock.` |
+| Hull 0 | `Emergency ascent - Hull 0; returned to dock.` |
+| Node Rest | `Rested at the node: +<n> Hull.` |
+| Rough sleep | `Rough sleep (<condition>): <effect>.` |
+| Dock Rest | `Rested at dock: +<n> Hull.` |
+| Surface | `Returned to dock - travel <t> phases.` |
+| No fights | `No fights left - surface or rest.` |
+| Empty pool | `Nothing answers the hook here.` |
+| Boss locked | `The Derelict is silent - <seen>/6 species seen.` |
+| EQUIP refused | `No tool selected.` / `Tool is broken.` / `No charge left.` / `Tool is rigged - always on.` |
+
+**Fight-ending copy** must survive the screen change: kill/overkill/flee/ascent/creature-flee use the status line above; subdue uses the settlement intro. The fight log remains the in-fight record.
+
+**Silent state is forbidden.** Release/Sell effects, wariness, grudge, rare chance, lockout, Heavy travel, sale price, rough-sleep condition, respawn availability, and phase/cycle must have a visible surface (status line, node/map line, help copy, or fight log). Heavy is included in the map's displayed travel cost.
+
+**Help and hints.** Every screen footer shows `[?] Help`; dock/field screens show `[J]ournal` when a save is active. `?` opens the manual page for the screen. Pages are 1–9 (page 9 is Journal & Speed). Page map: DOCK 1 · MAP 5 · NODE 5 · FIGHT/SUBDUE/SUBDUE_POST 2 · SUBDUE_INTRO/SETTLE 3 · REFINE/UPGRADE 4 · CRAFT/TOOLS 6 · JOURNAL 9 · BUY 8 · LORE/MENU/SAVE_ERR 1. `manual.3` covers Release/Sell; `manual.5` covers rough sleep and phases; `manual.6` describes each tool; `manual.7` covers the boss gate; `manual.9` covers the Journal and Speed reveal.
+
+The Esc menu remains M12; M10.1 leaves dock Esc=Save / q=Quit unchanged.
+
 ---
 
 ## 8. Combat
@@ -356,6 +400,8 @@ On success the creature gets no parting hit. On failure it acts **that same roun
 | **F — Fight on** | set `subdue_declined = true`, return to combat. **Consumes no RNG.** |
 | **Esc — Cancel** | identical to F. Esc is the keyboard alias. |
 
+The modal keeps HP/Resolve/Hull visible so the decision is informed. It labels the decline actions plainly: `[F] Fight on / decline` and `[Esc] Decline`. It states the Last Surge numbers: `+25% Resolve, +25% Attack, +2 Speed (cap +6)`. M10.1 owns this copy.
+
 If Thrash is live when you decline, log: *"You hold off. Its will begins to recover."*
 
 ### 9.4 Silent path (commons)
@@ -400,6 +446,8 @@ Restrain never touches HP, so **it cannot cause overkill**. The real chain:
 | **Sell** | sale price in coins. Normal renewal. Parts kept. |
 
 Zones with 0 rares (the tutorial zone) have no rare effect from releasing. Intentional.
+
+The settlement screen names the creature, shows `Secured: <parts>`, and states both effects exactly as §7.1. The player chooses with `1` (Release) or `2` (Sell); `R`/`S` remain node Rest/Surface and never trigger settlement. A successful subdue first shows `NAV_SUBDUE_INTRO` (`[C]ontinue`) so the outcome is never a silent screen change.
 
 ### 9.8 Overkill lockout
 
@@ -800,7 +848,7 @@ The full game adds T2–T4 sources for every material (M13 re-derives this table
 
 ## 18. Manual and Journal
 
-**Manual:** HTML 4.0 on the CD. Numbered pages, one mechanic per page, worked examples. Pages: 1 The Drowned World · 2 The Hunt · 3 Drops & Loot · 4 Refinement · 5 Calendar · 6 Equipment · 7 The Signal · 8 Cosmetics & Score · Legends.
+**Manual:** HTML 4.0 on the CD. Numbered pages, one mechanic per page, worked examples. Pages: 1 The Drowned World · 2 The Hunt · 3 Drops & Loot · 4 Refinement · 5 Calendar · 6 Equipment · 7 The Signal · 8 Cosmetics & Score · 9 Journal & Speed · Legends. Page 3 covers Release/Sell, page 5 covers rough sleep and phase costs, page 6 describes each tool, page 7 covers the boss gate, and page 9 covers journal unlock, `*NEW*`, and the Speed reveal.
 
 **Legends page:** Named creatures as *unconfirmed sightings — investigate if you can.* **2 entries in T1** (Mileel, Tunisteel); T2–T4 named creatures add entries at M13. No locations, no stats, no tips.
 
@@ -810,6 +858,8 @@ The full game adds T2–T4 sources for every material (M13 re-derives this table
 
 **Tooltips:** only two, first time each mechanic appears —
 *"Restrain damages Resolve, not HP."* / *"Past the red zone is overkill. It costs you the rare."*
+
+**Discoverability (M10.1):** every screen footer shows `[?] Help`; dock and field screens show `[J]ournal` when a save is active. The page map is in §7.1. `SPD ??` is explained on page 9 (journal) and page 2 (Sonar).
 
 ---
 
@@ -1360,7 +1410,7 @@ ASCII text, one statement per line. The scanner enforces this grammar; any viola
 - **`[cosmetics]`:** `name,price,unlock`; exactly 12 rows in item order (bit index 0..11); `unlock` is a condition id 1..4 (Z1/Z2/Z3/Derelict); `price > 0`.
 - **`[encounter]`:** `zone,phase,def_index,weight`; `zone` = index 0..11, `phase` = 0 Day / 1 Night, `def_index` = **load-order** index (not `CreatureDef.id`); `weight > 0`; weights per zone/phase sum to 100 (an empty zone/phase is allowed).
 - **`[zones]`:** `id,cost,boss`; `id` = zone index 0..11; `cost` ≥ 0; `boss` 0/1.
-- **`[text]`:** multi-line prose. `key=` starts an entry; it continues until the next `key=` or `[section]`. A continuation line begins with exactly one space, which is stripped; a continuation line consisting of exactly that one space is a **retained blank line** (paragraph break). Inside an entry the comment/blank rules do **not** apply — a line beginning with `#` after the leading space is prose. Keys live in the fixed vocabulary `manual.1..8`, `journal.1..19`, `legend.1..2`, `zone.1..9` (zone index + 1: Z1..Z8 = 1..8, D = 9), `error.1..6` (reserved; M7 owns the fatal/save copy as code constants, no reader today); caps `MAX_TEXT_KEYS` / `MAX_TEXT_BYTES`.
+- **`[text]`:** multi-line prose. `key=` starts an entry; it continues until the next `key=` or `[section]`. A continuation line begins with exactly one space, which is stripped; a continuation line consisting of exactly that one space is a **retained blank line** (paragraph break). Inside an entry the comment/blank rules do **not** apply — a line beginning with `#` after the leading space is prose. Keys live in the fixed vocabulary `manual.1..9`, `journal.1..19`, `legend.1..2`, `zone.1..9` (zone index + 1: Z1..Z8 = 1..8, D = 9), `error.1..6` (reserved; M7 owns the fatal/save copy as code constants, no reader today); caps `MAX_TEXT_KEYS` / `MAX_TEXT_BYTES`.
 - **Storage:** the file buffer and all string bytes live in the permanent arena for the process lifetime; loaded slices point into it (never into a temporary read buffer). `[text]` is file-only: `data.z98` ships with the game, so the compiled-in fallback is tables-only (`text_count = 0`) and exists for dev tools/tests, not as a content substitute.
 
 Loader errors use the §33 copy: missing → "Content file missing. Reinstall from CD."; malformed → "Content file is damaged at line N. Reinstall from CD."
@@ -1462,6 +1512,13 @@ Fixed array of ~64 widgets, rebuilt on screen change. Each frame: mark dirty →
 - Red zone width = `clamp((25 − margin) * bar_w / max_hp, 0, bar_w)`.
 - **Red zone carries a 1px dotted border in addition to colour**, and every bar carries an inline numeric (`HP 42/70`) — colour-blind safety.
 - Coupling tags drawn only when the gate is active.
+- The terminal fight draws the same red-zone boundary (a `|` marker) and a `COND <name>` line when a rough-sleep condition is active; the art fight draws the condition in the stats line.
+
+### Status line and transitions
+
+- Cell screens use row 29 for the one-action status line (§7.1); it replaces the screen's bottom hint for that action and is cleared on the next key.
+- The art loop writes the same line to cell row 29 after a fight ends; it never overwrites the art log while a fight is live.
+- A subdue success is an explicit intro (`NAV_SUBDUE_INTRO`), not an immediate screen swap; art mode draws it as a modal over the last fight frame.
 
 ### Text
 
@@ -1504,6 +1561,8 @@ gfxPollEvent → RawEvent → keymap / hit-test → Action → game.z98
 | R / 2 | Restrain |
 | E / 3 | Equipment |
 | F / 4 | Flee |
+| C | Continue on the subdue intro |
+| 1 / 2 | Release / Sell on the settlement screen |
 | arrows / Tab | move focus |
 | Enter / Space | confirm |
 | Esc | menu |
@@ -1516,7 +1575,7 @@ Mouse hit-tests `Event.px/py` against button rects; click emits the same Action 
 
 **Guards:** actions rejected when the fight is over; Restrain disabled vs boss with the journal line; Equipment disabled at 0 charge or broken, with the reason shown. Ink randomization happens **inside `game.z98`**, never in the input layer, and never selects Flee or a dialog choice.
 
-**Esc menu:** Journal · Map · Save · Quit. Options live at the start menu only.
+**Esc menu:** Journal · Map · Save · Quit. Options live at the start menu only. The Esc menu itself lands with M12; M10.1 leaves dock Esc=Save / q=Quit and does not add a mid-fight menu. `[?]` is the always-available reference surface.
 
 **Replay:** seed + action stream, version 2. Grammar (pinned): header `seed=` / `creature=<token>` / `zone=` / `phase=` / `tool=` then one `A <verb>` line per action where verb ∈ `strike|restrain|equipment|flee|attempt|decline`. **F and Esc both record as `decline`** (they are identical per §9.3). Ink and encounter draws are not recorded — they derive from the seed (§25.5 draw table). `creature` is the tooling token (`eel|electric_eel|steel_tuna|anemoniacus|freezing_perch` at M3); `zone`/`phase`/`tool` are recorded verbatim and are semantics-free until M4/M5.
 
@@ -1850,6 +1909,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | **M8** | Tier-1 content authoring | Verify M6's 18 rows/drops/tools/tables/zones/`manual.1`; append the Derelict row; wire blind/ink/decoy/phasing + Lure/Sonar; journal 19, manual 2–8, Legends 2, zone flavour 4 — §40 checklist | **Demo content-complete in terminal**; full T1 loop playable start→boss gate |
 | **M9** | Pixel tier | `std_gfx_px` split into pure native core + thin `std_gfx_pal`-backed wrapper (fixed 640×480 window), typed Lock/Unlock/BltFast, 16bpp 565 SYSTEMMEMORY offscreen, 8×16 font atlas, bars + dotted red zone, dirty rects, surface-lost recovery, art fight (modal/help/tool status/hidden SPD), playable `under.exe` loop (cell screens + art fight + <16bpp fallback), `--perf`; **quality cut** (single-source ids/owners/primitives, generated fallback, render/fight/data/save splits, view decoupling) | Fight renders in art mode; dock→fight→dock playable in `under.exe`; terminal `--dump-grid` + z9edit goldens byte-identical; quality cut green with all goldens unchanged |
 | **M10** | Asset pipeline + art | Palette lock, transitory SVG→`.ZSP` conversion (uncommitted, P19), committed Z98 `--validate-assets`, 11 creature A sprites (boss re-authored 96×96 ramp 10), 6 non-flex + 2 flex recolors, 4 boss V rows, 5 demo backgrounds, boat asset, 9 overlays; art fight wired to sprites + resident zone background (boat/score stay M11) | Demo asset budget met (indexed ≤1.35 MB, indexed+LUT ≤2 MB, backgrounds ≤120 KB each, RLE ≤400 KB); all 11 bases reviewed side-by-side as one set; art golden re-pinned once |
+| **M10.1** | Settlement + field feedback UX | One-action field status line (terminal + window), `NAV_SUBDUE_INTRO` + `[C]`, settlement copy/keys 1/2, fight-outcome and refusal feedback, condition/wariness/grudge/rare/lockout/Heavy/sale visibility, help pages 1–9 + `[?]`/`[J]` hints, lore wrap, Fresh-erase confirm | Every field transition answers “what happened / what next”; no silent state change; no irreversible one-key mis-press; TIER_M10 stays green; new UX tier passes; console boot explicitly test-only |
 | **M11** | Boss + score screen — **DEMO GATE** | The Derelict §15 (3 phases), 5 Phase-2 adaptive variants, credits, 3-panel score screen, cosmetics render on boat | Full boss loop completable; all 5 variants triggerable from a save; Field Record written once; demo shippable |
 | **M12** | Audio + options | Ambient + 4 cues (§31), options (volume, keys, save slot, colour-blind), pause-on-focus + audio Stop | Alt-tab pauses and silences; options persist; audio plays with no callback thread |
 | **M13** | T2–T4 content | 30–36 creature rows (exact count fixed by the Task-0 ledger; §21 taxonomy, rares unique per band), Z4–Z8 encounter tables, named keystones, journal/manual additions, economy re-derive | Full roster loads; per-tier sims pass (≤12/12/14/15 action gates); **boss-feasibility sim: ≥50% at Hull 150+Plate, ≥90% at max Hull**; material sources complete |
@@ -1924,6 +1984,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P27 | **M9 kickoff rulings (user-authorized, option A for under.exe scope):** (1) px builds on **`std_gfx_pal`'s window/pump** (spec §23.1 sentence is literal); `std_ddraw_pal:199-301` is the typed-signature source only. Lock/Unlock/BltFast get typed in `std_gfx_pal`. px owns its own opaque `Gfx` and a 16bpp 565 `DDSCAPS_SYSTEMMEMORY` offscreen alongside the shared window/clipper. (2) Native gate requires a **pure `std_gfx_px_core.zig`** (no Windows includes) + thin Windows wrapper; art goldens are core framebuffer dumps, and `<windows.h>`/Wine never enter the gate. (3) **`under.exe` becomes playable in M9**: one window, gfx `Event`→`Key` adapter, existing 80×30 `render_term` Screens cell-blitted for dock/map/node/journal/help, art px fight, switch at fight boundaries, <16bpp → all-cell fallback. `std_gfx` gains `gfxNativeState` and px gains `gfxPxAttach` so the single cell window/clipper/pump is shared (no second window). (4) G7 folds into `gfxPxOpen` (fixed 640×480, no resize/scale); G8 is `gfxPxPresent`; `gfxPxOpenMemory`/`gfxPxDump`/px event calls are added to §23.1. (5) `--perf` lives on `under.exe` and writes percentiles to `errors.log` (evidence only). (6) M8's six art-fight facts are binding in M9 (hidden SPD/Sonar, tool status line, mid-fight help overlay, zero-max Resolve guard, art subdue modal, shared `msgLine` parity). (7) New data/atlas code uses explicit `[N]T{...}` literals and no array-returning APIs (D24/D25). |
 | P28 | **M9 quality-cut rulings (user-authorized):** the final two M9 tasks remove extension-risk debt before M10/M13: (1) **smell removal** — ids (`NAV_*`/`SCREEN_*`/`MSG_*`/`OUT_*`/`TOOL_*`/`UNLOCK_*`/`NO_FIGHT`) live only in `def.zig`; `items.zig` owns tool/material ownership/kind, `paths.join` and `text_scan.zig` own path/text primitives; dead/alias layers removed; `tests/quality_smells.sh` greps + LOC checks run in the tier. (2) **structural refactor** — compiled content fallback is generated from `data.z98` via `undtool --emit-fallback` with a byte-equal diff gate (M13 authors once); `render_text`/`fight_rules`/`fight_tools`/`data_scan`/`data_load`/`save_scan`/`save_io` splits; renderers stop importing dock/economy/save_ux/journal/data and consume a prepared view struct. Both tasks are golden-identical (any golden drift is a STOP); test-harness consolidation and PAL de-duplication stay deferred. |
 | P29 | **M10 preflight rulings (user-authorized):** (1) palette anchors are at shade indices **0/5/10/15**, linear 8-bit interpolation with integer round-to-nearest, RGB565 round-to-nearest; index 255 is the key and ramp 15 has 15 usable shades (`15/15` recolor uses `base[254]`). (2) `boss00` is re-authored at **96×96** with header ramp **10** (Armor); `id=17` maps to `A boss00` with no V row, plus four V rows `10→2/4/13/5`. (3) exact manifest ledger is 26 A files + 12 V rows + `F font8x16`; `A` is the only indexed-byte source, `V` adds a 512-byte LUT. (4) M10 wires creature sprites + one resident zone background into the art fight and re-pins the art golden once; boat render/overlays/score stay M11. (5) Decoder precedes validator (`zspCanonicalEncode`/`zspRecolorLut` in `zsp.zig`); validator re-encodes and byte-compares, checks embedded palette equality, exact A/V/F ledger and per-asset allowed ramps. |
+| P30 | **M10.1 UX rulings (user-authorized):** (1) one M10.1 milestone covers all UX tasks; (2) `undtool.exe` may skip boot (test-only; `under.exe` is the real game), recorded not fixed; (3) subdue success always shows `NAV_SUBDUE_INTRO` and `[C]ontinue`; settlement keys are **1/2**, never R/S; (4) one-action status line in terminal and window row 29, exact copy in §7.1; (5) help pages 1–9 with the §7.1 page map, `[?]` on every screen, `[J]ournal` on dock/field; (6) lore wraps, save-error `[F]resh` confirms erase; (7) silent mechanics get visible feedback (rough sleep, wariness, grudge, rare chance, lockout, Heavy, sale, respawn, phase); (8) art subdue intro is a modal over the last fight frame; (9) tool/upgrade/cosmetic effects get in-game copy; (10) art polish, Esc menu (M12), boss journal wiring (M11), `legend.1/2` and `zone.4..8` (M13/M16) stay deferred. |
 
 ### Game design
 
