@@ -230,7 +230,7 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
 
     renderLog(sc, s, d, 7);
 
-    _ = put(sc, 0, 15, "[S]trike [R]estrain [E] Use tool [F]lee");
+    _ = put(sc, 0, 15, "[S]trike [R]estrain [E] Use tool [F]lee  [?] Help");
 }
 
 // ---- Dock / map / node screens (§12, §16, §26) ---------------------------
@@ -339,6 +339,48 @@ fn axisName(axis: i32) []const u8 {
         2 => return "Cargo",
         3 => return "Oxygen",
         4 => return "Precision",
+        else => return "Unknown",
+    }
+}
+
+// One-line cumulative effect for the next (or current max) tier (spec §11).
+fn axisEffect(axis: i32, tier: i32) []const u8 {
+    switch (axis) {
+        0 => {
+            if (tier <= 1) return "max Hull 125";
+            if (tier == 2) return "max Hull 150";
+            return "max Hull 200; Heavy +1 on cost 3+";
+        },
+        1 => {
+            if (tier <= 1) return "player Speed 12";
+            if (tier == 2) return "player Speed 15";
+            return "player Speed 19";
+        },
+        2 => {
+            if (tier <= 1) return "Cargo +1 part per drop";
+            if (tier == 2) return "Cargo +2 parts per drop";
+            return "Cargo +3 parts per drop; Heavy +1 on cost 3+";
+        },
+        3 => {
+            if (tier <= 1) return "4 fights per expedition";
+            if (tier == 2) return "5 fights per expedition";
+            return "6 fights per expedition";
+        },
+        4 => {
+            if (tier <= 1) return "overkill margin 15%; fragile tools";
+            if (tier == 2) return "overkill margin 20%; fragile tools";
+            return "overkill margin 25%; fragile tools";
+        },
+        else => return "unknown effect",
+    }
+}
+
+fn cosmeticUnlockName(unlock: i32) []const u8 {
+    switch (unlock) {
+        1 => return "Reach Z1",
+        2 => return "Reach Z2",
+        3 => return "Reach Z3",
+        4 => return "Kill the Derelict",
         else => return "Unknown",
     }
 }
@@ -456,6 +498,7 @@ pub fn renderDock(v: *const View, sc: *Screen) void {
         var sx = put(sc, 0, 13, "[Esc] Save - ");
         _ = put(sc, sx, 13, v.save_block);
     }
+    _ = put(sc, 0, 14, "[?] Help  [J]ournal");
 }
 
 pub fn renderRefine(v: *const View, sc: *Screen) void {
@@ -486,7 +529,7 @@ pub fn renderRefine(v: *const View, sc: *Screen) void {
         _ = put(sc, x, y, "/part)");
     }
 
-    _ = put(sc, 0, 12, "[1-7] Refine material  [Esc] Back");
+    _ = put(sc, 0, 12, "[1-7] Refine material  [Esc] Back  [?] Help");
 }
 
 pub fn renderUpgrade(v: *const View, sc: *Screen) void {
@@ -497,7 +540,7 @@ pub fn renderUpgrade(v: *const View, sc: *Screen) void {
 
     var axis: i32 = 0;
     while (axis < 5) : (axis += 1) {
-        const y = 3 + axis;
+        const y = 3 + axis * 2;
         const tier = s.world.boat[@intCast(usize, axis)];
         var x = putInt(sc, 0, y, axis + 1);
         x = put(sc, x, y, " ");
@@ -512,9 +555,13 @@ pub fn renderUpgrade(v: *const View, sc: *Screen) void {
             x = put(sc, x, y, ": ");
             _ = putUpgradeCost(sc, x, y, v, @intCast(usize, axis) * 3);
         }
+        var effect_tier = tier + 1;
+        if (effect_tier > 3) effect_tier = 3;
+        var ex = put(sc, 2, y + 1, "Effect: ");
+        _ = put(sc, ex, y + 1, axisEffect(axis, effect_tier));
     }
 
-    _ = put(sc, 0, 10, "[1-5] Upgrade axis  [Esc] Back");
+    _ = put(sc, 0, 14, "[1-5] Upgrade axis  [Esc] Back  [?] Help");
 }
 
 pub fn renderCraft(s: *const def.GameState, sc: *Screen) void {
@@ -526,7 +573,7 @@ pub fn renderCraft(s: *const def.GameState, sc: *Screen) void {
     var i: usize = 0;
     while (i < rows.len) : (i += 1) {
         const row = rows[i];
-        const y = 3 + @intCast(i32, i);
+        const y = 3 + @intCast(i32, i) * 2;
         var x = putInt(sc, 0, y, row.id);
         x = put(sc, x, y, " ");
         x = put(sc, x, y, toolName(row.id));
@@ -535,9 +582,11 @@ pub fn renderCraft(s: *const def.GameState, sc: *Screen) void {
         x = put(sc, x, y, "] ");
         x = putCost(sc, x, y, row.cost);
         if (items.toolOwned(&s.world, row.id)) _ = put(sc, x, y, " (owned)");
+        var ex = put(sc, 2, y + 1, "Effect: ");
+        _ = put(sc, ex, y + 1, render_text.toolEffect(row.id));
     }
 
-    _ = put(sc, 0, 12, "[1-7] Craft tool  [Esc] Back");
+    _ = put(sc, 0, 18, "[1-7] Craft tool  [Esc] Back  [?] Help");
 }
 
 fn cosmeticKey(index: i32) u8 {
@@ -566,13 +615,14 @@ pub fn renderBuy(v: *const View, sc: *Screen) void {
         if (status == COSMETIC_OWNED) {
             _ = put(sc, p, y, " (owned)");
         } else if (status == COSMETIC_LOCKED) {
-            _ = put(sc, p, y, " (locked)");
+            p = put(sc, p, y, " (locked) ");
+            _ = put(sc, p, y, cosmeticUnlockName(row.unlock));
         } else {
             _ = put(sc, p, y, " (available)");
         }
     }
 
-    _ = put(sc, 0, 16, "[1-9,a-c] Buy cosmetic  [Esc] Back");
+    _ = put(sc, 0, 16, "[1-9,a-c] Buy cosmetic  [Esc] Back  [?] Help");
 }
 
 pub fn renderTools(s: *const def.GameState, sc: *Screen) void {
@@ -583,7 +633,7 @@ pub fn renderTools(s: *const def.GameState, sc: *Screen) void {
 
     var id: i32 = 1;
     while (id <= 7) : (id += 1) {
-        const y = 3 + id - 1;
+        const y = 3 + (id - 1) * 2;
         var p = putInt(sc, 0, y, id);
         p = put(sc, p, y, " ");
         p = put(sc, p, y, toolName(id));
@@ -593,9 +643,11 @@ pub fn renderTools(s: *const def.GameState, sc: *Screen) void {
         if (!items.toolOwned(&s.world, id)) {
             _ = put(sc, p, y, " (not owned)");
         }
+        var ex = put(sc, 2, y + 1, "Effect: ");
+        _ = put(sc, ex, y + 1, render_text.toolEffect(id));
     }
 
-    _ = put(sc, 0, 12, "[1-7] Select tool  [0] None  [Esc] Back");
+    _ = put(sc, 0, 18, "[1-7] Select tool  [0] None  [Esc] Back  [?] Help");
 }
 
 
@@ -642,7 +694,7 @@ pub fn renderMap(v: *const View, sc: *Screen) void {
         _ = put(sc, 0, 14, "Heavy +1 (Hull/Cargo T3) on cost 3+ zones.");
     }
 
-    _ = put(sc, 0, 15, "[1-8] Z1-Z8  [9] Boss  [Esc] Back");
+    _ = put(sc, 0, 15, "[1-8] Z1-Z8  [9] Boss  [Esc] Back  [?] Help  [J]ournal");
 }
 
 // ---- Secured line (§7) ----------------------------------------------------
@@ -762,7 +814,7 @@ pub fn renderJournal(v: *const View, sc: *Screen) void {
         } else {
             _ = put(sc, 0, 3, "(entry text unavailable)");
         }
-        _ = put(sc, 0, ROWS - 1, "[Esc] Back to journal");
+        _ = put(sc, 0, ROWS - 1, "[Esc] Back to journal  [?] Help");
         return;
     }
 
@@ -788,7 +840,7 @@ pub fn renderJournal(v: *const View, sc: *Screen) void {
         }
     }
 
-    _ = put(sc, 0, ROWS - 1, "[1-9,a-j] Read  [Esc] Back");
+    _ = put(sc, 0, ROWS - 1, "[1-9,a-j] Read  [Esc] Back  [?] Help");
 }
 
 pub fn renderHelp(text: []const u8, sc: *Screen) void {
@@ -819,6 +871,7 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
                 _ = put(sc, 0, 2, "Secured: nothing");
             }
             _ = put(sc, 0, 4, "[C]ontinue");
+            _ = put(sc, 0, 6, "[?] Help");
             return;
         }
 
@@ -835,6 +888,7 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
         x = put(sc, 0, 8, "[2] Sell - parts kept; +");
         x = putInt(sc, x, 8, cdef.sale);
         _ = put(sc, x, 8, " coins");
+        _ = put(sc, 0, 10, "[?] Help  [J]ournal");
         return;
     }
 
@@ -869,6 +923,7 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
     }
 
     _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
+    _ = put(sc, 0, 8, "[?] Help  [J]ournal");
     _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");
 
     if (v.zone_flavour_found) {
@@ -910,7 +965,7 @@ pub fn renderLore(text: []const u8, sc: *Screen) void {
         i += 1;
     }
 
-    _ = put(sc, 0, ROWS - 1, "[Enter] Begin");
+    _ = put(sc, 0, ROWS - 1, "[Enter] Begin  [?] Help");
 }
 
 pub fn renderMenu(sc: *Screen) void {
@@ -920,13 +975,14 @@ pub fn renderMenu(sc: *Screen) void {
     _ = put(sc, 2, 4, "[N]ew Game");
     _ = put(sc, 2, 5, "[O]ptions (unavailable until M12)");
     _ = put(sc, 2, 6, "[Q]uit");
+    _ = put(sc, 0, ROWS - 1, "[?] Help");
 }
 
 pub fn renderSaveError(reason: []const u8, sc: *Screen) void {
     clear(sc);
     _ = put(sc, 0, 0, "UNDERSANDED  SAVE ERROR");
     _ = put(sc, 2, 3, reason);
-    _ = put(sc, 2, 6, "[F]resh  [B]ackup slot  [Q]uit");
+    _ = put(sc, 2, 6, "[F]resh  [B]ackup slot  [Q]uit  [?] Help");
 }
 
 // Row-major text dump (trailing spaces trimmed, '\n' after every row) for the

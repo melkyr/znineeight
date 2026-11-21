@@ -551,6 +551,7 @@ fn drawHud(sf: *px.Surface, w: *const Widget, s: *const def.GameState) void {
     p = catInt(buf[0..], p, s.exp.fight_index + 1);
     p = catText(buf[0..], p, "  COINS ");
     p = catInt(buf[0..], p, s.world.money);
+    p = catText(buf[0..], p, "  [?] Help");
     drawText(sf, w.x + 4, w.y, buf[0..p], C_TITLE, C_PANEL);
 
     var sc: render_text.Screen = undefined;

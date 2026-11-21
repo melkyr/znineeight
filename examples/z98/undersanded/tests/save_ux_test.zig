@@ -267,7 +267,7 @@ fn expectedLore(out: []u8) []const u8 {
     while (y < 29) : (y += 1) {
         appendLine(out, &at, "");
     }
-    appendLine(out, &at, "[Enter] Begin");
+    appendLine(out, &at, "[Enter] Begin  [?] Help");
     return out[0..at];
 }
 

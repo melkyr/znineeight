@@ -133,28 +133,39 @@ id=11,cost=0,boss=0
 [text]
 manual.1=The Undersanded is a place of pressure and patience. Read the current before you commit the hook, and keep one eye on your Hull.
  
+ At the dock: [R]efine, [U]pgrade, [C]raft, [B]uy, [E]quip, [T] Rest, [D]epart, [Q]uit. [Esc] saves and [?] opens this page.
+ 
  Every creature you release is one you may meet again; surface with what you can carry, not what you wish you had taken.
 manual.2=The hunt begins when you choose a zone and commit the hook. Every fight is a conversation of pressure: you take Hull, and the creature loses HP or Resolve.
  Restrain wears down Resolve. Strike cuts HP. When Resolve reaches zero a Subdue attempt may open, and the modal shows the odds before the roll is spent.
+ SPD ?? means the creature's Speed is hidden. Record it in the Journal or use Sonar Ping to reveal it; Speed sets turn order and flee odds.
  A creature that flees still counts as seen. A fight you leave is a fight you may meet again.
 manual.3=Every outcome has its own table. Subdue yields the gentlest parts; Kill yields more; Overkill ruins the rarest line and leaves only scrap.
- Parts drop straight into the hold. Cargo adds its tier to the first ordinary line of a drop, never to keystones.
- Secured parts stay with you through a flee or an ascent. Selling a subdued creature pays coins instead.
+ Parts drop straight into the hold. Cargo adds its tier to the first ordinary line of a drop, never to keystones. Both Release and Sell keep the secured parts.
+ Release adds 8 points of rare chance where rares exist (cap 40) and makes the creature warier: +15 Resolve next rematch. Sell pays its coin value instead. Choose with 1 or 2.
 manual.4=Refine converts one part type into materials. The exchange rate is fixed per part, and each refine raises expertise in that material.
  Rare batches, Glow Polyp and Glass Pane, take two presses: the first shows the total, and the second commits it.
  Expertise gates upgrades. Tier two asks for expertise two; tier three asks for expertise four.
 manual.5=Days and nights alternate. Each phase is a tick of the calendar, and each action at the dock costs one phase.
  Travel costs phases in each direction. Day and night draw from different encounter tables, so the same zone changes face.
+ Resting at a node can bring rough sleep: Drowsy (-20% Strike), Shaky (overkill margin halved), or Exposed (incoming damage +25%). Dock Rest is safe.
  Renewal is measured in cycles. A creature taken is unavailable until its respawn cycle, and the day you took it is inclusive.
-manual.6=One tool is equipped at a time. Craft it from parts at the dock, then choose it before you depart.
- Activated tools carry a single charge per trip. Rigged tools are always on while they are equipped.
- Some tools answer a specific creature: Steel Plate against steel, Brine Net against the slippery, Sonar against the unseen.
+manual.6=One tool is equipped at a time. Craft it from parts at the dock, then choose it before you depart. Activated tools carry one charge per trip; rigged tools are always on while equipped.
+ Electric Gland: stun the creature for one turn. Steel Plate Tool: negates armor and halves the Derelict's cannon volley. Bioluminescent Lure: reveals phase or the real target; prevents blind and decoy.
+ Pressure Hook: prevents flee. Sonar Ping: reveals Speed and the next action; prevents ink; shows the Ghost-Ray flip. Brine Net: Restrain ignores Shell and phasing reduction. Coral Shield: negates discharge damage.
+ Fragile tools: at Precision tier 2 or higher, one hit of 15 or more Hull disables the equipped tool for the rest of the expedition.
 manual.7=Past the reef the water carries a signal. It is not a call and not a voice, but it repeats at the edge of hearing.
+ The Derelict opens only after you have seen six distinct non-boss species; the map shows how many you have seen.
  The Derelict sits at the end of the ladder. The node warns that a strong hull is wise; the warning is not a promise of safety.
  Machines do not tire and do not surrender. Bring patience, and bring a hull that can take a volley.
 manual.8=Cosmetics are bought with coins and do not change the fight. They mark the boat you brought home.
+ Each zone milestone unlocks three cosmetics; the rest wait for a Derelict kill. A locked item shows its unlock condition at the dock.
  Score is kept in three panels: the Field Record written once, the variants of the Derelict you have met, and the Last Run.
  The ocean does not keep score. The record is for you.
+manual.9=The Journal records each creature when a fight with it ends, whatever the outcome. [J] opens it, and a *NEW* mark clears when you read the entry.
+ The Derelict is recorded only after the first kill. Locked entries stay unnamed until you meet them.
+ SPD ?? means Speed is hidden. Its Journal entry or Sonar Ping reveals it; Speed sets turn order and flee odds.
+ [?] opens the manual page for the current screen.
 legend.1=Mileel. An unconfirmed sighting. The account is inconsistent and the name may be a sailor's invention. Investigate if you can.
 legend.2=Tunisteel. An unconfirmed sighting. No two accounts agree on its size. Investigate if you can.
 zone.1=The Shallows hold the light longest. Sand and weed move in slow agreement, and the first creatures here are cautious of a boat that does not belong.

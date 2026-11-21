@@ -182,14 +182,17 @@ fn tViewedIndicator() bool {
 fn tHelpMap() bool {
     if (journal.helpPageNumber(def.NAV_DOCK) != 1) return false;
     if (journal.helpPageNumber(def.NAV_MAP) != 5) return false;
-    if (journal.helpPageNumber(def.NAV_NODE) != 2) return false;
+    if (journal.helpPageNumber(def.NAV_NODE) != 5) return false;
     if (journal.helpPageNumber(def.SCREEN_FIGHT) != 2) return false;
     if (journal.helpPageNumber(def.SCREEN_SUBDUE) != 2) return false;
+    if (journal.helpPageNumber(def.NAV_SUBDUE_INTRO) != 3) return false;
     if (journal.helpPageNumber(def.NAV_SETTLE) != 3) return false;
     if (journal.helpPageNumber(def.NAV_REFINE) != 4) return false;
-    if (journal.helpPageNumber(def.NAV_CRAFT) != 4) return false;
+    if (journal.helpPageNumber(def.NAV_UPGRADE) != 4) return false;
+    if (journal.helpPageNumber(def.NAV_CRAFT) != 6) return false;
     if (journal.helpPageNumber(def.NAV_TOOLS) != 6) return false;
-    if (journal.helpPageNumber(def.NAV_JOURNAL) != 7) return false;
+    if (journal.helpPageNumber(def.NAV_JOURNAL) != 9) return false;
+    if (journal.helpPageNumber(def.NAV_BUY) != 8) return false;
 
     if (journal.helpPage(def.NAV_DOCK)) |text| {
         if (!contains(text, "pressure and patience")) return false;
@@ -324,7 +327,7 @@ fn tContentKeys() bool {
     if (!contains(boss, "a signal, not a machine")) return false;
 
     n = 1;
-    while (n <= 8) : (n += 1) {
+    while (n <= 9) : (n += 1) {
         var key: [24]u8 = undefined;
         var at: usize = 0;
         const prefix: []const u8 = "manual.";

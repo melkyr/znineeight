@@ -364,6 +364,20 @@ pub fn toolKindName(kind: i32) []const u8 {
     return "unknown";
 }
 
+// One-line in-game effect copy (spec §10/§18); used by Craft and Tools.
+pub fn toolEffect(id: i32) []const u8 {
+    switch (id) {
+        1 => return "Negates armor; halves the Derelict's cannon volley.",
+        2 => return "Restrain ignores Shell and phasing reduction.",
+        3 => return "Stuns the creature for one turn.",
+        4 => return "Reveals phase or the real target; prevents blind and decoy.",
+        5 => return "Prevents creature flee.",
+        6 => return "Reveals Speed and next action; prevents ink; shows the flip.",
+        7 => return "Negates discharge-type Hull damage.",
+        else => return "No effect.",
+    }
+}
+
 pub fn renderToolStatus(sc: *Screen, s: *const def.GameState, y: i32) void {
     var x = put(sc, 0, y, "TOOL  ");
     x = put(sc, x, y, toolName(s.fight.tool));

@@ -331,7 +331,7 @@ pub fn parseZone(fields: []const scan.RowField, n: usize, line: i32, t: *def.Tab
 pub fn textKeyKnown(k: []const u8) bool {
     if (k.len > 7 and scan.eql(k[0..7], "manual.")) {
         const n = scan.parseI32(k[7..]) orelse return false;
-        return n >= 1 and n <= 8;
+        return n >= 1 and n <= 9;
     }
     if (k.len > 8 and scan.eql(k[0..8], "journal.")) {
         const n = scan.parseI32(k[8..]) orelse return false;
