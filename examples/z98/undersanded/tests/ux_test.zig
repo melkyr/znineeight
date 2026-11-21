@@ -16,6 +16,8 @@ const input = @import("../input.zig");
 const expedition = @import("../expedition.zig");
 const creatures = @import("../creatures_t1.zig");
 const world = @import("../world.zig");
+const text_scan = @import("../text_scan.zig");
+const std_mem = @import("std_mem.zig");
 
 var fails: usize = 0;
 
@@ -292,6 +294,277 @@ fn tSubdueIntroNoRngNoPhase() bool {
     return true;
 }
 
+fn lineIs(got: []const u8, want: []const u8) bool {
+    if (got.len != want.len) return false;
+    return std_mem.eqlU8(got.ptr, want.ptr, got.len);
+}
+
+fn lineStarts(got: []const u8, prefix: []const u8) bool {
+    if (got.len < prefix.len) return false;
+    return std_mem.eqlU8(got.ptr, prefix.ptr, prefix.len);
+}
+
+fn lineHas(got: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (got.len < needle.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= got.len) : (i += 1) {
+        var j: usize = 0;
+        var same = true;
+        while (j < needle.len) : (j += 1) {
+            if (got[i + j] != needle[j]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return true;
+    }
+    return false;
+}
+
+fn fieldLine(st: *const nav.NavState) []const u8 {
+    return st.field_msg[0..st.field_msg_len];
+}
+
+fn newDock() def.GameState {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    return g;
+}
+fn eventCopy(ev: i32, ev_def: i32, ev_value: i32, want: []const u8) bool {
+    var g = newDock();
+    var st = nav.initState();
+    g.last_event = ev;
+    g.last_event_def = ev_def;
+    g.last_event_value = ev_value;
+    _ = nav.navStep(&g, &st, key('x'));
+    if (g.last_event != def.EV_NONE) return false;
+    if (g.last_event_def != 0 or g.last_event_value != 0) return false;
+    return lineIs(fieldLine(&st), want);
+}
+fn startFightAt(g: *def.GameState, idx: i32) void {
+    game.startFight(g, idx);
+    g.exp.active = 1;
+    g.exp.zone = 0;
+    g.world.hull = g.fight.hull;
+}
+
+const EventCopyCase = struct {
+    name: []const u8,
+    ev: i32,
+    ev_def: i32,
+    ev_value: i32,
+    want: []const u8,
+};
+
+const EVENT_COPY_CASES = [_]EventCopyCase{
+    .{ .name = "event_overkill_status", .ev = def.EV_OVERKILL, .ev_def = 0, .ev_value = def.OUT_OVERKILL, .want = "Overkilled Mystic Eel - the rarest line is ruined." },
+    .{ .name = "event_creature_fled_status", .ev = def.EV_CREATURE_FLED, .ev_def = 0, .ev_value = 0, .want = "The creature fled - no loot; it renews." },
+    .{ .name = "event_player_fled_status", .ev = def.EV_PLAYER_FLED, .ev_def = 0, .ev_value = 0, .want = "You fled - no loot; returned to dock." },
+    .{ .name = "event_ascent_status", .ev = def.EV_ASCENT, .ev_def = 0, .ev_value = 0, .want = "Emergency ascent - Hull 0; returned to dock." },
+    .{ .name = "event_released_status", .ev = def.EV_RELEASED, .ev_def = 0, .ev_value = 0, .want = "Released Mystic Eel - parts kept; +15 Resolve next time." },
+    .{ .name = "event_sold_status", .ev = def.EV_SOLD, .ev_def = 0, .ev_value = 20, .want = "Sold Mystic Eel for 20 coins - parts kept." },
+};
+
+fn nodeCommand(zone: u8, action: u8, hull: i32, fight_index: i32,
+    want: []const u8) bool {
+    var g = newDock();
+    var st = nav.initState();
+    if (nav.navStep(&g, &st, key('d')) != def.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key(zone)) != def.NAV_NODE) return false;
+    if (hull >= 0) g.world.hull = hull;
+    if (fight_index >= 0) g.exp.fight_index = fight_index;
+    if (action != 0) _ = nav.navStep(&g, &st, key(action));
+    if (g.last_event != def.EV_NONE) return false;
+    return lineIs(fieldLine(&st), want);
+}
+fn tEventDepart() bool {
+    return nodeCommand('2', 0, -1, -1,
+        "Departed to The Reef - travel 2 out, 2 back (+1 depart action).");
+}
+fn tEventRestNode() bool {
+    return nodeCommand('4', 'r', 50, -1, "Rested at the node: +30 Hull.");
+}
+fn tEventRough() bool {
+    return eventCopy(def.EV_ROUGH, 0, def.COND_DROWSY, "Rough sleep (Drowsy): Strike -20%.")
+        and eventCopy(def.EV_ROUGH, 0, def.COND_SHAKY, "Rough sleep (Shaky): overkill margin halved.")
+        and eventCopy(def.EV_ROUGH, 0, def.COND_EXPOSED, "Rough sleep (Exposed): incoming damage +25%.");
+}
+fn tEventRestDock() bool {
+    var g = newDock();
+    var st = nav.initState();
+    g.world.hull = 60;
+    if (nav.navStep(&g, &st, key('t')) != def.NAV_DOCK) return false;
+    if (g.last_event != def.EV_NONE) return false;
+    return lineIs(fieldLine(&st), "Rested at dock: +40 Hull.");
+}
+fn tEventSurface() bool {
+    return nodeCommand('2', 's', -1, -1, "Returned to dock - travel 2 phases.");
+}
+fn tEventSubdueNoStatus() bool {
+    var g = newDock();
+    var st = nav.initState();
+    g.last_event = def.EV_SUBDUE;
+    g.last_event_def = 0;
+    _ = nav.navStep(&g, &st, key('x'));
+    if (g.last_event != def.EV_NONE) return false;
+    return st.field_msg_len == 0;
+}
+fn tEventKill() bool {
+    var g = newDock();
+    var st = nav.initState();
+    g.log[0] = def.LogEntry{ .class = def.CLS_SECURED, .msg_id = def.MSG_SECURED, .a = 0, .b = def.OUT_KILL };
+    g.log_n = 1;
+    g.last_event = def.EV_KILL;
+    g.last_event_def = 0;
+    _ = nav.navStep(&g, &st, key('x'));
+    if (g.last_event != def.EV_NONE) return false;
+    return lineIs(fieldLine(&st), "Killed Mystic Eel - Secured: Shell Chip x2.");
+}
+fn tEventHuntMax() bool {
+    return nodeCommand('2', 'h', -1, 999, "No fights left - surface or rest.");
+}
+fn tEventHuntEmpty() bool {
+    return nodeCommand('4', 'h', -1, -1, "Nothing answers the hook here.");
+}
+
+fn tNoEventNoStatus() bool {
+    var g = newDock();
+    var st = nav.initState();
+    if (nav.navStep(&g, &st, key('x')) != def.NAV_DOCK) return false;
+    if (g.last_event != def.EV_NONE) return false;
+    return st.field_msg_len == 0;
+}
+
+fn tStatusClearsNextKey() bool {
+    var g = newDock();
+    var st = nav.initState();
+    if (nav.navStep(&g, &st, key('d')) != def.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('2')) != def.NAV_NODE) return false;
+    if (st.field_msg_len == 0) return false;
+    if (nav.navStep(&g, &st, key('x')) != def.NAV_NODE) return false;
+    if (g.last_event != def.EV_NONE) return false;
+    if (st.field_msg_len != 0) return false;
+    return fieldMsgZeroed(&st);
+}
+fn tEventDoesNotChangePhaseOrRng() bool {
+    var g = newDock();
+    var st = nav.initState();
+    g.exp.active = 1;
+    g.exp.zone = 1;
+    g.world.field_phases = 7;
+    g.world.cycle = 3;
+    g.world.phase = 1;
+    g.world.rng_state = 0x9abcdef0;
+    g.fight.rng_state = 0x12345678;
+    g.world.hull = 55;
+    g.world.money = 12;
+
+    const phases = g.world.field_phases;
+    const cycle = g.world.cycle;
+    const phase = g.world.phase;
+    const world_rng = g.world.rng_state;
+    const fight_rng = g.fight.rng_state;
+    const hull = g.world.hull;
+    const money = g.world.money;
+
+    g.screen = def.NAV_NODE;
+    g.last_event = def.EV_REST_DOCK;
+    g.last_event_def = 0;
+    g.last_event_value = 40;
+    if (nav.navStep(&g, &st, key('x')) != def.NAV_NODE) return false;
+
+    if (g.world.field_phases != phases) return false;
+    if (g.world.cycle != cycle) return false;
+    if (g.world.phase != phase) return false;
+    if (g.world.rng_state != world_rng) return false;
+    if (g.fight.rng_state != fight_rng) return false;
+    if (g.world.hull != hull) return false;
+    if (g.world.money != money) return false;
+    if (g.last_event != def.EV_NONE) return false;
+    return lineIs(fieldLine(&st), "Rested at dock: +40 Hull.");
+}
+
+fn tKillOverkillFleeAscentSurviveScreenChange() bool {
+    // Kill: 300 max HP gives a 30 margin, so 15 HP cannot overshoot it.
+    var k = newDock();
+    var kst = nav.initState();
+    startFightAt(&k, 18);
+    const kidx = k.fight.def_index;
+    var kcdef = creatures.defAt(kidx);
+    const kname = kcdef.name[0..@intCast(usize, kcdef.name_len)];
+    k.fight.hp = 15;
+    if (nav.navStep(&k, &kst, key('s')) != def.NAV_NODE) return false;
+    if (expedition.isInFight(&k)) return false;
+    if (k.last_event != def.EV_NONE) return false;
+    if (!lineStarts(fieldLine(&kst), "Killed ")) return false;
+    if (!lineHas(fieldLine(&kst), kname)) return false;
+
+    // Overkill: 1 HP on the 70 HP eel is above its 7 margin.
+    var o = newDock();
+    var ost = nav.initState();
+    startFightAt(&o, 0);
+    const oidx = o.fight.def_index;
+    var ocdef = creatures.defAt(oidx);
+    const oname = ocdef.name[0..@intCast(usize, ocdef.name_len)];
+    o.fight.hp = 1;
+    if (nav.navStep(&o, &ost, key('s')) != def.NAV_NODE) return false;
+    if (expedition.isInFight(&o)) return false;
+    if (o.last_event != def.EV_NONE) return false;
+    var obuf: [96]u8 = undefined;
+    var op: usize = 0;
+    text_scan.appendText(obuf[0..], &op, "Overkilled ");
+    text_scan.appendText(obuf[0..], &op, oname);
+    text_scan.appendText(obuf[0..], &op, " - the rarest line is ruined.");
+    if (!lineIs(fieldLine(&ost), obuf[0..op])) return false;
+
+    // Creature flee: stay at the node, no loot.
+    var c = newDock();
+    var cst = nav.initState();
+    startFightAt(&c, 0);
+    c.fight.pending_flee = 1;
+    if (nav.navStep(&c, &cst, key('s')) != def.NAV_NODE) return false;
+    if (expedition.isInFight(&c)) return false;
+    if (c.last_event != def.EV_NONE) return false;
+    if (!lineIs(fieldLine(&cst), "The creature fled - no loot; it renews.")) return false;
+
+    // Player flee: return to dock.
+    var f = newDock();
+    var fst = nav.initState();
+    startFightAt(&f, 0);
+    if (nav.navStep(&f, &fst, key('f')) != def.NAV_DOCK) return false;
+    if (f.exp.active != 0) return false;
+    if (f.last_event != def.EV_NONE) return false;
+    if (!lineIs(fieldLine(&fst), "You fled - no loot; returned to dock.")) return false;
+
+    // Hull-0 ascent: return to dock, Hull 0.
+    var a = newDock();
+    var ast = nav.initState();
+    startFightAt(&a, 0);
+    a.fight.hull = 0;
+    if (nav.navStep(&a, &ast, key('s')) != def.NAV_DOCK) return false;
+    if (expedition.isInFight(&a)) return false;
+    if (a.exp.active != 0) return false;
+    if (a.world.hull != 0) return false;
+    if (a.last_event != def.EV_NONE) return false;
+    return lineIs(fieldLine(&ast), "Emergency ascent - Hull 0; returned to dock.");
+}
+
+fn tReleaseSellResultLine() bool {
+    var r = pendingState(def.NAV_SETTLE);
+    var rst = nav.initState();
+    if (nav.navStep(&r, &rst, key('1')) != def.NAV_NODE) return false;
+    if (r.last_event != def.EV_NONE) return false;
+    if (!lineIs(fieldLine(&rst),
+        "Released Mystic Eel - parts kept; +15 Resolve next time.")) return false;
+
+    var s = pendingState(def.NAV_SETTLE);
+    var sst = nav.initState();
+    if (nav.navStep(&s, &sst, key('2')) != def.NAV_NODE) return false;
+    if (s.last_event != def.EV_NONE) return false;
+    return lineIs(fieldLine(&sst), "Sold Mystic Eel for 20 coins - parts kept.");
+}
+
 pub fn main() void {
     report("init_state_zeroes_every_field", tInitStateZeroesEveryField());
     report("field_msg_cleared_on_next_key", tFieldMsgClearedOnNextKey());
@@ -301,6 +574,26 @@ pub fn main() void {
     report("settle_ignores_r_and_s", tSettleIgnoresRandS());
     report("settle_1_releases_2_sells", tSettle1Releases2Sells());
     report("subdue_intro_no_rng_no_phase", tSubdueIntroNoRngNoPhase());
+    report("event_depart_status", tEventDepart());
+    report("event_rest_node_status", tEventRestNode());
+    report("event_rough_status", tEventRough());
+    report("event_rest_dock_status", tEventRestDock());
+    report("event_surface_status", tEventSurface());
+    report("event_subdue_no_status", tEventSubdueNoStatus());
+    report("event_kill_status", tEventKill());
+    var ci: usize = 0;
+    while (ci < EVENT_COPY_CASES.len) : (ci += 1) {
+        const c = EVENT_COPY_CASES[ci];
+        report(c.name, eventCopy(c.ev, c.ev_def, c.ev_value, c.want));
+    }
+    report("event_hunt_max_status", tEventHuntMax());
+    report("event_hunt_empty_status", tEventHuntEmpty());
+    report("no_event_no_status", tNoEventNoStatus());
+    report("status_clears_next_key", tStatusClearsNextKey());
+    report("event_does_not_change_phase_or_rng", tEventDoesNotChangePhaseOrRng());
+    report("kill_overkill_flee_ascent_survive_screen_change",
+        tKillOverkillFleeAscentSurviveScreenChange());
+    report("release_sell_result_line", tReleaseSellResultLine());
 
     if (fails != 0) os.exit(1);
     io.write("ux_test PASS\n");

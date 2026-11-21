@@ -56,6 +56,14 @@ const HEAVY_TIER: i32 = 3;
 const COND_ROLL_LO: i32 = 0;
 const COND_ROLL_HI: i32 = 2;
 
+// M10.1 transient §7.1 field event. nav consumes last_event after the action
+// and turns it into the one-action status line; it is never persisted.
+fn setEvent(g: *def.GameState, ev: i32, d: i32, value: i32) void {
+    g.last_event = ev;
+    g.last_event_def = d;
+    g.last_event_value = value;
+}
+
 // ---- Travel ---------------------------------------------------------------
 
 fn zoneCost(zone: i32) i32 {
@@ -95,6 +103,7 @@ pub fn restAtDock(g: *def.GameState) void {
     if (h < 0) h = 0;
     g.world.hull = h;
     world.advancePhase(&g.world);
+    setEvent(g, def.EV_REST_DOCK, 0, DOCK_REST_HEAL);
 }
 
 // Empty pool check for the safe-Rest distinction (§5/§12). apportion does not
@@ -204,6 +213,7 @@ fn postFight(g: *def.GameState) bool {
         endAscent(g);
         g.world.hull = 0;
         world.advancePhase(&g.world);
+        setEvent(g, def.EV_ASCENT, idx, 0);
         returnToDock(g);
         return true;
     }
@@ -216,6 +226,7 @@ fn postFight(g: *def.GameState) bool {
         g.world.hull = g.fight.hull;
         g.fight.def_index = def.NO_FIGHT;
         world.advancePhase(&g.world);
+        setEvent(g, def.EV_PLAYER_FLED, idx, 0);
         returnToDock(g);
         return true;
     }
@@ -228,6 +239,7 @@ fn postFight(g: *def.GameState) bool {
         logSecured(g, idx, outcome);
         world.markTaken(&g.world, zone, idx, def.OUT_CREATURE_FLED);
         g.fight.def_index = def.NO_FIGHT;
+        setEvent(g, def.EV_CREATURE_FLED, idx, 0);
         return false;
     }
 
@@ -240,6 +252,7 @@ fn postFight(g: *def.GameState) bool {
         addLoot(g, &subdef, outcome);
         logSecured(g, idx, outcome);
         g.world.hull = g.fight.hull;
+        setEvent(g, def.EV_SUBDUE, idx, 0);
         g.screen = def.NAV_SUBDUE_INTRO;
         return false;
     }
@@ -251,6 +264,11 @@ fn postFight(g: *def.GameState) bool {
     logSecured(g, idx, outcome);
     world.markTaken(&g.world, zone, idx, outcome);
     g.world.hull = g.fight.hull;
+    if (outcome == def.OUT_OVERKILL) {
+        setEvent(g, def.EV_OVERKILL, idx, outcome);
+    } else {
+        setEvent(g, def.EV_KILL, idx, outcome);
+    }
     g.fight.def_index = def.NO_FIGHT;
     return false;
 }
@@ -281,10 +299,13 @@ pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
         SUB_RELEASE => {
             world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
             world.applyRelease(&g.world, zone, idx);
+            setEvent(g, def.EV_RELEASED, idx, 0);
         },
         SUB_SELL => {
             world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
-            g.world.money += creatures.defAt(idx).sale;
+            const sale = creatures.defAt(idx).sale;
+            g.world.money += sale;
+            setEvent(g, def.EV_SOLD, idx, sale);
         },
         else => return,
     }
@@ -341,21 +362,32 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     ep.pending_cond = def.COND_NONE;
 
     // Depart = 1 dock action + travel cost, advanced instantly (§6).
-    const phases = 1 + travelPhases(g, zone);
+    const travel = travelPhases(g, zone);
+    const phases = 1 + travel;
     var p: i32 = 0;
     while (p < phases) : (p += 1) {
         world.advancePhase(&g.world);
     }
+    setEvent(g, def.EV_DEPART, zone, travel);
     return &g.exp;
 }
 
 fn hunt(g: *def.GameState) void {
     if (isInFight(g)) return;
-    if (g.exp.fight_index >= world.maxFights(&g.world)) return;
+    if (g.exp.fight_index >= world.maxFights(&g.world)) {
+        setEvent(g, def.EV_HUNT_MAX, 0, world.maxFights(&g.world));
+        return;
+    }
 
     var idx: i32 = def.NO_FIGHT;
-    if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) return;
-    if (idx < 0) return;
+    if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) {
+        setEvent(g, def.EV_HUNT_EMPTY, g.exp.zone, 0);
+        return;
+    }
+    if (idx < 0) {
+        setEvent(g, def.EV_HUNT_EMPTY, g.exp.zone, 0);
+        return;
+    }
 
     world.markSeen(&g.world, idx);
 
@@ -409,6 +441,9 @@ fn restAtNode(g: *def.GameState) void {
     if (!empty) {
         const roll = rng.rngRange(&g.world.rng_state, COND_ROLL_LO, COND_ROLL_HI);
         g.exp.pending_cond = def.COND_DROWSY + roll;
+        setEvent(g, def.EV_ROUGH, 0, g.exp.pending_cond);
+    } else {
+        setEvent(g, def.EV_REST_NODE, 0, REST_HEAL);
     }
 }
 
@@ -446,7 +481,12 @@ pub fn expeditionStep(g: *def.GameState, action: i32) void {
     switch (action) {
         EXP_HUNT => hunt(g),
         EXP_REST => restAtNode(g),
-        EXP_SURFACE => returnToDock(g),
+        EXP_SURFACE => {
+            const zone = g.exp.zone;
+            const cost = travelPhases(g, zone);
+            returnToDock(g);
+            setEvent(g, def.EV_SURFACE, zone, cost);
+        },
         else => {},
     }
 }

@@ -102,6 +102,139 @@ pub fn navSetFieldMsgInt(st: *NavState, prefix: []const u8, value: i32,
     st.field_msg_len = at;
 }
 
+fn eventCondName(cond: i32) []const u8 {
+    switch (cond) {
+        def.COND_DROWSY => return "Drowsy",
+        def.COND_SHAKY => return "Shaky",
+        def.COND_EXPOSED => return "Exposed",
+        else => return "rough",
+    }
+}
+
+fn eventCondEffect(cond: i32) []const u8 {
+    switch (cond) {
+        def.COND_DROWSY => return "Strike -20%",
+        def.COND_SHAKY => return "overkill margin halved",
+        def.COND_EXPOSED => return "incoming damage +25%",
+        else => return "the sleep takes its toll",
+    }
+}
+
+// Consume one transient §7.1 field event into the one-action status line.
+// Called after the action so early returns cannot skip it. EV_SUBDUE has its
+// own intro screen and deliberately produces no status line.
+pub fn navConsumeEvent(g: *def.GameState, st: *NavState) void {
+    const ev = g.last_event;
+    const ev_def = g.last_event_def;
+    const ev_value = g.last_event_value;
+    g.last_event = def.EV_NONE;
+    g.last_event_def = 0;
+    g.last_event_value = 0;
+
+    var buf: [256]u8 = undefined;
+    var p: usize = 0;
+    switch (ev) {
+        def.EV_DEPART => {
+            text_scan.appendText(buf[0..], &p, "Departed to ");
+            text_scan.appendText(buf[0..], &p, render.zoneName(ev_def));
+            text_scan.appendText(buf[0..], &p, " - travel ");
+            text_scan.appendInt(buf[0..], &p, @intCast(i64, ev_value));
+            text_scan.appendText(buf[0..], &p, " out, ");
+            text_scan.appendInt(buf[0..], &p, @intCast(i64, ev_value));
+            text_scan.appendText(buf[0..], &p, " back (+1 depart action).");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_REST_NODE => {
+            navSetFieldMsgInt(st, "Rested at the node: +", ev_value, " Hull.");
+        },
+        def.EV_ROUGH => {
+            text_scan.appendText(buf[0..], &p, "Rough sleep (");
+            text_scan.appendText(buf[0..], &p, eventCondName(ev_value));
+            text_scan.appendText(buf[0..], &p, "): ");
+            text_scan.appendText(buf[0..], &p, eventCondEffect(ev_value));
+            text_scan.appendText(buf[0..], &p, ".");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_REST_DOCK => {
+            navSetFieldMsgInt(st, "Rested at dock: +", ev_value, " Hull.");
+        },
+        def.EV_SURFACE => {
+            navSetFieldMsgInt(st, "Returned to dock - travel ", ev_value, " phases.");
+        },
+        def.EV_SUBDUE => {},
+        def.EV_KILL => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            var sbuf: [160]u8 = undefined;
+            const secured = render.securedLine(g, sbuf[0..]);
+            text_scan.appendText(buf[0..], &p, "Killed ");
+            text_scan.appendText(buf[0..], &p, name);
+            if (secured.len > 0) {
+                text_scan.appendText(buf[0..], &p, " - ");
+                text_scan.appendText(buf[0..], &p, secured);
+                text_scan.appendText(buf[0..], &p, ".");
+            } else {
+                text_scan.appendText(buf[0..], &p, ".");
+            }
+            if (p <= st.field_msg.len) {
+                navSetFieldMsg(st, buf[0..p]);
+            } else {
+                p = 0;
+                text_scan.appendText(buf[0..], &p, "Killed ");
+                text_scan.appendText(buf[0..], &p, name);
+                text_scan.appendText(buf[0..], &p, ".");
+                navSetFieldMsg(st, buf[0..p]);
+            }
+        },
+        def.EV_OVERKILL => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            text_scan.appendText(buf[0..], &p, "Overkilled ");
+            text_scan.appendText(buf[0..], &p, name);
+            text_scan.appendText(buf[0..], &p, " - the rarest line is ruined.");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_CREATURE_FLED => {
+            navSetFieldMsg(st, "The creature fled - no loot; it renews.");
+        },
+        def.EV_PLAYER_FLED => {
+            navSetFieldMsg(st, "You fled - no loot; returned to dock.");
+        },
+        def.EV_ASCENT => {
+            navSetFieldMsg(st, "Emergency ascent - Hull 0; returned to dock.");
+        },
+        def.EV_HUNT_MAX => {
+            navSetFieldMsg(st, "No fights left - surface or rest.");
+        },
+        def.EV_HUNT_EMPTY => {
+            navSetFieldMsg(st, "Nothing answers the hook here.");
+        },
+        def.EV_RELEASED => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            text_scan.appendText(buf[0..], &p, "Released ");
+            text_scan.appendText(buf[0..], &p, name);
+            text_scan.appendText(buf[0..], &p, " - parts kept; +15 Resolve next time.");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        def.EV_SOLD => {
+            if (ev_def < 0 or ev_def >= creatures.defCount()) return;
+            var cdef = creatures.defAt(ev_def);
+            const name = render.creatureName(&cdef);
+            text_scan.appendText(buf[0..], &p, "Sold ");
+            text_scan.appendText(buf[0..], &p, name);
+            text_scan.appendText(buf[0..], &p, " for ");
+            text_scan.appendInt(buf[0..], &p, @intCast(i64, ev_value));
+            text_scan.appendText(buf[0..], &p, " coins - parts kept.");
+            navSetFieldMsg(st, buf[0..p]);
+        },
+        else => {},
+    }
+}
+
 pub const BootOut = struct {
     screen: i32,
     done: bool,
@@ -334,8 +467,9 @@ fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     return setScreen(g, def.NAV_JOURNAL);
 }
 
-// Next screen id for one key. Mutates game state only via dock/expedition.
-pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+// Inner step: every action path returns through here so the wrapper below can
+// always consume the transient field event exactly once.
+fn navStepInner(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     navClearFieldMsg(st);
     st.last = def.NAV_RESULT_NONE;
     st.tip = TIP_NONE;
@@ -414,6 +548,13 @@ pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         def.NAV_HELP => return setScreen(g, def.NAV_HELP),
         else => return dockStep(g, st, key),
     }
+}
+
+// Next screen id for one key. Mutates game state only via dock/expedition.
+pub fn navStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
+    const next = navStepInner(g, st, key);
+    navConsumeEvent(g, st);
+    return next;
 }
 
 // ---- prepared views for the decoupled terminal renderers ------------------
