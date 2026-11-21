@@ -236,8 +236,6 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
 // ---- Dock / map / node screens (§12, §16, §26) ---------------------------
 
 const BOSS_ZONE: i32 = 8;
-const BOSS_SEEN_GATE: i32 = 6;
-const ROLE_BOSS: i32 = 4;
 
 pub fn zoneName(zone: i32) []const u8 {
     switch (zone) {
@@ -269,35 +267,18 @@ fn zoneTag(zone: i32) []const u8 {
     }
 }
 
-fn seenMaskHas(s: *const def.GameState, d: i32) bool {
-    if (d < 0) return false;
-    const word: usize = @intCast(usize, d / 32);
-    if (word >= 2) return false;
-    const bit: u32 = @intCast(u32, d % 32);
-    const m: u32 = @intCast(u32, 1) << bit;
-    return (s.world.seen_mask[word] & m) != 0;
-}
-
-// Distinct non-boss creatures seen: count set bits in seen_mask over DEFS rows
-// whose role is not boss. Boss rows have no role constant in T1; §9.1 fixes the
-// boss role value at 4 (T1 DEFS only carry roles 1..3).
+// Distinct non-boss creatures seen. The domain helper owns the count so
+// expedition can enforce the gate without importing a renderer.
 pub fn seenNonBossCount(s: *const def.GameState) i32 {
-    var n: i32 = 0;
-    var i: i32 = 0;
-    while (i < creatures.defCount()) : (i += 1) {
-        const d = creatures.defAt(i);
-        if (d.role == ROLE_BOSS) continue;
-        if (seenMaskHas(s, i)) n += 1;
-    }
-    return n;
+    return world.seenNonBossCount(&s.world);
 }
 
 pub fn bossGateOpen(s: *const def.GameState) bool {
-    return seenNonBossCount(s) >= BOSS_SEEN_GATE;
+    return world.bossGateOpen(&s.world);
 }
 
 pub fn fightsLeft(s: *const def.GameState) i32 {
-    var left = world.maxFights(&s.world) - s.exp.fight_index;
+    var left = world.maxFights(&s.world, s.exp.zone) - s.exp.fight_index;
     if (left < 0) left = 0;
     return left;
 }
@@ -689,7 +670,7 @@ pub fn renderMap(v: *const View, sc: *Screen) void {
     var x = put(sc, 0, 13, "Seen non-boss: ");
     x = putInt(sc, x, 13, seenNonBossCount(s));
     x = put(sc, x, 13, "/");
-    _ = putInt(sc, x, 13, BOSS_SEEN_GATE);
+    _ = putInt(sc, x, 13, world.BOSS_SEEN_GATE);
     if (v.heavy_active) {
         _ = put(sc, 0, 14, "Heavy +1 (Hull/Cargo T3) on cost 3+ zones.");
     }
@@ -917,6 +898,10 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
     x = putInt(sc, x, 5, s.world.hull);
     x = put(sc, x, 5, "/");
     _ = putInt(sc, x, 5, world.hullMax(&s.world));
+
+    if (tables.zoneIsBoss(s.exp.zone) != 0) {
+        _ = put(sc, 0, 10, "Hull 150+ recommended.");
+    }
 
     if (secured.len > 0) {
         _ = put(sc, 0, 6, secured);

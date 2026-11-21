@@ -293,8 +293,10 @@ fn tBoatTables() bool {
     if (world.cargoMax(&w) != world.CARGO_TABLE[2]) return false;
     if (world.oxygenFights(&w) != world.OXYGEN_FIGHTS[1]) return false;
     if (world.precisionMargin(&w) != world.PRECISION_TABLE[0]) return false;
-    if (world.maxFights(&w) != 3 + w.boat[world.BOAT_OXYGEN]) return false;
-    if (world.maxFights(&w) != 4) return false;
+    if (world.maxFights(&w, 1) != 3 + w.boat[world.BOAT_OXYGEN]) return false;
+    if (world.maxFights(&w, 1) != 4) return false;
+    // Boss routes allow exactly one fight, independent of Oxygen.
+    if (world.maxFights(&w, 8) != 1) return false;
     return true;
 }
 

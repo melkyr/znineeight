@@ -411,21 +411,52 @@ pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {
     return &g.exp;
 }
 
+// The Derelict is the single role-boss row; find it without hard-coding the
+// dense index so a content override keeps the Hunt branch correct.
+fn bossDefIndex() i32 {
+    var i: i32 = 0;
+    while (i < creatures.defCount()) : (i += 1) {
+        if (creatures.defAt(i).role == creatures.ROLE_BOSS) return i;
+    }
+    return -1;
+}
+
 fn hunt(g: *def.GameState) void {
     if (isInFight(g)) return;
-    if (g.exp.fight_index >= world.maxFights(&g.world)) {
-        setEvent(g, def.EV_HUNT_MAX, 0, world.maxFights(&g.world));
+    const zone = g.exp.zone;
+    const cap = world.maxFights(&g.world, zone);
+    if (g.exp.fight_index >= cap) {
+        setEvent(g, def.EV_HUNT_MAX, 0, cap);
         return;
     }
 
     var idx: i32 = def.NO_FIGHT;
-    if (!encounter.rollEncounter(&g.world, g.exp.zone, &idx)) {
-        setEvent(g, def.EV_HUNT_EMPTY, g.exp.zone, 0);
-        return;
-    }
-    if (idx < 0) {
-        setEvent(g, def.EV_HUNT_EMPTY, g.exp.zone, 0);
-        return;
+    if (tables.zoneIsBoss(zone) != 0) {
+        // Defence in depth: navigation already refuses a locked boss, but a
+        // direct step must not start the fight through the gate.
+        if (!world.bossGateOpen(&g.world)) {
+            setEvent(g, def.EV_BOSS_LOCKED, 0, world.seenNonBossCount(&g.world));
+            return;
+        }
+        idx = bossDefIndex();
+        if (idx < 0) {
+            setEvent(g, def.EV_HUNT_EMPTY, zone, 0);
+            return;
+        }
+        // One boss row: the 20/40 respawn still governs a later expedition.
+        if (!world.available(&g.world, zone, idx)) {
+            setEvent(g, def.EV_HUNT_EMPTY, zone, 0);
+            return;
+        }
+    } else {
+        if (!encounter.rollEncounter(&g.world, zone, &idx)) {
+            setEvent(g, def.EV_HUNT_EMPTY, zone, 0);
+            return;
+        }
+        if (idx < 0) {
+            setEvent(g, def.EV_HUNT_EMPTY, zone, 0);
+            return;
+        }
     }
 
     world.markSeen(&g.world, idx);
@@ -468,6 +499,12 @@ fn hunt(g: *def.GameState) void {
 
     // §10 grudge: run-scoped family overkill raises this fight's stats.
     fight.applyGrudge(g, &cdef, g.world.family_overkill_mask);
+
+    // The Derelict layers §15 onto the fight only after the normal setup has
+    // copied Hull/actions/tool state into FightState.
+    if (tables.zoneIsBoss(zone) != 0) {
+        boss.startBoss(g, &g.world);
+    }
 }
 
 fn restAtNode(g: *def.GameState) void {

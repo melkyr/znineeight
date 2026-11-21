@@ -103,6 +103,64 @@ fn tVariantSelection() bool {
     return true;
 }
 
+fn expectedAxis(t: [5]i32) i32 {
+    var max_tier: i32 = 0;
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        if (t[i] > max_tier) max_tier = t[i];
+    }
+    const priority = [5]i32{
+        world.BOAT_HULL,
+        world.BOAT_PRECISION,
+        world.BOAT_CARGO,
+        world.BOAT_OXYGEN,
+        world.BOAT_SPEED,
+    };
+    var p: usize = 0;
+    while (p < priority.len) : (p += 1) {
+        const axis = priority[p];
+        if (t[@intCast(usize, axis)] == max_tier) return axis;
+    }
+    return world.BOAT_HULL;
+}
+
+fn expectedVariant(axis: i32) i32 {
+    switch (axis) {
+        world.BOAT_HULL => return boss.VARIANT_ARMOR,
+        world.BOAT_PRECISION => return boss.VARIANT_SLIVER,
+        world.BOAT_CARGO => return boss.VARIANT_HOARD,
+        world.BOAT_OXYGEN => return boss.VARIANT_DROWN,
+        world.BOAT_SPEED => return boss.VARIANT_BLUR,
+        else => return boss.VARIANT_ARMOR,
+    }
+}
+
+// Exhaustive 4^5 boat-tier matrix: max tier wins, tiebreak H>P>C>O>S, and
+// all-zero resolves to Hull/The Armor through the same two-step helper.
+fn tVariantMatrix() bool {
+    var code: i32 = 0;
+    while (code < 1024) : (code += 1) {
+        var t: [5]i32 = undefined;
+        t[world.BOAT_HULL] = code % 4;
+        t[world.BOAT_SPEED] = (code / 4) % 4;
+        t[world.BOAT_CARGO] = (code / 16) % 4;
+        t[world.BOAT_OXYGEN] = (code / 64) % 4;
+        t[world.BOAT_PRECISION] = (code / 256) % 4;
+        const axis = expectedAxis(t);
+        const variant = expectedVariant(axis);
+        if (!selectionOk(
+            t[world.BOAT_HULL],
+            t[world.BOAT_SPEED],
+            t[world.BOAT_CARGO],
+            t[world.BOAT_OXYGEN],
+            t[world.BOAT_PRECISION],
+            axis,
+            variant
+        )) return false;
+    }
+    return true;
+}
+
 fn tPhaseBoundaries() bool {
     var s: def.GameState = undefined;
     prepare(&s);
@@ -436,6 +494,7 @@ fn tOverkillBookkeeping() bool {
 
 pub fn main() void {
     report("variant_selection", tVariantSelection());
+    report("variant_matrix_all_boats", tVariantMatrix());
     report("phase_boundaries_200_100", tPhaseBoundaries());
     report("speed_attack_bands", tSpeedAttack());
     report("volley_cadence_plate", tVolleyCadenceAndPlate());
