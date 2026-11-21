@@ -284,6 +284,7 @@ pub const EV_HUNT_MAX: i32 = 12;
 pub const EV_HUNT_EMPTY: i32 = 13;
 pub const EV_RELEASED: i32 = 14;
 pub const EV_SOLD: i32 = 15;
+pub const EV_BOSS_LOCKED: i32 = 16;
 
 pub const BAR_NONE: i32 = 0;
 pub const BAR_STRIKE: i32 = 1;

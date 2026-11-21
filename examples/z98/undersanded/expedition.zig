@@ -97,13 +97,16 @@ fn healNode(g: *def.GameState) void {
 // §5: Dock Rest always costs exactly one phase, even at full Hull. It is safe
 // (no condition roll) and draws no RNG.
 pub fn restAtDock(g: *def.GameState) void {
+    const before = g.world.hull;
     var h = g.world.hull + DOCK_REST_HEAL;
     const mx = world.hullMax(&g.world);
     if (h > mx) h = mx;
     if (h < 0) h = 0;
     g.world.hull = h;
     world.advancePhase(&g.world);
-    setEvent(g, def.EV_REST_DOCK, 0, DOCK_REST_HEAL);
+    var gain = g.world.hull - before;
+    if (gain < 0) gain = 0;
+    setEvent(g, def.EV_REST_DOCK, 0, gain);
 }
 
 // Empty pool check for the safe-Rest distinction (§5/§12). apportion does not
@@ -434,8 +437,11 @@ fn restAtNode(g: *def.GameState) void {
     // Availability depends on cycle/phase, so decide before advancing: the
     // Rest's own phase step must not turn a non-empty pool into a safe Rest.
     const empty = poolEmpty(g);
+    const before = g.world.hull;
     healNode(g);
     world.advancePhase(&g.world);
+    var gain = g.world.hull - before;
+    if (gain < 0) gain = 0;
 
     // Node Rest is penalised; empty-pool Rest is safe (§5).
     if (!empty) {
@@ -443,7 +449,7 @@ fn restAtNode(g: *def.GameState) void {
         g.exp.pending_cond = def.COND_DROWSY + roll;
         setEvent(g, def.EV_ROUGH, 0, g.exp.pending_cond);
     } else {
-        setEvent(g, def.EV_REST_NODE, 0, REST_HEAL);
+        setEvent(g, def.EV_REST_NODE, 0, gain);
     }
 }
 

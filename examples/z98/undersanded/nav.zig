@@ -166,26 +166,10 @@ pub fn navConsumeEvent(g: *def.GameState, st: *NavState) void {
             if (ev_def < 0 or ev_def >= creatures.defCount()) return;
             var cdef = creatures.defAt(ev_def);
             const name = render.creatureName(&cdef);
-            var sbuf: [160]u8 = undefined;
-            const secured = render.securedLine(g, sbuf[0..]);
             text_scan.appendText(buf[0..], &p, "Killed ");
             text_scan.appendText(buf[0..], &p, name);
-            if (secured.len > 0) {
-                text_scan.appendText(buf[0..], &p, " - ");
-                text_scan.appendText(buf[0..], &p, secured);
-                text_scan.appendText(buf[0..], &p, ".");
-            } else {
-                text_scan.appendText(buf[0..], &p, ".");
-            }
-            if (p <= st.field_msg.len) {
-                navSetFieldMsg(st, buf[0..p]);
-            } else {
-                p = 0;
-                text_scan.appendText(buf[0..], &p, "Killed ");
-                text_scan.appendText(buf[0..], &p, name);
-                text_scan.appendText(buf[0..], &p, ".");
-                navSetFieldMsg(st, buf[0..p]);
-            }
+            text_scan.appendText(buf[0..], &p, ".");
+            navSetFieldMsg(st, buf[0..p]);
         },
         def.EV_OVERKILL => {
             if (ev_def < 0 or ev_def >= creatures.defCount()) return;
@@ -210,6 +194,10 @@ pub fn navConsumeEvent(g: *def.GameState, st: *NavState) void {
         },
         def.EV_HUNT_EMPTY => {
             navSetFieldMsg(st, "Nothing answers the hook here.");
+        },
+        def.EV_BOSS_LOCKED => {
+            navSetFieldMsgInt(st, "The Derelict is silent - ", ev_value,
+                "/6 species seen.");
         },
         def.EV_RELEASED => {
             if (ev_def < 0 or ev_def >= creatures.defCount()) return;
@@ -419,9 +407,14 @@ fn mapStep(g: *def.GameState, key: input.Key) i32 {
         return setScreen(g, def.NAV_NODE);
     }
 
-    if (key.ch == '9' and render.bossGateOpen(g)) {
-        _ = expedition.depart(g, 8);
-        return setScreen(g, def.NAV_NODE);
+    if (key.ch == '9') {
+        if (render.bossGateOpen(g)) {
+            _ = expedition.depart(g, 8);
+            return setScreen(g, def.NAV_NODE);
+        }
+        g.last_event = def.EV_BOSS_LOCKED;
+        g.last_event_def = 0;
+        g.last_event_value = render.seenNonBossCount(g);
     }
 
     // Locked boss or any other key stays on the map.

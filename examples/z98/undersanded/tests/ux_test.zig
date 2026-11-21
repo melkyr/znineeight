@@ -69,7 +69,7 @@ fn tFieldMsgClearedOnNextKey() bool {
     g.screen = def.NAV_DOCK;
     var st = nav.initState();
 
-    nav.navSetFieldMsg(&st, "Killed Mystic Eel - Secured: Shell Chip.");
+    nav.navSetFieldMsg(&st, "Killed Mystic Eel.");
     if (st.field_msg_len == 0) return false;
 
     _ = nav.navStep(&g, &st, key('x'));
@@ -299,29 +299,6 @@ fn lineIs(got: []const u8, want: []const u8) bool {
     return std_mem.eqlU8(got.ptr, want.ptr, got.len);
 }
 
-fn lineStarts(got: []const u8, prefix: []const u8) bool {
-    if (got.len < prefix.len) return false;
-    return std_mem.eqlU8(got.ptr, prefix.ptr, prefix.len);
-}
-
-fn lineHas(got: []const u8, needle: []const u8) bool {
-    if (needle.len == 0) return true;
-    if (got.len < needle.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= got.len) : (i += 1) {
-        var j: usize = 0;
-        var same = true;
-        while (j < needle.len) : (j += 1) {
-            if (got[i + j] != needle[j]) {
-                same = false;
-                break;
-            }
-        }
-        if (same) return true;
-    }
-    return false;
-}
-
 fn fieldLine(st: *const nav.NavState) []const u8 {
     return st.field_msg[0..st.field_msg_len];
 }
@@ -383,7 +360,7 @@ fn tEventDepart() bool {
         "Departed to The Reef - travel 2 out, 2 back (+1 depart action).");
 }
 fn tEventRestNode() bool {
-    return nodeCommand('4', 'r', 50, -1, "Rested at the node: +30 Hull.");
+    return nodeCommand('4', 'r', 90, -1, "Rested at the node: +10 Hull.");
 }
 fn tEventRough() bool {
     return eventCopy(def.EV_ROUGH, 0, def.COND_DROWSY, "Rough sleep (Drowsy): Strike -20%.")
@@ -393,10 +370,10 @@ fn tEventRough() bool {
 fn tEventRestDock() bool {
     var g = newDock();
     var st = nav.initState();
-    g.world.hull = 60;
+    g.world.hull = 90;
     if (nav.navStep(&g, &st, key('t')) != def.NAV_DOCK) return false;
     if (g.last_event != def.EV_NONE) return false;
-    return lineIs(fieldLine(&st), "Rested at dock: +40 Hull.");
+    return lineIs(fieldLine(&st), "Rested at dock: +10 Hull.");
 }
 fn tEventSurface() bool {
     return nodeCommand('2', 's', -1, -1, "Returned to dock - travel 2 phases.");
@@ -411,15 +388,7 @@ fn tEventSubdueNoStatus() bool {
     return st.field_msg_len == 0;
 }
 fn tEventKill() bool {
-    var g = newDock();
-    var st = nav.initState();
-    g.log[0] = def.LogEntry{ .class = def.CLS_SECURED, .msg_id = def.MSG_SECURED, .a = 0, .b = def.OUT_KILL };
-    g.log_n = 1;
-    g.last_event = def.EV_KILL;
-    g.last_event_def = 0;
-    _ = nav.navStep(&g, &st, key('x'));
-    if (g.last_event != def.EV_NONE) return false;
-    return lineIs(fieldLine(&st), "Killed Mystic Eel - Secured: Shell Chip x2.");
+    return eventCopy(def.EV_KILL, 18, def.OUT_KILL, "Killed The Derelict.");
 }
 fn tEventHuntMax() bool {
     return nodeCommand('2', 'h', -1, 999, "No fights left - surface or rest.");
@@ -427,7 +396,22 @@ fn tEventHuntMax() bool {
 fn tEventHuntEmpty() bool {
     return nodeCommand('4', 'h', -1, -1, "Nothing answers the hook here.");
 }
-
+fn tEventBossLocked() bool {
+    var g = newDock();
+    var st = nav.initState();
+    const gw = &g.world;
+    gw.seen_mask[0] = 7;
+    g.world.field_phases = 4;
+    g.world.rng_state = 0xabc;
+    if (nav.navStep(&g, &st, key('d')) != def.NAV_MAP) return false;
+    if (nav.navStep(&g, &st, key('9')) != def.NAV_MAP) return false;
+    if (g.screen != def.NAV_MAP) return false;
+    if (g.exp.active != 0) return false;
+    if (g.world.field_phases != 4) return false;
+    if (g.world.rng_state != 0xabc) return false;
+    if (g.last_event != def.EV_NONE) return false;
+    return lineIs(fieldLine(&st), "The Derelict is silent - 3/6 species seen.");
+}
 fn tNoEventNoStatus() bool {
     var g = newDock();
     var st = nav.initState();
@@ -497,8 +481,12 @@ fn tKillOverkillFleeAscentSurviveScreenChange() bool {
     if (nav.navStep(&k, &kst, key('s')) != def.NAV_NODE) return false;
     if (expedition.isInFight(&k)) return false;
     if (k.last_event != def.EV_NONE) return false;
-    if (!lineStarts(fieldLine(&kst), "Killed ")) return false;
-    if (!lineHas(fieldLine(&kst), kname)) return false;
+    var kbuf: [96]u8 = undefined;
+    var kp: usize = 0;
+    text_scan.appendText(kbuf[0..], &kp, "Killed ");
+    text_scan.appendText(kbuf[0..], &kp, kname);
+    text_scan.appendText(kbuf[0..], &kp, ".");
+    if (!lineIs(fieldLine(&kst), kbuf[0..kp])) return false;
 
     // Overkill: 1 HP on the 70 HP eel is above its 7 margin.
     var o = newDock();
@@ -588,6 +576,7 @@ pub fn main() void {
     }
     report("event_hunt_max_status", tEventHuntMax());
     report("event_hunt_empty_status", tEventHuntEmpty());
+    report("event_boss_locked_status", tEventBossLocked());
     report("no_event_no_status", tNoEventNoStatus());
     report("status_clears_next_key", tStatusClearsNextKey());
     report("event_does_not_change_phase_or_rng", tEventDoesNotChangePhaseOrRng());
