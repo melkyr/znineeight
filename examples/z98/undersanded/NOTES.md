@@ -2452,44 +2452,58 @@ and spec §31/§34. Verdict: **amendment required** to M12 Task 2's cue-hook
 wording. No game-design change is needed, and this task changes no M12
 plan/spec/code.
 
+**Fight/nav stays pure.** `fight.zig` and game state must not perform audio
+I/O. M12 must consume a cue-request/event from the pure fight/nav path, not
+call the audio layer from `fight.strike`/`postFight` directly. Every hook below
+names where the pure path raises the request, not where `audio.zig` is called.
+
 **HIT has no event hook.** No `EV_*` covers a landed Strike. `fight.strike`
-logs `MSG_STRIKE` only after the Phase/Decoy/Blind early returns, so M12 should
-hook that success point (including a 0-damage Strike absorbed by armor).
-Misses (`MSG_PHASE`, `MSG_DECOY`, `MSG_BLIND`) stay silent. A Strike that also
-kills or subdues fires HIT and the outcome cue; §31 allows overlap.
+logs `MSG_STRIKE` only after the Phase/Decoy/Blind early returns, so the pure
+path must raise the HIT cue request on that success point (including a
+0-damage Strike absorbed by armor). Misses (`MSG_PHASE`, `MSG_DECOY`,
+`MSG_BLIND`) stay silent. A Strike that also kills or subdues raises HIT and
+the outcome request; §31 allows overlap.
 
 **SUBDUE funnels through `postFight`.** `fight.finishSubdue` sets `OUT_SUBDUE`
-and `expedition.postFight` emits `EV_SUBDUE` once before
-`NAV_SUBDUE_INTRO`. The rare modal path reaches the same outcome via
-`resolveModal`, so hooking the `OUT_SUBDUE` settlement covers both. Keep
-`finishSurgeFailure`, declined modals, flee, creature-flee, and ascent silent
-(§31: subdue failure has no cue).
+and `expedition.postFight` settles it once before `NAV_SUBDUE_INTRO`. The rare
+modal path reaches the same outcome via `resolveModal`, so the SUBDUE request
+belongs on that `OUT_SUBDUE` settlement. Keep `finishSurgeFailure`, declined
+modals, flee, creature-flee, and ascent silent (§31: subdue failure has no
+cue).
 
-**KILL must not rely on `EV_KILL`.** Normal kills emit `EV_KILL`/
-`EV_OVERKILL`, but the Derelict branch in `postFight` returns before those
-events and goes straight to credits. Hook the death outcomes
-(`OUT_KILL`/`OUT_OVERKILL`) at `postFight` before the boss branch (or at
-`fight.checkDeath`) so a boss defeat also plays KILL. Both Kill and Overkill
-are death outcomes; pin KILL for both rather than leaving Overkill silent.
+**KILL must not rely on `EV_KILL` and must settle in `postFight`.** Normal
+kills emit `EV_KILL`/`EV_OVERKILL`, but the Derelict branch in `postFight`
+returns before those events and goes straight to credits. Pin the KILL cue
+request at `postFight` **after the Hull-0 guard and before the boss branch**,
+for `OUT_KILL`/`OUT_OVERKILL`, so a boss defeat also raises KILL. Do not hook
+`fight.checkDeath`: a same-turn kill plus Hull-0 settles as Ascent by the
+earlier Hull-0 guard, so `checkDeath` would play KILL wrongly. Both Kill and
+Overkill are death outcomes; pin KILL for both rather than leaving Overkill
+silent.
 
 **BOSSKILL's "first kill" is lifetime, not per-fight.** `boss.onDefeat` returns
 `first_defeat`, but `boss_defeat_done` resets in `startBoss`, so that flag is
 true on every boss defeat; its callers are idempotent (`freezeFieldRecord` is
 write-once, `journalOnBossKill` is mask-idempotent). For the §31 "Derelict
-first kill", test lifetime `world.boss_kills == 0` (equivalently
-`field_record_written == 0`) before `boss.onDefeat` and fire BOSSKILL only on
-that first defeat. Boss defeat is Kill or Overkill (§38 P31), so BOSSKILL
-covers either first defeat; later defeats play KILL only. BOSSKILL and KILL may
-overlap on the first defeat.
+first kill", test lifetime `world.boss_kills == 0` before `boss.onDefeat` and
+raise BOSSKILL only on that first defeat. `field_record_written == 0` is only
+effectively equivalent under normal flow, so it is not the predicate. Boss
+defeat is Kill or Overkill (§38 P31), so BOSSKILL covers either first defeat;
+later defeats play KILL only. BOSSKILL and KILL may overlap on the first
+defeat.
 
 **Exact amendment text (M12 Task 2, replace the hooks clause):**
 
-> hooks: landed Strike at `fight.strike` (`MSG_STRIKE` path) → HIT; `OUT_SUBDUE`
-> settlement in `expedition.postFight` → SUBDUE; `OUT_KILL`/`OUT_OVERKILL`
-> settlement in `expedition.postFight` before the boss branch → KILL; first
-> lifetime Derelict defeat (`world.boss_kills == 0` before `boss.onDefeat`) →
-> BOSSKILL. `EV_KILL`/`EV_OVERKILL`/`EV_SUBDUE` alone are not sufficient: the
-> boss branch skips the kill events and HIT/BOSSKILL have no events. Subdue
+> hooks raise a cue request from the pure path (the audio layer consumes it;
+> fight/nav does not call audio): landed Strike at `fight.strike`
+> (`MSG_STRIKE` path) → HIT; `OUT_SUBDUE` settlement in
+> `expedition.postFight` → SUBDUE; `OUT_KILL`/`OUT_OVERKILL` settlement in
+> `expedition.postFight` **after the Hull-0 guard and before the boss
+> branch** → KILL; first lifetime Derelict defeat (`world.boss_kills == 0`
+> before `boss.onDefeat`) → BOSSKILL. Do not use `fight.checkDeath`: a
+> same-turn kill + Hull-0 settles as Ascent and would play KILL wrongly.
+> `EV_KILL`/`EV_OVERKILL`/`EV_SUBDUE` alone are not sufficient: the boss
+> branch skips the kill events and HIT/BOSSKILL have no events. Subdue
 > failure/decline, flee/ascent, and misses stay silent.
 
 No other cue-trigger contradiction was found. `loop_gfx.readWindowKey` still
