@@ -141,6 +141,7 @@ pub const FieldRecord = struct {
     expertise: [MAX_MATERIALS]i32,
     money_earned: i32, cosmetics: i32,
     boat: [5]i32,
+    cosmetics_mask: u32,
 };
 
 pub const LastRun = struct {
@@ -375,6 +376,7 @@ pub const MSG_SUPPRESS_SHIELD: i32 = 33;
 pub const MSG_BOSS_RESTRAIN: i32 = 34;
 pub const MSG_BOSS_HOARD: i32 = 35;
 pub const MSG_BOSS_DROWN: i32 = 36;
+pub const MSG_BOSS_PHASE2: i32 = 37;
 
 // Content boot error copy (spec §25.10, §33).
 pub const MSG_MISSING: []const u8 = "Content file missing. Reinstall from CD.";
@@ -439,6 +441,10 @@ pub const MESSAGES = [_]MsgRow{
     MsgRow{
         .id = MSG_BOSS_DROWN,
         .text = "The Drown floods the hull: +5 Hull.",
+    },
+    MsgRow{
+        .id = MSG_BOSS_PHASE2,
+        .text = "The Derelict enters its second phase.",
     },
 };
 

@@ -1029,6 +1029,7 @@ pub fn renderScore(p: *const score.ScorePanels, sc: *Screen) void {
     _ = putInt(sc, x, 21, p.last.boss_kills);
 
     _ = put(sc, 0, 23, score.CLOSING);
+    _ = put(sc, 0, 24, score.CREDITS_CONTINUE);
 }
 
 pub fn renderCredits(sc: *Screen) void {

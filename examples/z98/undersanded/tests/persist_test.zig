@@ -274,6 +274,7 @@ fn richState(g: *def.GameState) void {
     fr.overkilled = 22;
     fr.money_earned = 500;
     fr.cosmetics = 3;
+    fr.cosmetics_mask = 0x000000A5;
     i = 0;
     while (i < def.MAX_MATERIALS) : (i += 1) {
         fr.expertise[i] = @intCast(i32, i % 6);
@@ -335,6 +336,7 @@ fn tRoundTrip() bool {
     const b = file_mod.readAll(&arena, P_VALID_B) catch return false;
     if (!eq(a, b)) return false;
     if (g2.world.field_record.cycles != 4) return false;
+    if (g2.world.field_record.cosmetics_mask != 0x000000A5) return false;
     if (g2.exp.pending_cond != def.COND_SHAKY) return false;
     if (g2.exp.hold[7] != 6) return false;
     return true;
@@ -652,6 +654,27 @@ fn tOldSaveWithoutJournalViewedLoads() bool {
     return saved;
 }
 
+// field_cosmetics is additive optional: old saves load it as zero, and the
+// writer omits it if the frozen mask is zero (byte-identical resave).
+fn tOldSaveWithoutFieldCosmeticsLoads() bool {
+    var arena = arena_mod.init(file_buf[0..]);
+    const raw = file_mod.readAll(&arena, FIXTURE_V2) catch return false;
+    if (contains(raw, "field_cosmetics=")) return false;
+
+    var w: def.World = undefined;
+    var e: def.Expedition = undefined;
+    game.zeroWorld(&w);
+    persist.saveRead(FIXTURE_V2, &w, &e) catch return false;
+    if (w.field_record.cosmetics_mask != 0) return false;
+    if (w.field_record.cosmetics != 3) return false;
+    if (w.cosmetics_owned != 0x00000FFF) return false;
+
+    persist.saveWrite(P_RESAVE, &w, &e) catch return false;
+    const omitted = !fileContains(P_RESAVE, "field_cosmetics=");
+    removeIfExists(P_RESAVE);
+    return omitted;
+}
+
 fn craftedBad(kind: i32) bool {
     var g: def.GameState = undefined;
     game.newGame(&g);
@@ -672,6 +695,7 @@ fn craftedBad(kind: i32) bool {
         11 => wp.tools_owned = @intCast(u32, 1) << @intCast(u32, 8),
         12 => wp.cosmetics_owned = @intCast(u32, 1) << @intCast(u32, 12),
         13 => wp.cosmetics_unlocked = @intCast(u32, 1) << @intCast(u32, 12),
+        14 => wp.field_record.cosmetics_mask = @intCast(u32, 1) << @intCast(u32, 12),
         else => return false,
     }
     persist.saveWrite(P_BAD, &g.world, &g.exp) catch {
@@ -691,7 +715,7 @@ fn craftedBad(kind: i32) bool {
 fn tCraftedCrcValidRejected() bool {
     cleanSlots();
     var k: i32 = 0;
-    while (k < 14) : (k += 1) {
+    while (k < 15) : (k += 1) {
         if (!craftedBad(k)) {
             io.write("crafted kind failed: ");
             io.printInt(k);
@@ -889,6 +913,7 @@ pub fn main() void {
     report("backup_slot_writes_save1_manually", tBackupSlotManual());
     report("fixture_v2_canonical_resave", tFixtureCanonicalResave());
     report("old_save_without_journal_viewed_loads", tOldSaveWithoutJournalViewedLoads());
+    report("old_save_without_field_cosmetics_loads", tOldSaveWithoutFieldCosmeticsLoads());
     report("crafted_crc_valid_rejected", tCraftedCrcValidRejected());
     report("options_unknown_keys_skipped", tOptionsUnknownSkipped());
     report("trailing_content_after_crc_rejected", tTrailingAfterCrcRejected());

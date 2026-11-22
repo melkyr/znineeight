@@ -86,6 +86,12 @@ fn setVariantBit(s: *def.GameState) void {
     w.boss_variants_seen = w.boss_variants_seen | bit;
 }
 
+fn logPhase2Entry(s: *def.GameState) void {
+    var v = s.fight.boss_variant;
+    if (v < 0 or v > 4) v = VARIANT_ARMOR;
+    def.appendLog(s, def.LOG_NORMAL, def.MSG_BOSS_PHASE2, v + 1, 0);
+}
+
 pub fn startBoss(s: *def.GameState, w: *def.World) void {
     s.fight.boss_axis = axisFromBoat(w);
     s.fight.boss_variant = variantFromAxis(s.fight.boss_axis);
@@ -94,20 +100,29 @@ pub fn startBoss(s: *def.GameState, w: *def.World) void {
     s.fight.boss_start_hull = s.fight.hull;
     s.fight.boss_start_actions = s.fight.actions;
     s.fight.boss_defeat_done = 0;
-    if (s.fight.boss_phase >= PHASE_2) setVariantBit(s);
+    if (s.fight.boss_phase >= PHASE_2) {
+        setVariantBit(s);
+        logPhase2Entry(s);
+    }
 }
 
 pub fn bossPhaseUpdate(s: *def.GameState) void {
     const p = phaseForHp(s.fight.hp);
     if (s.fight.boss_phase == 0) {
         s.fight.boss_phase = p;
-        if (p >= PHASE_2) setVariantBit(s);
+        if (p >= PHASE_2) {
+            setVariantBit(s);
+            logPhase2Entry(s);
+        }
         return;
     }
     if (p <= s.fight.boss_phase) return;
     const old = s.fight.boss_phase;
     s.fight.boss_phase = p;
-    if (old < PHASE_2 and p >= PHASE_2) setVariantBit(s);
+    if (old < PHASE_2 and p >= PHASE_2) {
+        setVariantBit(s);
+        logPhase2Entry(s);
+    }
 }
 
 pub fn effectiveSpeed(s: *const def.GameState) i32 {

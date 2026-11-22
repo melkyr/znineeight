@@ -160,6 +160,7 @@ pub const INK_ACT_MIN: i32 = 0;
 pub const INK_ACT_MAX: i32 = 2;
 
 // Sonar lookahead vocabulary (M8: latch-aware attack/flee prediction).
+pub const CREATURE_ACT_NONE: i32 = fight_rules.CREATURE_ACT_NONE;
 pub const CREATURE_ACT_ATTACK: i32 = fight_rules.CREATURE_ACT_ATTACK;
 pub const CREATURE_ACT_FLEE: i32 = fight_rules.CREATURE_ACT_FLEE;
 

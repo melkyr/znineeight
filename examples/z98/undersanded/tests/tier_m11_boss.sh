@@ -125,7 +125,8 @@ BOSS_LOG="$OUT/boss_test/run.log"
 for c in variant_selection variant_matrix_all_boats phase_boundaries_200_100 \
     speed_attack_bands volley_cadence_plate armor_variant sliver_variant \
     hoard_variant drown_variant blur_variant restrain_rejected \
-    subdue_rejected kill_bookkeeping overkill_bookkeeping; do
+    subdue_rejected kill_bookkeeping overkill_bookkeeping \
+    phase2_identity_log_once peek_phase2_nonvolley_no_attack; do
     require_case "$BOSS_LOG" "$c"
 done
 

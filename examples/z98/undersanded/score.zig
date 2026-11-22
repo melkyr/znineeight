@@ -140,6 +140,7 @@ pub fn freezeFieldRecord(w: *def.World, final_phase2: i32) void {
     }
     fr.money_earned = w.score_money_earned;
     fr.cosmetics = popcount(w.cosmetics_owned);
+    fr.cosmetics_mask = w.cosmetics_owned;
     i = 0;
     while (i < 5) : (i += 1) {
         fr.boat[i] = w.boat[i];

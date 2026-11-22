@@ -9,7 +9,9 @@
 
 const io = @import("std_io");
 const os = @import("std_os");
+const arena_mod = @import("std_arena");
 const def = @import("../def.zig");
+const data = @import("../data.zig");
 const game = @import("../game.zig");
 const fight = @import("../fight.zig");
 const boss = @import("../boss.zig");
@@ -20,8 +22,10 @@ const expedition = @import("../expedition.zig");
 const render = @import("../render_text.zig");
 
 const BOSS_INDEX: i32 = 18;
+const DATA_PATH = "examples/z98/undersanded/data.z98";
 
 var fails: usize = 0;
+var data_arena_buf: [256 * 1024]u8 = undefined;
 
 fn report(name: []const u8, ok: bool) void {
     if (ok) {
@@ -492,6 +496,62 @@ fn tOverkillBookkeeping() bool {
     return bookkeepCase(true);
 }
 
+fn tPhase2Identity() bool {
+    var arena = arena_mod.init(data_arena_buf[0..]);
+    var tables: def.Tables = undefined;
+    data.loadFile(&arena, DATA_PATH, &tables) catch return false;
+    data.install(&tables);
+
+    var s: def.GameState = undefined;
+    prepare(&s);
+    setBoat(&s, 0, 1, 0, 0, 0);
+    boss.startBoss(&s, &s.world);
+    if (countMsg(&s, def.MSG_BOSS_PHASE2) != 0) return false;
+
+    s.fight.hp = 200;
+    boss.bossPhaseUpdate(&s);
+    if (countMsg(&s, def.MSG_BOSS_PHASE2) != 1) return false;
+    const entry = s.log[@intCast(usize, s.log_n - 1)];
+    if (entry.msg_id != def.MSG_BOSS_PHASE2) return false;
+    if (entry.a != boss.VARIANT_BLUR + 1) return false;
+
+    var d = creatures.defAt(BOSS_INDEX);
+    var buf: [128]u8 = undefined;
+    const line = render.msgLine(entry, &d, buf[0..]);
+    const authored = data.textFind("boss.5") orelse return false;
+    if (!eq(line, authored)) return false;
+
+    s.fight.hp = 100;
+    boss.bossPhaseUpdate(&s);
+    if (s.fight.boss_phase != boss.PHASE_3) return false;
+    return countMsg(&s, def.MSG_BOSS_PHASE2) == 1;
+}
+
+fn tPeekPhase2NonVolley() bool {
+    var s: def.GameState = undefined;
+    prepare(&s);
+    setBoat(&s, 0, 1, 0, 0, 0);
+    boss.startBoss(&s, &s.world);
+    s.fight.hp = 200;
+    boss.bossPhaseUpdate(&s);
+    s.fight.round = 1;
+    var d = creatures.defAt(BOSS_INDEX);
+    const rules = creatures.rules();
+    if (fight.peekCreatureAction(&s, &d, rules) != fight.CREATURE_ACT_NONE) return false;
+
+    s.fight.round = 2;
+    if (fight.peekCreatureAction(&s, &d, rules) != fight.CREATURE_ACT_ATTACK) return false;
+
+    const e = def.LogEntry{
+        .class = def.LOG_NORMAL, .msg_id = def.MSG_SONAR, .a = 10,
+        .b = fight.CREATURE_ACT_NONE,
+    };
+    var buf: [128]u8 = undefined;
+    const line = render.msgLine(e, &d, buf[0..]);
+    if (!eq(line, "Sonar: Speed 10, next action nothing.")) return false;
+    return true;
+}
+
 pub fn main() void {
     report("variant_selection", tVariantSelection());
     report("variant_matrix_all_boats", tVariantMatrix());
@@ -507,6 +567,8 @@ pub fn main() void {
     report("subdue_rejected", tSubdueRejected());
     report("kill_bookkeeping", tKillBookkeeping());
     report("overkill_bookkeeping", tOverkillBookkeeping());
+    report("phase2_identity_log_once", tPhase2Identity());
+    report("peek_phase2_nonvolley_no_attack", tPeekPhase2NonVolley());
 
     if (fails != 0) os.exit(1);
     io.write("boss_test PASS\n");

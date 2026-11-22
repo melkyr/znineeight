@@ -145,7 +145,8 @@ fn artView(g: *def.GameState) art.ArtAssets {
     if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
         const d = creatures.defAt(g.fight.def_index);
         if ((d.flags & def.F_BOSS) != 0) {
-            view.sprite = assets.bossVariant(a, g.fight.boss_variant);
+            view.sprite = assets.bossSpriteForPhase(
+                a, g.fight.boss_variant, g.fight.boss_phase);
         } else {
             view.sprite = assets.spriteForDef(a, d.id);
         }

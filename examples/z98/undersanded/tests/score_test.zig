@@ -25,8 +25,12 @@ const render = @import("../render_term.zig");
 const nav = @import("../nav.zig");
 const input = @import("../input.zig");
 const undtool = @import("../undtool.zig");
+const assets = @import("../assets.zig");
+const art = @import("../render_art.zig");
+const core = @import("std_gfx_px_core.zig");
 
 const BOSS_INDEX: i32 = 18;
+const ASSETS_DIR = "examples/z98/undersanded/assets";
 const SCORE_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_score.golden";
 const CREDITS_GOLDEN = "examples/z98/undersanded/tests/fixtures/dump_grid_credits.golden";
 
@@ -67,6 +71,34 @@ fn goldenEq(path: []const u8, got: []const u8) bool {
     var arena = arena_mod.init(storage[0..]);
     const data = file_mod.readAll(&arena, path) catch return false;
     return eq(data, got);
+}
+
+// Hash only the Field Record boat panel so Last Run text changes do not count.
+fn scoreArtBoatHash(g: *def.GameState) u32 {
+    const a = assets.current() orelse return 0;
+    var view = art.emptyAssets();
+    view.boat = assets.boatSprite(a);
+    view.paints = assets.boatPaints(a);
+    view.overlays = assets.overlays(a);
+    const handle = core.gfxPxOpenMemory(640, 480) catch return 0;
+    var sf = core.pxCoreSurface(handle.opaque);
+    const saved = g.screen;
+    g.screen = def.NAV_SCORE;
+    art.resetFrame();
+    art.renderScreen(&sf, g, "", true, view);
+    g.screen = saved;
+    const dump = core.gfxPxDump(handle);
+    var h: u32 = 2166136261;
+    var y: i32 = 16;
+    while (y < 174) : (y += 1) {
+        var x: i32 = 428;
+        while (x < 640) : (x += 1) {
+            const off = (@intCast(usize, y) * 640 + @intCast(usize, x)) * 2;
+            h = (h ^ @intCast(u32, dump[off])) *% 16777619;
+            h = (h ^ @intCast(u32, dump[off + 1])) *% 16777619;
+        }
+    }
+    return h;
 }
 
 fn key(c: u8) input.Key {
@@ -154,6 +186,7 @@ fn tScoreCopy() bool {
     if (!contains(text, "[ ] The Drown")) return false;
     if (!contains(text, "[x] The Blur")) return false;
     if (!contains(text, score.CLOSING)) return false;
+    if (!contains(text, "[C]ontinue")) return false;
     return contains(text, "[?] Help");
 }
 
@@ -208,6 +241,7 @@ fn tFieldFreeze() bool {
     if (w.field_record.overkilled != 4) return false;
     if (w.field_record.money_earned != 55) return false;
     if (w.field_record.cosmetics != 3) return false;
+    if (w.field_record.cosmetics_mask != 0x0000000D) return false;
     if (w.field_record.boat[world.BOAT_HULL] != 2) return false;
     if (w.field_record.expertise[1] != 3) return false;
 
@@ -315,23 +349,31 @@ fn tOverkillRoute() bool {
 }
 
 fn tSecondDefeatKeepsRecord() bool {
+    if (!assets.load(ASSETS_DIR)) return false;
     var g: def.GameState = undefined;
     game.newGame(&g);
+    g.world.cosmetics_owned = @intCast(u32, 1) << @intCast(u32, 1);
     if (expedition.depart(&g, 8).active != 1) return false;
     setBoat(&g, 0, 0, 1, 0, 0);
     if (!startBossFight(&g)) return false;
     if (!strikeBoss(&g, false)) return false;
     if (g.world.field_record.final_phase2 != boss.VARIANT_HOARD) return false;
+    if (g.world.field_record.cosmetics_mask != g.world.cosmetics_owned) return false;
     var first = g.world.field_record;
+    const first_boat = scoreArtBoatHash(&g);
     if (!leaveCreditsAndScore(&g)) return false;
 
     if (expedition.depart(&g, 8).active != 1) return false;
+    g.world.cosmetics_owned |= @intCast(u32, 1) << @intCast(u32, 2);
     setBoat(&g, 0, 1, 0, 0, 0);
     if (!startBossFight(&g)) return false;
     if (!strikeBoss(&g, true)) return false;
     if (g.world.boss_kills != 2) return false;
     if (g.world.field_record_written != 1) return false;
     if (!fieldSame(&first, &g.world.field_record)) return false;
+    if (g.world.field_record.cosmetics_mask !=
+        (@intCast(u32, 1) << @intCast(u32, 1))) return false;
+    if (scoreArtBoatHash(&g) != first_boat) return false;
     if (g.world.field_record.final_phase2 != boss.VARIANT_HOARD) return false;
     return eq(score.identityLabel(g.world.last_run.phase2), "The Blur");
 }

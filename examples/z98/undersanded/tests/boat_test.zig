@@ -21,6 +21,7 @@ const game = @import("../game.zig");
 const art = @import("../render_art.zig");
 const assets = @import("../assets.zig");
 const boat = @import("../boat.zig");
+const boss = @import("../boss.zig");
 const score = @import("../score.zig");
 const core = @import("std_gfx_px_core.zig");
 
@@ -231,6 +232,11 @@ fn tAccessors() bool {
     const armor = assets.bossVariant(a, 0) orelse return false;
     const via_def = assets.spriteForDef(a, 17) orelse return false;
     if (armor.idx != via_def.idx or armor.lut != via_def.lut) return false;
+    const p1 = assets.bossSpriteForPhase(a, boss.VARIANT_BLUR, 1) orelse return false;
+    if (p1.idx != via_def.idx or p1.lut != via_def.lut) return false;
+    const p2 = assets.bossSpriteForPhase(a, boss.VARIANT_BLUR, 2) orelse return false;
+    const blur = assets.bossVariant(a, boss.VARIANT_BLUR) orelse return false;
+    if (p2.idx != blur.idx or p2.lut != blur.lut) return false;
     if (assets.bossVariant(a, 5) != null) return false;
     i = 1;
     while (i <= 4) : (i += 1) {
@@ -340,7 +346,13 @@ fn tSelection() bool {
     if (boat.selectedCosmetic(&w, boat.SLOT_FIGUREHEAD) != 5) return false;
     if (boat.selectedCosmetic(&w, boat.SLOT_FLAG) != 8) return false;
     if (boat.selectedCosmetic(&w, boat.SLOT_DECAL) != 11) return false;
-    return true;
+    if (boat.paintIndexMask(w.cosmetics_owned) != 2) return false;
+    if (boat.selectedCosmeticMask(w.cosmetics_owned, boat.SLOT_FIGUREHEAD) != 5) {
+        return false;
+    }
+    if (boat.selectedCosmeticMask(w.cosmetics_owned, boat.SLOT_FLAG) != 8) return false;
+    if (boat.selectedCosmeticMask(w.cosmetics_owned, boat.SLOT_DECAL) != 11) return false;
+    return boat.paintIndexMask(0) == -1;
 }
 
 // The highest owned index per slot must be the one drawn, not an earlier bit.

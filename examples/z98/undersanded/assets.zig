@@ -147,6 +147,13 @@ pub fn bossVariant(a: *const Assets, variant: i32) ?*const px.Sprite {
     return null;
 }
 
+// Boss art identity: the base sprite until Phase 2 so the variant recolor
+// cannot leak early; variant rows from Phase 2 onward.
+pub fn bossSpriteForPhase(a: *const Assets, variant: i32, phase: i32) ?*const px.Sprite {
+    if (phase < 2) return &a.sprites[@intCast(usize, A_BOSS)];
+    return bossVariant(a, variant);
+}
+
 fn isBackgroundA(a: i32) bool {
     return a >= A_BG_A and a <= 15;
 }

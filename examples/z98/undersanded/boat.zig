@@ -91,16 +91,16 @@ pub fn anchorY(slot: i32) i32 {
     }
 }
 
-fn owned(w: *const def.World, index: i32) bool {
+fn ownedMask(mask: u32, index: i32) bool {
     if (index < 0 or index >= 32) return false;
     const bit = @intCast(u32, 1) << @intCast(u32, index);
-    return (w.cosmetics_owned & bit) != 0;
+    return (mask & bit) != 0;
 }
 
-fn highestOwned(w: *const def.World, first: i32, last: i32) i32 {
+fn highestOwnedMask(mask: u32, first: i32, last: i32) i32 {
     var i = last;
     while (i >= first) : (i -= 1) {
-        if (owned(w, i)) return i;
+        if (ownedMask(mask, i)) return i;
     }
     return -1;
 }
@@ -114,12 +114,20 @@ pub fn paintName(paint: i32) []const u8 {
     }
 }
 
+pub fn paintIndexMask(mask: u32) i32 {
+    return highestOwnedMask(mask, 0, PAINT_COUNT - 1);
+}
+
+pub fn selectedCosmeticMask(mask: u32, slot: i32) i32 {
+    return highestOwnedMask(mask, slotFirst(slot), slotLast(slot));
+}
+
 pub fn paintIndex(w: *const def.World) i32 {
-    return highestOwned(w, 0, PAINT_COUNT - 1);
+    return paintIndexMask(w.cosmetics_owned);
 }
 
 pub fn selectedCosmetic(w: *const def.World, slot: i32) i32 {
-    return highestOwned(w, slotFirst(slot), slotLast(slot));
+    return selectedCosmeticMask(w.cosmetics_owned, slot);
 }
 
 pub fn figureheadIndex(w: *const def.World) i32 {

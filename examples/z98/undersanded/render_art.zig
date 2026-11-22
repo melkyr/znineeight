@@ -806,10 +806,15 @@ fn drawTextScreen(sf: *px.Surface, sc: *const render_text.Screen) void {
 // so the bow, stern, cabin, outline and portholes outside the bbox stay base.
 pub fn drawBoat(sf: *px.Surface, w: *const def.World, view: ArtAssets,
     ox: i32, oy: i32) void {
+    drawBoatMask(sf, w.cosmetics_owned, view, ox, oy);
+}
+
+pub fn drawBoatMask(sf: *px.Surface, mask: u32, view: ArtAssets,
+    ox: i32, oy: i32) void {
     const base = view.boat orelse return;
     px.pxCoreBlit(sf, ox, oy, base);
 
-    const paint = boat.paintIndex(w);
+    const paint = boat.paintIndexMask(mask);
     if (paint >= 0 and paint < 3) {
         if (view.paints) |paints| {
             const pidx: usize = @intCast(usize, paint);
@@ -822,7 +827,7 @@ pub fn drawBoat(sf: *px.Surface, w: *const def.World, view: ArtAssets,
     var i: usize = 0;
     while (i < boat.OVERLAY_DRAW_ORDER.len) : (i += 1) {
         const slot = boat.OVERLAY_DRAW_ORDER[i];
-        const cosmetic = boat.selectedCosmetic(w, slot);
+        const cosmetic = boat.selectedCosmeticMask(mask, slot);
         if (cosmetic < boat.COSMETIC_OVERLAY_FIRST
             or cosmetic > boat.COSMETIC_OVERLAY_LAST) continue;
         const local: usize = @intCast(usize,
@@ -853,7 +858,7 @@ fn drawScore(sf: *px.Surface, s: *const def.GameState, view: ArtAssets) void {
         fillRect(sf, bx - 4, by - 4, boat.BOAT_W + 8, boat.BOAT_H + 8, C_PANEL);
         drawDottedRect(sf, bx - 4, by - 4, boat.BOAT_W + 8, boat.BOAT_H + 8,
             C_BORDER);
-        drawBoat(sf, &s.world, view, bx, by);
+        drawBoatMask(sf, s.world.field_record.cosmetics_mask, view, bx, by);
     }
 }
 
