@@ -15,6 +15,7 @@ const rng = @import("../rng.zig");
 const game = @import("../game.zig");
 const creatures = @import("../creatures_t1.zig");
 const fight = @import("../fight.zig");
+const boss = @import("../boss.zig");
 const expedition = @import("../expedition.zig");
 const items = @import("../items.zig");
 const render = @import("../render_term.zig");
@@ -415,7 +416,7 @@ fn tMaxFightsBlocksHunt() bool {
         if (g.fight.outcome != def.OUT_CREATURE_FLED) return false;
     }
     if (g.exp.fight_index != 4) return false;
-    if (world.maxFights(&g.world) != 4) return false;
+    if (world.maxFights(&g.world, 1) != 4) return false;
 
     // Settles fight 4, then refuses to hunt.
     expedition.expeditionStep(&g, expedition.EXP_HUNT);
@@ -1018,6 +1019,100 @@ fn tDockRest() bool {
     return true;
 }
 
+const BOSS_INDEX: i32 = 18;
+
+fn openBossGate(g: *def.GameState) bool {
+    var i: i32 = 0;
+    var n: i32 = 0;
+    while (i < creatures.defCount() and n < world.BOSS_SEEN_GATE) : (i += 1) {
+        if (creatures.defAt(i).role == creatures.ROLE_BOSS) continue;
+        world.markSeen(&g.world, i);
+        n += 1;
+    }
+    return world.bossGateOpen(&g.world);
+}
+
+fn tBossHuntSelectsStartBoss() bool {
+    var g = newGame();
+    if (!openBossGate(&g)) return false;
+    g.world.boat[world.BOAT_HULL] = 3;
+    g.world.boat[world.BOAT_SPEED] = 1;
+    g.world.boat[world.BOAT_CARGO] = 2;
+    g.world.boat[world.BOAT_OXYGEN] = 1;
+    g.world.boat[world.BOAT_PRECISION] = 0;
+
+    _ = expedition.depart(&g, 8);
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+
+    if (!expedition.isInFight(&g)) return false;
+    if (g.fight.def_index != BOSS_INDEX) return false;
+    if (!boss.isEngaged(&g)) return false;
+    if (g.fight.boss_phase != boss.PHASE_1) return false;
+    if (g.fight.boss_variant != boss.VARIANT_ARMOR) return false;
+    if (g.exp.fight_index != 1) return false;
+    if (g.fight.hull != g.world.hull) return false;
+    return true;
+}
+
+fn tBossHuntNeedsGate() bool {
+    var g = newGame();
+    _ = expedition.depart(&g, 8);
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+
+    if (expedition.isInFight(&g)) return false;
+    if (g.exp.fight_index != 0) return false;
+    if (g.last_event != def.EV_BOSS_LOCKED) return false;
+    return g.last_event_value == 0;
+}
+
+fn tBossOneFightCapAndRespawn() bool {
+    var g = newGame();
+    if (!openBossGate(&g)) return false;
+    _ = expedition.depart(&g, 8);
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+    if (!expedition.isInFight(&g)) return false;
+
+    // Settle a Kill through the normal post-fight path, then the same
+    // expedition may not hunt the boss node again.
+    const kill_cycle = g.world.cycle;
+    g.fight.hull = 50;
+    g.fight.outcome = def.OUT_KILL;
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+
+    const ri: usize = 8 * def.MAX_CREATURES + @intCast(usize, BOSS_INDEX);
+    if (g.fight.def_index != def.NO_FIGHT) return false;
+    if (g.exp.fight_index != 1) return false;
+    if (expedition.isInFight(&g)) return false;
+    if (g.last_event != def.EV_HUNT_MAX) return false;
+    if (g.world.ready[ri] != kill_cycle + 20) return false;
+
+    // A new expedition still respects the 20-cycle respawn.
+    expedition.returnToDock(&g);
+    _ = expedition.depart(&g, 8);
+    if (g.world.cycle >= g.world.ready[ri]) return false;
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+    if (expedition.isInFight(&g)) return false;
+    if (g.last_event != def.EV_HUNT_EMPTY) return false;
+    if (g.exp.fight_index != 0) return false;
+
+    // On the ready cycle's Day the boss row answers again.
+    g.world.cycle = g.world.ready[ri];
+    g.world.phase = world.PHASE_DAY;
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+    if (!expedition.isInFight(&g)) return false;
+    if (g.exp.fight_index != 1) return false;
+    return g.fight.def_index == BOSS_INDEX;
+}
+
+fn tNormalHuntNotBoss() bool {
+    var g = newGame();
+    _ = expedition.depart(&g, 1);
+    expedition.expeditionStep(&g, expedition.EXP_HUNT);
+    if (!expedition.isInFight(&g)) return false;
+    if (boss.isEngaged(&g)) return false;
+    return g.fight.def_index != BOSS_INDEX;
+}
+
 pub fn main() void {
     report("z2_phase_ledger_depart_return", tZ2PhaseLedger());
     report("fight_seed_formula_seed_plus_index_77", tFightSeedFormula());
@@ -1046,6 +1141,10 @@ pub fn main() void {
     report("settlement_choice_keeps_secured", tSettlementChoiceKeepsSecured());
     report("field_action_clears_stale_secured", tFieldActionClearsStaleSecured());
     report("dock_rest_heal_phase_no_condition_rng", tDockRest());
+    report("boss_hunt_selects_start_boss", tBossHuntSelectsStartBoss());
+    report("boss_hunt_defensive_gate", tBossHuntNeedsGate());
+    report("boss_one_fight_cap_and_respawn", tBossOneFightCapAndRespawn());
+    report("normal_hunt_not_boss", tNormalHuntNotBoss());
 
     if (fails != 0) os.exit(1);
     io.write("expedition_test PASS\n");

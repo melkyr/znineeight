@@ -177,7 +177,7 @@ fn renderArtOk(g: *def.GameState) bool {
     const handle = core.gfxPxOpenMemory(640, 480) catch return false;
     var sf = core.pxCoreSurface(handle.opaque);
     art.renderScreen(&sf, g, "", true,
-        art.ArtAssets{ .bg = null, .sprite = null });
+        art.emptyAssets());
     return true;
 }
 

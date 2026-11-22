@@ -284,6 +284,7 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
     section = -1;
     var seen: [6]u32 = [6]u32{ 0, 0, 0, 0, 0, 0 };
     var saw_journal_viewed = false;
+    var saw_field_cosmetics = false;
 
     while (nextLine(content, &at, &line)) {
         const t = text_scan.stripCR(content[line.start..line.end]);
@@ -475,6 +476,11 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
                 } else if (eql(key, "score_money_earned")) {
                     tw.score_money_earned = data.parseI32(val) orelse return error.Damaged;
                     if (!markSeen(&seen, 5, 8)) return error.Damaged;
+                } else if (eql(key, "field_cosmetics")) {
+                    if (saw_field_cosmetics) return error.Damaged;
+                    tw.field_record.cosmetics_mask =
+                        parse.parseUint(val) orelse return error.Damaged;
+                    saw_field_cosmetics = true;
                 } else {
                     return error.Damaged;
                 }
@@ -527,6 +533,9 @@ pub fn saveRead(path: []const u8, w: *def.World, exp: *def.Expedition) SaveErr!v
     if ((tw.tools_owned & ~TOOLS_OWNED_MASK) != 0) return error.Damaged;
     if ((tw.cosmetics_owned & ~COSMETICS_OWNED_MASK) != 0) return error.Damaged;
     if ((tw.cosmetics_unlocked & ~COSMETICS_OWNED_MASK) != 0) return error.Damaged;
+    if ((tw.field_record.cosmetics_mask & ~COSMETICS_OWNED_MASK) != 0) {
+        return error.Damaged;
+    }
 
     if (!maskBitsValid(&tw.seen_mask, def_count)) return error.BadId;
     if (!maskBitsValid(&tw.journal_mask, def_count)) return error.BadId;
@@ -580,6 +589,7 @@ fn parseFieldRecord(val: []const u8, fr: *def.FieldRecord) bool {
         .money_earned = vals[19],
         .cosmetics = vals[20],
         .boat = [5]i32{ vals[21], vals[22], vals[23], vals[24], vals[25] },
+        .cosmetics_mask = 0,
     };
     fr.* = rec;
     return true;

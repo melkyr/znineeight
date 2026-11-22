@@ -32,6 +32,8 @@ const SCR_SAVE_ERR: i32 = 21;
 const SCR_JOURNAL: i32 = 22;
 const SCR_HELP: i32 = 23;
 const SCR_SUBDUE_INTRO: i32 = 24;
+const SCR_SCORE: i32 = 25;
+const SCR_CREDITS: i32 = 26;
 
 fn validDefIndex(d: i32) bool {
     if (d < 0) return false;
@@ -148,9 +150,9 @@ pub fn journalKey(def_index: i32, out: []u8) []const u8 {
 }
 
 // Page map (spec §7.1): dock 1, map/node 5, fight/subdue 2, subdue intro and
-// settle 3, refine/upgrade 4, craft/tools 6, journal 9, buy 8. Everything else
-// falls back to page 1 so `?` works on every screen. Returns the manual page
-// number (never zero).
+// settle 3, refine/upgrade 4, craft/tools 6, journal 9, buy/score/credits 8.
+// Everything else falls back to page 1 so `?` works on every screen. Returns
+// the manual page number (never zero).
 pub fn helpPageNumber(screen: i32) i32 {
     switch (screen) {
         SCR_DOCK => return 1,
@@ -161,7 +163,7 @@ pub fn helpPageNumber(screen: i32) i32 {
         SCR_REFINE, SCR_UPGRADE => return 4,
         SCR_CRAFT, SCR_TOOLS => return 6,
         SCR_JOURNAL => return 9,
-        SCR_BUY => return 8,
+        SCR_BUY, SCR_SCORE, SCR_CREDITS => return 8,
         SCR_LORE, SCR_MENU, SCR_SAVE_ERR, SCR_HELP => return 1,
         else => return 1,
     }

@@ -6,6 +6,7 @@
 
 const def = @import("def.zig");
 const creatures = @import("creatures_t1.zig");
+const tables = @import("tables_t1.zig");
 
 // ---- Calendar -------------------------------------------------------------
 
@@ -134,8 +135,30 @@ pub fn precisionMargin(w: *const def.World) i32 {
     return PRECISION_TABLE[tierIndex(w.boat[BOAT_PRECISION])];
 }
 
-pub fn maxFights(w: *const def.World) i32 {
+// Boss routes allow exactly one fight; normal zones keep the Oxygen cap. The
+// zone comes from the loaded ladder, never a hard-coded dense index.
+pub fn maxFights(w: *const def.World, zone: i32) i32 {
+    if (tables.zoneIsBoss(zone) != 0) return 1;
     return 3 + w.boat[BOAT_OXYGEN];
+}
+
+// ---- Boss gate ------------------------------------------------------------
+
+pub const BOSS_SEEN_GATE: i32 = 6;
+
+pub fn seenNonBossCount(w: *const def.World) i32 {
+    var n: i32 = 0;
+    var d: i32 = 0;
+    while (d < creatures.defCount()) : (d += 1) {
+        const cdef = creatures.defAt(d);
+        if (cdef.role == creatures.ROLE_BOSS) continue;
+        if (defBitSet(&w.seen_mask, d)) n += 1;
+    }
+    return n;
+}
+
+pub fn bossGateOpen(w: *const def.World) bool {
+    return seenNonBossCount(w) >= BOSS_SEEN_GATE;
 }
 
 // ---- Calendar -------------------------------------------------------------

@@ -17,6 +17,7 @@ const creatures = @import("creatures_t1.zig");
 const std_math = @import("std_math");
 const fight_rules = @import("fight_rules.zig");
 const fight_tools = @import("fight_tools.zig");
+const boss = @import("boss.zig");
 
 fn hookActive(s: *const def.GameState) bool {
     return fight_tools.hookActive(s);
@@ -71,14 +72,17 @@ pub fn phaseState(s: *const def.GameState) i32 {
 }
 
 pub fn effectiveSpeed(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
+    if (boss.isEngaged(s)) return boss.effectiveSpeed(s);
     return fight_rules.effectiveSpeed(s, cdef, rules);
 }
 
 pub fn effectiveAttack(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
+    if (boss.isEngaged(s)) return boss.effectiveAttack(s);
     return fight_rules.effectiveAttack(s, cdef, rules);
 }
 
 pub fn creatureFirst(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) bool {
+    if (boss.isEngaged(s)) return boss.creatureFirst(s);
     return fight_rules.creatureFirst(s, cdef, rules);
 }
 
@@ -87,6 +91,10 @@ pub fn peekCreatureAction(s: *const def.GameState, cdef: *const def.CreatureDef,
 }
 
 pub fn effectiveArmorPct(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
+    if (boss.isEngaged(s)) {
+        const override = boss.strikePctOverride(s);
+        if (override > 0) return override;
+    }
     return fight_rules.effectiveArmorPct(s, cdef, rules);
 }
 
@@ -152,6 +160,7 @@ pub const INK_ACT_MIN: i32 = 0;
 pub const INK_ACT_MAX: i32 = 2;
 
 // Sonar lookahead vocabulary (M8: latch-aware attack/flee prediction).
+pub const CREATURE_ACT_NONE: i32 = fight_rules.CREATURE_ACT_NONE;
 pub const CREATURE_ACT_ATTACK: i32 = fight_rules.CREATURE_ACT_ATTACK;
 pub const CREATURE_ACT_FLEE: i32 = fight_rules.CREATURE_ACT_FLEE;
 
@@ -199,6 +208,11 @@ pub fn startFightDef(s: *def.GameState, def_index: i32, cdef: *const def.Creatur
     s.fight.phase_state = 0;
     s.fight.boss_phase = 0;
     s.fight.boss_axis = 0;
+    s.fight.boss_variant = 0;
+    s.fight.boss_volley_round = 0;
+    s.fight.boss_start_hull = 0;
+    s.fight.boss_start_actions = 0;
+    s.fight.boss_defeat_done = 0;
     s.fight.last_bar = def.BAR_NONE;
     s.fight.switches = 0;
     s.fight.hull_spent = 0;
@@ -578,16 +592,26 @@ fn creatureAct(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const b
         return;
     }
 
-    var dmg = effectiveAttack(s, cdef, rules);
-    if (dmg < 0) dmg = 0;
+    var count: i32 = 1;
+    if (boss.isEngaged(s)) {
+        count = boss.attackCount(s);
+    }
+    if (count <= 0) return;
 
-    s.fight.hull -= dmg;
-    s.fight.hull_spent += dmg;
-    if (s.fight.hull < 0) s.fight.hull = 0;
-    log(s, def.LOG_NORMAL, def.MSG_CREATURE_ATTACK, dmg, s.fight.hull);
+    var hit: i32 = 0;
+    while (hit < count) : (hit += 1) {
+        var dmg = effectiveAttack(s, cdef, rules);
+        if (dmg < 0) dmg = 0;
 
-    // Fragile tools: a single incoming hit, not cumulative damage.
-    tools.onHullHit(s, dmg);
+        s.fight.hull -= dmg;
+        s.fight.hull_spent += dmg;
+        if (s.fight.hull < 0) s.fight.hull = 0;
+        log(s, def.LOG_NORMAL, def.MSG_CREATURE_ATTACK, dmg, s.fight.hull);
+
+        // Fragile tools: a single incoming hit, not cumulative damage.
+        tools.onHullHit(s, dmg);
+        if (s.fight.hull <= 0) return;
+    }
 }
 
 fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
@@ -602,6 +626,8 @@ fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
         s.fight.hp = std_math.min(s.fight.max_hp, s.fight.hp + regen);
         log(s, def.LOG_NORMAL, def.MSG_COUPLING, regen, 2);
     }
+
+    if (boss.isEngaged(s)) boss.endRound(s);
 
     s.fight.round += 1;
     s.fight.prev_hp = s.fight.hp;
@@ -658,6 +684,7 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
     }
 
     refreshPhase(s, cdef);
+    if (boss.isEngaged(s)) boss.bossPhaseUpdate(s);
     armStrikeRules(s, cdef, rules);
 
     switch (a.kind) {
@@ -699,6 +726,11 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
         }
     }
 
+    if (act.kind == def.ACT_RESTRAIN and boss.isEngaged(s)) {
+        log(s, def.LOG_NORMAL, def.MSG_BOSS_RESTRAIN, 0, 0);
+        return;
+    }
+
     const player_first = !creatureFirst(s, cdef, rules);
     var creature_acted: bool = false;
 
@@ -717,6 +749,8 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
     applyRules(s, cdef, rules);
 
     if (checkDeath(s)) return;
+
+    if (boss.isEngaged(s)) boss.bossPhaseUpdate(s);
 
     if (gateOpen(s, cdef)) {
         if (cdef.subdue_chance >= def.SUBDUE_PROMPT_BELOW) {

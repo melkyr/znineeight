@@ -67,6 +67,7 @@ pub fn zeroWorld(w: *def.World) void {
         .money_earned = 0,
         .cosmetics = 0,
         .boat = [5]i32{ 0, 0, 0, 0, 0 },
+        .cosmetics_mask = 0,
     };
     w.last_run = def.LastRun{
         .cycles = 0,

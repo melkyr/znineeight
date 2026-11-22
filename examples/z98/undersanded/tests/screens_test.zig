@@ -227,6 +227,21 @@ fn tNodeLines() bool {
     return true;
 }
 
+fn tBossNodeTelegraph() bool {
+    var g = newGame();
+    g.exp.active = 1;
+    g.exp.zone = 8;
+    var buf: [8192]u8 = undefined;
+
+    const boss_text = nodeText(&g, buf[0..]);
+    if (!contains(boss_text, "Fights left 1")) return false;
+    if (!contains(boss_text, "Hull 150+ recommended.")) return false;
+
+    g.exp.zone = 1;
+    const normal_text = nodeText(&g, buf[0..]);
+    return !contains(normal_text, "Hull 150+ recommended.");
+}
+
 fn tSubdueIntroCopy() bool {
     var buf: [8192]u8 = undefined;
     const text = undtool.dumpFixedScreen("subdue", buf[0..]) orelse return false;
@@ -477,6 +492,7 @@ pub fn main() void {
     report("map_screen_ladder_locked_boss", tMapLines());
     report("map_boss_gate_six_distinct_nonboss", tBossGate());
     report("node_screen_key_lines", tNodeLines());
+    report("node_boss_telegraph", tBossNodeTelegraph());
     report("subdue_intro_copy", tSubdueIntroCopy());
     report("settle_copy_names_creature_and_effects", tSettleCopy());
     report("dock_golden_exact", tGolden("dock", DOCK_GOLDEN));

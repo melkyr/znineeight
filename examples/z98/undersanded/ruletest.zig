@@ -42,6 +42,8 @@ fn fixtureFight() def.FightState {
         .subdue_declined = 0, .surge_count = 0, .surge_atk_applied = 0,
         .tool = 0, .tool_charge = 0, .tool_broken = 0, .tool_active = 0,
         .phase_state = 0, .boss_phase = 0, .boss_axis = 0,
+        .boss_variant = 0, .boss_volley_round = 0,
+        .boss_start_hull = 0, .boss_start_actions = 0, .boss_defeat_done = 0,
         .last_bar = def.BAR_NONE, .switches = 0, .hull_spent = 0,
         .rng_state = 0,
         .rule_consumed = 0,

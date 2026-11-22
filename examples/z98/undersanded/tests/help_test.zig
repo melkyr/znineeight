@@ -20,6 +20,7 @@ const nav = @import("../nav.zig");
 const input = @import("../input.zig");
 const render = @import("../render_term.zig");
 const journal = @import("../journal.zig");
+const score = @import("../score.zig");
 const data = @import("../data.zig");
 const creatures = @import("../creatures_t1.zig");
 
@@ -84,6 +85,8 @@ fn tPageMap() bool {
     if (journal.helpPageNumber(def.NAV_TOOLS) != 6) return false;
     if (journal.helpPageNumber(def.NAV_JOURNAL) != 9) return false;
     if (journal.helpPageNumber(def.NAV_BUY) != 8) return false;
+    if (journal.helpPageNumber(def.NAV_SCORE) != 8) return false;
+    if (journal.helpPageNumber(def.NAV_CREDITS) != 8) return false;
     if (journal.helpPageNumber(def.NAV_LORE) != 1) return false;
     if (journal.helpPageNumber(def.NAV_MENU) != 1) return false;
     if (journal.helpPageNumber(def.NAV_SAVE_ERR) != 1) return false;
@@ -108,6 +111,8 @@ fn tPagesPresent() bool {
     if (!pageEquals(def.NAV_CRAFT, "manual.6")) return false;
     if (!pageEquals(def.NAV_JOURNAL, "manual.9")) return false;
     if (!pageEquals(def.NAV_BUY, "manual.8")) return false;
+    if (!pageEquals(def.NAV_SCORE, "manual.8")) return false;
+    if (!pageEquals(def.NAV_CREDITS, "manual.8")) return false;
     return true;
 }
 
@@ -135,6 +140,8 @@ fn tManualCopy() bool {
     if (!contains(m7, "six distinct") or !contains(m7, "Derelict")) return false;
     const m8 = data.textFind("manual.8") orelse return false;
     if (!contains(m8, "zone milestone")) return false;
+    if (!contains(m8, "three panels") or !contains(m8, "Field Record")) return false;
+    if (!contains(m8, "Last Run")) return false;
     const m9 = data.textFind("manual.9") orelse return false;
     if (!contains(m9, "Journal") or !contains(m9, "SPD ??")) return false;
     if (!contains(m9, "Speed") or !contains(m9, "[J]")) return false;
@@ -200,6 +207,15 @@ fn tFooterHelpEveryScreen() bool {
     if (!hasText(&sc, buf[0..], "[?] Help")) return false;
 
     render.renderTools(&g, &sc);
+    if (!hasText(&sc, buf[0..], "[?] Help")) return false;
+
+    g.screen = def.NAV_SCORE;
+    var sp = score.scoreSnapshot(&g.world);
+    render.renderScore(&sp, &sc);
+    if (!hasText(&sc, buf[0..], "[?] Help")) return false;
+
+    g.screen = def.NAV_CREDITS;
+    render.renderCredits(&sc);
     if (!hasText(&sc, buf[0..], "[?] Help")) return false;
 
     nav.prepareJournal(&g, 0, &v);
@@ -415,7 +431,19 @@ fn tHelpNoRngEveryScreen() bool {
     f.exp.active = 1;
     f.exp.zone = 0;
     var fst = nav.initState();
-    return helpNoAction(&f, &fst, 2);
+    if (!helpNoAction(&f, &fst, 2)) return false;
+
+    var c: def.GameState = undefined;
+    game.newGame(&c);
+    c.screen = def.NAV_CREDITS;
+    var cst = nav.initState();
+    if (!helpNoAction(&c, &cst, 8)) return false;
+
+    var sc: def.GameState = undefined;
+    game.newGame(&sc);
+    sc.screen = def.NAV_SCORE;
+    var scst = nav.initState();
+    return helpNoAction(&sc, &scst, 8);
 }
 
 pub fn main() void {

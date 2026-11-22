@@ -1,0 +1,10 @@
+ok - saved_boat_armor_identity
+ok - saved_boat_sliver_identity
+ok - saved_boat_hoard_identity
+ok - saved_boat_drown_identity
+ok - saved_boat_blur_identity
+demo kill outbound=7 return=6 actions=19 hull_spent=191 outcome=Kill identity=The Armor variants=1 boss_kills=1 field=1 score=1/0
+ok - demo_loop_kill
+demo overkill outbound=7 return=6 actions=19 hull_spent=191 outcome=Overkill identity=The Armor variants=1 boss_kills=1 field=1 score=0/1
+ok - demo_loop_overkill
+m11_demo_test PASS

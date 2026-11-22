@@ -2395,3 +2395,125 @@ M11 plan/spec/NOTES amended from the M10.1 tree; **no M11 code executed**.
 **Hoard.** Jettison the first non-empty non-keystone hold slot every 3 rounds.
 
 **Plan/spec changes.** M11 File Structure expanded; M10.1 status/help contract and both nav allow-lists (`nav.navRun`, `loop_gfx.navRunGfx`) are binding; nav ids >=25; nest `TIER_M10.1`; Task 0 pins score/credits layout + `boss.1..5`/`cosmetic.1..12` text keys + `data_load_test` count 34→51; Task 2 verifies landed gate/telegraph/zone D/cost 5/20-40 respawn rather than reimplementing; Task 1/3 wire `journalOnBossKill`+`runReset`+counters; Task 4 owns boat/overlay accessors, paint LUT/clip, highest-owned cosmetics, credits; Task 5 includes Task 4 and nests M10.1; `LastRun.actions` = `FightState.actions`.
+
+**Score screen layout (pinned, terminal 80×30; art mode uses the same labels).**
+Every screen keeps the `[?] Help` footer; score/boat/credits all map to `manual.8` (no new page). The three panel titles are exactly `FIELD RECORD`, `VARIANTS SEEN`, `LAST RUN`. Field Record rows, in order: cycles, field time (`World.field_phases`, phases), species seen, rares seen, bosses killed, final Phase 2 identity, subdued/killed/overkilled, expertise per material, money earned, cosmetics, boat tiers. Variants Seen prints `n / 5` and the five identity rows grayed when unseen. Last Run prints cycles, Phase 2 identity, outcome, actions (`FightState.actions`), Hull spent, and lifetime boss kills.
+
+```
+UNDERSANDED  SCORE                                                  [?] Help
+FIELD RECORD                          VARIANTS SEEN
+Cycles: <n>                           Variants: <n> / 5
+Field time: <n> phases                [x] The Armor
+Species seen: <n>/<N>                 [ ] The Sliver
+Rares seen: <n>/<N>                   [ ] The Hoard
+Bosses killed: <n>/1                  [ ] The Drown
+Final Phase 2: <identity>             [ ] The Blur
+Subdued/Killed/Overkilled: <a>/<b>/<c>
+Expertise: <e0> <e1> ... <e9>
+Money earned: <n>
+Cosmetics: <n>/12
+Boat: Hull <n> Speed <n> Cargo <n> Oxygen <n> Precision <n>
+
+LAST RUN
+Cycles: <n>
+Phase 2: <identity>
+Outcome: <Kill|Overkill|Fled|Ascent|Lost>
+Actions: <n>
+Hull spent: <n>
+Boss kills: <n>
+
+Thank you for playing. The ocean is still there.
+```
+
+The Field Record title and closing line are the two §40 authoring lines: title `FIELD RECORD`, closing line exactly `Thank you for playing. The ocean is still there.` (code constants in `score.zig`, not `data.z98`). The boat is rendered in full (base → paint → decal → figurehead → flag) in the Field Record panel in art mode; terminal prints the boat-tier line above.
+
+**Credits screen (pinned).** Exact copy, one line per row, centered; `[C]ontinue` (only `C`/`c`) advances to the score screen. No nav/help state is lost: the boss-kill status is deliberately replaced by this transition.
+
+```
+UNDERSANDED
+A Z98 demo.
+Design, code, art, and data by the Undersanded team.
+[C]ontinue
+```
+
+**Identity labels (pinned).** Phase-2 identity order is spec §15 table order: `The Armor`, `The Sliver`, `The Hoard`, `The Drown`, `The Blur`. `boss.1..5` map in that same order; the 5-bit Variants Seen mask uses the same bit order (Armor=bit 0 … Blur=bit 4). Last Run outcome labels: `Kill`, `Overkill`, `Fled`, `Ascent`, `Lost` (boss defeat is only Kill or Overkill).
+
+**Text vocabulary (pinned; authored in Task 0).** `boss.1..5` are the Phase-2 flavor lines in identity order above; `cosmetic.1..12` are one line per `[cosmetics]` row in item order (1 Foam White, 2 Abyss Teal, 3 Leviathan Black, 4 Gull Skull, 5 Lantern Jaw, 6 Derelict Cog, 7 Patched Pennant, 8 Reef Signal, 9 Trench Mark, 10 Barnacle Stamp, 11 Glass Squid, 12 Boss Sigil). `data_schema.textKeyKnown` accepts `boss.1..5` and `cosmetic.1..12`; `data.z98` ships all 17 rows; `tests/data_load_test.zig` text count is **51** (34→51). `defs_golden.txt` **does** contain text rows (`[text-keys]`), so it is re-pinned with the same 17 keys in the same order (after `journal.19`). `defs_boss_golden.txt` is a single boss row and needs no change.
+
+**Field Record boat freeze (M11 final review; P31 extension).** `def.FieldRecord.cosmetics_mask: u32` snapshots `World.cosmetics_owned` in `score.freezeFieldRecord`; the second defeat never refreshes it. Save format is unchanged (`data_version` stays 2) and the `field_record` CSV length is still 26. The mask persists as the **optional** `[score]` key `field_cosmetics`, written only when nonzero; absent means 0, so old saves (including `save_v2_valid.sav`) load as 0 and resave byte-identically when the mask is 0. `save_scan` rejects duplicate keys or a mask with any bit outside 0..11. The art score boat draws through `boat.paintIndexMask`/`selectedCosmeticMask` + `render_art.drawBoatMask` from `field_record.cosmetics_mask`; `--screen boat` and the live boat screen keep using `World.cosmetics_owned`.
+
+**Phase-2 identity surface (M11 final review).** `def.MSG_BOSS_PHASE2 = 37` is appended once on the transition into Phase 2 (`boss.startBoss` when starting there, or `boss.bossPhaseUpdate` crossing 1→2), with `a = boss_variant + 1`; Phase 2→3 does not repeat it. `render_text.msgLine` maps that id through `data.textFind("boss.N")` so terminal and art logs show the authored `boss.1..5` line, falling back to the compiled-in `def.MESSAGES` row when content is absent. `loop_gfx.artView` uses `assets.bossSpriteForPhase`: the base boss sprite until `boss_phase >= 2`, then the variant recolor.
+
+**Known cell-mode limitation (unseen Variants Seen).** The 80×30 cell renderer has no color attributes, so unseen identity rows keep the existing `[ ]` marker and cannot be grayed; art mode shares the same pinned labels. Do not invent a cell-mode color.
+
+**Minor review notes.** The score screen adds a `[C]ontinue` hint on row 24 (below the closing line) and the pinned score golden carries exactly the 30-row dump; the boat/score goldens have no rows beyond the 30-row content. Sonar `peekCreatureAction` returns `CREATURE_ACT_NONE` on Phase-2 non-volley rounds and `msgLine` renders that as "nothing" instead of an attack.
+
+**Content/existing-state confirmation.** `data.z98` id17 (`The Derelict`) already has `subdue_chance=-1`, HP 300, Speed 7, Attack 10, `respawn_kill=20`/`respawn_over=40`. `World` already carries `field_record_written`, `field_record`, `last_run`, `score_subdued`/`score_killed`/`score_overkilled`, `score_money_earned`, `boss_variants_seen`, `boss_kills`. `World.runReset` exists (`world.zig`) but has **no production caller**; wiring it (with `journalOnBossKill` and the score counters) belongs to Tasks 1/3, not this preflight.
+
+**Baseline (before Task 0 edits, from this worktree).** `TIER_M10.1 PASS 133 passed / 0 failed`, nested `TIER_M10 PASS 71 passed / 0 failed`. Post-edit data/content drivers and `TIER_M10.1` are rerun and recorded in the Task 0 report.
+
+### M12 amendment review (M11 Task 6)
+
+Reviewed `2026-11-12-undersanded-m12-audio-options-plan.md` against the landed
+M11 tree (`boss.zig`, `fight.zig`, `expedition.zig`, `nav.zig`, `loop_gfx.zig`)
+and spec §31/§34. Verdict: **amendment required** to M12 Task 2's cue-hook
+wording. No game-design change is needed, and this task changes no M12
+plan/spec/code.
+
+**Fight/nav stays pure.** `fight.zig` and game state must not perform audio
+I/O. M12 must consume a cue-request/event from the pure fight/nav path, not
+call the audio layer from `fight.strike`/`postFight` directly. Every hook below
+names where the pure path raises the request, not where `audio.zig` is called.
+
+**HIT has no event hook.** No `EV_*` covers a landed Strike. `fight.strike`
+logs `MSG_STRIKE` only after the Phase/Decoy/Blind early returns, so the pure
+path must raise the HIT cue request on that success point (including a
+0-damage Strike absorbed by armor). Misses (`MSG_PHASE`, `MSG_DECOY`,
+`MSG_BLIND`) stay silent. A Strike that also kills or subdues raises HIT and
+the outcome request; §31 allows overlap.
+
+**SUBDUE funnels through `postFight`.** `fight.finishSubdue` sets `OUT_SUBDUE`
+and `expedition.postFight` settles it once before `NAV_SUBDUE_INTRO`. The rare
+modal path reaches the same outcome via `resolveModal`, so the SUBDUE request
+belongs on that `OUT_SUBDUE` settlement. Keep `finishSurgeFailure`, declined
+modals, flee, creature-flee, and ascent silent (§31: subdue failure has no
+cue).
+
+**KILL must not rely on `EV_KILL` and must settle in `postFight`.** Normal
+kills emit `EV_KILL`/`EV_OVERKILL`, but the Derelict branch in `postFight`
+returns before those events and goes straight to credits. Pin the KILL cue
+request at `postFight` **after the Hull-0 guard and before the boss branch**,
+for `OUT_KILL`/`OUT_OVERKILL`, so a boss defeat also raises KILL. Do not hook
+`fight.checkDeath`: a same-turn kill plus Hull-0 settles as Ascent by the
+earlier Hull-0 guard, so `checkDeath` would play KILL wrongly. Both Kill and
+Overkill are death outcomes; pin KILL for both rather than leaving Overkill
+silent.
+
+**BOSSKILL's "first kill" is lifetime, not per-fight.** `boss.onDefeat` returns
+`first_defeat`, but `boss_defeat_done` resets in `startBoss`, so that flag is
+true on every boss defeat; its callers are idempotent (`freezeFieldRecord` is
+write-once, `journalOnBossKill` is mask-idempotent). For the §31 "Derelict
+first kill", test lifetime `world.boss_kills == 0` before `boss.onDefeat` and
+raise BOSSKILL only on that first defeat. `field_record_written == 0` is only
+effectively equivalent under normal flow, so it is not the predicate. Boss
+defeat is Kill or Overkill (§38 P31), so BOSSKILL covers either first defeat;
+later defeats play KILL only. BOSSKILL and KILL may overlap on the first
+defeat.
+
+**Exact amendment text (M12 Task 2, replace the hooks clause):**
+
+> hooks raise a cue request from the pure path (the audio layer consumes it;
+> fight/nav does not call audio): landed Strike at `fight.strike`
+> (`MSG_STRIKE` path) → HIT; `OUT_SUBDUE` settlement in
+> `expedition.postFight` → SUBDUE; `OUT_KILL`/`OUT_OVERKILL` settlement in
+> `expedition.postFight` **after the Hull-0 guard and before the boss
+> branch** → KILL; first lifetime Derelict defeat (`world.boss_kills == 0`
+> before `boss.onDefeat`) → BOSSKILL. Do not use `fight.checkDeath`: a
+> same-turn kill + Hull-0 settles as Ascent and would play KILL wrongly.
+> `EV_KILL`/`EV_OVERKILL`/`EV_SUBDUE` alone are not sufficient: the boss
+> branch skips the kill events and HIT/BOSSKILL have no events. Subdue
+> failure/decline, flee/ascent, and misses stay silent.
+
+No other cue-trigger contradiction was found. `loop_gfx.readWindowKey` still
+ignores focus/resize (the M12 ownership comment), so M12 Task 3 remains the
+sole owner of `focus_lost` handling and ambient `Stop()`.

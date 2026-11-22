@@ -5,6 +5,9 @@
 // copy have one owner.
 
 const def = @import("def.zig");
+// Use the schema hub directly: the data.zig umbrella trips this compiler's
+// constant folding when linked beside save_ux on the older Z98 front end.
+const data = @import("data_schema.zig");
 const fight = @import("fight.zig");
 const items = @import("items.zig");
 const tools = @import("tools.zig");
@@ -281,6 +284,8 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
             p = copyInto(out, p, ", next action ");
             if (next == fight.CREATURE_ACT_FLEE) {
                 p = copyInto(out, p, "flee");
+            } else if (next == fight.CREATURE_ACT_NONE) {
+                p = copyInto(out, p, "nothing");
             } else {
                 p = copyInto(out, p, "attack");
             }
@@ -302,6 +307,15 @@ pub fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8
                 p = copyInto(out, p, "It remembers the last run: armor drops to 30%.");
             } else {
                 p = copyInto(out, p, "It remembers the last run: +30 Resolve.");
+            }
+        },
+        def.MSG_BOSS_PHASE2 => {
+            var key_buf: [8]u8 = undefined;
+            const key = keyIntInto("boss.", e.a, key_buf[0..]);
+            if (data.textFind(key)) |text| {
+                p = copyInto(out, p, text);
+            } else if (def.messageText(e.msg_id)) |text| {
+                p = copyInto(out, p, text);
             }
         },
         else => {

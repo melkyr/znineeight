@@ -15,6 +15,8 @@ const creatures = @import("creatures_t1.zig");
 const tables = @import("tables_t1.zig");
 const items = @import("items.zig");
 const render_text = @import("render_text.zig");
+const score = @import("score.zig");
+const boat = @import("boat.zig");
 
 pub const COLS: usize = render_text.COLS;
 pub const ROWS: usize = render_text.ROWS;
@@ -236,8 +238,6 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
 // ---- Dock / map / node screens (§12, §16, §26) ---------------------------
 
 const BOSS_ZONE: i32 = 8;
-const BOSS_SEEN_GATE: i32 = 6;
-const ROLE_BOSS: i32 = 4;
 
 pub fn zoneName(zone: i32) []const u8 {
     switch (zone) {
@@ -269,35 +269,18 @@ fn zoneTag(zone: i32) []const u8 {
     }
 }
 
-fn seenMaskHas(s: *const def.GameState, d: i32) bool {
-    if (d < 0) return false;
-    const word: usize = @intCast(usize, d / 32);
-    if (word >= 2) return false;
-    const bit: u32 = @intCast(u32, d % 32);
-    const m: u32 = @intCast(u32, 1) << bit;
-    return (s.world.seen_mask[word] & m) != 0;
-}
-
-// Distinct non-boss creatures seen: count set bits in seen_mask over DEFS rows
-// whose role is not boss. Boss rows have no role constant in T1; §9.1 fixes the
-// boss role value at 4 (T1 DEFS only carry roles 1..3).
+// Distinct non-boss creatures seen. The domain helper owns the count so
+// expedition can enforce the gate without importing a renderer.
 pub fn seenNonBossCount(s: *const def.GameState) i32 {
-    var n: i32 = 0;
-    var i: i32 = 0;
-    while (i < creatures.defCount()) : (i += 1) {
-        const d = creatures.defAt(i);
-        if (d.role == ROLE_BOSS) continue;
-        if (seenMaskHas(s, i)) n += 1;
-    }
-    return n;
+    return world.seenNonBossCount(&s.world);
 }
 
 pub fn bossGateOpen(s: *const def.GameState) bool {
-    return seenNonBossCount(s) >= BOSS_SEEN_GATE;
+    return world.bossGateOpen(&s.world);
 }
 
 pub fn fightsLeft(s: *const def.GameState) i32 {
-    var left = world.maxFights(&s.world) - s.exp.fight_index;
+    var left = world.maxFights(&s.world, s.exp.zone) - s.exp.fight_index;
     if (left < 0) left = 0;
     return left;
 }
@@ -689,7 +672,7 @@ pub fn renderMap(v: *const View, sc: *Screen) void {
     var x = put(sc, 0, 13, "Seen non-boss: ");
     x = putInt(sc, x, 13, seenNonBossCount(s));
     x = put(sc, x, 13, "/");
-    _ = putInt(sc, x, 13, BOSS_SEEN_GATE);
+    _ = putInt(sc, x, 13, world.BOSS_SEEN_GATE);
     if (v.heavy_active) {
         _ = put(sc, 0, 14, "Heavy +1 (Hull/Cargo T3) on cost 3+ zones.");
     }
@@ -918,6 +901,10 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
     x = put(sc, x, 5, "/");
     _ = putInt(sc, x, 5, world.hullMax(&s.world));
 
+    if (tables.zoneIsBoss(s.exp.zone) != 0) {
+        _ = put(sc, 0, 10, "Hull 150+ recommended.");
+    }
+
     if (secured.len > 0) {
         _ = put(sc, 0, 6, secured);
     }
@@ -929,6 +916,173 @@ pub fn renderNode(v: *const View, sc: *Screen) void {
     if (v.zone_flavour_found) {
         putTextBlock(sc, 11, v.zone_flavour, ROWS - 1);
     }
+}
+
+// ---- Score / credits (§19, §38 P31) --------------------------------------
+
+fn variantSeen(mask: u32, index: i32) bool {
+    if (index < 0 or index >= score.VARIANT_COUNT) return false;
+    const bit: u32 = @intCast(u32, 1) << @intCast(u32, index);
+    return (mask & bit) != 0;
+}
+
+fn putVariantLine(sc: *Screen, y: i32, mask: u32, index: i32) void {
+    const i: usize = @intCast(usize, index);
+    if (variantSeen(mask, index)) {
+        _ = put(sc, 38, y, "[x]");
+    } else {
+        _ = put(sc, 38, y, "[ ]");
+    }
+    _ = put(sc, 42, y, score.IDENTITIES[i]);
+}
+
+pub fn renderScore(p: *const score.ScorePanels, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  SCORE");
+    _ = put(sc, 71, 0, "[?] Help");
+
+    _ = put(sc, 0, 2, score.TITLE_FIELD_RECORD);
+    _ = put(sc, 38, 2, score.TITLE_VARIANTS_SEEN);
+
+    var x = put(sc, 0, 3, "Cycles: ");
+    _ = putInt(sc, x, 3, p.field.cycles);
+    x = put(sc, 38, 3, "Variants: ");
+    x = putInt(sc, x, 3, p.variants_count);
+    _ = put(sc, x, 3, " / 5");
+
+    x = put(sc, 0, 4, "Field time: ");
+    x = putInt(sc, x, 4, p.field.field_phases);
+    _ = put(sc, x, 4, " phases");
+    putVariantLine(sc, 4, p.variants_seen, 0);
+
+    x = put(sc, 0, 5, "Species seen: ");
+    x = putInt(sc, x, 5, p.field.creatures_seen);
+    x = put(sc, x, 5, "/");
+    _ = putInt(sc, x, 5, p.creatures_total);
+    putVariantLine(sc, 5, p.variants_seen, 1);
+
+    x = put(sc, 0, 6, "Rares seen: ");
+    x = putInt(sc, x, 6, p.field.rares_seen);
+    x = put(sc, x, 6, "/");
+    _ = putInt(sc, x, 6, p.rares_total);
+    putVariantLine(sc, 6, p.variants_seen, 2);
+
+    x = put(sc, 0, 7, "Bosses killed: ");
+    x = putInt(sc, x, 7, p.field.bosses_killed);
+    _ = put(sc, x, 7, "/1");
+    putVariantLine(sc, 7, p.variants_seen, 3);
+
+    x = put(sc, 0, 8, "Final Phase 2: ");
+    _ = put(sc, x, 8, score.identityLabel(p.field.final_phase2));
+    putVariantLine(sc, 8, p.variants_seen, 4);
+
+    x = put(sc, 0, 9, "Subdued/Killed/Overkilled: ");
+    x = putInt(sc, x, 9, p.field.subdued);
+    x = put(sc, x, 9, "/");
+    x = putInt(sc, x, 9, p.field.killed);
+    x = put(sc, x, 9, "/");
+    _ = putInt(sc, x, 9, p.field.overkilled);
+
+    x = put(sc, 0, 10, "Expertise:");
+    var i: usize = 0;
+    while (i < def.MAX_MATERIALS) : (i += 1) {
+        x = put(sc, x, 10, " ");
+        x = putInt(sc, x, 10, p.field.expertise[i]);
+    }
+
+    x = put(sc, 0, 11, "Money earned: ");
+    _ = putInt(sc, x, 11, p.field.money_earned);
+
+    x = put(sc, 0, 12, "Cosmetics: ");
+    x = putInt(sc, x, 12, p.field.cosmetics);
+    _ = put(sc, x, 12, "/12");
+
+    x = put(sc, 0, 13, "Boat: Hull ");
+    x = putInt(sc, x, 13, p.field.boat[world.BOAT_HULL]);
+    x = put(sc, x, 13, " Speed ");
+    x = putInt(sc, x, 13, p.field.boat[world.BOAT_SPEED]);
+    x = put(sc, x, 13, " Cargo ");
+    x = putInt(sc, x, 13, p.field.boat[world.BOAT_CARGO]);
+    x = put(sc, x, 13, " Oxygen ");
+    x = putInt(sc, x, 13, p.field.boat[world.BOAT_OXYGEN]);
+    x = put(sc, x, 13, " Precision ");
+    _ = putInt(sc, x, 13, p.field.boat[world.BOAT_PRECISION]);
+
+    _ = put(sc, 0, 15, score.TITLE_LAST_RUN);
+
+    x = put(sc, 0, 16, "Cycles: ");
+    _ = putInt(sc, x, 16, p.last.cycles);
+
+    x = put(sc, 0, 17, "Phase 2: ");
+    _ = put(sc, x, 17, score.identityLabel(p.last.phase2));
+
+    x = put(sc, 0, 18, "Outcome: ");
+    _ = put(sc, x, 18, score.outcomeLabel(p.last.outcome));
+
+    x = put(sc, 0, 19, "Actions: ");
+    _ = putInt(sc, x, 19, p.last.actions);
+
+    x = put(sc, 0, 20, "Hull spent: ");
+    _ = putInt(sc, x, 20, p.last.hull_spent);
+
+    x = put(sc, 0, 21, "Boss kills: ");
+    _ = putInt(sc, x, 21, p.last.boss_kills);
+
+    _ = put(sc, 0, 23, score.CLOSING);
+    _ = put(sc, 0, 24, score.CREDITS_CONTINUE);
+}
+
+pub fn renderCredits(sc: *Screen) void {
+    clear(sc);
+    var i: usize = 0;
+    while (i < score.CREDITS_LINES.len) : (i += 1) {
+        const line = score.CREDITS_LINES[i];
+        const width: i32 = @intCast(i32, line.len);
+        const cols: i32 = @intCast(i32, COLS);
+        const x: i32 = (cols - width) / 2;
+        _ = put(sc, x, 10 + @intCast(i32, i), line);
+    }
+    _ = put(sc, 0, ROWS - 1, "[?] Help");
+}
+
+fn putCosmeticName(sc: *Screen, x: i32, y: i32, index: i32) i32 {
+    if (index < 0 or index >= def.MAX_COSMETICS) return put(sc, x, y, "none");
+    const rows = tables.cosmetics();
+    if (@intCast(usize, index) >= rows.len) return put(sc, x, y, "none");
+    return put(sc, x, y, rows[@intCast(usize, index)].name);
+}
+
+// Boat summary used by `--dump-grid --screen boat`; the decorated pixel boat
+// itself is drawn by render_art in art mode (and inside the Field Record).
+pub fn renderBoat(w: *const def.World, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  BOAT");
+    _ = put(sc, 71, 0, "[?] Help");
+
+    var x = put(sc, 0, 2, "Paint: ");
+    _ = put(sc, x, 2, boat.paintName(boat.paintIndex(w)));
+
+    x = put(sc, 0, 3, "Figurehead: ");
+    x = putCosmeticName(sc, x, 3, boat.figureheadIndex(w));
+
+    x = put(sc, 0, 4, "Flag: ");
+    x = putCosmeticName(sc, x, 4, boat.flagIndex(w));
+
+    x = put(sc, 0, 5, "Decal: ");
+    _ = putCosmeticName(sc, x, 5, boat.decalIndex(w));
+
+    x = put(sc, 0, 7, "Boat: Hull ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_HULL]);
+    x = put(sc, x, 7, " Speed ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_SPEED]);
+    x = put(sc, x, 7, " Cargo ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_CARGO]);
+    x = put(sc, x, 7, " Oxygen ");
+    x = putInt(sc, x, 7, w.boat[world.BOAT_OXYGEN]);
+    x = put(sc, x, 7, " Precision ");
+    _ = putInt(sc, x, 7, w.boat[world.BOAT_PRECISION]);
+
+    _ = put(sc, 0, 9, "Highest owned cosmetic per slot is shown in art mode.");
 }
 
 // ---- First run / menu / save error (§20, §32, §33) ------------------------

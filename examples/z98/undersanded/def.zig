@@ -120,6 +120,8 @@ pub const FightState = struct {
     subdue_declined: i32, surge_count: i32, surge_atk_applied: i32,
     tool: i32, tool_charge: i32, tool_broken: i32, tool_active: i32,
     phase_state: i32, boss_phase: i32, boss_axis: i32,
+    boss_variant: i32, boss_volley_round: i32,
+    boss_start_hull: i32, boss_start_actions: i32, boss_defeat_done: i32,
     last_bar: i32, switches: i32, hull_spent: i32,
     rng_state: u32,
     rule_consumed: u32,
@@ -139,6 +141,7 @@ pub const FieldRecord = struct {
     expertise: [MAX_MATERIALS]i32,
     money_earned: i32, cosmetics: i32,
     boat: [5]i32,
+    cosmetics_mask: u32,
 };
 
 pub const LastRun = struct {
@@ -267,6 +270,8 @@ pub const NAV_SAVE_ERR: i32 = 21;
 pub const NAV_JOURNAL: i32 = 22;
 pub const NAV_HELP: i32 = 23;
 pub const NAV_SUBDUE_INTRO: i32 = 24;
+pub const NAV_SCORE: i32 = 25;
+pub const NAV_CREDITS: i32 = 26;
 pub const NAV_QUIT: i32 = -1;
 
 pub const NAV_RESULT_NONE: i32 = -100;
@@ -368,6 +373,10 @@ pub const MSG_SUPPRESS_LURE: i32 = 30;
 pub const MSG_SUPPRESS_SONAR: i32 = 31;
 pub const MSG_SUPPRESS_HOOK: i32 = 32;
 pub const MSG_SUPPRESS_SHIELD: i32 = 33;
+pub const MSG_BOSS_RESTRAIN: i32 = 34;
+pub const MSG_BOSS_HOARD: i32 = 35;
+pub const MSG_BOSS_DROWN: i32 = 36;
+pub const MSG_BOSS_PHASE2: i32 = 37;
 
 // Content boot error copy (spec §25.10, §33).
 pub const MSG_MISSING: []const u8 = "Content file missing. Reinstall from CD.";
@@ -420,6 +429,22 @@ pub const MESSAGES = [_]MsgRow{
     MsgRow{
         .id = MSG_GRUDGE,
         .text = "It remembers the last run: +30 Resolve.",
+    },
+    MsgRow{
+        .id = MSG_BOSS_RESTRAIN,
+        .text = "The machine has no will to break.",
+    },
+    MsgRow{
+        .id = MSG_BOSS_HOARD,
+        .text = "The Hoard jettisons something from your hold.",
+    },
+    MsgRow{
+        .id = MSG_BOSS_DROWN,
+        .text = "The Drown floods the hull: +5 Hull.",
+    },
+    MsgRow{
+        .id = MSG_BOSS_PHASE2,
+        .text = "The Derelict enters its second phase.",
     },
 };
 

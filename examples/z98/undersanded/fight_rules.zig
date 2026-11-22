@@ -8,6 +8,7 @@ const def = @import("def.zig");
 const math = @import("math.zig");
 const behavior = @import("behavior.zig");
 const tools = @import("fight_tools.zig");
+const boss = @import("boss.zig");
 
 pub const PERCENT_BASE: i32 = 100;
 pub const DANGER_BASE: i32 = 25;
@@ -29,6 +30,7 @@ pub const PHASE_ROUND_SPAN: i32 = 2;
 pub const PHASE_LOCK_PCT: i32 = 30;
 pub const PHASE_SOLID_RESIST_PCT: i32 = 50;
 
+pub const CREATURE_ACT_NONE: i32 = 0;
 pub const CREATURE_ACT_ATTACK: i32 = 1;
 pub const CREATURE_ACT_FLEE: i32 = 2;
 
@@ -189,6 +191,7 @@ pub fn peekCreatureAction(s: *const def.GameState, cdef: *const def.CreatureDef,
     copy.fight = s.fight;
 
     if (copy.fight.pending_flee != 0 and !tools.hookActive(&copy)) return CREATURE_ACT_FLEE;
+    if (boss.isEngaged(&copy) and boss.attackCount(&copy) <= 0) return CREATURE_ACT_NONE;
     _ = effectiveAttack(&copy, cdef, rules);
     return CREATURE_ACT_ATTACK;
 }

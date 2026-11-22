@@ -16,6 +16,7 @@ const arena_mod = @import("std_arena");
 const parse = @import("std_parse");
 const str = @import("std_str");
 const paths = @import("paths.zig");
+const boat = @import("boat.zig");
 const zsp = @import("zsp.zig");
 const px = @import("std_gfx_px_core.zig");
 
@@ -55,6 +56,8 @@ const A_BG_A: i32 = 11;
 const A_BG_B: i32 = 12;
 const A_BG_C: i32 = 13;
 const A_BG_D: i32 = 14;
+const A_BOAT: i32 = 16;
+const A_OVERLAY_FIRST: i32 = 17;
 
 // Base identity rows: demo def id -> A index (validator's BASE_DEFS).
 const DefBase = struct { id: i32, a: i32 };
@@ -75,9 +78,12 @@ const BASE_DEFS: [11]DefBase = [11]DefBase{
 pub const Assets = struct {
     sprites: [A_COUNT]px.Sprite,
     base_luts: [A_COUNT * 256]u16,
+    boat_paints: [3]px.Sprite,
+    boat_paint_luts: [3 * 256]u16,
     var_sprites: [V_COUNT]px.Sprite,
     var_luts: [V_COUNT * 256]u16,
     var_def_ids: [V_COUNT]i32,
+    var_boss_variants: [V_COUNT]i32,
     loaded: bool,
 };
 
@@ -94,6 +100,58 @@ pub fn spriteForDef(a: *const Assets, def_id: i32) ?*const px.Sprite {
         if (a.var_def_ids[i] == def_id) return &a.var_sprites[i];
     }
     return null;
+}
+
+// A-index accessors for the M11 boat screen. The overlay rows are already
+// decoded by load(): cosmetic indices 3..11 map to A rows 17..25 in the
+// pinned manifest order (figureheads, flags, decals).
+pub fn spriteForA(a: *const Assets, index: i32) ?*const px.Sprite {
+    if (index < 0 or @intCast(usize, index) >= A_COUNT) return null;
+    return &a.sprites[@intCast(usize, index)];
+}
+
+pub fn boatSprite(a: *const Assets) ?*const px.Sprite {
+    return &a.sprites[A_BOAT];
+}
+
+pub fn boatPaint(a: *const Assets, paint: i32) ?*const px.Sprite {
+    if (paint < 0 or paint >= boat.PAINT_COUNT) return null;
+    return &a.boat_paints[@intCast(usize, paint)];
+}
+
+pub fn boatPaints(a: *const Assets) ?*const [3]px.Sprite {
+    return &a.boat_paints;
+}
+
+pub fn overlayForCosmetic(a: *const Assets, cosmetic: i32) ?*const px.Sprite {
+    if (cosmetic < boat.COSMETIC_OVERLAY_FIRST
+        or cosmetic > boat.COSMETIC_OVERLAY_LAST) return null;
+    const idx = A_OVERLAY_FIRST + (cosmetic - boat.COSMETIC_OVERLAY_FIRST);
+    return &a.sprites[@intCast(usize, idx)];
+}
+
+// A rows 17..25 are the nine cosmetic overlays in the pinned index order.
+pub fn overlays(a: *const Assets) ?*const [9]px.Sprite {
+    return @ptrCast(*const [9]px.Sprite,
+        &a.sprites[@intCast(usize, A_OVERLAY_FIRST)]);
+}
+
+// Boss identity sprites: identity 0 is Armor (the base/Armor A row); the four
+// V rows map to 1..4 by their symbolic manifest ids (sliver/hoard/drown/blur).
+pub fn bossVariant(a: *const Assets, variant: i32) ?*const px.Sprite {
+    if (variant == 0) return &a.sprites[A_BOSS];
+    var i: usize = 0;
+    while (i < V_COUNT) : (i += 1) {
+        if (a.var_boss_variants[i] == variant) return &a.var_sprites[i];
+    }
+    return null;
+}
+
+// Boss art identity: the base sprite until Phase 2 so the variant recolor
+// cannot leak early; variant rows from Phase 2 onward.
+pub fn bossSpriteForPhase(a: *const Assets, variant: i32, phase: i32) ?*const px.Sprite {
+    if (phase < 2) return &a.sprites[@intCast(usize, A_BOSS)];
+    return bossVariant(a, variant);
 }
 
 fn isBackgroundA(a: i32) bool {
@@ -225,6 +283,35 @@ fn decodeAsset(assets_dir: []const u8, name: []const u8, a: i32, out_ramp: *u8) 
     return true;
 }
 
+// Build the three pinned hull paint LUTs from the decoded base palette. The
+// hull uses from_ramp=0 even though boat00.zsp's header ramp is 1; the
+// viewport clip stays in render_art (these LUTs change palette entries only).
+fn buildBoatPaints() bool {
+    var sprites: *[A_COUNT]px.Sprite = &g_assets.sprites;
+    var base_luts: *[A_COUNT * 256]u16 = &g_assets.base_luts;
+    var paint_luts: *[3 * 256]u16 = &g_assets.boat_paint_luts;
+    var paints: *[3]px.Sprite = &g_assets.boat_paints;
+
+    const base_idx: usize = @intCast(usize, A_BOAT);
+    const base_off: usize = base_idx * 256;
+    var base_lut: [256]u16 = undefined;
+    var i: usize = 0;
+    while (i < 256) : (i += 1) base_lut[i] = base_luts[base_off + i];
+
+    var p: usize = 0;
+    while (p < 3) : (p += 1) {
+        var lut: [256]u16 = undefined;
+        boat.paintLut(&lut, &base_lut, @intCast(i32, p));
+        const off: usize = p * 256;
+        i = 0;
+        while (i < 256) : (i += 1) paint_luts[off + i] = lut[i];
+        var sprite = sprites[base_idx];
+        sprite.lut = @ptrCast([*]const u16, &paint_luts[off]);
+        paints[p] = sprite;
+    }
+    return true;
+}
+
 fn decodeBackground(assets_dir: []const u8, name: []const u8, a: i32) bool {
     var out_buf: [PATH_MAX]u8 = undefined;
     const out_dir = paths.join(assets_dir, "out", out_buf[0..]) orelse return false;
@@ -290,8 +377,19 @@ fn parseFromTo(token: []const u8, out: *u8) bool {
     return true;
 }
 
+fn bossVariantForId(id: []const u8) i32 {
+    if (eq(id, "boss00:sliver")) return 1;
+    if (eq(id, "boss00:hoard")) return 2;
+    if (eq(id, "boss00:drown")) return 3;
+    if (eq(id, "boss00:blur")) return 4;
+    return -1;
+}
+
 fn buildVariants(manifest: []const u8, base_ramps: []const u8) bool {
     var var_count: usize = 0;
+    var var_boss: *[V_COUNT]i32 = &g_assets.var_boss_variants;
+    var bi: usize = 0;
+    while (bi < V_COUNT) : (bi += 1) var_boss[bi] = -1;
     var start: usize = 0;
     while (start < manifest.len) {
         var end = start;
@@ -350,6 +448,7 @@ fn buildVariants(manifest: []const u8, base_ramps: []const u8) bool {
         sprite.lut = @ptrCast([*]const u16, &var_luts[var_off]);
         var_sprites[var_count] = sprite;
         var_ids[var_count] = def_id;
+        var_boss[var_count] = bossVariantForId(id);
         var_count += 1;
     }
     return var_count == V_COUNT;
@@ -414,6 +513,7 @@ pub fn load(assets_dir: []const u8) bool {
     while (i < A_COUNT) : (i += 1) {
         if (!seen[i]) return false;
     }
+    if (!buildBoatPaints()) return false;
     if (!buildVariants(manifest, a_ramp[0..])) return false;
     if (assets_dir.len > g_assets_dir_buf.len) return false;
     str.copy(g_assets_dir_buf[0..], assets_dir);

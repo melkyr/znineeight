@@ -29,6 +29,7 @@ const text_scan = @import("text_scan.zig");
 const render_text = @import("render_text.zig");
 const economy = @import("economy.zig");
 const tables = @import("tables_t1.zig");
+const score = @import("score.zig");
 
 pub const HELP_PAGE_NONE: i32 = 0;
 pub const TIP_NONE: i32 = 0;
@@ -326,10 +327,25 @@ fn setScreen(g: *def.GameState, screen: i32) i32 {
     return screen;
 }
 
+// Nav screens that survive loop startup. Fight SCREEN_* values stay outside
+// this list; the loops only consult it before a new key is read.
+pub fn screenAllowed(screen: i32) bool {
+    if (screen == def.NAV_MAP or screen == def.NAV_NODE or screen == def.NAV_SETTLE) return true;
+    if (screen == def.NAV_SUBDUE_INTRO) return true;
+    if (screen == def.NAV_REFINE or screen == def.NAV_UPGRADE) return true;
+    if (screen == def.NAV_CRAFT or screen == def.NAV_BUY or screen == def.NAV_TOOLS) return true;
+    if (screen == def.NAV_LORE or screen == def.NAV_MENU or screen == def.NAV_SAVE_ERR) return true;
+    if (screen == def.NAV_JOURNAL or screen == def.NAV_HELP) return true;
+    if (screen == def.NAV_SCORE or screen == def.NAV_CREDITS) return true;
+    return false;
+}
+
 // A field action may start a fight; keep def.SCREEN_* in that case so
 // the next key still maps through input.mapKey. A subdue intro is a field
-// screen too: postFight owns it and this must not overwrite it.
+// screen too: postFight owns it and this must not overwrite it. The boss
+// defeat transition (credits -> score) is also owned by postFight.
 fn screenAfterField(g: *def.GameState) i32 {
+    if (g.screen == def.NAV_CREDITS or g.screen == def.NAV_SCORE) return g.screen;
     if (expedition.isInFight(g)) return g.screen;
     if (isPending(g) and g.screen == def.NAV_SUBDUE_INTRO) return g.screen;
     return deriveScreen(g);
@@ -569,6 +585,22 @@ fn journalStep(g: *def.GameState, st: *NavState, key: input.Key) i32 {
     return setScreen(g, def.NAV_JOURNAL);
 }
 
+// §19/§38 P31: defeat -> credits -> score -> dock. Only C advances from
+// credits; the score accepts C or Enter and then pays the normal D-route
+// return travel.
+fn creditsStep(g: *def.GameState, key: input.Key) i32 {
+    if (isChar(key, 'c')) return setScreen(g, def.NAV_SCORE);
+    return setScreen(g, def.NAV_CREDITS);
+}
+
+fn scoreStep(g: *def.GameState, key: input.Key) i32 {
+    if (isChar(key, 'c') or key.ch == 13 or key.ch == 10) {
+        expedition.returnToDock(g);
+        return setScreen(g, def.NAV_DOCK);
+    }
+    return setScreen(g, def.NAV_SCORE);
+}
+
 // Inner step: every action path returns through here so the wrapper below can
 // always consume the transient field event exactly once.
 fn navStepInner(g: *def.GameState, st: *NavState, key: input.Key) i32 {
@@ -627,6 +659,10 @@ fn navStepInner(g: *def.GameState, st: *NavState, key: input.Key) i32 {
         }
         return setScreen(g, deriveScreen(g));
     }
+
+    // Boss defeat owns the credits -> score transition; J must not hijack it.
+    if (g.screen == def.NAV_CREDITS) return creditsStep(g, key);
+    if (g.screen == def.NAV_SCORE) return scoreStep(g, key);
 
     // `J` opens the Journal everywhere but mid-fight. A pending settlement is
     // handled above and consumes J with every other non-1/2 key.
@@ -834,6 +870,11 @@ pub fn drawScreen(g: *def.GameState, st: *const NavState, sc: *render.Screen) vo
             render.renderBuy(&v, sc);
         },
         def.NAV_TOOLS => render.renderTools(g, sc),
+        def.NAV_SCORE => {
+            var p = score.scoreSnapshot(&g.world);
+            render.renderScore(&p, sc);
+        },
+        def.NAV_CREDITS => render.renderCredits(sc),
         def.NAV_LORE => render.renderLore(save_ux.manualPageOne(), sc),
         def.NAV_MENU => render.renderMenu(sc),
         def.NAV_SAVE_ERR => render.renderSaveError(save_ux.saveErrTextKind(st.save_err_kind), sc),
@@ -928,12 +969,7 @@ pub fn navIntercept(g: *def.GameState, st: *NavState, dir: []const u8,
 
 // Interactive console loop: render, prompt, read one key, step. EOF exits.
 pub fn navRun(g: *def.GameState) void {
-    if (g.screen != def.NAV_MAP and g.screen != def.NAV_NODE and g.screen != def.NAV_SETTLE
-        and g.screen != def.NAV_SUBDUE_INTRO
-        and g.screen != def.NAV_REFINE and g.screen != def.NAV_UPGRADE
-        and g.screen != def.NAV_CRAFT and g.screen != def.NAV_BUY and g.screen != def.NAV_TOOLS
-        and g.screen != def.NAV_LORE and g.screen != def.NAV_MENU and g.screen != def.NAV_SAVE_ERR
-        and g.screen != def.NAV_JOURNAL and g.screen != def.NAV_HELP) {
+    if (!screenAllowed(g.screen)) {
         g.screen = def.NAV_DOCK;
     }
 

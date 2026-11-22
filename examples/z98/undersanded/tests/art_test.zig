@@ -136,7 +136,7 @@ fn goldenFight(g: *def.GameState) void {
 var empty_px: [1]u8 = [1]u8{0};
 
 fn assetView(g: *const def.GameState) art.ArtAssets {
-    var view = art.ArtAssets{ .bg = null, .sprite = null };
+    var view = art.emptyAssets();
     const a = assets.current() orelse return view;
     view.bg = assets.ensureBackgroundZone(g.exp.zone);
     if (g.fight.def_index >= 0 and g.fight.def_index < creatures.defCount()) {
@@ -594,9 +594,9 @@ fn tTweenEqualSamples() bool {
 }
 
 fn tMsgLineParity() bool {
-    const ids = [25]i32{
+    const ids = [26]i32{
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 37,
     };
     var d = creatures.defAt(0);
     var i: usize = 0;
@@ -820,7 +820,7 @@ fn tAssetsMissingFallback() bool {
 
     var g: def.GameState = undefined;
     goldenFight(&g);
-    const none = art.ArtAssets{ .bg = null, .sprite = null };
+    const none = art.emptyAssets();
     art.resetFrame();
     const h1 = fnv(renderIntoView(&g, "", true, none));
     art.resetFrame();
@@ -831,6 +831,34 @@ fn tAssetsMissingFallback() bool {
     art.resetFrame();
     const real = fnv(renderInto(&g, "", true));
     return real != h1;
+}
+
+fn tScoreCreditsArtDeterministic() bool {
+    var g: def.GameState = undefined;
+    game.newGame(&g);
+    g.screen = def.NAV_SCORE;
+    g.world.boss_variants_seen = 0x15;
+    g.world.boss_kills = 1;
+    g.world.score_subdued = 2;
+    g.world.score_killed = 3;
+    g.world.score_overkilled = 1;
+    g.world.score_money_earned = 55;
+    g.world.field_record_written = 1;
+    g.world.last_run.outcome = def.OUT_KILL;
+
+    art.resetFrame();
+    const score1 = fnv(renderInto(&g, "", true));
+    art.resetFrame();
+    const score2 = fnv(renderInto(&g, "", true));
+    if (score1 != score2) return false;
+
+    g.screen = def.NAV_CREDITS;
+    art.resetFrame();
+    const credits1 = fnv(renderInto(&g, "", true));
+    art.resetFrame();
+    const credits2 = fnv(renderInto(&g, "", true));
+    if (credits1 != credits2) return false;
+    return score1 != credits1;
 }
 
 fn tGolden() bool {
@@ -868,6 +896,7 @@ pub fn main() void {
     report("background_one_resident_slot", tBackgroundResidency());
     report("assets_missing_fallback_deterministic", tAssetsMissingFallback());
     report("assets_malformed_v_manifest_falls_back", tMalformedVManifestFallsBack());
+    report("score_credits_art_deterministic", tScoreCreditsArtDeterministic());
     report("golden_art_fight_640x480", tGolden());
 
     if (fails != 0) os.exit(1);

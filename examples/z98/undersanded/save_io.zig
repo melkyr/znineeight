@@ -199,6 +199,9 @@ fn writeScore(out: *buf_mod.Buf, w: *const def.World) void {
     wSection(out, "score");
     wKVInt(out, "field_record_written", w.field_record_written);
     writeFieldRecord(out, &w.field_record);
+    if (w.field_record.cosmetics_mask != 0) {
+        wKVUint(out, "field_cosmetics", w.field_record.cosmetics_mask);
+    }
     wKVUint(out, "boss_variants_seen", w.boss_variants_seen);
     wKVInt(out, "boss_kills", w.boss_kills);
     writeLastRun(out, &w.last_run);
